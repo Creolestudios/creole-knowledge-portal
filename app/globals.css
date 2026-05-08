@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #34c4f2;
+  --color-brand-hover: #2db0db;
+  --color-brand-muted: rgba(52, 196, 242, 0.1);
+  --color-brand-glow: rgba(52, 196, 242, 0.4);
+  
+  --shadow-brand: 0 0 20px var(--color-brand-glow);
+  --shadow-card: 0 10px 40px rgba(0, 0, 0, 0.04);
+}
+
+@layer base {
+  body {
+    @apply antialiased text-zinc-900;
+  }
+}
