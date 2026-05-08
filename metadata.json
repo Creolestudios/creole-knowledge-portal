@@ -1,0 +1,6 @@
+{
+  "name": "Creole Knowledge Portal",
+  "description": "An internal office tool delivering personalized morning blog recommendations with Supabase Magic Link authentication.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
