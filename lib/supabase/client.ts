@@ -11,6 +11,14 @@ export function createClient() {
 
   return createBrowserClient(
     url || 'https://placeholder.supabase.co',
-    key || 'placeholder-key'
+    key || 'placeholder-key',
+    {
+      cookieOptions: {
+        sameSite: 'none',
+        secure: true,
+        partitioned: true,
+        path: '/',
+      } as any,
+    }
   );
 }

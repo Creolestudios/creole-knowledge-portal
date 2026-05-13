@@ -17,9 +17,14 @@ import {
   ExternalLink
 } from 'lucide-react';
 
+import UserManagement from '@/components/user-management';
+
 const ADMIN_EMAIL = 'priya.dhanani@creolestudios.com';
 
+type Tab = 'sources' | 'users';
+
 export default function AdminDashboard() {
+  const [activeTab, setActiveTab] = useState<Tab>('sources');
   const [urls, setUrls] = useState<string[]>(['']);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -56,7 +61,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user || user.email !== ADMIN_EMAIL) {
+      if (!user || user.email?.toLowerCase() !== ADMIN_EMAIL) {
         router.push('/');
         return;
       }
@@ -156,7 +161,7 @@ export default function AdminDashboard() {
     <main className="min-h-screen bg-[#fafafa]">
       {/* Header */}
       <header className="bg-zinc-900 text-white py-6 shadow-xl border-b border-zinc-800">
-        <div className="max-w-4xl mx-auto px-6 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="w-10 h-10 bg-[#34c4f2] rounded-lg flex items-center justify-center">
               <ShieldCheck className="text-white w-6 h-6" />
@@ -172,146 +177,188 @@ export default function AdminDashboard() {
             </div>
           </div>
           
-          <button 
-            onClick={handleSignOut}
-            className="flex items-center space-x-2 text-zinc-400 hover:text-white transition-colors text-sm font-semibold group"
-          >
-            <span>Sign Out</span>
-            <LogOut className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-          </button>
+          <div className="flex items-center gap-8">
+            <nav className="flex items-center gap-2 bg-zinc-800/50 p-1 rounded-xl">
+              <button 
+                onClick={() => setActiveTab('sources')}
+                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
+                  activeTab === 'sources' 
+                    ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20' 
+                    : 'text-zinc-500 hover:text-white'
+                }`}
+              >
+                Blog Sources
+              </button>
+              <button 
+                onClick={() => setActiveTab('users')}
+                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
+                  activeTab === 'users' 
+                    ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20' 
+                    : 'text-zinc-500 hover:text-white'
+                }`}
+              >
+                Users
+              </button>
+            </nav>
+
+            <button 
+              onClick={handleSignOut}
+              className="flex items-center space-x-2 text-zinc-400 hover:text-white transition-colors text-sm font-semibold group"
+            >
+              <span>Sign Out</span>
+              <LogOut className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Content */}
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-2xl shadow-card border border-zinc-100 overflow-hidden"
-        >
-          {/* Section Header */}
-          <div className="p-8 border-b border-zinc-50">
-            <div className="flex items-center space-x-3 mb-2">
-              <div className="p-2 bg-[#34c4f2]/10 rounded-lg">
-                <Globe className="text-[#34c4f2] w-5 h-5" />
-              </div>
-              <h2 className="text-2xl font-bold text-zinc-900">Manage Blog Sources</h2>
-            </div>
-            <p className="text-zinc-500 text-sm leading-relaxed max-w-2xl">
-              Add up to 10 trending blog site URLs. These will be used to fetch and recommend 
-              high-quality technical content to your users every morning.
-            </p>
-          </div>
-
-          {/* Section Body */}
-          <div className="p-8 space-y-6">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">
-                Source URL List
-              </span>
-              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${
-                urls.length >= 10 
-                  ? 'bg-red-50 text-red-500 border-red-100' 
-                  : 'bg-zinc-50 text-zinc-500 border-zinc-100'
-              }`}>
-                {urls.length} / 10 URLs Added
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              <AnimatePresence mode="popLayout">
-                {urls.map((url, index) => (
-                  <motion.div 
-                    key={index}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 10 }}
-                    className="flex items-center space-x-3 group"
-                  >
-                    <div className="relative flex-grow">
-                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-[#34c4f2] transition-colors">
-                        <ExternalLink className="w-4 h-4" />
-                      </div>
-                      <input
-                        type="url"
-                        value={url}
-                        onChange={(e) => updateUrl(index, e.target.value)}
-                        placeholder="https://example.com/blog"
-                        className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] focus:border-transparent transition-all text-zinc-900 font-medium placeholder:text-zinc-300 placeholder:font-normal"
-                      />
-                    </div>
-                    <button
-                      onClick={() => removeUrlField(index)}
-                      className="p-3.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all active:scale-90"
-                      title="Remove source"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-            </div>
-
-            <button
-              onClick={addUrlField}
-              disabled={urls.length >= 10}
-              className="w-full py-4 border-2 border-dashed border-zinc-100 rounded-2xl flex items-center justify-center space-x-2 text-zinc-400 hover:text-[#34c4f2] hover:border-[#34c4f2]/30 hover:bg-[#34c4f2]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+      <div className="max-w-5xl mx-auto px-6 py-12">
+        <AnimatePresence mode="wait">
+          {activeTab === 'sources' ? (
+            <motion.div 
+              key="sources"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.2 }}
+              className="bg-white rounded-2xl shadow-card border border-zinc-100 overflow-hidden"
             >
-              <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-              <span className="font-bold text-sm uppercase tracking-widest">Add Another URL</span>
-            </button>
-          </div>
+              {/* Section Header */}
+              <div className="p-8 border-b border-zinc-50">
+                <div className="flex items-center space-x-3 mb-2">
+                  <div className="p-2 bg-[#34c4f2]/10 rounded-lg">
+                    <Globe className="text-[#34c4f2] w-5 h-5" />
+                  </div>
+                  <h2 className="text-2xl font-bold text-zinc-900">Manage Blog Sources</h2>
+                </div>
+                <p className="text-zinc-500 text-sm leading-relaxed max-w-2xl">
+                  Add up to 10 trending blog site URLs. These will be used to fetch and recommend 
+                  high-quality technical content to your users every morning.
+                </p>
+              </div>
 
-          {/* Section Footer */}
-          <div className="p-8 bg-zinc-50/50 border-t border-zinc-100">
-            <div className="flex flex-col space-y-4">
-              <AnimatePresence>
-                {error && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100"
+              {/* Section Body */}
+              <div className="p-8 space-y-6">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">
+                    Source URL List
+                  </span>
+                  <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${
+                    urls.length >= 10 
+                      ? 'bg-red-50 text-red-500 border-red-100' 
+                      : 'bg-zinc-50 text-zinc-500 border-zinc-100'
+                  }`}>
+                    {urls.length} / 10 URLs Added
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  <AnimatePresence mode="popLayout">
+                    {urls.map((url, index) => (
+                      <motion.div 
+                        key={index}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: 10 }}
+                        className="flex items-center space-x-3 group"
+                      >
+                        <div className="relative flex-grow">
+                          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-[#34c4f2] transition-colors">
+                            <ExternalLink className="w-4 h-4" />
+                          </div>
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={(e) => updateUrl(index, e.target.value)}
+                            placeholder="https://example.com/blog"
+                            className="w-full pl-11 pr-4 py-3.5 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] focus:border-transparent transition-all text-zinc-900 font-medium placeholder:text-zinc-300 placeholder:font-normal"
+                          />
+                        </div>
+                        <button
+                          onClick={() => removeUrlField(index)}
+                          className="p-3.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                          title="Remove source"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+
+                <button
+                  onClick={addUrlField}
+                  disabled={urls.length >= 10}
+                  className="w-full py-4 border-2 border-dashed border-zinc-100 rounded-2xl flex items-center justify-center space-x-2 text-zinc-400 hover:text-[#34c4f2] hover:border-[#34c4f2]/30 hover:bg-[#34c4f2]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+                >
+                  <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+                  <span className="font-bold text-sm uppercase tracking-widest">Add Another URL</span>
+                </button>
+              </div>
+
+              {/* Section Footer */}
+              <div className="p-8 bg-zinc-50/50 border-t border-zinc-100">
+                <div className="flex flex-col space-y-4">
+                  <AnimatePresence>
+                    {error && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100"
+                      >
+                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                        <p className="font-medium">{error}</p>
+                      </motion.div>
+                    )}
+
+                    {success && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="flex items-center space-x-2 p-4 text-sm text-emerald-600 bg-emerald-50 rounded-xl border border-emerald-100"
+                      >
+                        <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                        <p className="font-bold">Sources saved successfully! System updated.</p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  <button
+                    onClick={saveSources}
+                    disabled={saving}
+                    className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-5 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
                   >
-                    <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                    <p className="font-medium">{error}</p>
-                  </motion.div>
-                )}
-
-                {success && (
-                  <motion.div 
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="flex items-center space-x-2 p-4 text-sm text-emerald-600 bg-emerald-50 rounded-xl border border-emerald-100"
-                  >
-                    <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                    <p className="font-bold">Sources saved successfully! System updated.</p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <button
-                onClick={saveSources}
-                disabled={saving}
-                className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-5 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
-              >
-                {saving ? (
-                  <Loader2 className="w-6 h-6 animate-spin" />
-                ) : (
-                  <>
-                    <Save className="w-5 h-5" />
-                    <span>Save Sources</span>
-                  </>
-                )}
-              </button>
-            </div>
-            
-            <p className="mt-6 text-center text-[10px] text-zinc-400 font-mono uppercase tracking-[0.2em]">
-              Authorized Administrative Action Node
-            </p>
-          </div>
-        </motion.div>
+                    {saving ? (
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    ) : (
+                      <>
+                        <Save className="w-5 h-5" />
+                        <span>Save Sources</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                
+                <p className="mt-6 text-center text-[10px] text-zinc-400 font-mono uppercase tracking-[0.2em]">
+                  Authorized Administrative Action Node
+                </p>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="users"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.2 }}
+            >
+              <UserManagement />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </main>
   );
