@@ -1,0 +1,153 @@
+name: Production Quality Gate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+jobs:
+  quality-gate:
+    name: Core Quality & Security Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Important for gitleaks/secret scanning
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Prepare Reports Directory
+        run: mkdir -p reports
+
+      # --- A. ESLint ---
+      - name: Run ESLint
+        run: npm run lint:report
+        continue-on-error: true
+
+      - name: Upload ESLint Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eslint-report
+          path: reports/eslint-report.json
+          retention-days: 7
+
+      # --- B. Prettier ---
+      - name: Run Prettier Check
+        run: npm run format:report
+        continue-on-error: true
+
+      - name: Upload Prettier Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: prettier-report
+          path: reports/prettier-report.txt
+          retention-days: 7
+
+      # --- C. NPM Audit ---
+      - name: Run NPM Audit
+        run: npm run audit:report
+        continue-on-error: true
+
+      - name: Upload Audit Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: reports/npm-audit-report.json
+          retention-days: 7
+
+      # --- D. Trivy Filesystem Scan ---
+      - name: Run Trivy Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          format: 'table'
+          output: 'reports/trivy-report.txt'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+        continue-on-error: true
+
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: reports/trivy-report.txt
+          retention-days: 7
+
+      # --- E. Secret Scanning (Gitleaks) ---
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: detect --source . --verbose --redact --report-path reports/gitleaks-report.json
+        continue-on-error: true
+
+      - name: Upload Secret Scan Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-scan-report
+          path: reports/gitleaks-report.json
+          retention-days: 7
+
+      # --- F. Unit Tests ---
+      - name: Run Unit Tests
+        run: npm run test:report
+        continue-on-error: true
+
+      - name: Upload Test Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: reports/test-report.json
+          retention-days: 7
+
+      # --- G. PR Summary ---
+      - name: Generate PR Summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let summary = '### 🚀 Production Quality Gate Results\n\n';
+            summary += '| Check | Status | Artifact |\n';
+            summary += '| :--- | :---: | :--- |\n';
+            
+            const checkFiles = [
+              { name: 'ESLint', path: 'reports/eslint-report.json' },
+              { name: 'Prettier', path: 'reports/prettier-report.txt' },
+              { name: 'NPM Audit', path: 'reports/npm-audit-report.json' },
+              { name: 'Trivy Scan', path: 'reports/trivy-report.txt' },
+              { name: 'Secret Scan', path: 'reports/gitleaks-report.json' },
+              { name: 'Unit Tests', path: 'reports/test-report.json' }
+            ];
+
+            for (const check of checkFiles) {
+              const exists = fs.existsSync(check.path);
+              const status = exists ? '✅ Complete' : '⚠️ Missing';
+              summary += `| ${check.name} | ${status} | [View Artifact](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}) |\n`;
+            }
+
+            summary += '\n> Note: Pipeline configured for non-blocking execution. Please review warnings in the report artifacts.';
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });

@@ -10,6 +10,7 @@ export async function GET(request: Request) {
   
   // Clean origin - remove internal ports like :3000 or :8080 for public access
   // Standard robust detection: use protocol and hostname from request
+  // Robust origin detection: use protocol and hostname from request
   const isLocalhost = requestUrl.hostname === 'localhost';
   const origin = isLocalhost 
     ? `${requestUrl.protocol}//${requestUrl.hostname}${requestUrl.port ? `:${requestUrl.port}` : ''}`
@@ -18,33 +19,49 @@ export async function GET(request: Request) {
   const next = requestUrl.searchParams.get('next') ?? '/dashboard';
 
   console.log(`[Auth Callback] URL: ${request.url}`);
+  const allCookies = request.headers.get('cookie') || '';
+  const cookieNames = allCookies.split(';').map(c => c.split('=')[0].trim());
+  const authCookies = cookieNames.filter(name => name.includes('auth-token'));
+  console.log(`[Auth Callback] Auth Cookies: ${authCookies.join(', ') || 'NONE'}`);
   console.log(`[Auth Callback] Origin: ${origin}, Code present: ${!!code}`);
-
+  
   if (error) {
-    console.error(`[Auth Callback] Error param found: ${error}`);
-    const errorParam = encodeURIComponent(errorDescription || error);
-    return NextResponse.redirect(`${origin}/?error=${errorParam}`);
+    console.error(`[Auth Callback] Error param found: ${error} - ${errorDescription}`);
+    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(errorDescription || error)}`);
   }
 
   if (code) {
     try {
       const supabase = await createClient();
       console.log('[Auth Callback] Exchanging code for session...');
-      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
       
-      if (!exchangeError) {
-        const { data: { user } } = await supabase.auth.getUser();
-        const isAdmin = user?.email === 'priya.dhanani@creolestudios.com';
+      const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+      
+      if (exchangeError) {
+        console.error('[Auth Callback] Exchange error:', exchangeError.message);
+        // If it's an invalid flow state, it might be due to missing cookies
+        const message = exchangeError.message === 'invalid flow state, no valid flow state found'
+          ? 'Login session expired or context lost. Please try again from the direct URL.'
+          : exchangeError.message;
+        return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(message)}`);
+      }
+
+      if (data.user) {
+        const user = data.user;
+        const normalizedEmail = user.email?.toLowerCase().trim();
+        const isAdmin = normalizedEmail === 'priya.dhanani@creolestudios.com';
         const finalRedirect = isAdmin ? '/admin/dashboard' : next;
         
-        console.log(`[Auth Callback] Success! User: ${user?.email}, Redirecting to: ${origin}${finalRedirect}`);
-        return NextResponse.redirect(`${origin}${finalRedirect}`);
+        console.log(`[Auth Callback] Success! User: ${user.email}, Admin: ${isAdmin}, Redirecting to: ${finalRedirect}`);
+        
+        const redirectUrl = new URL(finalRedirect, origin);
+        return NextResponse.redirect(redirectUrl.toString());
       }
       
-      console.error('[Auth Callback] Exchange error:', exchangeError.message);
-      return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(exchangeError.message)}`);
+      console.error('[Auth Callback] No user data after exchange');
+      return NextResponse.redirect(`${origin}/?error=No%20user%20found%20after%20login`);
     } catch (err: any) {
-      console.error('[Auth Callback] Fatal internal error during exchange:', err);
+      console.error('[Auth Callback] Fatal internal error:', err);
       return NextResponse.redirect(`${origin}/?error=Internal%20auth%20error`);
     }
   }
