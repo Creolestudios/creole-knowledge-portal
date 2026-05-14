@@ -26,7 +26,6 @@ export async function createClient() {
               ...options,
               sameSite: 'none',
               secure: true,
-              partitioned: true,
               path: '/',
             } as any);
           } catch (error) {
@@ -41,7 +40,6 @@ export async function createClient() {
               ...options,
               sameSite: 'none',
               secure: true,
-              partitioned: true,
               path: '/',
             } as any);
           } catch (error) {
