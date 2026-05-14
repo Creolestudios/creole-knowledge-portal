@@ -35,7 +35,6 @@ export async function middleware(request: NextRequest) {
               ...options,
               sameSite: 'none',
               secure: true,
-              partitioned: true,
               path: '/',
             } as any)
           );
@@ -72,7 +71,6 @@ export async function middleware(request: NextRequest) {
         ...cookie,
         sameSite: 'none',
         secure: true,
-        partitioned: true,
         path: '/',
       } as any);
     });
