@@ -13,15 +13,38 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Fetch all authenticated users
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.listUsers();
+    if (authError) throw authError;
+
     // Fetch all profiles
-    const { data: profiles, error } = await supabaseAdmin
+    const { data: profiles, error: profileError } = await supabaseAdmin
       .from('user_profiles')
-      .select('*')
-      .order('updated_at', { ascending: false });
+      .select('*');
+    if (profileError) throw profileError;
 
-    if (error) throw error;
+    // Merge users with their profiles (if they exist), excluding the admin
+    const mergedUsers = authData.users
+      .filter((authUser) => authUser.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase())
+      .map((authUser) => {
+      const profile = profiles?.find((p) => p.user_id === authUser.id) || {};
+      return {
+        user_id: authUser.id,
+        email: authUser.email,
+        current_role: profile.current_role || '',
+        years_of_experience: profile.years_of_experience || null,
+        current_tech_stack: profile.current_tech_stack || [],
+        primary_tech_stack: profile.primary_tech_stack || [],
+        secondary_tech_stack: profile.secondary_tech_stack || [],
+        future_interests: profile.future_interests || '',
+        updated_at: profile.updated_at || authUser.updated_at,
+      };
+    });
 
-    return NextResponse.json(profiles);
+    // Sort by most recently updated
+    mergedUsers.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+
+    return NextResponse.json(mergedUsers);
   } catch (error: any) {
     console.error('API Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

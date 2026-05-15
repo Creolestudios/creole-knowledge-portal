@@ -158,62 +158,94 @@ export default function AdminDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fafafa]">
-      {/* Header */}
-      <header className="bg-zinc-900 text-white py-6 shadow-xl border-b border-zinc-800">
-        <div className="max-w-5xl mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="w-10 h-10 bg-[#34c4f2] rounded-lg flex items-center justify-center">
+    <main className="min-h-screen bg-[#fafafa] flex">
+      {/* Sidebar */}
+      <aside className="w-72 bg-zinc-900 text-white min-h-screen flex flex-col border-r border-zinc-800 fixed left-0 top-0 bottom-0 z-10 hidden md:flex">
+        {/* Logo area */}
+        <div className="p-6 border-b border-zinc-800">
+          <div className="flex items-center space-x-4 mb-4">
+            <div className="w-10 h-10 bg-[#34c4f2] rounded-lg flex items-center justify-center shrink-0">
               <ShieldCheck className="text-white w-6 h-6" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <h1 className="text-xl font-bold tracking-tight">Admin Console</h1>
-                <span className="bg-[#34c4f2]/20 text-[#34c4f2] text-[10px] font-black uppercase px-2 py-0.5 rounded tracking-widest border border-[#34c4f2]/30">
-                  Secure Access
-                </span>
+                <h1 className="text-lg font-bold tracking-tight">Admin Console</h1>
               </div>
-              <p className="text-zinc-400 text-xs mt-0.5 font-medium">{user?.email}</p>
+              <span className="inline-block mt-1 bg-[#34c4f2]/20 text-[#34c4f2] text-[9px] font-black uppercase px-2 py-0.5 rounded tracking-widest border border-[#34c4f2]/30">
+                Secure Access
+              </span>
             </div>
           </div>
-          
-          <div className="flex items-center gap-8">
-            <nav className="flex items-center gap-2 bg-zinc-800/50 p-1 rounded-xl">
-              <button 
-                onClick={() => setActiveTab('sources')}
-                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
-                  activeTab === 'sources' 
-                    ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20' 
-                    : 'text-zinc-500 hover:text-white'
-                }`}
-              >
-                Blog Sources
-              </button>
-              <button 
-                onClick={() => setActiveTab('users')}
-                className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${
-                  activeTab === 'users' 
-                    ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20' 
-                    : 'text-zinc-500 hover:text-white'
-                }`}
-              >
-                Users
-              </button>
-            </nav>
+        </div>
 
-            <button 
-              onClick={handleSignOut}
-              className="flex items-center space-x-2 text-zinc-400 hover:text-white transition-colors text-sm font-semibold group"
-            >
-              <span>Sign Out</span>
-              <LogOut className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+          <div className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-4 px-3 mt-2">Menu</div>
+          <button 
+            onClick={() => setActiveTab('sources')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'sources' 
+                ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20' 
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+            }`}
+          >
+            <Globe className="w-5 h-5" />
+            <span>Blog Sources</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('users')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'users' 
+                ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20' 
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+            }`}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span>Users</span>
+          </button>
+        </nav>
+
+        {/* User / Sign Out */}
+        <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
+          <div className="px-3 mb-4">
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Logged In As</p>
+            <p className="text-sm font-medium text-zinc-300 truncate">{user?.email}</p>
+          </div>
+          <button 
+            onClick={handleSignOut}
+            className="w-full flex items-center justify-center gap-2 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all text-sm font-bold group"
+          >
+            <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 md:ml-72 flex flex-col min-h-screen">
+        {/* Mobile Header (visible only on small screens) */}
+        <header className="md:hidden bg-zinc-900 text-white p-4 flex items-center justify-between shadow-md z-10 sticky top-0">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-[#34c4f2] rounded-md flex items-center justify-center">
+              <ShieldCheck className="text-white w-4 h-4" />
+            </div>
+            <h1 className="font-bold text-sm">Admin Console</h1>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setActiveTab('sources')} className={`p-2 rounded-md ${activeTab === 'sources' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
+              <Globe className="w-4 h-4" />
+            </button>
+            <button onClick={() => setActiveTab('users')} className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </button>
+            <button onClick={handleSignOut} className="p-2 text-zinc-400 hover:text-white ml-2 border-l border-zinc-700 pl-4">
+              <LogOut className="w-4 h-4" />
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Content */}
-      <div className="max-w-5xl mx-auto px-6 py-12">
+        {/* Tab Content */}
+        <div className="p-6 md:p-10 lg:p-12 w-full max-w-5xl mx-auto">
         <AnimatePresence mode="wait">
           {activeTab === 'sources' ? (
             <motion.div 
@@ -359,6 +391,7 @@ export default function AdminDashboard() {
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
     </main>
   );
