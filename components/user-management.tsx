@@ -23,8 +23,11 @@ import { motion, AnimatePresence } from 'motion/react';
 interface UserProfile {
   user_id: string;
   email: string;
+  current_role: string;
   years_of_experience: number;
   current_tech_stack: string[];
+  primary_tech_stack: string[];
+  secondary_tech_stack: string[];
   future_interests: string;
   updated_at: string;
 }
@@ -39,11 +42,14 @@ export default function UserManagement() {
   
   // Form State
   const [formData, setFormData] = useState({
+    current_role: '',
     years_of_experience: 0,
-    current_tech_stack: [] as string[],
+    primary_tech_stack: [] as string[],
+    secondary_tech_stack: [] as string[],
     future_interests: ''
   });
-  const [techInput, setTechInput] = useState('');
+  const [primaryTechInput, setPrimaryTechInput] = useState('');
+  const [secondaryTechInput, setSecondaryTechInput] = useState('');
 
   const supabase = createClient();
   
@@ -68,10 +74,14 @@ export default function UserManagement() {
   const handleUserClick = (user: UserProfile) => {
     setSelectedUser(user);
     setFormData({
+      current_role: user.current_role || '',
       years_of_experience: user.years_of_experience || 0,
-      current_tech_stack: user.current_tech_stack || [],
+      primary_tech_stack: user.primary_tech_stack || [],
+      secondary_tech_stack: user.secondary_tech_stack || [],
       future_interests: user.future_interests || ''
     });
+    setPrimaryTechInput('');
+    setSecondaryTechInput('');
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -85,8 +95,10 @@ export default function UserManagement() {
         .upsert({
           user_id: selectedUser.user_id,
           email: selectedUser.email,
+          current_role: formData.current_role,
           years_of_experience: formData.years_of_experience,
-          current_tech_stack: formData.current_tech_stack,
+          primary_tech_stack: formData.primary_tech_stack,
+          secondary_tech_stack: formData.secondary_tech_stack,
           future_interests: formData.future_interests,
           updated_at: new Date().toISOString()
         }, {
@@ -105,24 +117,45 @@ export default function UserManagement() {
     }
   };
 
-  const addTechTag = (e: React.KeyboardEvent) => {
+  const addPrimaryTechTag = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
-      const tag = techInput.trim().replace(/,$/, '');
-      if (tag && !formData.current_tech_stack.includes(tag)) {
+      const tag = primaryTechInput.trim().replace(/,$/, '');
+      if (tag && !formData.primary_tech_stack.includes(tag)) {
         setFormData({
           ...formData,
-          current_tech_stack: [...formData.current_tech_stack, tag]
+          primary_tech_stack: [...formData.primary_tech_stack, tag]
         });
       }
-      setTechInput('');
+      setPrimaryTechInput('');
     }
   };
 
-  const removeTechTag = (tagToRemove: string) => {
+  const removePrimaryTechTag = (tagToRemove: string) => {
     setFormData({
       ...formData,
-      current_tech_stack: formData.current_tech_stack.filter(tag => tag !== tagToRemove)
+      primary_tech_stack: formData.primary_tech_stack.filter(tag => tag !== tagToRemove)
+    });
+  };
+
+  const addSecondaryTechTag = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const tag = secondaryTechInput.trim().replace(/,$/, '');
+      if (tag && !formData.secondary_tech_stack.includes(tag)) {
+        setFormData({
+          ...formData,
+          secondary_tech_stack: [...formData.secondary_tech_stack, tag]
+        });
+      }
+      setSecondaryTechInput('');
+    }
+  };
+
+  const removeSecondaryTechTag = (tagToRemove: string) => {
+    setFormData({
+      ...formData,
+      secondary_tech_stack: formData.secondary_tech_stack.filter(tag => tag !== tagToRemove)
     });
   };
 
@@ -132,7 +165,7 @@ export default function UserManagement() {
   );
 
   const isProfileComplete = (user: UserProfile) => {
-    return user.years_of_experience !== null && user.current_tech_stack?.length > 0;
+    return user.years_of_experience !== null && user.primary_tech_stack?.length > 0;
   };
 
   if (loading && users.length === 0) {
@@ -249,39 +282,56 @@ export default function UserManagement() {
 
               <form onSubmit={handleSave} className="space-y-8">
                 <div className="grid grid-cols-1 gap-8">
-                  {/* Years of Experience */}
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
-                      <Calendar size={14} />
-                      Years of Experience
-                    </label>
-                    <input 
-                      type="number"
-                      min="0"
-                      value={formData.years_of_experience}
-                      onChange={(e) => setFormData({ ...formData, years_of_experience: parseInt(e.target.value) || 0 })}
-                      className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all font-mono"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Current Role */}
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
+                        <User size={14} />
+                        Current Role
+                      </label>
+                      <input 
+                        type="text"
+                        value={formData.current_role}
+                        onChange={(e) => setFormData({ ...formData, current_role: e.target.value })}
+                        placeholder="e.g. Senior Frontend Developer"
+                        className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all"
+                      />
+                    </div>
+
+                    {/* Years of Experience */}
+                    <div className="space-y-2">
+                      <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
+                        <Calendar size={14} />
+                        Years of Experience
+                      </label>
+                      <input 
+                        type="number"
+                        min="0"
+                        value={formData.years_of_experience}
+                        onChange={(e) => setFormData({ ...formData, years_of_experience: parseInt(e.target.value) || 0 })}
+                        className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all font-mono"
+                      />
+                    </div>
                   </div>
 
-                  {/* Tech Stack */}
+                  {/* Primary Tech Stack */}
                   <div className="space-y-2">
                     <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
                       <Code size={14} />
-                      Current Tech Stack
+                      Primary Tech Stack
                     </label>
                     <div className="space-y-4">
                       <input 
                         type="text"
-                        value={techInput}
-                        onChange={(e) => setTechInput(e.target.value)}
-                        onKeyDown={addTechTag}
-                        placeholder="Type a skill and press Enter or comma"
+                        value={primaryTechInput}
+                        onChange={(e) => setPrimaryTechInput(e.target.value)}
+                        onKeyDown={addPrimaryTechTag}
+                        placeholder="Type a core skill and press Enter or comma"
                         className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all"
                       />
                       <div className="flex flex-wrap gap-2">
                         <AnimatePresence>
-                          {formData.current_tech_stack.map(tag => (
+                          {formData.primary_tech_stack.map(tag => (
                             <motion.span
                               key={tag}
                               initial={{ opacity: 0, scale: 0.8 }}
@@ -292,7 +342,7 @@ export default function UserManagement() {
                               {tag}
                               <button 
                                 type="button" 
-                                onClick={() => removeTechTag(tag)}
+                                onClick={() => removePrimaryTechTag(tag)}
                                 className="hover:scale-120 transition-transform"
                               >
                                 <X size={12} />
@@ -300,7 +350,50 @@ export default function UserManagement() {
                             </motion.span>
                           ))}
                         </AnimatePresence>
-                        {formData.current_tech_stack.length === 0 && (
+                        {formData.primary_tech_stack.length === 0 && (
+                          <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">No tags added yet</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Secondary Tech Stack */}
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
+                      <Code size={14} />
+                      Secondary Tech Stack
+                    </label>
+                    <div className="space-y-4">
+                      <input 
+                        type="text"
+                        value={secondaryTechInput}
+                        onChange={(e) => setSecondaryTechInput(e.target.value)}
+                        onKeyDown={addSecondaryTechTag}
+                        placeholder="Type an additional skill and press Enter or comma"
+                        className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <AnimatePresence>
+                          {formData.secondary_tech_stack.map(tag => (
+                            <motion.span
+                              key={tag}
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-200 text-zinc-700 text-xs font-bold rounded-lg shadow-sm"
+                            >
+                              {tag}
+                              <button 
+                                type="button" 
+                                onClick={() => removeSecondaryTechTag(tag)}
+                                className="hover:scale-120 transition-transform"
+                              >
+                                <X size={12} />
+                              </button>
+                            </motion.span>
+                          ))}
+                        </AnimatePresence>
+                        {formData.secondary_tech_stack.length === 0 && (
                           <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">No tags added yet</span>
                         )}
                       </div>
