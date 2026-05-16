@@ -6,18 +6,16 @@ export function createClient() {
 
   if (!url || !key) {
     // Return a dummy client or handle the error gracefully for build/preview
-    console.warn('Supabase URL or Anon Key is missing. Shared/Deployed builds will require these secrets.');
+    console.warn(
+      'Supabase URL or Anon Key is missing. Shared/Deployed builds will require these secrets.'
+    );
   }
 
-  return createBrowserClient(
-    url || 'https://placeholder.supabase.co',
-    key || 'placeholder-key',
-    {
-      cookieOptions: {
-        sameSite: 'none',
-        secure: true,
-        path: '/',
-      } as any,
-    }
-  );
+  return createBrowserClient(url || 'https://placeholder.supabase.co', key || 'placeholder-key', {
+    cookieOptions: {
+      sameSite: 'none',
+      secure: true,
+      path: '/',
+    } as any,
+  });
 }

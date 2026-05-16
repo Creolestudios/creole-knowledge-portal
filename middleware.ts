@@ -15,33 +15,27 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const supabase = createServerClient(
-    url,
-    key,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            request.cookies.set(name, value)
-          );
-          response = NextResponse.next({
-            request,
-          });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, {
-              ...options,
-              sameSite: 'none',
-              secure: true,
-              path: '/',
-            } as any)
-          );
-        },
+  const supabase = createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
       },
-    }
-  );
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value));
+        response = NextResponse.next({
+          request,
+        });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, {
+            ...options,
+            sameSite: 'none',
+            secure: true,
+            path: '/',
+          } as any)
+        );
+      },
+    },
+  });
 
   // Use getUser() to verify the session
   let user = null;
@@ -56,11 +50,13 @@ export async function middleware(request: NextRequest) {
   const isDashboard = request.nextUrl.pathname.startsWith('/dashboard');
   const isAdminDashboard = request.nextUrl.pathname.startsWith('/admin');
   const isLoginPage = request.nextUrl.pathname === '/';
-  
+
   const normalizedEmail = user?.email?.toLowerCase().trim();
   const isAdminEmail = normalizedEmail === 'priya.dhanani@creolestudios.com';
 
-  console.log(`[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdminEmail}`);
+  console.log(
+    `[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdminEmail}`
+  );
 
   // Function to create a redirect response that preserves cookies
   const redirect = (url: string) => {

@@ -12,11 +12,7 @@ export const metadata: Metadata = {
   description: 'Personalized morning blog recommendations for office teams.',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable}`}>
       <head>
