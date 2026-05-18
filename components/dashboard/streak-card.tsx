@@ -1,35 +1,35 @@
-'use client'
+'use client';
 
-import React from 'react'
-import { Flame } from 'lucide-react'
-import { clsx, type ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
+import React from 'react';
+import { Flame } from 'lucide-react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 
 function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+  return twMerge(clsx(inputs));
 }
 
 interface StreakCardProps {
-  currentStreak: number
-  longestStreak: number
-  lastActivityDate?: string
+  currentStreak: number;
+  longestStreak: number;
+  lastActivityDate?: string;
 }
 
 export function StreakCard({ currentStreak, longestStreak, lastActivityDate }: StreakCardProps) {
   // Generate 7-day activity dots
-  const days = []
-  const today = new Date()
+  const days = [];
+  const today = new Date();
 
   for (let i = 6; i >= 0; i--) {
-    const date = new Date()
-    date.setDate(today.getDate() - i)
-    const dateString = date.toISOString().split('T')[0]
+    const date = new Date();
+    date.setDate(today.getDate() - i);
+    const dateString = date.toISOString().split('T')[0];
 
     // We don't actually have the full activity log here, but for the UI
     // we can simulate dots or the parent can pass activity dates.
     // For now, we'll just show the current streak filling from the right.
-    const isActive = i < currentStreak
-    days.push({ date: dateString, active: isActive })
+    const isActive = i < currentStreak;
+    days.push({ date: dateString, active: isActive });
   }
 
   return (
@@ -40,8 +40,12 @@ export function StreakCard({ currentStreak, longestStreak, lastActivityDate }: S
             <Flame className="w-6 h-6 text-orange-500" />
           </div>
           <div>
-            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">Learning Streak</h3>
-            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{currentStreak} Days</p>
+            <h3 className="text-sm font-medium text-zinc-500 dark:text-zinc-400">
+              Learning Streak
+            </h3>
+            <p className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+              {currentStreak} Days
+            </p>
           </div>
         </div>
         <div className="text-right">
@@ -55,10 +59,10 @@ export function StreakCard({ currentStreak, longestStreak, lastActivityDate }: S
           <div key={idx} className="flex flex-col items-center gap-1">
             <div
               className={cn(
-                "w-3 h-3 rounded-full transition-colors",
+                'w-3 h-3 rounded-full transition-colors',
                 day.active
-                  ? "bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]"
-                  : "bg-zinc-200 dark:bg-zinc-700"
+                  ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]'
+                  : 'bg-zinc-200 dark:bg-zinc-700'
               )}
             />
             <span className="text-[10px] text-zinc-400 uppercase font-medium">
@@ -68,5 +72,5 @@ export function StreakCard({ currentStreak, longestStreak, lastActivityDate }: S
         ))}
       </div>
     </div>
-  )
+  );
 }

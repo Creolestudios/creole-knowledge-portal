@@ -21,7 +21,7 @@ export default function LoginPage() {
       const params = new URLSearchParams(window.location.search);
       const errorParam = params.get('error');
       const errorCode = params.get('error_code');
-      
+
       if (errorParam) {
         let message = decodeURIComponent(errorParam);
         if (errorCode === 'otp_expired' || message.toLowerCase().includes('expired')) {
@@ -40,10 +40,8 @@ export default function LoginPage() {
     try {
       // Robust origin detection for production
       const isLocalhost = window.location.hostname === 'localhost';
-      const origin = isLocalhost 
-        ? window.location.origin 
-        : `https://${window.location.hostname}`;
-      
+      const origin = isLocalhost ? window.location.origin : `https://${window.location.hostname}`;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -65,10 +63,8 @@ export default function LoginPage() {
     try {
       // Robust origin detection for production
       const isLocalhost = window.location.hostname === 'localhost';
-      const origin = isLocalhost 
-        ? window.location.origin 
-        : `https://${window.location.hostname}`;
-      
+      const origin = isLocalhost ? window.location.origin : `https://${window.location.hostname}`;
+
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
@@ -95,11 +91,25 @@ export default function LoginPage() {
       <section className="relative w-full md:w-1/2 bg-[#0a0a0a] flex flex-col justify-center px-10 md:px-16 py-20 text-white overflow-hidden min-h-[400px]">
         {/* Decorative Geometric Background */}
         <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
-          <div className="absolute top-[-10%] left-[-10%] w-[120%] h-[120%]" style={{ backgroundImage: 'radial-gradient(circle at 20% 30%, #34c4f2 0%, transparent 40%), radial-gradient(circle at 80% 70%, #34c4f2 0%, transparent 30%)', filter: 'blur(80px)' }} />
-          <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(rgba(52, 196, 242, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(52, 196, 242, 0.1) 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+          <div
+            className="absolute top-[-10%] left-[-10%] w-[120%] h-[120%]"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 20% 30%, #34c4f2 0%, transparent 40%), radial-gradient(circle at 80% 70%, #34c4f2 0%, transparent 30%)',
+              filter: 'blur(80px)',
+            }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage:
+                'linear-gradient(rgba(52, 196, 242, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(52, 196, 242, 0.1) 1px, transparent 1px)',
+              backgroundSize: '40px 40px',
+            }}
+          />
         </div>
 
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
@@ -109,25 +119,30 @@ export default function LoginPage() {
             <div className="w-12 h-12 rounded-lg bg-brand flex items-center justify-center shadow-brand">
               <BookOpen className="h-7 w-7 text-black" />
             </div>
-            <h2 className="text-brand uppercase tracking-[0.2em] font-bold text-xs">Internal Utility</h2>
+            <h2 className="text-brand uppercase tracking-[0.2em] font-bold text-xs">
+              Internal Utility
+            </h2>
           </div>
-          
-          <h1 id="portal-title" className="text-white text-5xl md:text-6xl font-extrabold tracking-tight leading-tight mb-6">
-            Creole <br/>
-            <span className="text-brand">Knowledge</span> <br/>
+
+          <h1
+            id="portal-title"
+            className="text-white text-5xl md:text-6xl font-extrabold tracking-tight leading-tight mb-6"
+          >
+            Creole <br />
+            <span className="text-brand">Knowledge</span> <br />
             Portal
           </h1>
-          
+
           <p className="text-zinc-400 text-lg max-w-sm leading-relaxed">
-            Your personalized morning dose of industry insights and internal wisdom, delivered straight to your workstation.
+            Your personalized morning dose of industry insights and internal wisdom, delivered
+            straight to your workstation.
           </p>
         </motion.div>
-        
       </section>
 
       {/* Right Column - Authentication Card */}
       <section className="w-full md:w-1/2 flex flex-col justify-center items-center bg-[#f8f9fa] border-l border-zinc-200 p-6 md:p-10">
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.2 }}
@@ -135,7 +150,9 @@ export default function LoginPage() {
         >
           <div className="bg-white p-8 md:p-12 rounded-2xl shadow-card border border-zinc-100">
             <div className="mb-10">
-              <h3 id="signin-heading" className="text-2xl font-bold text-zinc-900 mb-2">Welcome Back</h3>
+              <h3 id="signin-heading" className="text-2xl font-bold text-zinc-900 mb-2">
+                Welcome Back
+              </h3>
               <p className="text-zinc-500 text-sm">Sign in to access your knowledge network.</p>
             </div>
 
@@ -176,7 +193,10 @@ export default function LoginPage() {
 
               <form onSubmit={handleLogin} className="space-y-6">
                 <div>
-                  <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2 ml-1">
+                  <label
+                    htmlFor="email"
+                    className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2 ml-1"
+                  >
                     Email Address
                   </label>
                   <input
@@ -193,7 +213,7 @@ export default function LoginPage() {
 
                 <AnimatePresence mode="wait">
                   {error && (
-                    <motion.div 
+                    <motion.div
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
@@ -205,7 +225,7 @@ export default function LoginPage() {
                   )}
 
                   {success && (
-                    <motion.div 
+                    <motion.div
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       className="flex items-center gap-3 p-4 text-sm text-emerald-600 bg-emerald-50 rounded-lg border border-emerald-100"
@@ -229,10 +249,10 @@ export default function LoginPage() {
                   ) : (
                     <>
                       <span>Send Magic Link</span>
-                      <motion.svg 
-                        xmlns="http://www.w3.org/2000/svg" 
-                        className="h-4 w-4" 
-                        viewBox="0 0 20 20" 
+                      <motion.svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="h-4 w-4"
+                        viewBox="0 0 20 20"
                         fill="currentColor"
                         animate={{ x: [0, 3, 0] }}
                         transition={{ repeat: Infinity, duration: 1.5 }}
@@ -246,10 +266,10 @@ export default function LoginPage() {
             </div>
 
             <p className="mt-8 text-center text-[10px] text-zinc-400 leading-relaxed">
-              By signing in, you agree to our Internal Data Handling Policies and Security Protocols.
+              By signing in, you agree to our Internal Data Handling Policies and Security
+              Protocols.
             </p>
           </div>
-
         </motion.div>
       </section>
     </main>

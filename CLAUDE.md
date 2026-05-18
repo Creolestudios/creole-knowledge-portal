@@ -1,4 +1,3 @@
-
 ```
 # Creole Knowledge Portal — Global Instructions for Claude
 

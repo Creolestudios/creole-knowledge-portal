@@ -10,43 +10,39 @@ export async function createClient() {
     console.warn('Supabase URL or Anon Key is missing in server context.');
   }
 
-  return createServerClient(
-    url || 'https://placeholder.supabase.co',
-    key || 'placeholder-key',
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ 
-              name, 
-              value, 
-              ...options,
-              sameSite: 'none',
-              secure: true,
-              path: '/',
-            } as any);
-          } catch (error) {
-            // ...
-          }
-        },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ 
-              name, 
-              value: '', 
-              ...options,
-              sameSite: 'none',
-              secure: true,
-              path: '/',
-            } as any);
-          } catch (error) {
-            // ...
-          }
-        },
+  return createServerClient(url || 'https://placeholder.supabase.co', key || 'placeholder-key', {
+    cookies: {
+      get(name: string) {
+        return cookieStore.get(name)?.value;
       },
-    }
-  );
+      set(name: string, value: string, options: CookieOptions) {
+        try {
+          cookieStore.set({
+            name,
+            value,
+            ...options,
+            sameSite: 'none',
+            secure: true,
+            path: '/',
+          } as any);
+        } catch (error) {
+          // ...
+        }
+      },
+      remove(name: string, options: CookieOptions) {
+        try {
+          cookieStore.set({
+            name,
+            value: '',
+            ...options,
+            sameSite: 'none',
+            secure: true,
+            path: '/',
+          } as any);
+        } catch (error) {
+          // ...
+        }
+      },
+    },
+  });
 }

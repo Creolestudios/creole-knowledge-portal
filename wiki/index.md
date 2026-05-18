@@ -10,6 +10,7 @@ updated: 2026-05-16
 Welcome to the Creole Knowledge Portal documentation.
 
 ## Modules
+
 - [[architecture]]
 - [[setup-guide]]
 - [[roadmap]]

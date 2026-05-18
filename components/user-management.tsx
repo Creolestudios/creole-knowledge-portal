@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { 
-  User, 
-  Mail, 
-  Search, 
-  ChevronRight, 
-  Clock, 
-  CheckCircle2, 
+import {
+  User,
+  Mail,
+  Search,
+  ChevronRight,
+  Clock,
+  CheckCircle2,
   AlertCircle,
   X,
   Save,
@@ -16,7 +16,7 @@ import {
   Calendar,
   Code,
   Target,
-  ArrowLeft
+  ArrowLeft,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -39,20 +39,20 @@ export default function UserManagement() {
   const [searchQuery, setSearchQuery] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  
+
   // Form State
   const [formData, setFormData] = useState({
     current_role: '',
     years_of_experience: 0,
     primary_tech_stack: [] as string[],
     secondary_tech_stack: [] as string[],
-    future_interests: ''
+    future_interests: '',
   });
   const [primaryTechInput, setPrimaryTechInput] = useState('');
   const [secondaryTechInput, setSecondaryTechInput] = useState('');
 
   const supabase = createClient();
-  
+
   const fetchUsers = async () => {
     setLoading(true);
     try {
@@ -78,7 +78,7 @@ export default function UserManagement() {
       years_of_experience: user.years_of_experience || 0,
       primary_tech_stack: user.primary_tech_stack || [],
       secondary_tech_stack: user.secondary_tech_stack || [],
-      future_interests: user.future_interests || ''
+      future_interests: user.future_interests || '',
     });
     setPrimaryTechInput('');
     setSecondaryTechInput('');
@@ -88,11 +88,10 @@ export default function UserManagement() {
     e.preventDefault();
     if (!selectedUser) return;
     setSaving(true);
-    
+
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .upsert({
+      const { error } = await supabase.from('user_profiles').upsert(
+        {
           user_id: selectedUser.user_id,
           email: selectedUser.email,
           current_role: formData.current_role,
@@ -100,10 +99,12 @@ export default function UserManagement() {
           primary_tech_stack: formData.primary_tech_stack,
           secondary_tech_stack: formData.secondary_tech_stack,
           future_interests: formData.future_interests,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'user_id',
+        }
+      );
 
       if (error) throw error;
 
@@ -124,7 +125,7 @@ export default function UserManagement() {
       if (tag && !formData.primary_tech_stack.includes(tag)) {
         setFormData({
           ...formData,
-          primary_tech_stack: [...formData.primary_tech_stack, tag]
+          primary_tech_stack: [...formData.primary_tech_stack, tag],
         });
       }
       setPrimaryTechInput('');
@@ -134,7 +135,7 @@ export default function UserManagement() {
   const removePrimaryTechTag = (tagToRemove: string) => {
     setFormData({
       ...formData,
-      primary_tech_stack: formData.primary_tech_stack.filter(tag => tag !== tagToRemove)
+      primary_tech_stack: formData.primary_tech_stack.filter((tag) => tag !== tagToRemove),
     });
   };
 
@@ -145,7 +146,7 @@ export default function UserManagement() {
       if (tag && !formData.secondary_tech_stack.includes(tag)) {
         setFormData({
           ...formData,
-          secondary_tech_stack: [...formData.secondary_tech_stack, tag]
+          secondary_tech_stack: [...formData.secondary_tech_stack, tag],
         });
       }
       setSecondaryTechInput('');
@@ -155,13 +156,14 @@ export default function UserManagement() {
   const removeSecondaryTechTag = (tagToRemove: string) => {
     setFormData({
       ...formData,
-      secondary_tech_stack: formData.secondary_tech_stack.filter(tag => tag !== tagToRemove)
+      secondary_tech_stack: formData.secondary_tech_stack.filter((tag) => tag !== tagToRemove),
     });
   };
 
-  const filteredUsers = users.filter(u => 
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.future_interests?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredUsers = users.filter(
+    (u) =>
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.future_interests?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const isProfileComplete = (user: UserProfile) => {
@@ -191,11 +193,16 @@ export default function UserManagement() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-100 pb-6">
               <div>
                 <h2 className="text-2xl font-black text-zinc-900 tracking-tight">All Users</h2>
-                <p className="text-zinc-500 text-sm">Click on a user to view and manage their profile details.</p>
+                <p className="text-zinc-500 text-sm">
+                  Click on a user to view and manage their profile details.
+                </p>
               </div>
               <div className="relative w-full md:w-80">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                <input 
+                <Search
+                  className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
+                  size={16}
+                />
+                <input
                   type="text"
                   placeholder="Search by email or interests..."
                   value={searchQuery}
@@ -221,19 +228,25 @@ export default function UserManagement() {
                       className="flex items-center justify-between p-5 bg-white border border-zinc-100 rounded-2xl hover:border-[#34c4f2]/30 hover:shadow-card transition-all text-left group"
                     >
                       <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
-                          complete ? 'bg-emerald-50 text-emerald-500' : 'bg-zinc-50 text-zinc-400'
-                        }`}>
+                        <div
+                          className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
+                            complete ? 'bg-emerald-50 text-emerald-500' : 'bg-zinc-50 text-zinc-400'
+                          }`}
+                        >
                           <User size={24} />
                         </div>
                         <div>
-                          <p className="font-bold text-zinc-900 group-hover:text-[#34c4f2] transition-colors">{user.email}</p>
+                          <p className="font-bold text-zinc-900 group-hover:text-[#34c4f2] transition-colors">
+                            {user.email}
+                          </p>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${
-                              complete 
-                                ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
-                                : 'bg-amber-50 text-amber-600 border-amber-100'
-                            }`}>
+                            <span
+                              className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${
+                                complete
+                                  ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                  : 'bg-amber-50 text-amber-600 border-amber-100'
+                              }`}
+                            >
                               {complete ? 'Profile Complete' : 'Profile Incomplete'}
                             </span>
                             <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest flex items-center gap-1">
@@ -243,7 +256,10 @@ export default function UserManagement() {
                           </div>
                         </div>
                       </div>
-                      <ChevronRight className="text-zinc-300 group-hover:text-[#34c4f2] group-hover:translate-x-1 transition-all" size={20} />
+                      <ChevronRight
+                        className="text-zinc-300 group-hover:text-[#34c4f2] group-hover:translate-x-1 transition-all"
+                        size={20}
+                      />
                     </button>
                   );
                 })
@@ -258,7 +274,7 @@ export default function UserManagement() {
             exit={{ opacity: 0, x: 20 }}
             className="space-y-8"
           >
-            <button 
+            <button
               onClick={() => setSelectedUser(null)}
               className="flex items-center gap-2 text-zinc-400 hover:text-zinc-600 font-bold text-xs uppercase tracking-widest transition-colors mb-4"
             >
@@ -269,7 +285,9 @@ export default function UserManagement() {
             <div className="bg-white p-8 rounded-3xl border border-zinc-100 shadow-card">
               <div className="mb-10 pb-6 border-b border-zinc-50 flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">Edit User Profile</h3>
+                  <h3 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">
+                    Edit User Profile
+                  </h3>
                   <p className="text-zinc-500 flex items-center gap-2 font-medium">
                     <Mail size={14} />
                     {selectedUser.email}
@@ -289,7 +307,7 @@ export default function UserManagement() {
                         <User size={14} />
                         Current Role
                       </label>
-                      <input 
+                      <input
                         type="text"
                         value={formData.current_role}
                         onChange={(e) => setFormData({ ...formData, current_role: e.target.value })}
@@ -304,11 +322,16 @@ export default function UserManagement() {
                         <Calendar size={14} />
                         Years of Experience
                       </label>
-                      <input 
+                      <input
                         type="number"
                         min="0"
                         value={formData.years_of_experience}
-                        onChange={(e) => setFormData({ ...formData, years_of_experience: parseInt(e.target.value) || 0 })}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            years_of_experience: parseInt(e.target.value) || 0,
+                          })
+                        }
                         className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all font-mono"
                       />
                     </div>
@@ -321,7 +344,7 @@ export default function UserManagement() {
                       Primary Tech Stack
                     </label>
                     <div className="space-y-4">
-                      <input 
+                      <input
                         type="text"
                         value={primaryTechInput}
                         onChange={(e) => setPrimaryTechInput(e.target.value)}
@@ -331,7 +354,7 @@ export default function UserManagement() {
                       />
                       <div className="flex flex-wrap gap-2">
                         <AnimatePresence>
-                          {formData.primary_tech_stack.map(tag => (
+                          {formData.primary_tech_stack.map((tag) => (
                             <motion.span
                               key={tag}
                               initial={{ opacity: 0, scale: 0.8 }}
@@ -340,8 +363,8 @@ export default function UserManagement() {
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#34c4f2] text-zinc-900 text-xs font-bold rounded-lg shadow-sm"
                             >
                               {tag}
-                              <button 
-                                type="button" 
+                              <button
+                                type="button"
                                 onClick={() => removePrimaryTechTag(tag)}
                                 className="hover:scale-120 transition-transform"
                               >
@@ -351,7 +374,9 @@ export default function UserManagement() {
                           ))}
                         </AnimatePresence>
                         {formData.primary_tech_stack.length === 0 && (
-                          <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">No tags added yet</span>
+                          <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">
+                            No tags added yet
+                          </span>
                         )}
                       </div>
                     </div>
@@ -364,7 +389,7 @@ export default function UserManagement() {
                       Secondary Tech Stack
                     </label>
                     <div className="space-y-4">
-                      <input 
+                      <input
                         type="text"
                         value={secondaryTechInput}
                         onChange={(e) => setSecondaryTechInput(e.target.value)}
@@ -374,7 +399,7 @@ export default function UserManagement() {
                       />
                       <div className="flex flex-wrap gap-2">
                         <AnimatePresence>
-                          {formData.secondary_tech_stack.map(tag => (
+                          {formData.secondary_tech_stack.map((tag) => (
                             <motion.span
                               key={tag}
                               initial={{ opacity: 0, scale: 0.8 }}
@@ -383,8 +408,8 @@ export default function UserManagement() {
                               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-200 text-zinc-700 text-xs font-bold rounded-lg shadow-sm"
                             >
                               {tag}
-                              <button 
-                                type="button" 
+                              <button
+                                type="button"
                                 onClick={() => removeSecondaryTechTag(tag)}
                                 className="hover:scale-120 transition-transform"
                               >
@@ -394,7 +419,9 @@ export default function UserManagement() {
                           ))}
                         </AnimatePresence>
                         {formData.secondary_tech_stack.length === 0 && (
-                          <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">No tags added yet</span>
+                          <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">
+                            No tags added yet
+                          </span>
                         )}
                       </div>
                     </div>
@@ -406,10 +433,12 @@ export default function UserManagement() {
                       <Target size={14} />
                       Future Interests
                     </label>
-                    <textarea 
+                    <textarea
                       rows={4}
                       value={formData.future_interests}
-                      onChange={(e) => setFormData({ ...formData, future_interests: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, future_interests: e.target.value })
+                      }
                       placeholder="e.g. Wants to learn AI/ML and cloud architecture"
                       className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all resize-none font-medium"
                     />
@@ -428,7 +457,11 @@ export default function UserManagement() {
                             toast.type === 'success' ? 'text-emerald-600' : 'text-red-600'
                           }`}
                         >
-                          {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+                          {toast.type === 'success' ? (
+                            <CheckCircle2 size={18} />
+                          ) : (
+                            <AlertCircle size={18} />
+                          )}
                           {toast.message}
                         </motion.div>
                       )}
@@ -448,11 +481,7 @@ export default function UserManagement() {
                       disabled={saving}
                       className="flex items-center justify-center gap-2 px-10 py-3.5 bg-[#34c4f2] text-zinc-900 font-black rounded-2xl shadow-xl shadow-[#34c4f2]/30 hover:bg-[#2db0db] hover:scale-[1.02] active:scale-[0.98] transition-all text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {saving ? (
-                        <Loader2 size={18} className="animate-spin" />
-                      ) : (
-                        <Save size={18} />
-                      )}
+                      {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                       Save Profile
                     </button>
                   </div>

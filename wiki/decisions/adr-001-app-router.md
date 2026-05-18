@@ -10,12 +10,15 @@ updated: 2026-05-16
 **Status:** Accepted
 
 ## Context
+
 Next.js 15 App Router provides a more modern approach to routing and server-side component handling.
 
 ## Decision
+
 Use Next.js App Router exclusively. No `pages/` directory.
 
 ## Consequences
+
 - Better support for server components.
 - Cleaner routing structure.
 - Requires learning new conventions.
