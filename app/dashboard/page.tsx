@@ -3,18 +3,19 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { 
-  LogOut, 
-  User, 
-  LayoutDashboard, 
-  Settings, 
-  Bell, 
+import {
+  LogOut,
+  User,
+  LayoutDashboard,
+  Settings,
+  Bell,
   Search,
   Home,
   UserCircle,
   Loader2
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
+import { StreakCard } from '@/components/dashboard/streak-card';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function DashboardPage() {
@@ -35,6 +36,21 @@ export default function DashboardPage() {
     }
     getInitialData();
   }, [supabase, router]);
+
+  const [streak, setStreak] = useState<any>(null);
+
+  useEffect(() => {
+    async function fetchStreak() {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('user_streaks')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      if (!error) setStreak(data);
+    }
+    fetchStreak();
+  }, [user, supabase]);
 
   if (loading || !user) {
     return (
@@ -125,6 +141,16 @@ export default function DashboardPage() {
               </div>
               <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">Your Morning Briefing</h1>
               <p className="text-zinc-500 text-lg">Welcome back! Here&apos;s what&apos;s trending in your knowledge network today.</p>
+            </div>
+
+            <div className="mb-12">
+              {streak && (
+                <StreakCard
+                  currentStreak={streak.current_streak}
+                  longestStreak={streak.longest_streak}
+                  lastActivityDate={streak.last_activity_date}
+                />
+              )}
             </div>
 
             {/* Recommendations Grid */}
