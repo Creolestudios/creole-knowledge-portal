@@ -158,13 +158,11 @@ export default function DashboardPage() {
             </div>
 
             <div className="mb-12">
-              {streak && (
-                <StreakCard
-                  currentStreak={streak.current_streak}
-                  longestStreak={streak.longest_streak}
-                  lastActivityDate={streak.last_activity_date}
-                />
-              )}
+              <StreakCard
+                currentStreak={streak?.current_streak ?? 0}
+                longestStreak={streak?.longest_streak ?? 0}
+                lastActivityDate={streak?.last_activity_date ?? null}
+              />
             </div>
 
             {/* Recommendations Grid */}

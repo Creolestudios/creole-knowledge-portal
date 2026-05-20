@@ -1,0 +1,87 @@
+name: Auto PR and Risk-Based Merge
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  auto-pr-and-merge:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      statuses: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create Pull Request
+        id: create_pr
+        run: |
+          PR_URL=$(gh pr create --fill --head "${{ github.ref_name }}" --base main || echo "EXISTS")
+          if [ "$PR_URL" != "EXISTS" ]; then
+            echo "pr_url=$PR_URL" >> $GITHUB_OUTPUT
+            echo "created=true" >> $GITHUB_OUTPUT
+          else
+            echo "created=false" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Analyze Risk Level
+        id: risk_analysis
+        run: |
+          # Define high-risk patterns
+          HIGH_RISK_PATTERNS="app/auth|lib/supabase|middleware.ts|payments|finance|billing"
+
+          # Get list of changed files compared to main
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD)
+
+          if echo "$CHANGED_FILES" | grep -Eiq "$HIGH_RISK_PATTERNS"; then
+            echo "risk=high" >> $GITHUB_OUTPUT
+            echo "Risk Level: HIGH - High risk files detected."
+          else
+            echo "risk=low" >> $GITHUB_OUTPUT
+            echo "Risk Level: LOW - No high risk files detected."
+          fi
+
+      - name: Notify Slack
+        if: secrets.SLACK_WEBHOOK_URL != ''
+        run: |
+          RISK_LEVEL="${{ steps.risk_analysis.outputs.risk }}"
+          EMOJI="⚠️"
+          if [ "$RISK_LEVEL" = "low" ]; then
+            EMOJI="✅"
+          fi
+
+          PR_URL=$(gh pr view --json url --jq '.url')
+          MESSAGE=$(printf '%s *PR Notification* (%s risk)\nBranch: `%s`\nPR: %s' "$EMOJI" "$RISK_LEVEL" "${{ github.ref_name }}" "$PR_URL")
+          PAYLOAD=$(jq -n --arg text "$MESSAGE" '{text: $text}')
+
+          curl --fail-with-body -X POST -H 'Content-type: application/json' \
+            --data "$PAYLOAD" \
+            "${{ secrets.SLACK_WEBHOOK_URL }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Handle High Risk - Label
+        if: steps.risk_analysis.outputs.risk == 'high'
+        run: |
+          gh pr edit ${{ github.event.pull_request.number || (gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number') }} --add-label "high-risk"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Handle Low Risk - Auto Approve and Merge
+        if: steps.risk_analysis.outputs.risk == 'low'
+        run: |
+          PR_NUMBER=$(gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number')
+          gh pr edit $PR_NUMBER --add-label "low-risk"
+          gh pr merge $PR_NUMBER --merge --auto
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
