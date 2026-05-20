@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 - <<'PY'\nimport json\nprint(json.dumps({\"hookSpecificOutput\": {\"hookEventName\": \"UserPromptSubmit\", \"additionalContext\": \"Project instruction: before responding to this user prompt, inspect the wiki folder when relevant and update the appropriate wiki/log entry with any new logic, task progress, validation results, or decisions made during the response. If no code/task/documentation change is made, explicitly skip wiki updates.\"}}))\nPY",
+            "timeout": 5,
+            "statusMessage": "Checking wiki update requirement..."
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
