@@ -73,7 +73,8 @@ jobs:
       - name: Handle High Risk - Label
         if: steps.risk_analysis.outputs.risk == 'high'
         run: |
-          gh pr edit ${{ github.event.pull_request.number || (gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number') }} --add-label "high-risk"
+          PR_NUMBER=$(gh pr list --head "${{ github.ref_name }}" --json number --jq '.[0].number')
+          gh pr edit "$PR_NUMBER" --add-label "high-risk"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
