@@ -7,8 +7,9 @@ const workflow = readFileSync(workflowPath, 'utf8');
 
 describe('auto-merge workflow Slack notification', () => {
   it('guards Slack notification when webhook secret is missing', () => {
+    expect(workflow).toContain('SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}');
     expect(workflow).toContain('- name: Notify Slack');
-    expect(workflow).toContain("if: secrets.SLACK_WEBHOOK_URL != ''");
+    expect(workflow).toContain("if: env.SLACK_WEBHOOK_URL != ''");
   });
 
   it('builds a valid JSON payload for Slack', () => {
@@ -19,6 +20,6 @@ describe('auto-merge workflow Slack notification', () => {
 
   it('fails loudly when Slack rejects the request', () => {
     expect(workflow).toContain('curl --fail-with-body');
-    expect(workflow).toContain('"${{ secrets.SLACK_WEBHOOK_URL }}"');
+    expect(workflow).toContain('"$SLACK_WEBHOOK_URL"');
   });
 });

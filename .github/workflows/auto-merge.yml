@@ -15,6 +15,9 @@ jobs:
       pull-requests: write
       statuses: write
 
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,7 +55,7 @@ jobs:
           fi
 
       - name: Notify Slack
-        if: secrets.SLACK_WEBHOOK_URL != ''
+        if: env.SLACK_WEBHOOK_URL != ''
         run: |
           RISK_LEVEL="${{ steps.risk_analysis.outputs.risk }}"
           EMOJI="⚠️"
@@ -66,7 +69,7 @@ jobs:
 
           curl --fail-with-body -X POST -H 'Content-type: application/json' \
             --data "$PAYLOAD" \
-            "${{ secrets.SLACK_WEBHOOK_URL }}"
+            "$SLACK_WEBHOOK_URL"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
