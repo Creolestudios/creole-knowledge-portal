@@ -65,7 +65,31 @@ jobs:
 
           PR_URL=$(gh pr view --json url --jq '.url')
           MESSAGE=$(printf '%s *PR Notification* (%s risk)\nBranch: `%s`\nPR: %s' "$EMOJI" "$RISK_LEVEL" "${{ github.ref_name }}" "$PR_URL")
-          PAYLOAD=$(jq -n --arg text "$MESSAGE" '{text: $text}')
+          PAYLOAD=$(jq -n --arg text "$MESSAGE" --arg pr_url "$PR_URL" '{
+            text: $text,
+            blocks: [
+              {
+                type: "section",
+                text: {
+                  type: "mrkdwn",
+                  text: $text
+                }
+              },
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: {
+                      type: "plain_text",
+                      text: "Review / Approve PR"
+                    },
+                    url: $pr_url
+                  }
+                ]
+              }
+            ]
+          }')
 
           curl --fail-with-body -X POST -H 'Content-type: application/json' \
             --data "$PAYLOAD" \

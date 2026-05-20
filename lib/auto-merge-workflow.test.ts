@@ -12,9 +12,13 @@ describe('auto-merge workflow Slack notification', () => {
     expect(workflow).toContain("if: env.SLACK_WEBHOOK_URL != ''");
   });
 
-  it('builds a valid JSON payload for Slack', () => {
-    expect(workflow).toContain('PAYLOAD=$(jq -n --arg text "$MESSAGE"');
-    expect(workflow).toContain("'{text: $text}'");
+  it('builds a valid Slack Block Kit payload with a review button', () => {
+    expect(workflow).toContain('PAYLOAD=$(jq -n --arg text "$MESSAGE" --arg pr_url "$PR_URL"');
+    expect(workflow).toContain('blocks: [');
+    expect(workflow).toContain('type: "actions"');
+    expect(workflow).toContain('type: "button"');
+    expect(workflow).toContain('text: "Review / Approve PR"');
+    expect(workflow).toContain('url: $pr_url');
     expect(workflow).toContain('--data "$PAYLOAD"');
   });
 
