@@ -8,6 +8,6 @@ tags: index, logs, moc, changelog
 
 This section provides a chronological log of changes made to the Creole Knowledge Portal project.
 
+*   [[logs/2026-05-20.md|2026-05-20]]
+*   [[logs/2026-05-19.md|2026-05-19]]
 *   [[logs/2026-05-16.md|2026-05-16]]
-
-TODO: Add more dated log entries as changes occur.
