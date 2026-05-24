@@ -6,12 +6,10 @@ import { useRouter } from 'next/navigation';
 import { 
   LogOut, 
   User, 
-  LayoutDashboard, 
   Settings, 
   Bell, 
   Search,
   Home,
-  UserCircle,
   Loader2,
   Sparkles,
   RefreshCw,
@@ -19,12 +17,18 @@ import {
   CheckCircle,
   ExternalLink,
   Clock,
-  Code
+  Flame,
+  Coins,
+  Award,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  Zap
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
 import { motion, AnimatePresence } from 'motion/react';
 
-// A high-fidelity, zero-dependency Markdown renderer
+// A high-fidelity, zero-dependency Markdown renderer that ignores HTML comments
 function PremiumMarkdownRenderer({ content }: { content: string }) {
   const lines = content.split('\n');
   let inCodeBlock = false;
@@ -34,6 +38,11 @@ function PremiumMarkdownRenderer({ content }: { content: string }) {
     <div className="space-y-6 text-zinc-700 leading-relaxed font-sans">
       {lines.map((line, idx) => {
         const trimmed = line.trim();
+
+        // Prevent rendering HTML comment data (like quiz payloads)
+        if (trimmed.startsWith('<!--')) {
+          return null;
+        }
 
         // Handle Code Blocks
         if (trimmed.startsWith('```')) {
@@ -95,7 +104,6 @@ function PremiumMarkdownRenderer({ content }: { content: string }) {
         // Lists
         if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
           const listText = trimmed.substring(2);
-          // Inline bold parsing
           return (
             <li key={idx} className="ml-6 list-disc text-sm py-1.5 font-medium text-zinc-600 pl-2">
               {parseInlineMarkdown(listText)}
@@ -161,24 +169,33 @@ export default function DashboardPage() {
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
+
+  // Gamification & Quiz States
+  const [gamification, setGamification] = useState<any>(null);
+  const [quizActive, setQuizActive] = useState(false);
+  const [quizQuestions, setQuizQuestions] = useState<any[]>([]);
+  const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
+  const [selectedOption, setSelectedOption] = useState<string>('');
+  const [userAnswers, setUserAnswers] = useState<any[]>([]);
+  const [quizSubmitting, setQuizSubmitting] = useState(false);
+  const [quizResult, setQuizResult] = useState<any>(null);
+  const [showCelebration, setShowCelebration] = useState(false);
   
   const supabase = createClient();
   const router = useRouter();
 
   useEffect(() => {
     async function getInitialData() {
-      // Check query param or cookie
       const params = new URLSearchParams(window.location.search);
       const isMock = params.has('mockUser') || document.cookie.includes('mock-user=true');
       
       let currentUser = null;
       if (isMock) {
         currentUser = {
-          id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004', // priyadhanani125@gmail.com user_id
+          id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004',
           email: 'priyadhanani125@gmail.com'
         };
         setUser(currentUser);
-        // Set mock-user cookie in document
         document.cookie = "mock-user=true; path=/; max-age=3600";
       } else {
         const { data: { user } } = await supabase.auth.getUser();
@@ -200,11 +217,29 @@ export default function DashboardPage() {
       setProfile(userProfile);
       setLoading(false);
       
-      // Get latest daily briefing if available
-      await fetchLatestBrief();
+      // Load briefing & gamification status
+      await Promise.all([
+        fetchLatestBrief(),
+        fetchGamificationStatus(currentUser.id)
+      ]);
     }
     getInitialData();
   }, [supabase, router]);
+
+  const parseQuizFromBlog = (blogContent: string) => {
+    const quizRegex = /<!--\s*QUIZ_DATA:\s*({[\s\S]*?})\s*-->/;
+    const match = blogContent.match(quizRegex);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed && parsed.questions) {
+          setQuizQuestions(parsed.questions);
+        }
+      } catch (err) {
+        console.error('Failed to parse quiz from morning brief:', err);
+      }
+    }
+  };
 
   const fetchLatestBrief = async () => {
     setLoadingBrief(true);
@@ -214,6 +249,7 @@ export default function DashboardPage() {
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
+          parseQuizFromBlog(data.blog.content);
         }
       }
     } catch (e) {
@@ -223,12 +259,32 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchGamificationStatus = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/streaks/status?mockUser=${userId === 'b632b1ab-71e5-48ca-ab5d-b431c4e65004'}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setGamification(data.data);
+          
+          // Lock daily quiz immediately if already completed today
+          if (data.data.dailyQuizCompleted && data.data.dailyQuizResult) {
+            setQuizResult(data.data.dailyQuizResult);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching gamification status:', e);
+    }
+  };
+
   const handleGenerateBriefing = async () => {
     if (!user) return;
     setGenerating(true);
     setBrief(null);
+    setQuizActive(false);
+    setQuizResult(null);
     
-    // Custom simulated steps to give extremely premium, immersive feel
     const steps = [
       'Accessing Administrative registered urls...',
       'Crawling developer feeds from Hacker News and Dev.to...',
@@ -236,6 +292,7 @@ export default function DashboardPage() {
       'Evaluating interest matches...',
       'Calling Gemini 2.5 Flash for deep synthesis...',
       'Structuring morning technical brief...',
+      'Generating dynamic 3-question knowledge assessment quiz...',
       'Saving article briefing to Creole database...'
     ];
 
@@ -263,6 +320,9 @@ export default function DashboardPage() {
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
+          parseQuizFromBlog(data.blog.content);
+          // Refetch gamification status
+          fetchGamificationStatus(user.id);
         } else {
           alert('Generation completed but briefing was not retrieved.');
         }
@@ -278,6 +338,87 @@ export default function DashboardPage() {
     }
   };
 
+  const handleNextQuizQuestion = () => {
+    if (!selectedOption) return;
+
+    const currentQuestion = quizQuestions[currentQuestionIdx];
+    const newAnswers = [...userAnswers, { questionId: currentQuestion.id, userAnswer: selectedOption }];
+    setUserAnswers(newAnswers);
+
+    if (currentQuestionIdx < quizQuestions.length - 1) {
+      setCurrentQuestionIdx(currentQuestionIdx + 1);
+      setSelectedOption('');
+    } else {
+      submitQuizAnswers(newAnswers);
+    }
+  };
+
+  const submitQuizAnswers = async (finalAnswers: any[]) => {
+    setQuizSubmitting(true);
+    try {
+      const res = await fetch('/api/quizzes/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quizId: brief.id || brief.url,
+          answers: finalAnswers,
+          timeTakenSec: 45 // Simulated reading-to-quiz duration
+        })
+      });
+
+      if (res.ok) {
+        const resData = await res.json();
+        if (resData.success) {
+          const data = resData.data;
+          setQuizResult(data);
+          setQuizActive(false);
+          setShowCelebration(true);
+
+          // Update gamification sidebar dynamically in REAL TIME!
+          setGamification((prev: any) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              dailyQuizCompleted: true,
+              dailyQuizResult: data,
+              profile: {
+                ...prev.profile,
+                xp: data.profile.xp,
+                level: data.profile.level,
+                coins: data.profile.coins
+              },
+              streak: {
+                ...prev.streak,
+                currentStreak: data.streak.currentStreak,
+                longestStreak: data.streak.longestStreak
+              },
+              badges: [
+                ...prev.badges,
+                ...(data.badgesUnlocked || []).map((b: any) => ({
+                  id: b.id,
+                  name: b.name,
+                  description: b.description || 'Achievement unlocked!',
+                  rarity: b.rarity,
+                  unlocked_at: new Date().toISOString()
+                }))
+              ]
+            };
+          });
+        }
+      } else {
+        alert('Failed to submit quiz results.');
+      }
+    } catch (e) {
+      console.error('Error submitting quiz:', e);
+    } finally {
+      setQuizSubmitting(false);
+    }
+  };
+
+  const closeCelebration = () => {
+    setShowCelebration(false);
+  };
+
   if (loading || !user) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center space-y-4">
@@ -287,9 +428,6 @@ export default function DashboardPage() {
     );
   }
 
-  // Parse brief details
-  const hasBrief = !!brief;
-  
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex">
       {/* Sidebar */}
@@ -306,15 +444,64 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Sidebar Level & XP Indicator */}
+        {gamification && (
+          <div className="mb-8 p-4 bg-zinc-900/80 rounded-2xl border border-zinc-800 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-16 h-16 bg-brand/5 blur-xl group-hover:bg-brand/10 transition-colors" />
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">Level Progress</span>
+              <span className="text-xs text-brand font-black">LVL {gamification.profile.level}</span>
+            </div>
+            
+            {/* XP progress bar */}
+            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden mb-2">
+              <div 
+                className="bg-brand h-full rounded-full transition-all duration-500" 
+                style={{ 
+                  width: `${((gamification.profile.xp - gamification.profile.xpRequiredProgress) / (gamification.profile.xpRequiredForNextLevel - gamification.profile.xpRequiredProgress)) * 100}%` 
+                }}
+              />
+            </div>
+            <div className="flex justify-between text-[9px] text-zinc-500 font-bold">
+              <span>{gamification.profile.xp} XP</span>
+              <span>{gamification.profile.xpRequiredForNextLevel} XP</span>
+            </div>
+          </div>
+        )}
+
         <nav className="flex-1 space-y-1 relative z-10">
           <button 
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-900/50 text-brand border border-brand/20 shadow-sm text-left"
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group text-left bg-zinc-900/50 text-brand border border-brand/20 shadow-sm"
           >
             <Home size={20} />
             <span className="font-semibold text-sm">Morning Brief</span>
           </button>
 
           <div className="h-4" />
+
+          <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest px-4 mb-2">Game center</div>
+
+          {gamification && (
+            <div className="px-4 py-2 space-y-3">
+              <div className="flex items-center justify-between text-sm font-medium text-zinc-400">
+                <span className="flex items-center gap-2">
+                  <Flame size={18} className="text-orange-500 animate-pulse" />
+                  Streak
+                </span>
+                <span className="font-black text-white">{gamification.streak.currentStreak} Days</span>
+              </div>
+              
+              <div className="flex items-center justify-between text-sm font-medium text-zinc-400">
+                <span className="flex items-center gap-2">
+                  <Coins size={18} className="text-yellow-500" />
+                  Coins
+                </span>
+                <span className="font-black text-white">{gamification.profile.coins}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="h-6" />
 
           <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left">
             <Bell size={20} className="group-hover:rotate-12 transition-transform" />
@@ -347,6 +534,20 @@ export default function DashboardPage() {
           </div>
           
           <div className="flex items-center gap-6">
+            {/* Coins & Streak in Header for mobile/responsive */}
+            {gamification && (
+              <div className="flex items-center gap-4 md:hidden">
+                <div className="flex items-center gap-1 text-sm font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full border border-orange-100">
+                  <Flame size={16} />
+                  <span>{gamification.streak.currentStreak}d</span>
+                </div>
+                <div className="flex items-center gap-1 text-sm font-bold text-yellow-600 bg-yellow-50 px-2.5 py-1 rounded-full border border-yellow-100">
+                  <Coins size={16} />
+                  <span>{gamification.profile.coins}</span>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center gap-4">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-zinc-900 leading-tight capitalize">{profile?.name || user.email?.split('@')[0]}</p>
@@ -362,32 +563,37 @@ export default function DashboardPage() {
         {/* Content Area */}
         <div className="p-10 flex-1 overflow-y-auto">
           <div className="max-w-6xl mx-auto">
-            {/* Top section */}
+            {/* Header Welcome Section */}
             <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
               <div>
                 <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand/10 border border-brand/20 rounded-full text-brand text-[10px] font-bold uppercase tracking-widest mb-4">
                   <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
                   AI Factory Digest
                 </div>
-                <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">Your Morning Briefing</h1>
-                <p className="text-zinc-500 text-base">Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.</p>
+                <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">
+                  Your Morning Briefing
+                </h1>
+                <p className="text-zinc-500 text-base">
+                  Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.
+                </p>
               </div>
 
-              {hasBrief && !generating && (
-                <button 
-                  onClick={handleGenerateBriefing}
-                  className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
-                >
-                  <RefreshCw size={15} />
-                  Regenerate Briefing
-                </button>
-              )}
+              <div className="flex gap-3 shrink-0">
+                {brief && !generating && (
+                  <button 
+                    onClick={handleGenerateBriefing}
+                    className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer"
+                  >
+                    <RefreshCw size={15} />
+                    Regenerate Briefing
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Main view state switcher */}
             <AnimatePresence mode="wait">
               {loadingBrief ? (
-                /* LOADING PREVIOUS BRIEFING */
                 <motion.div 
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -398,7 +604,6 @@ export default function DashboardPage() {
                   <p className="text-zinc-500 font-semibold text-lg">Retrieving your latest briefing...</p>
                 </motion.div>
               ) : generating ? (
-                /* ACTIVE AI SYNTHESIS PROCESS */
                 <motion.div 
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -420,27 +625,25 @@ export default function DashboardPage() {
                       </p>
                     </div>
 
-                    {/* Glowing Progress bar */}
                     <div className="w-full bg-zinc-800 h-2.5 rounded-full overflow-hidden relative shadow-inner">
                       <div className="absolute top-0 left-0 h-full bg-brand rounded-full animate-progress-loading w-[85%] shadow-brand" />
                     </div>
 
-                    {/* Step logger */}
                     <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5 inline-block min-w-[320px]">
                       <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-2">Current Pipeline Process</span>
                       <p className="text-brand font-mono text-xs font-bold animate-pulse">{generationStep}</p>
                     </div>
                   </div>
                 </motion.div>
-              ) : hasBrief ? (
-                /* BRIEFING ACTIVE AND LOADED */
+              ) : brief ? (
+                /* BRIEFING RENDERER */
                 <motion.div 
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="grid grid-cols-1 lg:grid-cols-3 gap-8"
                 >
                   {/* Left major briefing reader */}
-                  <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
+                  <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card flex flex-col">
                     <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-6 border-b pb-6 border-zinc-100">
                       <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
                         <Clock size={12} className="text-zinc-500" />
@@ -457,8 +660,165 @@ export default function DashboardPage() {
                       {brief.title}
                     </h2>
 
-                    {/* Premium rendered content */}
+                    {/* Premium rendered markdown content */}
                     <PremiumMarkdownRenderer content={brief.content} />
+
+                    {/* ======================================================== */}
+                    {/* INTERACTIVE QUIZ AREA                                     */}
+                    {/* ======================================================== */}
+                    {quizQuestions.length > 0 && (
+                      <div className="mt-12 pt-8 border-t border-zinc-200">
+                        {!quizActive && !quizResult && (
+                          <div className="p-8 bg-zinc-900 text-white rounded-2xl relative overflow-hidden group shadow-lg">
+                            <div className="absolute top-0 right-0 w-40 h-40 bg-brand/5 blur-3xl pointer-events-none group-hover:bg-brand/10 transition-colors" />
+                            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+                              <div>
+                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-brand uppercase tracking-widest mb-2">
+                                  <Zap size={12} />
+                                  Check Your Understanding
+                                </div>
+                                <h4 className="text-xl font-bold tracking-tight mb-1">Take Today's Curation Quiz!</h4>
+                                <p className="text-zinc-400 text-xs max-w-md">
+                                  Complete Today's {quizQuestions.length}-question assessment to lock in your daily active streak and claim +40 XP & +10 Coins.
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => setQuizActive(true)}
+                                className="px-6 py-3.5 bg-brand hover:bg-brand-hover text-black font-black uppercase text-xs tracking-wider rounded-xl shadow-brand hover:scale-[1.03] transition-all shrink-0 cursor-pointer"
+                              >
+                                Start Daily Quiz
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Quiz Panel Active State */}
+                        {quizActive && (
+                          <div className="p-8 bg-zinc-50 border border-zinc-200 rounded-2xl">
+                            <div className="flex justify-between items-center mb-6">
+                              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                                Question {currentQuestionIdx + 1} of {quizQuestions.length}
+                              </span>
+                              <div className="w-24 bg-zinc-200 h-1.5 rounded-full overflow-hidden">
+                                <div 
+                                  className="bg-brand h-full rounded-full transition-all duration-300"
+                                  style={{ width: `${((currentQuestionIdx + 1) / quizQuestions.length) * 100}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            <h4 className="text-lg font-bold text-zinc-950 mb-6 leading-tight">
+                              {quizQuestions[currentQuestionIdx].text}
+                            </h4>
+
+                            <div className="space-y-3 mb-8">
+                              {quizQuestions[currentQuestionIdx].options.map((opt: string) => {
+                                const optLetter = opt.charAt(0);
+                                const isSelected = selectedOption === optLetter;
+                                return (
+                                  <button
+                                    key={opt}
+                                    onClick={() => setSelectedOption(optLetter)}
+                                    className={`w-full p-4 rounded-xl border text-left text-sm font-semibold transition-all cursor-pointer ${
+                                      isSelected
+                                        ? 'border-brand bg-brand/5 text-zinc-950 font-bold'
+                                        : 'border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700'
+                                    }`}
+                                  >
+                                    {opt}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="flex justify-end">
+                              <button
+                                onClick={handleNextQuizQuestion}
+                                disabled={!selectedOption || quizSubmitting}
+                                className={`px-6 py-3.5 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-2 cursor-pointer transition-all ${
+                                  selectedOption && !quizSubmitting
+                                    ? 'bg-zinc-900 hover:bg-zinc-800 text-white shadow-md'
+                                    : 'bg-zinc-200 text-zinc-400 cursor-not-allowed'
+                                }`}
+                              >
+                                {quizSubmitting ? (
+                                  <>
+                                    <Loader2 size={14} className="animate-spin" />
+                                    Submitting Answers...
+                                  </>
+                                ) : currentQuestionIdx === quizQuestions.length - 1 ? (
+                                  <>
+                                    Submit Quiz Answers
+                                    <ChevronRight size={14} />
+                                  </>
+                                ) : (
+                                  <>
+                                    Next Question
+                                    <ChevronRight size={14} />
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Quiz Graded Results Section (NO RETAKES) */}
+                        {quizResult && (
+                          <div className="p-8 bg-zinc-50 border border-zinc-200 rounded-[24px]">
+                            <div className="flex items-center justify-between border-b pb-4 mb-6 border-zinc-200">
+                              <div>
+                                <h4 className="text-xl font-extrabold text-zinc-900 tracking-tight">Daily Quiz Graded</h4>
+                                <p className="text-xs text-zinc-500">Graded submission locked. One attempt allowed daily.</p>
+                              </div>
+                              <div className="text-right">
+                                <span className={`text-2xl font-black ${quizResult.isPerfect ? 'text-emerald-600' : 'text-zinc-800'}`}>
+                                  {quizResult.score} / {quizResult.totalQuestions} Correct
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="space-y-6">
+                              {quizResult.gradedAnswers.map((ans: any, idx: number) => (
+                                <div key={idx} className="p-5 bg-white border border-zinc-100 rounded-xl space-y-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <p className="text-sm font-bold text-zinc-900 leading-tight">
+                                      {idx + 1}. {ans.text}
+                                    </p>
+                                    {ans.isCorrect ? (
+                                      <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100 uppercase tracking-wider shrink-0">
+                                        <CheckCircle2 size={12} />
+                                        Correct
+                                      </span>
+                                    ) : (
+                                      <span className="flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-full border border-rose-100 uppercase tracking-wider shrink-0">
+                                        <XCircle size={12} />
+                                        Incorrect
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="text-xs space-y-1 bg-zinc-50 p-3 rounded-lg border">
+                                    <p className="text-zinc-600">
+                                      Your Answer: <strong className="text-zinc-900">{ans.userAnswer}</strong>
+                                    </p>
+                                    <p className="text-zinc-600">
+                                      Correct Answer: <strong className="text-zinc-900">{ans.correctAnswer}</strong>
+                                    </p>
+                                  </div>
+
+                                  {ans.explanation && (
+                                    <div className="text-xs text-zinc-500 leading-relaxed bg-brand/5 border-l-2 border-brand p-3.5 rounded-r-lg">
+                                      <span className="font-bold text-[9px] uppercase tracking-widest text-brand block mb-1">AI Explanation</span>
+                                      {ans.explanation}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Right side widgets/takeaways sidebar */}
@@ -537,7 +897,6 @@ export default function DashboardPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   className="p-12 bg-gradient-to-tr from-zinc-950 via-zinc-900 to-indigo-950 rounded-[48px] border border-zinc-800 text-white relative overflow-hidden shadow-2xl"
                 >
-                  {/* Neon glow grids */}
                   <div className="absolute top-0 right-0 w-96 h-96 bg-brand/10 blur-[130px] pointer-events-none" />
                   <div className="absolute -bottom-20 -left-20 w-96 h-96 bg-indigo-500/10 blur-[130px] pointer-events-none" />
                   
@@ -563,10 +922,95 @@ export default function DashboardPage() {
                 </motion.div>
               )}
             </AnimatePresence>
-
           </div>
         </div>
       </main>
+
+      {/* ======================================================== */}
+      {/* CELEBRATION/CLAIM XP DIALOG OVERLAY (IMMERSIVE EXPERIENCE) */}
+      {/* ======================================================== */}
+      <AnimatePresence>
+        {showCelebration && quizResult && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-md z-50 flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-zinc-950 border border-zinc-800 text-white rounded-[36px] max-w-md w-full p-8 text-center relative overflow-hidden shadow-2xl"
+            >
+              {/* Glow effects */}
+              <div className="absolute top-0 right-0 w-48 h-48 bg-brand/10 blur-[80px] pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 blur-[80px] pointer-events-none" />
+
+              <div className="w-20 h-20 bg-brand/10 border border-brand/20 rounded-[28px] mx-auto flex items-center justify-center text-brand mb-6 animate-bounce">
+                <Award size={44} />
+              </div>
+
+              <h3 className="text-2xl font-black tracking-tight mb-2">Congratulations!</h3>
+              <p className="text-zinc-400 text-sm mb-6 max-w-xs mx-auto">
+                You successfully passed the daily assessment and checked off your learning objectives today!
+              </p>
+
+              {/* Stats earned block */}
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-2xl flex flex-col items-center">
+                  <span className="flex items-center gap-1 text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-1">XP Earned</span>
+                  <span className="text-xl font-black text-brand flex items-center gap-1">
+                    <Zap size={18} className="text-brand fill-brand" />
+                    +{quizResult.xpEarned}
+                  </span>
+                </div>
+                <div className="p-4 bg-zinc-900 border border-zinc-800 rounded-2xl flex flex-col items-center">
+                  <span className="flex items-center gap-1 text-[10px] text-zinc-500 font-bold uppercase tracking-wider mb-1">Coins Awarded</span>
+                  <span className="text-xl font-black text-yellow-500 flex items-center gap-1">
+                    <Coins size={18} />
+                    +{quizResult.coinsEarned}
+                  </span>
+                </div>
+              </div>
+
+              {/* Streak info */}
+              <div className="p-4 bg-[#f97316]/5 border border-[#f97316]/20 rounded-2xl flex justify-between items-center mb-8">
+                <span className="flex items-center gap-2 text-xs font-bold text-[#f97316]">
+                  <Flame size={18} className="animate-pulse" />
+                  Active Streak Updated
+                </span>
+                <span className="text-sm font-black text-white">{quizResult.streak?.currentStreak || gamification?.streak?.currentStreak} Days</span>
+              </div>
+
+              {/* Badges Unlocked Section */}
+              {quizResult.badgesUnlocked && quizResult.badgesUnlocked.length > 0 && (
+                <div className="mb-8 text-left bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
+                  <span className="text-[10px] text-zinc-500 font-extrabold uppercase tracking-widest block mb-2">New Badge Unlocked!</span>
+                  {quizResult.badgesUnlocked.map((b: any) => (
+                    <div key={b.id} className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-brand/10 border border-brand/20 rounded-xl flex items-center justify-center text-brand">
+                        <Award size={20} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-white leading-none mb-1">{b.name}</p>
+                        <p className="text-[10px] text-zinc-400 capitalize">{b.rarity} Reward Badge</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={closeCelebration}
+                className="w-full py-4 bg-brand text-black font-black uppercase text-xs tracking-widest rounded-xl hover:bg-brand-hover shadow-brand cursor-pointer transition-all"
+              >
+                Claim Rewards & Continue
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
