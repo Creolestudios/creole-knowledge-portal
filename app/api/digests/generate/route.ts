@@ -230,6 +230,8 @@ You MUST respond with a structured daily briefing matching these guidelines:
 3. **Structured Sections**: Write 3 to 4 comprehensive, detailed sections that synthesize the concepts from the source articles. Use rich Markdown formatting, bold headings, and professional developer code blocks or examples where appropriate to represent best practices. Ensure the tone is wowed, premium, and extremely insightful.
 4. **Key Takeaways**: A summary actionable section containing 2-3 clear next steps for their career/learning.
 5. **Cited Sources**: A beautifully formatted section highlighting which source URLs they should read next. Use clickable markdown links.
+6. **Assessment Quiz**: At the very bottom of the briefing, you MUST append a 3-question multiple-choice quiz testing the reader's understanding of the briefing concepts. You MUST format this quiz exactly inside an HTML comment block at the end (with NO markdown blocks inside the comment, just raw valid JSON):
+<!-- QUIZ_DATA: {"questions": [{"id": "q1", "text": "Question 1 text?", "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"], "correctAnswer": "A", "explanation": "Why A is correct"}, {"id": "q2", "text": "Question 2 text?", "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"], "correctAnswer": "C", "explanation": "Why C is correct"}, {"id": "q3", "text": "Question 3 text?", "options": ["A) Option 1", "B) Option 2", "C) Option 3", "D) Option 4"], "correctAnswer": "B", "explanation": "Why B is correct"}]} -->
 
 Target reading length: ~1500 to 2500 words of rich content.
 
