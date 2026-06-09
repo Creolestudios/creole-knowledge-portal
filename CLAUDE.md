@@ -21,7 +21,7 @@ bash scripts/ci-test.sh  # Full local quality gate
 - **Server Components by default** — add `'use client'` only when needed (hooks, browser APIs)
 - **Supabase clients:** use `lib/supabase/client.ts` (browser), `lib/supabase/server.ts` (server), `lib/supabase/admin.ts` (admin API only)
 - **Middleware** handles all auth routing — do not add auth redirects inside page components
-- Admin email hardcoded: `priya.dhanani@creolestudios.com` (see `middleware.ts`)
+<!-- - Admin email hardcoded: `priya.dhanani@creolestudios.com` (see `middleware.ts`) -->
 
 ## Critical Constraints
 - Never commit real secrets — use `.env.local` only (gitignored)
