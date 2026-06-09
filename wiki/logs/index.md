@@ -1,0 +1,17 @@
+---
+title: Changelog Index
+tags: [moc, logs, history]
+created: 2026-05-27
+updated: 2026-05-27
+---
+
+# Changelog Index
+
+This section tracks historical logs and development entries for the **Creole Knowledge Portal** in chronological order.
+
+---
+
+## 📅 Release Entries
+
+- [[logs/2026-05-27|2026-05-27 — Initial Documentation and Baseline Wiki Release]]
+  - _Summary:_ Comprehensive baseline documentation of the Next.js frontend, authentication layouts, admin panel components, API routers, and development roadmap.
