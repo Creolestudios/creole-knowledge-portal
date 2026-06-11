@@ -127,21 +127,40 @@ function PremiumMarkdownRenderer({ content }: { content: string }) {
 
 // Inline Markdown Parser for bold strings (**text**)
 function parseInlineMarkdown(text: string) {
-  const boldRegex = /\*\*([^*]+)\*\*/g;
+  // Regex to match bold "**text**" and links "[text](url)"
+  const regex = /(\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\))/g;
   let match;
   const parts = [];
   let lastIdx = 0;
   
-  while ((match = boldRegex.exec(text)) !== null) {
+  while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIdx) {
       parts.push(text.substring(lastIdx, match.index));
     }
-    parts.push(
-      <strong key={match.index} className="font-extrabold text-zinc-900">
-        {match[1]}
-      </strong>
-    );
-    lastIdx = boldRegex.lastIndex;
+    
+    if (match[2]) {
+      // Bold match - parse inner content recursively!
+      parts.push(
+        <strong key={match.index} className="font-extrabold text-zinc-900">
+          {parseInlineMarkdown(match[2])}
+        </strong>
+      );
+    } else if (match[3] && match[4]) {
+      // Link match
+      parts.push(
+        <a 
+          key={match.index} 
+          href={match[4]} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-brand hover:underline font-bold inline-flex items-center gap-0.5 group"
+        >
+          {match[3]}
+          <ExternalLink size={10} className="inline opacity-60 group-hover:opacity-100 transition-opacity" />
+        </a>
+      );
+    }
+    lastIdx = regex.lastIndex;
   }
   
   if (lastIdx < text.length) {
@@ -200,13 +219,13 @@ export default function DashboardPage() {
       setProfile(userProfile);
       setLoading(false);
       
-      // Get latest daily briefing if available
-      await fetchLatestBrief();
+      // Get latest daily briefing if available, passing active details for potential auto-generation
+      await fetchLatestBrief(currentUser, userProfile);
     }
     getInitialData();
   }, [supabase, router]);
 
-  const fetchLatestBrief = async () => {
+  const fetchLatestBrief = async (currentUser?: any, currentProfile?: any) => {
     setLoadingBrief(true);
     try {
       const res = await fetch('/api/digests/latest');
@@ -214,25 +233,33 @@ export default function DashboardPage() {
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
+          setLoadingBrief(false);
+          return;
         }
       }
+      // If no brief, trigger generation automatically
+      await handleGenerateBriefing(currentUser, currentProfile);
     } catch (e) {
       console.error('Error fetching brief:', e);
+      await handleGenerateBriefing(currentUser, currentProfile);
     } finally {
       setLoadingBrief(false);
     }
   };
 
-  const handleGenerateBriefing = async () => {
-    if (!user) return;
+  const handleGenerateBriefing = async (targetUser?: any, targetProfile?: any) => {
+    const activeUser = targetUser || user;
+    const activeProfile = targetProfile || profile;
+    if (!activeUser) return;
     setGenerating(true);
     setBrief(null);
+    setLoadingBrief(false);
     
     // Custom simulated steps to give extremely premium, immersive feel
     const steps = [
       'Accessing Administrative registered urls...',
       'Crawling developer feeds from Hacker News and Dev.to...',
-      'Mapping tech stack: ' + ((profile?.primary_tech_stack || []).join(', ') || 'WordPress') + '...',
+      'Mapping tech stack: ' + ((activeProfile?.primary_tech_stack || []).join(', ') || 'WordPress') + '...',
       'Evaluating interest matches...',
       'Calling Gemini 2.5 Flash for deep synthesis...',
       'Structuring morning technical brief...',
@@ -253,7 +280,7 @@ export default function DashboardPage() {
       const res = await fetch('/api/digests/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
+        body: JSON.stringify({ userId: activeUser.id })
       });
       
       clearInterval(stepInterval);
@@ -372,16 +399,6 @@ export default function DashboardPage() {
                 <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">Your Morning Briefing</h1>
                 <p className="text-zinc-500 text-base">Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.</p>
               </div>
-
-              {hasBrief && !generating && (
-                <button 
-                  onClick={handleGenerateBriefing}
-                  className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
-                >
-                  <RefreshCw size={15} />
-                  Regenerate Briefing
-                </button>
-              )}
             </div>
 
             {/* Main view state switcher */}
@@ -549,16 +566,21 @@ export default function DashboardPage() {
                     <div className="space-y-4">
                       <h2 className="text-4xl font-black tracking-tight leading-none">Your Daily Tech Briefing is Ready.</h2>
                       <p className="text-zinc-400 text-base leading-relaxed">
-                        Synthesize your personalized technical morning briefing dynamically. We compile insights from Hacker News, Dev.to feeds, and administrative sources, mapping directly to your technology stack.
+                        Your personalized technical morning briefing automatically compiles high-quality insights from Hacker News, Dev.to, and team sources at 9:00 AM daily, mapping directly to your technology stack.
                       </p>
                     </div>
 
-                    <button 
-                      onClick={handleGenerateBriefing}
-                      className="px-10 py-5 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 transition-all text-sm uppercase tracking-widest cursor-pointer"
-                    >
-                      Synthesize Morning Briefing
-                    </button>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+                      <button 
+                        onClick={handleGenerateBriefing}
+                        className="px-10 py-5 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                      >
+                        Refresh Briefing Now
+                      </button>
+                      <span className="text-xs text-zinc-500 font-bold uppercase tracking-wider bg-zinc-800/50 border border-zinc-700/50 px-4 py-2.5 rounded-xl w-fit">
+                        ⏰ Scheduled: 9:00 AM Daily
+                      </span>
+                    </div>
                   </div>
                 </motion.div>
               )}
