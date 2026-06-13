@@ -54,7 +54,6 @@ export default function UserManagement() {
   const supabase = createClient();
   
   const fetchUsers = async () => {
-    setLoading(true);
     try {
       const res = await fetch('/api/admin/users');
       if (!res.ok) throw new Error('Failed to fetch users');
@@ -68,7 +67,9 @@ export default function UserManagement() {
   };
 
   useEffect(() => {
-    fetchUsers();
+    (async () => {
+      await fetchUsers();
+    })();
   }, []);
 
   const handleUserClick = (user: UserProfile) => {
