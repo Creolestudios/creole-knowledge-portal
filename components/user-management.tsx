@@ -16,13 +16,15 @@ import {
   Calendar,
   Code,
   Target,
-  ArrowLeft
+  ArrowLeft,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface UserProfile {
   user_id: string;
   email: string;
+  role: string;
   current_role: string;
   years_of_experience: number;
   current_tech_stack: string[];
@@ -42,6 +44,7 @@ export default function UserManagement() {
   
   // Form State
   const [formData, setFormData] = useState({
+    role: 'user',
     current_role: '',
     years_of_experience: 0,
     primary_tech_stack: [] as string[],
@@ -77,6 +80,7 @@ export default function UserManagement() {
   const handleUserClick = (user: UserProfile) => {
     setSelectedUser(user);
     setFormData({
+      role: user.role || 'user',
       current_role: user.current_role || '',
       years_of_experience: user.years_of_experience || 0,
       primary_tech_stack: user.primary_tech_stack || [],
@@ -93,22 +97,27 @@ export default function UserManagement() {
     setSaving(true);
     
     try {
-      const { error } = await supabase
-        .from('user_profiles')
-        .upsert({
+      const res = await fetch('/api/admin/users', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           user_id: selectedUser.user_id,
           email: selectedUser.email,
+          role: formData.role,
           current_role: formData.current_role,
           years_of_experience: formData.years_of_experience,
           primary_tech_stack: formData.primary_tech_stack,
           secondary_tech_stack: formData.secondary_tech_stack,
           future_interests: formData.future_interests,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'user_id'
-        });
+        }),
+      });
 
-      if (error) throw error;
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to update profile');
+      }
 
       setToast({ message: 'Profile updated successfully!', type: 'success' });
       void fetchUsers();
@@ -239,6 +248,13 @@ export default function UserManagement() {
                             }`}>
                               {complete ? 'Profile Complete' : 'Profile Incomplete'}
                             </span>
+                            <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${
+                              user.role === 'admin'
+                                ? 'bg-purple-50 text-purple-600 border-purple-100'
+                                : 'bg-blue-50 text-blue-600 border-blue-100'
+                            }`}>
+                              {user.role === 'admin' ? 'Admin' : 'User'}
+                            </span>
                             <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest flex items-center gap-1">
                               <Clock size={10} />
                               {new Date(user.updated_at).toLocaleDateString()}
@@ -285,6 +301,69 @@ export default function UserManagement() {
 
               <form onSubmit={handleSave} className="space-y-8">
                 <div className="grid grid-cols-1 gap-8">
+                  {/* System Access Role */}
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
+                      <ShieldCheck size={14} />
+                      System Access Role
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <label className={`flex-1 flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
+                        formData.role === 'user' 
+                          ? 'border-[#34c4f2] bg-[#34c4f2]/5 text-[#34c4f2]' 
+                          : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-300'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <User size={18} className={formData.role === 'user' ? 'text-[#34c4f2]' : 'text-zinc-400'} />
+                          <div>
+                            <p className="text-sm font-bold text-zinc-900">User</p>
+                            <p className="text-xs text-zinc-500 opacity-75">Standard dashboard access</p>
+                          </div>
+                        </div>
+                        <input 
+                          type="radio" 
+                          name="role" 
+                          value="user" 
+                          checked={formData.role === 'user'} 
+                          onChange={() => setFormData({ ...formData, role: 'user' })}
+                          className="sr-only" 
+                        />
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          formData.role === 'user' ? 'border-[#34c4f2]' : 'border-zinc-300'
+                        }`}>
+                          {formData.role === 'user' && <div className="w-2.5 h-2.5 rounded-full bg-[#34c4f2]" />}
+                        </div>
+                      </label>
+
+                      <label className={`flex-1 flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
+                        formData.role === 'admin' 
+                          ? 'border-purple-500 bg-purple-50 text-purple-600' 
+                          : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-300'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <ShieldCheck size={18} className={formData.role === 'admin' ? 'text-purple-600' : 'text-zinc-400'} />
+                          <div>
+                            <p className="text-sm font-bold text-zinc-900">Admin</p>
+                            <p className="text-xs text-zinc-500 opacity-75">Full portal administrator</p>
+                          </div>
+                        </div>
+                        <input 
+                          type="radio" 
+                          name="role" 
+                          value="admin" 
+                          checked={formData.role === 'admin'} 
+                          onChange={() => setFormData({ ...formData, role: 'admin' })}
+                          className="sr-only" 
+                        />
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                          formData.role === 'admin' ? 'border-purple-500' : 'border-zinc-300'
+                        }`}>
+                          {formData.role === 'admin' && <div className="w-2.5 h-2.5 rounded-full bg-purple-500" />}
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* Current Role */}
                     <div className="space-y-2">
