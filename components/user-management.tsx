@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { 
   User, 
@@ -53,23 +53,26 @@ export default function UserManagement() {
 
   const supabase = createClient();
   
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/admin/users');
       if (!res.ok) throw new Error('Failed to fetch users');
       const data = await res.json();
       setUsers(data);
-    } catch (err: any) {
-      setToast({ message: err.message, type: 'error' });
+    } catch (err) {
+      setToast({ message: err instanceof Error ? err.message : 'Failed to fetch users', type: 'error' });
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    const timer = setTimeout(() => {
+      void fetchUsers();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchUsers]);
 
   const handleUserClick = (user: UserProfile) => {
     setSelectedUser(user);
@@ -108,7 +111,7 @@ export default function UserManagement() {
       if (error) throw error;
 
       setToast({ message: 'Profile updated successfully!', type: 'success' });
-      fetchUsers(); // Refresh list
+      void fetchUsers();
       setTimeout(() => setToast(null), 3000);
     } catch (err: any) {
       setToast({ message: err.message, type: 'error' });

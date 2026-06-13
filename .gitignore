@@ -5,3 +5,12 @@ coverage/
 *.log
 .env*
 !.env.example
+playwright-report/
+test-results/
+node_modules
+API/
+app/api/
+.venv/
+**/__pycache__/
+*.pyc
+tsconfig.tsbuildinfo
