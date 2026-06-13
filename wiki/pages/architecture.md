@@ -2,7 +2,7 @@
 title: System Architecture
 tags: [architecture, design, diagrams]
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-06-13
 ---
 
 # System Architecture

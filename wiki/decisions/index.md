@@ -2,17 +2,20 @@
 title: Architectural Decisions Index
 tags: [moc, adr, architecture]
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-06-13
 ---
 
 # Architectural Decision Records (ADRs)
 
-This index hosts all Architectural Decision Records (ADRs) document choices made during the conception, structuring, and development of the **Creole Knowledge Portal**.
+This index hosts all Architectural Decision Records (ADRs) documenting choices made during the conception, structuring, and development of the **Creole Knowledge Portal**.
 
 ---
 
 ## ⚡ Active ADRs
 
+- [[decisions/001-app-router|ADR 001: Use Next.js App Router (Base)]]
+  - _Status:_ Approved
+  - _Summary:_ Foundation ADR to use Next.js App Router.
 - [[decisions/0001-nextjs-app-router|ADR 0001: Next.js 15 App Router Structure]]
   - _Status:_ Approved
   - _Summary:_ Standardizing on Next.js 15's App Router architecture for pages, API routes, and layouts to utilize React Server Components (RSC).

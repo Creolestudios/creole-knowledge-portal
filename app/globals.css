@@ -15,3 +15,20 @@
     @apply antialiased text-zinc-900;
   }
 }
+
+@keyframes progress-loading {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 75%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.animate-progress-loading {
+  animation: progress-loading 25s ease-in-out infinite;
+}
+
