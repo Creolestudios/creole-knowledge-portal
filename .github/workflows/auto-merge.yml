@@ -80,6 +80,7 @@ jobs:
                 elements: [
                   {
                     type: "button",
+                    action_id: "review_approve_pr",
                     text: {
                       type: "plain_text",
                       text: "Review / Approve PR"
