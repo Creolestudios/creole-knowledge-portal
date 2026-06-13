@@ -436,13 +436,10 @@ export default function DashboardPage() {
                       Quiz Completed
                     </div>
                   ) : quizStatus?.inProgress ? (
-                    <Link 
-                      href={`/dashboard/quiz/${brief.id}`}
-                      className="px-6 py-3 bg-zinc-900 hover:bg-black text-white font-bold rounded-xl border border-zinc-800 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer"
-                    >
-                      <Clock size={15} className="text-brand animate-pulse" />
-                      Resume Quiz
-                    </Link>
+                    <div className="px-6 py-3 bg-zinc-900 text-zinc-500 font-bold rounded-xl border border-zinc-800 shadow-sm transition-all flex items-center gap-2 text-sm cursor-not-allowed">
+                      <Clock size={15} className="text-zinc-600" />
+                      Quiz in Progress...
+                    </div>
                   ) : (
                     <Link 
                       href={`/dashboard/quiz/${brief.id}`}
