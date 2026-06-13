@@ -30,15 +30,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid or completed quiz attempt' }, { status: 403 });
     }
 
-    if (timeLeft !== undefined && typeof timeLeft === 'number') {
-      const timeTaken = 600 - timeLeft;
-      await supabaseAdmin.from('quiz_attempts')
-        .update({ time_taken_seconds: Math.max(timeTaken, attempt.time_taken_seconds || 0) })
-        .eq('id', attemptId);
-    }
-
     if (!questionId || userAnswer === undefined) {
-      return NextResponse.json({ success: true, heartbeat: true });
+      return NextResponse.json({ success: true });
     }
 
     // Fetch the question to get the correct answers and type

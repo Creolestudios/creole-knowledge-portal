@@ -61,7 +61,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
-          handleSubmitQuiz(0);
+          handleSubmitQuiz();
           return 0;
         }
         return prev - 1;
@@ -69,19 +69,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     }, 1000);
   };
 
-  // Heartbeat to sync timer every 5 seconds
-  useEffect(() => {
-    if (!attemptId || timeLeft <= 0 || timeLeft === 600 || timeLeft % 5 !== 0) return;
-    
-    fetch('/api/quizzes/evaluate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        attemptId,
-        timeLeft
-      })
-    }).catch(console.error);
-  }, [timeLeft, attemptId]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -186,8 +174,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
         body: JSON.stringify({
           attemptId,
           questionId: qId,
-          userAnswer: ans,
-          timeLeft
+          userAnswer: ans
         })
       }).catch(console.error);
     }
@@ -206,18 +193,16 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     }
   };
 
-  const handleSubmitQuiz = async (forcedTimeLeft?: number) => {
+  const handleSubmitQuiz = async () => {
     if (timerRef.current) clearInterval(timerRef.current);
     saveCurrentAnswer();
     setLoading(true);
-    
-    const finalTimeLeft = forcedTimeLeft !== undefined ? forcedTimeLeft : timeLeft;
 
     try {
       const res = await fetch('/api/quizzes/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId, timeLeft: finalTimeLeft })
+        body: JSON.stringify({ attemptId })
       });
       const data = await res.json();
       if (res.ok && data.success) {

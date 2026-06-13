@@ -39,9 +39,9 @@ export async function POST(request: Request) {
 
     const completedAt = new Date();
     
-    // Determine time taken either from passed in timeLeft or the last saved db value
-    const storedTimeTaken = attempt.time_taken_seconds || 0;
-    const timeTakenSeconds = timeLeft !== undefined ? Math.max(600 - timeLeft, storedTimeTaken) : storedTimeTaken;
+    // Determine time taken based on wall-clock
+    const elapsedSeconds = Math.floor((Date.now() - new Date(attempt.started_at).getTime()) / 1000);
+    const timeTakenSeconds = Math.min(600, Math.max(0, elapsedSeconds));
 
     // Update attempt
     const { error: updateError } = await supabaseAdmin

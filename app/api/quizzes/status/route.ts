@@ -76,9 +76,77 @@ export async function GET(request: Request) {
           }
         });
       } else {
-        // Calculate remaining time (600s = 10 mins) based on stored time_taken_seconds instead of wall-clock
-        const elapsedSeconds = attempt.time_taken_seconds || 0;
+        // Calculate remaining time (600s = 10 mins) based on wall-clock
+        const elapsedSeconds = Math.floor((Date.now() - new Date(attempt.started_at).getTime()) / 1000);
         const timeLeft = Math.max(0, 600 - elapsedSeconds);
+
+        if (timeLeft <= 0) {
+          // Time expired, auto-submit the quiz
+          const { data: fullAttempt } = await supabaseAdmin
+            .from('quiz_attempts')
+            .select('*, quiz_answers(points_awarded, question_id, is_correct)')
+            .eq('id', attempt.id)
+            .single();
+            
+          const autoAnswers = fullAttempt?.quiz_answers || [];
+          const maxPossibleScore = 8; 
+          const totalScore = autoAnswers.reduce((sum: number, ans: any) => sum + (ans.points_awarded || 0), 0);
+          const percentage = Math.round((totalScore / maxPossibleScore) * 100);
+
+          await supabaseAdmin
+            .from('quiz_attempts')
+            .update({
+              status: 'completed',
+              completed_at: new Date().toISOString(),
+              score: totalScore,
+              percentage: percentage,
+              time_taken_seconds: 600
+            })
+            .eq('id', attempt.id);
+
+          // Fetch full review data for the completed response
+          const { data: questions } = await supabaseAdmin
+            .from('quiz_questions')
+            .select('*')
+            .eq('blog_id', attempt.blog_id)
+            .limit(5);
+
+          const { data: finalAttempt } = await supabaseAdmin
+            .from('quiz_attempts')
+            .select('*, quiz_answers(points_awarded, question_id, is_correct, user_answer, evaluation_reason)')
+            .eq('id', attempt.id)
+            .single();
+
+          const finalAnswers = finalAttempt?.quiz_answers || [];
+
+          const reviewData = (questions || []).map((q: any) => {
+            const ans = finalAnswers.find((a: any) => a.question_id === q.id);
+            return {
+              questionId: q.id,
+              question: q.question,
+              questionType: q.question_type,
+              options: q.options,
+              correctAnswers: q.correct_answers,
+              explanation: q.explanation,
+              userAnswer: ans?.user_answer || null,
+              isCorrect: ans?.is_correct || false,
+              pointsAwarded: ans?.points_awarded || 0,
+              evaluationReason: ans?.evaluation_reason || 'Time expired.'
+            };
+          });
+
+          return NextResponse.json({
+            completed: true,
+            result: {
+              score: totalScore,
+              percentage: percentage,
+              timeTaken: 600,
+              total: Math.round((totalScore / (percentage || 1)) * 100) || 8,
+              correctAnswers: Math.round((percentage / 100) * attempt.total_questions) || 0,
+              reviewData
+            }
+          });
+        }
 
         // Fetch questions
         const { data: questions } = await supabaseAdmin
