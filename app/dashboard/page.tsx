@@ -22,6 +22,8 @@ import {
   Code
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
+import Link from 'next/link';
+import { PenSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // A high-fidelity, zero-dependency Markdown renderer
@@ -307,12 +309,20 @@ export default function DashboardPage() {
         </div>
 
         <nav className="flex-1 space-y-1 relative z-10">
-          <button 
+          <button
             className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-900/50 text-brand border border-brand/20 shadow-sm text-left"
           >
             <Home size={20} />
             <span className="font-semibold text-sm">Morning Brief</span>
           </button>
+
+          <Link
+            href="/blog-roulette"
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left"
+          >
+            <PenSquare size={20} />
+            <span className="font-medium text-sm">Blog Roulette</span>
+          </Link>
 
           <div className="h-4" />
 
