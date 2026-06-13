@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { GoogleGenAI } from '@google/genai';
-
+import { generateQuizForBlog } from '@/lib/ai/quiz-generator';
 interface SourceArticle {
   title: string;
   url: string;
@@ -358,6 +358,19 @@ Generate the output article in beautiful GitHub Markdown.
         display_order: 0,
         curation_notes: `Personalized brief for user ${userId}`
       });
+
+    // Automatically generate technical quiz based on the newly synthesized blog content
+    try {
+      console.log('[Quiz Factory] Starting automated quiz generation for blog_id:', newBlog.id);
+      await generateQuizForBlog(newBlog.id, synthesizedContent);
+      console.log('[Quiz Factory] Quiz successfully generated.');
+      
+      // Update the response object so the frontend knows the quiz is ready immediately
+      newBlog.quiz_generated = true;
+    } catch (quizError) {
+      console.error('[Quiz Factory] Failed to generate quiz for blog:', quizError);
+      // We don't throw here to ensure the blog is still returned successfully even if quiz generation fails occasionally
+    }
 
     return NextResponse.json({
       success: true,
