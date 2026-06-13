@@ -73,7 +73,6 @@ export default function SubmissionsModeration() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
-    setLoading(true);
     try {
       const [subsRes, logsRes] = await Promise.all([
         fetch('/api/submissions'),
@@ -101,7 +100,9 @@ export default function SubmissionsModeration() {
   };
 
   useEffect(() => {
-    fetchData();
+    (async () => {
+      await fetchData();
+    })();
   }, []);
 
   const handleModerate = async (id: string, action: 'APPROVE' | 'REJECT') => {
