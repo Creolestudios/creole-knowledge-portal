@@ -107,8 +107,8 @@ export async function middleware(request: NextRequest) {
     return redirect('/');
   }
 
-  // 2. If logged in as admin and trying to access root or standard dashboard -> redirect to admin dashboard
-  if (user && isAdmin && (isLoginPage || isDashboard)) {
+  // 2. If logged in as admin and trying to access root -> redirect to admin dashboard (but allow access to standard dashboard)
+  if (user && isAdmin && isLoginPage) {
     return redirect('/admin/dashboard');
   }
 
