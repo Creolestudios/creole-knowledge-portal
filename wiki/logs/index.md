@@ -1,13 +1,23 @@
 ---
-title: Changelogs
+title: Changelogs MOC
+tags: [index, logs, moc, changelog]
 created: 2026-05-16
-updated: 2026-05-16
-tags: index, logs, moc, changelog
+updated: 2026-06-13
 ---
-# Changelogs
+# 📜 Changelogs
 
-This section provides a chronological log of changes made to the Creole Knowledge Portal project.
+This section provides a chronological record of all significant changes, features, and fixes implemented in the Creole Knowledge Portal.
 
-*   [[logs/2026-05-20.md|2026-05-20]]
-*   [[logs/2026-05-19.md|2026-05-19]]
-*   [[logs/2026-05-16.md|2026-05-16]]
+## 📅 Timeline
+
+- [[wiki/logs/2026-06-13|2026-06-13]] - Complete Wiki generation and architectural documentation.
+- [[wiki/logs/2026-05-20|2026-05-20]]
+- [[wiki/logs/2026-05-19|2026-05-19]]
+- [[wiki/logs/2026-05-16|2026-05-16]]
+
+---
+**Log Format:**
+- **Added**: New features or components.
+- **Changed**: Modifications to existing logic.
+- **Fixed**: Bug fixes.
+- **Removed**: Deprecated or deleted code.

@@ -1,20 +1,34 @@
 ---
 title: Roadmap & Known Issues
+tags: [roadmap, issues, future]
 created: 2026-05-16
-updated: 2026-05-16
-tags: roadmap, issues, future
+updated: 2026-06-13
 ---
 # Roadmap & Known Issues
 
-## Future Plans
+This page tracks the evolution of the Creole Knowledge Portal, including planned features and existing technical debt.
 
-*   **Enhanced AI Digest Personalization:** Implement more sophisticated user profiling and content analysis to tailor AI digests more effectively.
-*   **Expanded Blog Sources:** Integrate additional news sources and technical blogs, potentially with a UI for users to add their own RSS feeds.
-*   **Community Features:** Explore features for users to share or comment on recommended articles.
-*   **Performance Optimizations:** Further refine blog fetching and AI synthesis pipelines for speed and cost-efficiency.
+## 🎯 Future Plans
 
-## Known Issues
+### Short-Term (Q3 2026)
+- [ ] **User-Defined Sources**: Allow users to add their own RSS feeds via the dashboard.
+- [ ] **Digest Feedback Loop**: Implement "Thumbs Up/Down" on digest sections to refine AI personalization.
+- [ ] **Enhanced Admin UI**: Move admin user management to a more robust interface.
 
-*   **Initial blog fetch reliability:** Some RSS feeds may occasionally fail to parse correctly due to non-standard formatting. (See `fetch-blogs/` module logs for details).
-*   **Supabase connection stability:** Under heavy load, there might be intermittent connection issues with Supabase. (See `lib/supabase/` error logs).
-*   **Admin email hardcoding:** The admin email (`priya.dhanani@creolestudios.com`) is currently hardcoded in `middleware.ts`. A future iteration may involve a more flexible configuration for admin roles.
+### Medium-Term (Q4 2026)
+- [ ] **Semantic Search**: Implement a search interface for past digests using `pgvector` embeddings.
+- [ ] **Multi-Modal Synthesis**: Incorporate images and video summaries into the daily digests.
+- [ ] **Collaborative Digests**: Shared digests for specific office teams or projects.
+
+### Long-Term (2027+)
+- [ ] **Agentic Curation**: Fully autonomous agents that scout for niche blogs based on emerging tech trends.
+- [ ] **Self-Correcting Pipeline**: AI-driven validation of scraped content to reduce parsing errors.
+
+## ⚠️ Known Issues & Technical Debt
+
+- **Admin Hardcoding**: The admin email is currently hardcoded in `middleware.ts`.
+  - *Plan*: Move to a `profiles` table `role` column or a config file.
+- **Parsing Fragility**: Certain RSS feeds have non-standard XML, leading to occasional fetch failures.
+  - *Plan*: Implement more robust fallback parsers in the `fetch-blogs/` module.
+- **Connection Latency**: Intermittent latency when fetching large vector sets from Supabase.
+  - *Plan*: Optimize index strategies (HNSW) and implement caching.

@@ -1,36 +1,38 @@
 ---
 title: Authentication Components
+tags: [components, auth]
 created: 2026-05-16
-updated: 2026-05-16
-tags: components, auth
+updated: 2026-06-13
 ---
-# Authentication Components
+# 🔑 Authentication Components
 
-This section documents the components related to user authentication.
+Documentation for the authentication interface and logic.
 
-## Supabase Authentication
+## 🛠️ Implementation
 
-### `MagicLinkLogin`
+Authentication is handled via **Supabase Auth**, providing a passwordless experience.
 
-- **Purpose:** Handles user login via email One-Time Password (OTP) using Supabase Magic Link.
-- **File:** `components/Auth/MagicLinkLogin.tsx` (assumed path)
-- **Features:**
-    - Input for email address.
-    - Sends OTP to the provided email.
-    - Handles OTP verification and user session creation.
-- **Dependencies:** Supabase Auth client.
+### Magic Link Login
+- **Purpose**: Allows users to log in via email OTP (One-Time Password).
+- **Logic**: Uses `supabase.auth.signInWithOtp`.
+- **UI**: Simple email input field with a "Send Link" action.
 
-### `GoogleOAuthButton`
+### Google OAuth
+- **Purpose**: Integration with corporate Google accounts.
+- **Logic**: Uses `supabase.auth.signInWithOAuth` with provider `google`.
+- **UI**: Dedicated "Sign in with Google" button.
 
-- **Purpose:** A button component that initiates the Google OAuth flow for user login.
-- **File:** `components/Auth/GoogleOAuthButton.tsx` (assumed path)
-- **Features:**
-    - Renders a Google Sign-In button.
-    - Initiates the OAuth redirect to Google.
-- **Dependencies:** Supabase Auth client, Next.js app configuration for OAuth.
+## 🛡️ Authorization Logic
 
-## Admin Authentication
+### User Access
+- All authenticated users can access the `/dashboard` route.
+- Authorization is enforced in `middleware.ts`.
 
-*   **Admin Access:** Access to admin dashboards is restricted to a hardcoded email (`priya.dhanani@creolestudios.com`) as per `middleware.ts`.
+### Admin Access
+- **Hardcoded Rule**: Only users with the email `priya.dhanani@creolestudios.com` are granted access to `/admin/*` routes.
+- **Enforcement**: The middleware checks the authenticated user's email against this literal string.
 
-TODO: Add details on any specific admin-only components if they exist.
+## 🔗 Related Files
+- `middleware.ts`: Global auth routing and enforcement.
+- `app/page.tsx`: The primary login landing page.
+- `app/auth/callback/route.ts`: Handles the Supabase auth redirect.
