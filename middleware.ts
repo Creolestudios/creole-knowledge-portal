@@ -68,11 +68,24 @@ export async function middleware(request: NextRequest) {
   const isDashboard = request.nextUrl.pathname.startsWith('/dashboard');
   const isAdminDashboard = request.nextUrl.pathname.startsWith('/admin');
   const isLoginPage = request.nextUrl.pathname === '/';
-  
-  const normalizedEmail = user?.email?.toLowerCase().trim();
-  const isAdminEmail = normalizedEmail === 'priya.dhanani@creolestudios.com';
 
-  console.log(`[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdminEmail}`);
+  let isAdmin = false;
+  if (user) {
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      if (profile) {
+        isAdmin = profile.role === 'admin';
+      }
+    } catch (err) {
+      console.error('[Middleware] error fetching profile role:', err);
+    }
+  }
+
+  console.log(`[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdmin}`);
 
   // Function to create a redirect response that preserves cookies
   const redirect = (url: string) => {
@@ -95,12 +108,12 @@ export async function middleware(request: NextRequest) {
   }
 
   // 2. If logged in as admin and trying to access root or standard dashboard -> redirect to admin dashboard
-  if (user && isAdminEmail && (isLoginPage || isDashboard)) {
+  if (user && isAdmin && (isLoginPage || isDashboard)) {
     return redirect('/admin/dashboard');
   }
 
   // 3. If logged in as non-admin and trying to access root or admin dashboard -> redirect to standard dashboard
-  if (user && !isAdminEmail) {
+  if (user && !isAdmin) {
     if (isLoginPage || isAdminDashboard) {
       return redirect('/dashboard');
     }

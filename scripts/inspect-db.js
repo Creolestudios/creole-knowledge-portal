@@ -3,7 +3,7 @@ const fs = require('fs');
 
 // Simple parse for .env.local
 try {
-  const content = fs.readFileSync('.env.local', 'utf8');
+  const content = fs.readFileSync('.env', 'utf8');
   content.split('\n').forEach(line => {
     line = line.trim();
     if (!line || line.startsWith('#')) return;
@@ -18,7 +18,7 @@ try {
     }
   });
 } catch (e) {
-  console.error('Failed to load .env.local', e);
+  console.error('Failed to load .env', e);
 }
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

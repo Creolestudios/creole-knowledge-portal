@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import { 
-  LogOut, 
-  User, 
-  LayoutDashboard, 
-  Settings, 
-  Bell, 
+import {
+  LogOut,
+  User,
+  LayoutDashboard,
+  Settings,
+  Bell,
   Search,
   Home,
   UserCircle,
@@ -24,102 +24,120 @@ import {
 import LogoutButton from '@/components/logout-button';
 import { motion, AnimatePresence } from 'motion/react';
 
+interface MarkdownBlock {
+  type: 'code' | 'h1' | 'h2' | 'h3' | 'li' | 'blockquote' | 'empty' | 'p';
+  content: string;
+}
+
 // A high-fidelity, zero-dependency Markdown renderer
 function PremiumMarkdownRenderer({ content }: { content: string }) {
   const lines = content.split('\n');
+  const blocks: MarkdownBlock[] = [];
   let inCodeBlock = false;
   let codeLines: string[] = [];
 
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('```')) {
+      if (inCodeBlock) {
+        inCodeBlock = false;
+        blocks.push({ type: 'code', content: codeLines.join('\n') });
+        codeLines = [];
+      } else {
+        inCodeBlock = true;
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (trimmed.startsWith('# ')) {
+      blocks.push({ type: 'h1', content: trimmed.substring(2) });
+    } else if (trimmed.startsWith('## ')) {
+      blocks.push({ type: 'h2', content: trimmed.substring(3) });
+    } else if (trimmed.startsWith('### ')) {
+      blocks.push({ type: 'h3', content: trimmed.substring(4) });
+    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      blocks.push({ type: 'li', content: trimmed.substring(2) });
+    } else if (trimmed.startsWith('> ')) {
+      blocks.push({ type: 'blockquote', content: trimmed.substring(2) });
+    } else if (trimmed === '') {
+      blocks.push({ type: 'empty', content: '' });
+    } else {
+      blocks.push({ type: 'p', content: line });
+    }
+  }
+
+  if (inCodeBlock && codeLines.length > 0) {
+    blocks.push({ type: 'code', content: codeLines.join('\n') });
+  }
+
   return (
     <div className="space-y-6 text-zinc-700 leading-relaxed font-sans">
-      {lines.map((line, idx) => {
-        const trimmed = line.trim();
-
-        // Handle Code Blocks
-        if (trimmed.startsWith('```')) {
-          if (inCodeBlock) {
-            inCodeBlock = false;
-            const code = codeLines.join('\n');
-            codeLines = [];
+      {blocks.map((block, idx) => {
+        switch (block.type) {
+          case 'code':
             return (
               <div key={idx} className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-[#0f0f11] my-6 font-mono text-xs shadow-lg">
                 <div className="flex items-center justify-between px-6 py-3 bg-[#16161a] border-b border-zinc-800 text-zinc-400">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-brand">Code Snippet</span>
-                  <button 
-                    onClick={() => navigator.clipboard.writeText(code)}
+                  <button
+                    onClick={() => navigator.clipboard.writeText(block.content)}
                     className="hover:text-white transition-colors text-[10px] font-bold uppercase tracking-widest cursor-pointer"
                   >
                     Copy
                   </button>
                 </div>
                 <pre className="p-6 overflow-x-auto text-zinc-300">
-                  <code>{code}</code>
+                  <code>{block.content}</code>
                 </pre>
               </div>
             );
-          } else {
-            inCodeBlock = true;
+          case 'h1':
+            return (
+              <h1 key={idx} className="text-3xl font-black text-zinc-900 mt-10 mb-4 tracking-tight leading-tight">
+                {block.content}
+              </h1>
+            );
+          case 'h2':
+            return (
+              <h2 key={idx} className="text-2xl font-black text-zinc-900 mt-8 mb-4 border-b pb-3 border-zinc-100 tracking-tight leading-tight flex items-center gap-2">
+                <span className="w-1.5 h-6 bg-brand rounded-full inline-block" />
+                {block.content}
+              </h2>
+            );
+          case 'h3':
+            return (
+              <h3 key={idx} className="text-lg font-extrabold text-zinc-900 mt-6 mb-3 tracking-tight">
+                {block.content}
+              </h3>
+            );
+          case 'li':
+            return (
+              <li key={idx} className="ml-6 list-disc text-sm py-1.5 font-medium text-zinc-600 pl-2">
+                {parseInlineMarkdown(block.content)}
+              </li>
+            );
+          case 'blockquote':
+            return (
+              <div key={idx} className="p-6 bg-brand/5 border-l-4 border-brand rounded-r-2xl my-6 text-zinc-700 italic text-sm shadow-sm">
+                {parseInlineMarkdown(block.content)}
+              </div>
+            );
+          case 'empty':
+            return <div key={idx} className="h-2" />;
+          case 'p':
+            return (
+              <p key={idx} className="text-zinc-600 text-[15px] leading-relaxed">
+                {parseInlineMarkdown(block.content)}
+              </p>
+            );
+          default:
             return null;
-          }
         }
-
-        if (inCodeBlock) {
-          codeLines.push(line);
-          return null;
-        }
-
-        // Headings
-        if (trimmed.startsWith('# ')) {
-          return (
-            <h1 key={idx} className="text-3xl font-black text-zinc-900 mt-10 mb-4 tracking-tight leading-tight">
-              {trimmed.replace('# ', '')}
-            </h1>
-          );
-        }
-        if (trimmed.startsWith('## ')) {
-          return (
-            <h2 key={idx} className="text-2xl font-black text-zinc-900 mt-8 mb-4 border-b pb-3 border-zinc-100 tracking-tight leading-tight flex items-center gap-2">
-              <span className="w-1.5 h-6 bg-brand rounded-full inline-block" />
-              {trimmed.replace('## ', '')}
-            </h2>
-          );
-        }
-        if (trimmed.startsWith('### ')) {
-          return (
-            <h3 key={idx} className="text-lg font-extrabold text-zinc-900 mt-6 mb-3 tracking-tight">
-              {trimmed.replace('### ', '')}
-            </h3>
-          );
-        }
-
-        // Lists
-        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-          const listText = trimmed.substring(2);
-          // Inline bold parsing
-          return (
-            <li key={idx} className="ml-6 list-disc text-sm py-1.5 font-medium text-zinc-600 pl-2">
-              {parseInlineMarkdown(listText)}
-            </li>
-          );
-        }
-
-        // Blockquote / Tip / Note alert box
-        if (trimmed.startsWith('> ')) {
-          return (
-            <div key={idx} className="p-6 bg-brand/5 border-l-4 border-brand rounded-r-2xl my-6 text-zinc-700 italic text-sm shadow-sm">
-              {parseInlineMarkdown(trimmed.substring(2))}
-            </div>
-          );
-        }
-
-        if (trimmed === '') return <div key={idx} className="h-2" />;
-
-        // Standard Paragraphs
-        return (
-          <p key={idx} className="text-zinc-600 text-[15px] leading-relaxed">
-            {parseInlineMarkdown(line)}
-          </p>
-        );
       })}
     </div>
   );
@@ -131,7 +149,7 @@ function parseInlineMarkdown(text: string) {
   let match;
   const parts = [];
   let lastIdx = 0;
-  
+
   while ((match = boldRegex.exec(text)) !== null) {
     if (match.index > lastIdx) {
       parts.push(text.substring(lastIdx, match.index));
@@ -143,11 +161,11 @@ function parseInlineMarkdown(text: string) {
     );
     lastIdx = boldRegex.lastIndex;
   }
-  
+
   if (lastIdx < text.length) {
     parts.push(text.substring(lastIdx));
   }
-  
+
   return parts.length > 0 ? parts : text;
 }
 
@@ -155,56 +173,15 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  
+
   // Brief states
   const [brief, setBrief] = useState<any>(null);
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
-  
+
   const supabase = createClient();
   const router = useRouter();
-
-  useEffect(() => {
-    async function getInitialData() {
-      // Check query param or cookie
-      const params = new URLSearchParams(window.location.search);
-      const isMock = params.has('mockUser') || document.cookie.includes('mock-user=true');
-      
-      let currentUser = null;
-      if (isMock) {
-        currentUser = {
-          id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004', // priyadhanani125@gmail.com user_id
-          email: 'priyadhanani125@gmail.com'
-        };
-        setUser(currentUser);
-        // Set mock-user cookie in document
-        document.cookie = "mock-user=true; path=/; max-age=3600";
-      } else {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          router.push('/');
-          return;
-        }
-        currentUser = user;
-        setUser(user);
-      }
-      
-      // Get detailed user profile
-      const { data: userProfile } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('user_id', currentUser.id)
-        .single();
-      
-      setProfile(userProfile);
-      setLoading(false);
-      
-      // Get latest daily briefing if available
-      await fetchLatestBrief();
-    }
-    getInitialData();
-  }, [supabase, router]);
 
   const fetchLatestBrief = async () => {
     setLoadingBrief(true);
@@ -223,11 +200,52 @@ export default function DashboardPage() {
     }
   };
 
+  useEffect(() => {
+    async function getInitialData() {
+      // Check query param or cookie
+      const params = new URLSearchParams(window.location.search);
+      const isMock = params.has('mockUser') || document.cookie.includes('mock-user=true');
+
+      let currentUser = null;
+      if (isMock) {
+        currentUser = {
+          id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004', // priyadhanani125@gmail.com user_id
+          email: 'priyadhanani125@gmail.com'
+        };
+        setUser(currentUser);
+        // Set mock-user cookie in document
+        document.cookie = "mock-user=true; path=/; max-age=3600";
+      } else {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          router.push('/');
+          return;
+        }
+        currentUser = user;
+        setUser(user);
+      }
+
+      // Get detailed user profile
+      const { data: userProfile } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .single();
+
+      setProfile(userProfile);
+      setLoading(false);
+
+      // Get latest daily briefing if available
+      await fetchLatestBrief();
+    }
+    getInitialData();
+  }, [supabase, router]);
+
   const handleGenerateBriefing = async () => {
     if (!user) return;
     setGenerating(true);
     setBrief(null);
-    
+
     // Custom simulated steps to give extremely premium, immersive feel
     const steps = [
       'Accessing Administrative registered urls...',
@@ -255,9 +273,9 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: user.id })
       });
-      
+
       clearInterval(stepInterval);
-      
+
       if (res.ok) {
         setGenerationStep('Finalizing your Morning Brief...');
         const data = await res.json();
@@ -289,13 +307,13 @@ export default function DashboardPage() {
 
   // Parse brief details
   const hasBrief = !!brief;
-  
+
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex">
       {/* Sidebar */}
       <aside className="w-72 bg-[#0a0a0a] text-white flex flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
-        
+
         <div className="flex items-center gap-3 mb-12 relative z-10">
           <div className="w-10 h-10 bg-brand rounded-lg flex items-center justify-center shadow-brand">
             <span className="text-black font-black text-xl">C</span>
@@ -307,7 +325,7 @@ export default function DashboardPage() {
         </div>
 
         <nav className="flex-1 space-y-1 relative z-10">
-          <button 
+          <button
             className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-900/50 text-brand border border-brand/20 shadow-sm text-left"
           >
             <Home size={20} />
@@ -338,14 +356,14 @@ export default function DashboardPage() {
           <div className="flex items-center gap-4 flex-1">
             <div className="relative w-full max-w-md">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-              <input 
-                type="text" 
-                placeholder="Search portal resources..." 
+              <input
+                type="text"
+                placeholder="Search portal resources..."
                 className="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand text-sm transition-all"
               />
             </div>
           </div>
-          
+
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
               <div className="text-right hidden sm:block">
@@ -374,7 +392,7 @@ export default function DashboardPage() {
               </div>
 
               {hasBrief && !generating && (
-                <button 
+                <button
                   onClick={handleGenerateBriefing}
                   className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
                 >
@@ -388,7 +406,7 @@ export default function DashboardPage() {
             <AnimatePresence mode="wait">
               {loadingBrief ? (
                 /* LOADING PREVIOUS BRIEFING */
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -399,7 +417,7 @@ export default function DashboardPage() {
                 </motion.div>
               ) : generating ? (
                 /* ACTIVE AI SYNTHESIS PROCESS */
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
@@ -407,12 +425,12 @@ export default function DashboardPage() {
                 >
                   <div className="absolute top-0 right-0 w-80 h-80 bg-brand/10 blur-[120px] pointer-events-none" />
                   <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-indigo-500/10 blur-[120px] pointer-events-none" />
-                  
+
                   <div className="max-w-2xl mx-auto text-center space-y-8 relative z-10 py-10">
                     <div className="w-20 h-20 bg-brand/10 border border-brand/20 rounded-[28px] mx-auto flex items-center justify-center text-brand animate-bounce">
                       <Sparkles size={40} />
                     </div>
-                    
+
                     <div className="space-y-3">
                       <h2 className="text-3xl font-black tracking-tight">AI Factory is Synthesizing...</h2>
                       <p className="text-zinc-400 text-sm max-w-md mx-auto">
@@ -434,7 +452,7 @@ export default function DashboardPage() {
                 </motion.div>
               ) : hasBrief ? (
                 /* BRIEFING ACTIVE AND LOADED */
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="grid grid-cols-1 lg:grid-cols-3 gap-8"
@@ -532,7 +550,7 @@ export default function DashboardPage() {
                 </motion.div>
               ) : (
                 /* EMPTY STATE / SYNTHESIZE NOW CALL OUT */
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   className="p-12 bg-gradient-to-tr from-zinc-950 via-zinc-900 to-indigo-950 rounded-[48px] border border-zinc-800 text-white relative overflow-hidden shadow-2xl"
@@ -540,7 +558,7 @@ export default function DashboardPage() {
                   {/* Neon glow grids */}
                   <div className="absolute top-0 right-0 w-96 h-96 bg-brand/10 blur-[130px] pointer-events-none" />
                   <div className="absolute -bottom-20 -left-20 w-96 h-96 bg-indigo-500/10 blur-[130px] pointer-events-none" />
-                  
+
                   <div className="max-w-xl text-left space-y-8 relative z-10 py-10 md:pl-8">
                     <div className="w-16 h-16 bg-brand/10 border border-brand/20 rounded-2xl flex items-center justify-center text-brand">
                       <Sparkles size={32} />
@@ -553,7 +571,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
 
-                    <button 
+                    <button
                       onClick={handleGenerateBriefing}
                       className="px-10 py-5 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 transition-all text-sm uppercase tracking-widest cursor-pointer"
                     >
