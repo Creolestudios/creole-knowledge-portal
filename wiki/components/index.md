@@ -2,7 +2,7 @@
 title: Components Map of Content
 tags: [moc, components, documentation]
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-06-13
 ---
 
 # Components Map of Content (MOC)
@@ -15,6 +15,9 @@ This page lists and describes all primary React and UI components used in the **
 
 - [[components/user-management|User Management]]: Admin panel component for searching, viewing, and modifying user profiles, tech stacks, and interest sets.
 - [[components/logout-button|Logout Button]]: Authentication helper component providing sidebar and default styling variations for session termination.
+- [[components/Auth|Authentication Components]]: Authentication forms and client-side credential controllers.
+- [[components/DigestCard|Digest Card Component]]: Renders the morning briefings and daily newsletter digests.
+- [[components/Layout|Layout Components]]: Shell layout wrapper, sidebar, and workspace grid structures.
 
 ---
 

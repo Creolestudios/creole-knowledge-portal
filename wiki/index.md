@@ -2,7 +2,7 @@
 title: Creole Knowledge Portal Wiki
 tags: [moc, root, documentation]
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-06-13
 ---
 
 # Welcome to the Creole Knowledge Portal Wiki
@@ -33,4 +33,3 @@ The Creole Knowledge Portal is an internal office application designed to delive
 ### 📋 History & Logs
 
 - [[logs/index|Changelogs Index]]: The list of chronological updates, additions, fixes, and removals.
-- [[logs/2026-05-27|Initial Changelog - 2026-05-27]]: Today's progress and system snapshot.

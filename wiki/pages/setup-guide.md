@@ -2,7 +2,7 @@
 title: Setup & Installation Guide
 tags: [setup, installation, environment]
 created: 2026-05-27
-updated: 2026-05-27
+updated: 2026-06-13
 ---
 
 # Setup & Installation Guide
@@ -18,6 +18,7 @@ Before starting, ensure you have the following software installed:
 - **Node.js**: Version 18.x or 20.x (Recommended)
 - **NPM**: Version 9.x or newer
 - **Supabase Account**: Access to a project instance for database tables and authentication configs.
+- **Google Cloud Console Project**: For configuring Google OAuth logins.
 
 ---
 
@@ -40,6 +41,8 @@ Configure the following environment variables:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes          | The client-safe API key for database access and auth callbacks.                                |
 | `SUPABASE_SERVICE_ROLE_KEY`     | Yes (Server) | High-privilege API bypass key for administrative calls. **Do NOT prefix with `NEXT_PUBLIC_`**. |
 | `GEMINI_API_KEY`                | Yes (Server) | Google Gemini AI developer API token for text summarization.                                   |
+| `GOOGLE_CLIENT_ID`              | Yes          | Google Client ID for OAuth flow.                                                               |
+| `GOOGLE_CLIENT_SECRET`          | Yes          | Google Client Secret for OAuth flow.                                                           |
 
 ---
 
