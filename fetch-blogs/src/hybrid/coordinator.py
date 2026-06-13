@@ -8,6 +8,8 @@ from src.scrapers.hn_scraper import fetch_hn_top_stories
 from src.scrapers.rss_scraper import parse_rss_feed
 from src.synthesis.generator import generate_daily_digest
 from src.storage.mongodb import get_db
+from src.ai_pipeline.reranker import get_profile_embedding, semantic_rank, llm_rerank
+from src.ai_pipeline.jina_crawler import enrich_article_via_jina
 
 logger = logging.getLogger(__name__)
 
@@ -205,44 +207,67 @@ async def run_hybrid_pipeline(user_id: str) -> DailyDigest:
     except Exception as e:
         logger.error(f"Failed to record scraped sources inside MongoDB: {e}")
             
-    # 3. Relevance Scoring and MongoDB caching
+    # 3. Strategy C: keyword pre-filter → semantic ranking → LLM re-rank
     logger.info(f"Evaluating {len(all_scraped)} scraped article candidates...")
-    scored_candidates = []
-    
+
+    # 3a. Keyword pre-filter (Strategy A layer) — remove excluded topics
+    keyword_filtered: list[Article] = []
     for art in all_scraped:
         score = score_article_relevance(art, keywords)
         art.quality_score = score
-        
-        # Check excluded topics
-        is_excluded = False
-        for ex in user.excluded_topics:
-            if ex.lower() in art.title.lower() or ex.lower() in art.body_text.lower():
-                is_excluded = True
-                break
-                
+        is_excluded = any(
+            ex.lower() in art.title.lower() or ex.lower() in art.body_text[:500].lower()
+            for ex in user.excluded_topics
+        )
         if not is_excluded:
-            scored_candidates.append(art)
-            
-    # Sort candidates by relevance score descending
-    scored_candidates.sort(key=lambda x: x.quality_score, reverse=True)
-    top_candidates = scored_candidates[:6] # Retain top 6 highly-relevant candidates for LLM synthesis
-    
-    # Lazy scrape full detailed contents of ONLY the top selected candidates
-    logger.info(f"Lazy deep-scraping selected top {len(top_candidates)} high-quality candidates...")
+            keyword_filtered.append(art)
+
+    keyword_filtered.sort(key=lambda x: x.quality_score, reverse=True)
+    pre_semantic_pool = keyword_filtered[:40]  # pass top-40 to semantic ranker
+
+    # 3b. Generate user profile embedding (Strategy B layer)
+    logger.info("Generating user profile embedding for semantic ranking...")
+    try:
+        profile_embedding = get_profile_embedding(user)
+    except Exception as e:
+        logger.error(f"Profile embedding failed: {e}. Falling back to keyword ranking.")
+        profile_embedding = []
+
+    # 3c. Semantic ranking via cosine similarity
+    if profile_embedding and any(v != 0.0 for v in profile_embedding):
+        logger.info("Running semantic cosine similarity ranking...")
+        semantically_ranked = semantic_rank(pre_semantic_pool, profile_embedding, top_n=20)
+    else:
+        semantically_ranked = pre_semantic_pool[:20]
+
+    # 3d. Deep-scrape top-20 via Jina Reader with newspaper3k fallback
+    logger.info(f"Deep-scraping top {len(semantically_ranked)} candidates via Jina Reader...")
     from src.scrapers.extractor import extract_article_content
-    for art in top_candidates:
+    for art in semantically_ranked:
         try:
-            logger.info(f"Deep scraping: {art.url}")
-            extracted = extract_article_content(art.url)
-            if extracted and extracted.get("body_text"):
-                art.body_text = extracted["body_text"]
-                art.body_markdown = extracted["body_markdown"] or extracted["body_text"]
-                art.word_count = extracted["word_count"]
-                art.reading_time_min = extracted["reading_time_min"]
-                if extracted.get("author"):
-                    art.author = extracted["author"]
+            enriched = enrich_article_via_jina(art)
+            if not enriched.body_text or len(enriched.body_text) < 200:
+                # Jina returned empty — fall back to newspaper3k
+                extracted = extract_article_content(art.url)
+                if extracted and extracted.get("body_text"):
+                    art.body_text = extracted["body_text"]
+                    art.body_markdown = extracted.get("body_markdown") or extracted["body_text"]
+                    art.word_count = extracted["word_count"]
+                    art.reading_time_min = extracted["reading_time_min"]
+                    if extracted.get("author"):
+                        art.author = extracted["author"]
         except Exception as e:
-            logger.warning(f"Lazy deep scraping failed for {art.url}: {e}")
+            logger.warning(f"Deep scraping failed for {art.url}: {e}")
+
+    # 3e. LLM re-rank top-20 → final top-6
+    logger.info("Running Gemini LLM re-ranker on top candidates...")
+    try:
+        top_candidates = llm_rerank(semantically_ranked, user, top_n=6)
+    except Exception as e:
+        logger.error(f"LLM re-ranking failed: {e}. Using semantic ranking order.")
+        top_candidates = semantically_ranked[:6]
+
+    logger.info(f"Final candidate set: {len(top_candidates)} articles selected for synthesis.")
             
     # Cache articles in MongoDB
     saved_articles = []
@@ -271,8 +296,9 @@ async def run_hybrid_pipeline(user_id: str) -> DailyDigest:
             doc["id"] = str(doc.pop("_id"))
             saved_articles.append(Article(**doc))
             
-    # 4. Synthesize custom Daily Digest
+    # 4. Synthesize custom Daily Digest (Strategy C = A fetch + B semantic rank + LLM synthesis)
     digest = generate_daily_digest(user, saved_articles)
+    digest.strategy_used = "C"
     
     # 5. Save digest inside MongoDB
     try:
