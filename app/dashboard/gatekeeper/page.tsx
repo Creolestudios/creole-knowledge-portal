@@ -18,8 +18,9 @@ import {
   HelpCircle,
   FileText,
   AlertTriangle,
-  ArrowRight,
   BookOpen,
+  Trophy,
+  ArrowRight
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
 import { motion, AnimatePresence } from 'motion/react';
@@ -262,7 +263,7 @@ export default function GatekeeperPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] flex">
+    <div className="h-screen overflow-hidden bg-[#f8f9fa] flex">
       {/* Sidebar */}
       <aside className="w-72 bg-[#0a0a0a] text-white flex flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
@@ -294,6 +295,13 @@ export default function GatekeeperPage() {
           >
             <ShieldCheck size={20} />
             <span className="font-semibold text-sm">Blog Submissions</span>
+          </button>
+          <button
+            onClick={() => router.push('/dashboard/quizzes')}
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer text-left"
+          >
+            <Trophy size={20} className="group-hover:scale-110 transition-transform" />
+            <span className="font-semibold text-sm">My Quizzes</span>
           </button>
 
           <div className="h-4" />

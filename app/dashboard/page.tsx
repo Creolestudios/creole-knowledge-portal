@@ -20,10 +20,14 @@ import {
   CheckCircle,
   ExternalLink,
   Clock,
-  Code
+  Code,
+  Target,
+  Trophy
 } from 'lucide-react';
+import Link from 'next/link';
 import LogoutButton from '@/components/logout-button';
 import { motion, AnimatePresence } from 'motion/react';
+import { QuizRunner } from '@/components/quiz/quiz-runner';
 
 // A high-fidelity, zero-dependency Markdown renderer
 function PremiumMarkdownRenderer({ content }: { content: string }) {
@@ -173,6 +177,7 @@ export default function DashboardPage() {
   
   // Brief states
   const [brief, setBrief] = useState<any>(null);
+  const [quizStatus, setQuizStatus] = useState<any>(null);
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
@@ -188,6 +193,16 @@ export default function DashboardPage() {
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
+          // Check quiz status
+          try {
+            const statusRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
+            if (statusRes.ok) {
+              const statusData = await statusRes.json();
+              setQuizStatus(statusData);
+            }
+          } catch (e) {
+            console.error('Error fetching quiz status:', e);
+          }
         }
       }
     } catch (e) {
@@ -242,6 +257,7 @@ export default function DashboardPage() {
     if (!user) return;
     setGenerating(true);
     setBrief(null);
+    setQuizStatus(null);
     
     // Custom simulated steps to give extremely premium, immersive feel
     const steps = [
@@ -306,7 +322,7 @@ export default function DashboardPage() {
   const hasBrief = !!brief;
   
   return (
-    <div className="min-h-screen bg-[#f8f9fa] flex">
+    <div className="h-screen overflow-hidden bg-[#f8f9fa] flex">
       {/* Sidebar */}
       <aside className="w-72 bg-[#0a0a0a] text-white flex flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
@@ -337,6 +353,13 @@ export default function DashboardPage() {
           >
             <ShieldCheck size={20} className="group-hover:scale-110 transition-transform" />
             <span className="font-semibold text-sm">Blog Submissions</span>
+          </button>
+          <button
+            onClick={() => router.push('/dashboard/quizzes')}
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer text-left"
+          >
+            <Trophy size={20} className="group-hover:scale-110 transition-transform" />
+            <span className="font-semibold text-sm">My Quizzes</span>
           </button>
           <div className="h-4" />
           <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left">
@@ -399,13 +422,37 @@ export default function DashboardPage() {
                 <p className="text-zinc-500 text-base">Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.</p>
               </div>
               {hasBrief && !generating && (
-                <button 
-                  onClick={handleGenerateBriefing}
-                  className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
-                >
-                  <RefreshCw size={15} />
-                  Regenerate Briefing
-                </button>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button 
+                    onClick={handleGenerateBriefing}
+                    className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer"
+                  >
+                    <RefreshCw size={15} />
+                    Regenerate Briefing
+                  </button>
+                  {quizStatus?.completed ? (
+                    <div className="px-6 py-3 bg-zinc-100 text-zinc-400 font-bold rounded-xl border border-zinc-200 flex items-center gap-2 text-sm cursor-not-allowed">
+                      <CheckCircle size={15} className="text-emerald-500" />
+                      Quiz Completed
+                    </div>
+                  ) : quizStatus?.inProgress ? (
+                    <Link 
+                      href={`/dashboard/quiz/${brief.id}`}
+                      className="px-6 py-3 bg-zinc-900 hover:bg-black text-white font-bold rounded-xl border border-zinc-800 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer"
+                    >
+                      <Clock size={15} className="text-brand animate-pulse" />
+                      Resume Quiz
+                    </Link>
+                  ) : (
+                    <Link 
+                      href={`/dashboard/quiz/${brief.id}`}
+                      className="px-6 py-3 bg-zinc-900 hover:bg-black text-white font-bold rounded-xl border border-zinc-800 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer"
+                    >
+                      <Target size={15} className="text-brand" />
+                      Take Quiz
+                    </Link>
+                  )}
+                </div>
               )}
             </div>
 
