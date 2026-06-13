@@ -307,60 +307,31 @@ export default function UserManagement() {
                       <ShieldCheck size={14} />
                       System Access Role
                     </label>
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <label className={`flex-1 flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
-                        formData.role === 'user' 
-                          ? 'border-[#34c4f2] bg-[#34c4f2]/5 text-[#34c4f2]' 
-                          : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-300'
-                      }`}>
-                        <div className="flex items-center gap-3">
-                          <User size={18} className={formData.role === 'user' ? 'text-[#34c4f2]' : 'text-zinc-400'} />
-                          <div>
-                            <p className="text-sm font-bold text-zinc-900">User</p>
-                            <p className="text-xs text-zinc-500 opacity-75">Standard dashboard access</p>
-                          </div>
-                        </div>
-                        <input 
-                          type="radio" 
-                          name="role" 
-                          value="user" 
-                          checked={formData.role === 'user'} 
-                          onChange={() => setFormData({ ...formData, role: 'user' })}
-                          className="sr-only" 
-                        />
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          formData.role === 'user' ? 'border-[#34c4f2]' : 'border-zinc-300'
-                        }`}>
-                          {formData.role === 'user' && <div className="w-2.5 h-2.5 rounded-full bg-[#34c4f2]" />}
-                        </div>
-                      </label>
-
-                      <label className={`flex-1 flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
-                        formData.role === 'admin' 
-                          ? 'border-purple-500 bg-purple-50 text-purple-600' 
-                          : 'border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-300'
-                      }`}>
-                        <div className="flex items-center gap-3">
-                          <ShieldCheck size={18} className={formData.role === 'admin' ? 'text-purple-600' : 'text-zinc-400'} />
-                          <div>
-                            <p className="text-sm font-bold text-zinc-900">Admin</p>
-                            <p className="text-xs text-zinc-500 opacity-75">Full portal administrator</p>
-                          </div>
-                        </div>
-                        <input 
-                          type="radio" 
-                          name="role" 
-                          value="admin" 
-                          checked={formData.role === 'admin'} 
-                          onChange={() => setFormData({ ...formData, role: 'admin' })}
-                          className="sr-only" 
-                        />
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                          formData.role === 'admin' ? 'border-purple-500' : 'border-zinc-300'
-                        }`}>
-                          {formData.role === 'admin' && <div className="w-2.5 h-2.5 rounded-full bg-purple-500" />}
-                        </div>
-                      </label>
+                    <div className="flex bg-zinc-100 p-1.5 rounded-2xl max-w-md border border-zinc-200/60 relative">
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, role: 'user' })}
+                        className={`flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                          formData.role === 'user'
+                            ? 'bg-[#34c4f2] text-zinc-900 shadow-md shadow-[#34c4f2]/20 font-bold scale-[1.02]'
+                            : 'text-zinc-500 hover:text-zinc-800 font-semibold'
+                        }`}
+                      >
+                        <User size={16} />
+                        <span>User access</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, role: 'admin' })}
+                        className={`flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                          formData.role === 'admin'
+                            ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20 font-bold scale-[1.02]'
+                            : 'text-zinc-500 hover:text-zinc-800 font-semibold'
+                        }`}
+                      >
+                        <ShieldCheck size={16} />
+                        <span>Admin access</span>
+                      </button>
                     </div>
                   </div>
 

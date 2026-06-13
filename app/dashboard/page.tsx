@@ -342,6 +342,19 @@ export default function DashboardPage() {
             <Settings size={20} className="group-hover:rotate-90 transition-transform" />
             <span className="font-medium text-sm">Settings</span>
           </button>
+
+          {profile?.role === 'admin' && (
+            <>
+              <div className="h-4" />
+              <button
+                onClick={() => router.push('/admin/dashboard')}
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-purple-400 hover:text-white hover:bg-purple-950/35 rounded-xl transition-all group text-left border border-purple-900/20"
+              >
+                <LayoutDashboard size={20} />
+                <span className="font-semibold text-sm">Admin Console</span>
+              </button>
+            </>
+          )}
         </nav>
 
         <div className="pt-8 border-t border-zinc-800 relative z-10">
@@ -365,6 +378,15 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-6">
+            {profile?.role === 'admin' && (
+              <button
+                onClick={() => router.push('/admin/dashboard')}
+                className="flex items-center gap-1.5 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold transition-all shadow-sm"
+              >
+                <LayoutDashboard size={14} />
+                <span>Admin Console</span>
+              </button>
+            )}
             <div className="flex items-center gap-4">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-zinc-900 leading-tight capitalize">{profile?.name || user.email?.split('@')[0]}</p>

@@ -14,7 +14,8 @@ import {
   AlertCircle,
   CheckCircle2,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  Home
 } from 'lucide-react';
 
 import UserManagement from '@/components/user-management';
@@ -211,6 +212,16 @@ export default function AdminDashboard() {
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
             <span>Users</span>
+          </button>
+
+          <div className="h-px bg-zinc-800 my-4" />
+
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-zinc-400 hover:text-white hover:bg-zinc-800"
+          >
+            <Home className="w-5 h-5" />
+            <span>User Dashboard</span>
           </button>
         </nav>
 
