@@ -1,61 +1,72 @@
 ---
 title: Setup Guide
+tags: [setup, installation, environment]
 created: 2026-05-16
-updated: 2026-05-16
-tags: setup, installation, environment
+updated: 2026-06-13
 ---
 # Setup Guide
 
 This guide covers the steps required to set up the development environment for the Creole Knowledge Portal.
 
-## Prerequisites
+## 🛠️ Prerequisites
 
-*   Node.js (version managed by `package.json`, recommend LTS)
-*   npm or yarn (npm is used in `package.json` scripts)
-*   Supabase account (for local development and deployment)
-*   Google Cloud account (for Google OAuth integration)
+- **Node.js**: LTS version (v20+ recommended).
+- **npm**: Included with Node.js.
+- **Supabase Account**: For authentication, database, and vector storage.
+- **Google Cloud Console**: For Google OAuth credentials.
+- **Gemini API Key**: From Google AI Studio for the content synthesis engine.
 
-## Installation
+## 🚀 Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [repository-url]
-    cd creole-knowledge-portal
-    ```
+1. **Clone the repository:**
+   ```bash
+   git clone [repository-url]
+   cd creole-knowledge-portal
+   ```
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
 
-3.  **Environment Variables:**
-    Create a `.env.local` file in the root directory and populate it with the necessary credentials. See `.env.example` for details.
+3. **Environment Configuration:**
+   Create a `.env.local` file in the root directory. Use the following template:
 
-    *   `GEMINI_API_KEY`
-    *   `SUPABASE_URL`
-    *   `SUPABASE_ANON_KEY`
-    *   `SUPABASE_SERVICE_ROLE_KEY` (Server-side only)
-    *   `NEXT_PUBLIC_SUPABASE_URL`
-    *   `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-    *   `GOOGLE_CLIENT_ID`
-    *   `GOOGLE_CLIENT_SECRET`
+   ```env
+   # Supabase Configuration
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key # Server-side ONLY
 
-    **Note:** Never commit `.env.local` to version control.
+   # AI Configuration
+   GEMINI_API_KEY=your_gemini_api_key
 
-## Running the Application
+   # OAuth Configuration
+   GOOGLE_CLIENT_ID=your_google_client_id
+   GOOGLE_CLIENT_SECRET=your_google_client_secret
+   ```
 
-1.  **Start the development server:**
-    ```bash
-    npm run dev
-    ```
-    The application will be available at `http://localhost:3000`.
+   > ⚠️ **Security Warning**: Never commit `.env.local` to version control.
 
-2.  **Run linters and tests:**
-    ```bash
-    npm run lint
-    npm run test
-    ```
+## 💻 Running the Application
 
-## Database Setup
+### Development Mode
+```bash
+npm run dev
+```
+The application will be available at `http://localhost:3000`.
 
-Refer to the Supabase project settings for database schema and table information. Ensure your local Supabase instance or development database is configured correctly.
+### Quality Checks
+- **Linting**: `npm run lint`
+- **Unit Tests**: `npm run test`
+- **Full CI Gate**: `bash scripts/ci-test.sh`
+
+## 🗄️ Database & Auth Setup
+
+1. **Supabase Tables**: Ensure the following tables are initialized:
+   - `user_profiles`
+   - `articles`
+   - `daily_digests`
+2. **Vector Support**: Enable `pgvector` extension in the Supabase dashboard.
+3. **Auth Providers**: Enable "Magic Link" and "Google" providers in the Supabase Auth settings.
+4. **Redirect URLs**: Set `http://localhost:3000/auth/callback` as a valid redirect URL in Supabase.
