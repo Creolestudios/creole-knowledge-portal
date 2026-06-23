@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Loader2,
   Sparkles,
+  Award,
 } from 'lucide-react';
 import PortalShell from '@/components/blog-roulette/portal-shell';
 import type { RouletteBlog, BlogStatus } from '@/lib/blog-roulette/types';
@@ -54,6 +55,7 @@ export default function BlogRouletteListPage() {
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [blogs, setBlogs] = useState<RouletteBlog[]>([]);
+  const [leaderboard, setLeaderboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -74,6 +76,18 @@ export default function BlogRouletteListPage() {
         .order('updated_at', { ascending: false });
 
       setBlogs(data ?? []);
+
+      // Get user points and badges from leaderboard
+      const { data: leaderboardData } = await supabase
+        .from('roulette_leaderboard')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (leaderboardData) {
+        setLeaderboard(leaderboardData);
+      }
+      
       setLoading(false);
     })();
   }, [supabase, router]);
@@ -104,6 +118,38 @@ export default function BlogRouletteListPage() {
             Start New Blog
           </Link>
         </div>
+
+        {/* Achievements Summary Banner */}
+        {leaderboard && (
+          <div className="bg-zinc-950 text-white rounded-[28px] p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-6 border border-zinc-800 relative overflow-hidden shadow-xl mb-10">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-brand/10 blur-[90px] pointer-events-none" />
+            <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-indigo-500/10 blur-[90px] pointer-events-none" />
+            
+            <div className="flex items-center gap-4 relative z-10">
+              <div className="w-14 h-14 bg-brand/10 border border-brand/20 rounded-2xl flex items-center justify-center text-brand animate-pulse">
+                <Award size={28} />
+              </div>
+              <div>
+                <h4 className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 leading-none mb-1.5">Your Achievements</h4>
+                <p className="text-xl font-black tracking-tight leading-none text-zinc-100">{leaderboard.points || 0} Points Accumulated</p>
+              </div>
+            </div>
+            
+            {leaderboard.badges && leaderboard.badges.length > 0 && (
+              <div className="flex flex-wrap gap-2.5 relative z-10">
+                {leaderboard.badges.map((badge: string, idx: number) => (
+                  <span
+                    key={idx}
+                    className="px-4 py-2 bg-brand text-black rounded-xl text-xs font-black flex items-center gap-1.5 uppercase tracking-widest shadow-brand hover:scale-105 transition-transform"
+                  >
+                    <Sparkles size={12} className="fill-black" />
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {loading ? (
           <div className="bg-white rounded-[32px] p-20 border border-zinc-100 shadow-card flex flex-col items-center justify-center text-center space-y-4">
