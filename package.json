@@ -30,6 +30,7 @@
     "google-trends-api": "^4.9.2",
     "lucide-react": "^0.553.0",
     "marked": "^13.0.3",
+    "mermaid": "^11.15.0",
     "motion": "^12.23.24",
     "next": "^15.4.9",
     "postcss": "^8.5.6",

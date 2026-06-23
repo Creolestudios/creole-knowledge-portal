@@ -38,11 +38,16 @@ export default function QuizPage() {
   const [result, setResult] = useState<ResultState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Boot: fetch blog status; if SUBMITTED, allow start.
+  // Boot: fetch blog; only allow quiz if status is SUBMITTED
   useEffect(() => {
     (async () => {
       const res = await fetch(`/api/blog-roulette/${id}`);
       if (!res.ok) {
+        router.push('/blog-roulette');
+        return;
+      }
+      const data = await res.json();
+      if (data.blog?.status !== 'SUBMITTED' && data.blog?.status !== 'QUIZ_IN_PROGRESS') {
         router.push('/blog-roulette');
         return;
       }

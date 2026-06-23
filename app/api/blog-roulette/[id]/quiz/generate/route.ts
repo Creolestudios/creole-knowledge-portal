@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { GoogleGenAI } from '@google/genai';
+import {
+  geminiGenerate,
+  fallbackQuizQuestions,
+} from '@/lib/blog-roulette/gemini-client';
 import type { RouletteQuizQuestion } from '@/lib/blog-roulette/types';
 
 export const runtime = 'nodejs';
@@ -19,7 +23,6 @@ function stripHtml(html: string) {
 async function generateWithGemini(text: string): Promise<RouletteQuizQuestion[]> {
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY missing');
 
-  const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
   const prompt = `You are an interrogator validating that an author truly wrote and understands this blog post.
 
 Generate exactly 3 DEEP, SPECIFIC questions about the content below. Each question must:
@@ -33,12 +36,7 @@ Return ONLY a JSON array of 3 objects in this shape:
 BLOG CONTENT:
 ${text.slice(0, 12000)}`;
 
-  const result = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: prompt,
-  });
-
-  const raw = result.text ?? '';
+  const raw = await geminiGenerate(prompt, { maxRetries: 2 });
   const jsonMatch = raw.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error('Gemini returned non-JSON');
   const parsed = JSON.parse(jsonMatch[0]) as RouletteQuizQuestion[];
@@ -82,11 +80,23 @@ export async function POST(
   }
 
   let questions: RouletteQuizQuestion[];
-  try {
-    questions = await generateWithGemini(text);
-  } catch (err) {
-    console.error('[quiz/generate]', err);
-    return NextResponse.json({ error: 'AI generation failed' }, { status: 502 });
+  if (!GEMINI_KEY) {
+    // No API key configured — use rule-based fallback
+    console.warn('[quiz/generate] No Gemini API key, using fallback generator');
+    questions = fallbackQuizQuestions(text);
+  } else {
+    try {
+      questions = await generateWithGemini(text);
+    } catch (err: any) {
+      // If Gemini is rate-limited or down, use the rule-based fallback
+      if (err?._rateLimited || err?.status === 429 || err?.code === 429) {
+        console.warn('[quiz/generate] Gemini rate-limited, using fallback', err.message);
+        questions = fallbackQuizQuestions(text);
+      } else {
+        console.error('[quiz/generate]', err);
+        return NextResponse.json({ error: 'AI generation failed' }, { status: 502 });
+      }
+    }
   }
 
   // Determine attempt_number
@@ -118,5 +128,6 @@ export async function POST(
   return NextResponse.json({
     attempt_id: attempt!.id,
     questions: safeQuestions,
+    used_fallback: !GEMINI_KEY,
   });
 }

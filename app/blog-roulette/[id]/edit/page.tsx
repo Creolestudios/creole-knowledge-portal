@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Editor } from '@tinymce/tinymce-react';
 import {
@@ -10,9 +10,16 @@ import {
   Sparkles,
   Tag as TagIcon,
   Image as ImageIcon,
+  Eye,
+  EyeOff,
+  FileUp,
+  Bot,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import PortalShell from '@/components/blog-roulette/portal-shell';
 import ChecklistSidebar from '@/components/blog-roulette/checklist-sidebar';
+import PreviewPane from '@/components/blog-roulette/preview-pane';
 import {
   runCheckpoints,
   type CheckpointResult,
@@ -39,6 +46,17 @@ export default function BlogEditPage() {
   const [coverImageUrl, setCoverImageUrl] = useState('');
   const [tagsInput, setTagsInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
+
+  // AI detection state (null = not yet scanned)
+  const [aiScore, setAiScore] = useState<number | null>(null);
+  const [aiSignals, setAiSignals] = useState<string[]>([]);
+  const [aiDetecting, setAiDetecting] = useState(false);
+
+  // Preview toggle
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Debounce timer for AI detection
+  const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load blog
   useEffect(() => {
@@ -69,7 +87,7 @@ export default function BlogEditPage() {
   const readingTime = Math.max(1, Math.round(wordCount / 200));
 
   const codeBlockCount = useMemo(
-    () => (bodyHtml.match(/<pre[\s>]|<code[\s>]/gi) ?? []).length,
+    () => (bodyHtml.match(/<pre[\s>]/gi) ?? []).length,
     [bodyHtml],
   );
   const diagramCount = useMemo(
@@ -88,7 +106,7 @@ export default function BlogEditPage() {
         meta_description: metaDesc,
         tldr,
         cover_image_url: coverImageUrl,
-        ai_score: 30, // placeholder until AI score endpoint wired
+        ai_score: aiScore ?? 0,
         tags,
         code_block_count: codeBlockCount,
         diagram_count: diagramCount,
@@ -113,6 +131,44 @@ export default function BlogEditPage() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bodyHtml, seoTitle, metaDesc, tldr, coverImageUrl, tags, blog]);
+
+  // AI detection — debounced 3s after content stops changing
+  const runAiDetection = useCallback(async (html: string) => {
+    if (html.length < 150) {
+      setAiScore(0);
+      setAiSignals(['Add more content for AI detection']);
+      return;
+    }
+    setAiDetecting(true);
+    try {
+      const res = await fetch(`/api/blog-roulette/${id}/ai-score`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body_html: html }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAiScore(data.score);
+        setAiSignals(data.signals ?? []);
+      }
+    } catch {
+      // silently fail — keep last score
+    } finally {
+      setAiDetecting(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (!blog || blog.status !== 'DRAFT') return;
+    if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+    aiTimerRef.current = setTimeout(() => {
+      void runAiDetection(bodyHtml);
+    }, 3000);
+    return () => {
+      if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bodyHtml, blog]);
 
   async function save(silent = false) {
     if (!blog) return;
@@ -150,7 +206,15 @@ export default function BlogEditPage() {
       return;
     }
     setSubmitting(true);
+
+    // Force an AI scan with the latest content so the DB has an accurate
+    // score before the submit checkpoint reads it.
+    await runAiDetection(bodyHtml);
+    // Then save everything (includes the latest ai_score if the scan
+    // persisted it — the scan runs in the background, so we also save
+    // locally to be safe).
     await save();
+
     const res = await fetch(`/api/blog-roulette/${id}/submit`, {
       method: 'POST',
     });
@@ -191,6 +255,14 @@ export default function BlogEditPage() {
 
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setShowPreview(!showPreview)}
+              className="px-4 py-2.5 bg-white hover:bg-zinc-50 text-zinc-600 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm"
+              title={showPreview ? 'Show editor' : 'Preview blog'}
+            >
+              {showPreview ? <EyeOff size={14} /> : <Eye size={14} />}
+              {showPreview ? 'Editor' : 'Preview'}
+            </button>
+            <button
               onClick={() => save(false)}
               disabled={saving || isLocked}
               className="px-5 py-2.5 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm disabled:opacity-50"
@@ -227,7 +299,7 @@ export default function BlogEditPage() {
                   Cover image URL
                 </label>
                 <div className="flex items-center gap-2">
-                  <ImageIcon size={16} className="text-zinc-400" />
+                  <ImageIcon size={16} className="text-zinc-400 shrink-0" />
                   <input
                     value={coverImageUrl}
                     onChange={(e) => setCoverImageUrl(e.target.value)}
@@ -235,6 +307,33 @@ export default function BlogEditPage() {
                     disabled={isLocked}
                     className="flex-1 px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/20"
                   />
+                  {!isLocked && (
+                    <label className="px-3 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-600 rounded-lg cursor-pointer transition-colors flex items-center gap-1.5 text-xs font-bold shrink-0">
+                      <FileUp size={14} />
+                      Upload
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const form = new FormData();
+                          form.append('file', file);
+                          try {
+                            const res = await fetch('/api/blog-roulette/upload', {
+                              method: 'POST',
+                              body: form,
+                            });
+                            if (res.ok) {
+                              const data = await res.json();
+                              setCoverImageUrl(data.url);
+                            }
+                          } catch { /* silent */ }
+                        }}
+                      />
+                    </label>
+                  )}
                 </div>
               </div>
 
@@ -324,57 +423,106 @@ export default function BlogEditPage() {
               </div>
             </div>
 
-            {/* TinyMCE Editor */}
-            <div className="bg-white rounded-[28px] p-2 border border-zinc-100 shadow-card overflow-hidden">
-              <Editor
-                apiKey={TINY_API_KEY}
-                onInit={(_evt, editor) => {
-                  editorRef.current = editor;
-                }}
-                value={bodyHtml}
-                disabled={isLocked}
-                onEditorChange={(content) => setBodyHtml(content)}
-                init={{
-                  height: 650,
-                  menubar: 'edit view insert format tools',
-                  plugins: [
-                    'advlist',
-                    'autolink',
-                    'lists',
-                    'link',
-                    'image',
-                    'charmap',
-                    'preview',
-                    'anchor',
-                    'searchreplace',
-                    'visualblocks',
-                    'code',
-                    'fullscreen',
-                    'insertdatetime',
-                    'media',
-                    'table',
-                    'wordcount',
-                    'codesample',
-                  ],
-                  toolbar:
-                    'undo redo | blocks | bold italic underline | bullist numlist | link image media codesample | removeformat | code',
-                  codesample_languages: [
-                    { text: 'TypeScript', value: 'typescript' },
-                    { text: 'JavaScript', value: 'javascript' },
-                    { text: 'Python', value: 'python' },
-                    { text: 'Go', value: 'go' },
-                    { text: 'Rust', value: 'rust' },
-                    { text: 'SQL', value: 'sql' },
-                    { text: 'Bash', value: 'bash' },
-                    { text: 'JSON', value: 'json' },
-                  ],
-                  content_style:
-                    "body { font-family: Inter, sans-serif; font-size:15px; line-height:1.7; color:#27272a; } pre { background:#0f0f11; color:#e4e4e7; padding:16px; border-radius:12px; }",
-                  branding: false,
-                  promotion: false,
-                }}
+            {/* TinyMCE Editor / Preview Pane */}
+            {showPreview ? (
+              <PreviewPane
+                html={bodyHtml}
+                title={blog.title}
+                seoTitle={seoTitle}
+                tldr={tldr}
+                aiScore={aiScore}
+                aiSignals={aiSignals}
+                readingTime={readingTime}
               />
-            </div>
+            ) : (
+              <div className="bg-white rounded-[28px] p-2 border border-zinc-100 shadow-card overflow-hidden">
+                <Editor
+                  apiKey={TINY_API_KEY}
+                  onInit={(_evt, editor) => {
+                    editorRef.current = editor;
+                  }}
+                  value={bodyHtml}
+                  disabled={isLocked}
+                  onEditorChange={(content) => setBodyHtml(content)}
+                  init={{
+                    height: 650,
+                    menubar: 'edit view insert format tools',
+                    plugins: [
+                      'advlist',
+                      'autolink',
+                      'lists',
+                      'link',
+                      'image',
+                      'charmap',
+                      'preview',
+                      'anchor',
+                      'searchreplace',
+                      'visualblocks',
+                      'code',
+                      'fullscreen',
+                      'insertdatetime',
+                      'media',
+                      'table',
+                      'wordcount',
+                      'codesample',
+                      'quickbars',
+                    ],
+                    toolbar:
+                      'undo redo | blocks | bold italic underline strikethrough | bullist numlist | link image media codesample | removeformat | code fullscreen',
+                    // --- Image upload: drag-and-drop / desktop file picker ---
+                    // automatic_uploads is NOT set — URL images go straight in,
+                    // only explicit uploads go through images_upload_handler.
+                    file_picker_types: 'image image media',
+                    image_title: true,
+                    images_upload_handler: async (blobInfo) => {
+                      const formData = new FormData();
+                      formData.append('file', blobInfo.blob(), blobInfo.filename());
+                      const res = await fetch('/api/blog-roulette/upload', {
+                        method: 'POST',
+                        body: formData,
+                      });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err.error || 'Image upload failed');
+                      }
+                      const data = await res.json();
+                      return data.url;
+                    },
+                    // Don't mangle external URLs
+                    convert_urls: false,
+                    // Allow full img attributes (src, alt, title, width, height, etc.)
+                    extended_valid_elements:
+                      'img[class|src|alt|title|width|height|loading|data-*]',
+                    // --- Link defaults ---
+                    link_default_target: '_blank',
+                    link_context_toolbar: true,
+                    // --- Quickbars (context toolbars on selection) ---
+                    quickbars_insert_toolbar: 'image media codesample table',
+                    quickbars_selection_toolbar: 'bold italic underline | bullist numlist | link h2 h3 blockquote',
+                    quickbars_image_toolbar: 'alignleft aligncenter alignright | link image options',
+                    codesample_languages: [
+                      { text: 'TypeScript', value: 'typescript' },
+                      { text: 'JavaScript', value: 'javascript' },
+                      { text: 'Python', value: 'python' },
+                      { text: 'Go', value: 'go' },
+                      { text: 'Rust', value: 'rust' },
+                      { text: 'SQL', value: 'sql' },
+                      { text: 'Bash', value: 'bash' },
+                      { text: 'JSON', value: 'json' },
+                    ],
+                    content_style: [
+                      "body { font-family: Inter, system-ui, sans-serif; font-size:15px; line-height:1.7; color:#27272a; }",
+                      "pre { background:#0f0f11 !important; color:#e4e4e7 !important; padding:20px !important; border-radius:12px !important; border:1px solid #27272a !important; font-size:13px !important; line-height:1.6 !important; overflow-x:auto !important; margin:24px 0 !important; }",
+                      "pre code { background:transparent !important; color:inherit !important; padding:0 !important; font-family:'JetBrains Mono','Fira Code','Cascadia Code',monospace !important; font-size:13px !important; }",
+                      "pre[class*='language-']::before { content:attr(class); display:block; margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #27272a; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#a1a1aa; }",
+                      "code:not(pre code) { background:#f4f4f5; color:#a855f7; padding:2px 6px; border-radius:6px; font-size:13.5px; }",
+                    ].join(' '),
+                    branding: false,
+                    promotion: false,
+                  }}
+                />
+              </div>
+            )}
           </div>
 
           {/* Sidebar — checklist */}
@@ -404,6 +552,26 @@ export default function BlogEditPage() {
                 <div className="flex justify-between">
                   <span className="text-zinc-500">Images / diagrams</span>
                   <span className="font-bold text-zinc-900">{diagramCount}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-zinc-500 flex items-center gap-1.5">
+                    <Bot size={12} />
+                    AI score
+                    {aiDetecting && <Loader2 size={10} className="animate-spin text-brand" />}
+                  </span>
+                  <span
+                    className={`font-bold text-xs px-2 py-0.5 rounded-lg ${
+                      aiScore === null
+                        ? 'bg-zinc-100 text-zinc-400'
+                        : aiScore >= 80
+                          ? 'bg-red-50 text-red-600'
+                          : aiScore >= 60
+                            ? 'bg-amber-50 text-amber-600'
+                            : 'bg-emerald-50 text-emerald-600'
+                    }`}
+                  >
+                    {aiScore === null ? '—' : `${aiScore}%`}
+                  </span>
                 </div>
               </div>
             </div>

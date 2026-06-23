@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { GoogleGenAI } from '@google/genai';
 import { quizSubmitSchema } from '@/lib/blog-roulette/validators';
+import {
+  geminiGenerate,
+  fallbackGradeAnswers,
+} from '@/lib/blog-roulette/gemini-client';
 import { BLOG_RULES, type RouletteQuizQuestion } from '@/lib/blog-roulette/types';
 
 export const runtime = 'nodejs';
@@ -13,7 +16,6 @@ async function scoreAnswers(
   answers: string[],
 ): Promise<{ correct: number; per: boolean[] }> {
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY missing');
-  const ai = new GoogleGenAI({ apiKey: GEMINI_KEY });
 
   const prompt = `You grade quiz answers for technical blog vetting.
 
@@ -32,11 +34,7 @@ ${questions
   )
   .join('\n')}`;
 
-  const result = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: prompt,
-  });
-  const raw = result.text ?? '';
+  const raw = await geminiGenerate(prompt, { maxRetries: 1 });
   const match = raw.match(/\[[^\]]*\]/);
   if (!match) throw new Error('Grader returned non-JSON');
   const arr = JSON.parse(match[0]) as boolean[];
@@ -89,15 +87,24 @@ export async function POST(
     return NextResponse.json({ error: 'No active attempt' }, { status: 409 });
   }
 
+  const questions = attempt.questions as RouletteQuizQuestion[];
   let scored: { correct: number; per: boolean[] };
-  try {
-    scored = await scoreAnswers(
-      attempt.questions as RouletteQuizQuestion[],
-      parsed.data.answers,
-    );
-  } catch (err) {
-    console.error('[quiz/submit]', err);
-    return NextResponse.json({ error: 'Grading failed' }, { status: 502 });
+  if (!GEMINI_KEY) {
+    console.warn('[quiz/submit] No Gemini API key, using fallback grader');
+    scored = fallbackGradeAnswers(questions, parsed.data.answers);
+  } else {
+    try {
+      scored = await scoreAnswers(questions, parsed.data.answers);
+    } catch (err: any) {
+      // Fall back to heuristic grading if Gemini is rate-limited or down
+      if (err?._rateLimited || err?.status === 429 || err?.code === 429) {
+        console.warn('[quiz/submit] Gemini rate-limited, using fallback grader');
+        scored = fallbackGradeAnswers(questions, parsed.data.answers);
+      } else {
+        console.error('[quiz/submit]', err);
+        return NextResponse.json({ error: 'Grading failed' }, { status: 502 });
+      }
+    }
   }
 
   const passed = scored.correct >= BLOG_RULES.QUIZ_PASS_THRESHOLD;

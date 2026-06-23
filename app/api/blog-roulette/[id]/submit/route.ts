@@ -36,7 +36,7 @@ export async function POST(
   const tags = tagRows?.map((r) => r.tag) ?? [];
 
   const html = blog.body_html ?? '';
-  const codeBlockCount = (html.match(/<pre[\s>]|<code[\s>]/gi) ?? []).length;
+  const codeBlockCount = (html.match(/<pre[\s>]/gi) ?? []).length;
   const diagramCount =
     (html.match(/<img[\s>]|class="(?:mermaid|citation)"|<figure/gi) ?? [])
       .length;
