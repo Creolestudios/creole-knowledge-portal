@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { quizSubmitSchema } from '@/lib/blog-roulette/validators';
+import { runPublishPipeline } from '@/lib/blog-roulette/publisher';
 import {
   geminiGenerate,
   fallbackGradeAnswers,
@@ -89,21 +90,15 @@ export async function POST(
 
   const questions = attempt.questions as RouletteQuizQuestion[];
   let scored: { correct: number; per: boolean[] };
-  if (!GEMINI_KEY) {
-    console.warn('[quiz/submit] No Gemini API key, using fallback grader');
+  if (!GEMINI_KEY || process.env.MOCK_AI_PIPELINE === 'true') {
+    console.warn('[quiz/submit] Using rule-based fallback grader (mock or missing API key)');
     scored = fallbackGradeAnswers(questions, parsed.data.answers);
   } else {
     try {
       scored = await scoreAnswers(questions, parsed.data.answers);
     } catch (err: any) {
-      // Fall back to heuristic grading if Gemini is rate-limited or down
-      if (err?._rateLimited || err?.status === 429 || err?.code === 429) {
-        console.warn('[quiz/submit] Gemini rate-limited, using fallback grader');
-        scored = fallbackGradeAnswers(questions, parsed.data.answers);
-      } else {
-        console.error('[quiz/submit]', err);
-        return NextResponse.json({ error: 'Grading failed' }, { status: 502 });
-      }
+      console.warn('[quiz/submit] Gemini API failed, falling back to rule-based grader:', err.message || err);
+      scored = fallbackGradeAnswers(questions, parsed.data.answers);
     }
   }
 
@@ -130,6 +125,14 @@ export async function POST(
     .from('roulette_blogs')
     .update({ status: nextStatus })
     .eq('id', id);
+
+  if (passed) {
+    // Run publishing pipeline in background to avoid blocking response
+    runPublishPipeline(id, supabase, user.email || '')
+      .catch((err) => {
+        console.error('[quiz/submit] Background publishing failed:', err);
+      });
+  }
 
   return NextResponse.json({
     passed,

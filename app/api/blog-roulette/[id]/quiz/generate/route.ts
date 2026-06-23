@@ -80,22 +80,15 @@ export async function POST(
   }
 
   let questions: RouletteQuizQuestion[];
-  if (!GEMINI_KEY) {
-    // No API key configured — use rule-based fallback
-    console.warn('[quiz/generate] No Gemini API key, using fallback generator');
+  if (!GEMINI_KEY || process.env.MOCK_AI_PIPELINE === 'true') {
+    console.warn('[quiz/generate] Using rule-based fallback generator (mock or missing API key)');
     questions = fallbackQuizQuestions(text);
   } else {
     try {
       questions = await generateWithGemini(text);
     } catch (err: any) {
-      // If Gemini is rate-limited or down, use the rule-based fallback
-      if (err?._rateLimited || err?.status === 429 || err?.code === 429) {
-        console.warn('[quiz/generate] Gemini rate-limited, using fallback', err.message);
-        questions = fallbackQuizQuestions(text);
-      } else {
-        console.error('[quiz/generate]', err);
-        return NextResponse.json({ error: 'AI generation failed' }, { status: 502 });
-      }
+      console.warn('[quiz/generate] Gemini API failed, falling back to rule-based generator:', err.message || err);
+      questions = fallbackQuizQuestions(text);
     }
   }
 
