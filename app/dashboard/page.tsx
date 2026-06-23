@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
 import Link from 'next/link';
-import { PenSquare, Award } from 'lucide-react';
+import { PenSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // A high-fidelity, zero-dependency Markdown renderer
@@ -156,7 +156,6 @@ function parseInlineMarkdown(text: string) {
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
-  const [leaderboard, setLeaderboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
   // Brief states
@@ -201,18 +200,6 @@ export default function DashboardPage() {
         .single();
       
       setProfile(userProfile);
-
-      // Get user points and badges from leaderboard
-      const { data: leaderboardData } = await supabase
-        .from('roulette_leaderboard')
-        .select('*')
-        .eq('user_id', currentUser.id)
-        .maybeSingle();
-
-      if (leaderboardData) {
-        setLeaderboard(leaderboardData);
-      }
-      
       setLoading(false);
       
       // Get latest daily briefing if available
@@ -486,40 +473,6 @@ export default function DashboardPage() {
 
                   {/* Right side widgets/takeaways sidebar */}
                   <div className="space-y-8">
-                    {/* Your Achievements Card */}
-                    <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                      <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
-                        <Award size={18} className="text-brand animate-pulse" />
-                        Your Achievements
-                      </h3>
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center bg-zinc-50 p-4 rounded-2xl border border-zinc-100">
-                          <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Total Points</span>
-                          <span className="text-xl font-black text-zinc-900">{leaderboard?.points || 0} pts</span>
-                        </div>
-                        {leaderboard?.badges && leaderboard.badges.length > 0 ? (
-                          <div>
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Badges Earned</span>
-                            <div className="flex flex-wrap gap-2">
-                              {leaderboard.badges.map((badge: string, idx: number) => (
-                                <span
-                                  key={idx}
-                                  className="px-3 py-1.5 bg-brand/10 border border-brand/20 text-brand rounded-xl text-xs font-bold flex items-center gap-1.5"
-                                >
-                                  <Sparkles size={11} className="shrink-0" />
-                                  {badge}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-zinc-400 font-medium italic leading-relaxed">
-                            No badges earned yet. Publish a blog in Blog Roulette to earn your first badge!
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
                     {/* Key features / tags */}
                     <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
                       <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
