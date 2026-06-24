@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Editor } from '@tinymce/tinymce-react';
+import { motion } from 'motion/react';
 import {
   Loader2,
   Save,
@@ -20,11 +21,13 @@ import {
 import PortalShell from '@/components/blog-roulette/portal-shell';
 import ChecklistSidebar from '@/components/blog-roulette/checklist-sidebar';
 import PreviewPane from '@/components/blog-roulette/preview-pane';
+import PublishedBlogView from '@/components/blog-roulette/published-blog-view';
 import {
   runCheckpoints,
   type CheckpointResult,
 } from '@/lib/blog-roulette/validators';
 import { BLOG_RULES, type RouletteBlog } from '@/lib/blog-roulette/types';
+import { createClient } from '@/lib/supabase/client';
 
 const TINY_API_KEY = process.env.NEXT_PUBLIC_TINYMCE_API_KEY ?? 'no-api-key';
 
@@ -32,6 +35,13 @@ export default function BlogEditPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const id = params.id;
+
+  const supabase = useMemo(() => createClient(), []);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
+  const [rejectionTime, setRejectionTime] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(0);
 
   const editorRef = useRef<{ getContent: () => string } | null>(null);
   const [blog, setBlog] = useState<RouletteBlog | null>(null);
@@ -58,9 +68,14 @@ export default function BlogEditPage() {
   // Debounce timer for AI detection
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load blog
+  // Load blog and user details
   useEffect(() => {
     (async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        setUser({ id: authUser.id, email: authUser.email ?? undefined });
+      }
+
       const res = await fetch(`/api/blog-roulette/${id}`);
       if (!res.ok) {
         router.push('/blog-roulette');
@@ -74,9 +89,70 @@ export default function BlogEditPage() {
       setTldr(data.blog.tldr ?? '');
       setCoverImageUrl(data.blog.cover_image_url ?? '');
       setTags(data.tags ?? []);
+
+      // If blog is REJECTED, check for attempts to calculate cooldown
+      if (data.blog.status === 'REJECTED') {
+        const { data: attempts } = await supabase
+          .from('roulette_quiz_attempts')
+          .select('*')
+          .eq('blog_id', id)
+          .eq('result', 'REJECT')
+          .order('completed_at', { ascending: false })
+          .limit(1);
+
+        if (attempts && attempts.length > 0) {
+          setRejectionTime(attempts[0].completed_at);
+        } else {
+          setRejectionTime(data.blog.updated_at);
+        }
+      }
+
       setLoading(false);
     })();
-  }, [id, router]);
+  }, [id, router, supabase]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setNow(Date.now());
+    }, 0);
+    if (!rejectionTime || blog?.status !== 'REJECTED') return () => clearTimeout(t);
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      clearTimeout(t);
+      clearInterval(interval);
+    };
+  }, [rejectionTime, blog]);
+
+  async function handleUnlock() {
+    setUnlocking(true);
+    setUnlockError(null);
+    try {
+      const res = await fetch(`/api/blog-roulette/${id}/unlock`, {
+        method: 'POST',
+      });
+      if (res.ok) {
+        const { data: updatedBlog } = await supabase
+          .from('roulette_blogs')
+          .select('*')
+          .eq('id', id)
+          .single();
+        if (updatedBlog) {
+          setBlog(updatedBlog);
+        } else {
+          window.location.reload();
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setUnlockError(data.error ?? 'Unlock failed.');
+      }
+    } catch (err: any) {
+      setUnlockError(err.message ?? 'Unlock failed.');
+    } finally {
+      setUnlocking(false);
+    }
+  }
 
   // Computed metrics
   const wordCount = useMemo(() => {
@@ -121,6 +197,7 @@ export default function BlogEditPage() {
       tags,
       codeBlockCount,
       diagramCount,
+      aiScore,
     ],
   );
 
@@ -167,7 +244,7 @@ export default function BlogEditPage() {
     return () => {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bodyHtml, blog]);
 
   async function save(silent = false) {
@@ -237,10 +314,45 @@ export default function BlogEditPage() {
     );
   }
 
+  if (blog.status === 'PUBLISHED' || blog.status === 'PUBLISHING' || blog.status === 'PASSED') {
+    return (
+      <PortalShell userEmail={user?.email}>
+        <PublishedBlogView blog={blog} tags={tags} />
+      </PortalShell>
+    );
+  }
+
   const isLocked = blog.status !== 'DRAFT';
+  const isAdmin = user?.email?.toLowerCase().trim() === 'priya.dhanani@creolestudios.com';
+
+  let cooldownRemainingText: string | null = null;
+  let canUnlockSelf = false;
+
+  if (blog.status === 'REJECTED' && rejectionTime && now > 0) {
+    const cooldownHours = BLOG_RULES.QUIZ_LOCKOUT_COOLDOWN_HOURS;
+    const cooldownMs = cooldownHours * 60 * 60 * 1000;
+    const elapsedMs = now - new Date(rejectionTime).getTime();
+    const remainingMs = cooldownMs - elapsedMs;
+
+    if (remainingMs <= 0) {
+      cooldownRemainingText = null;
+      canUnlockSelf = true;
+    } else {
+      const hrs = Math.floor(remainingMs / (60 * 60 * 1000));
+      const mins = Math.floor((remainingMs % (60 * 60 * 1000)) / (60 * 1000));
+      const secs = Math.floor((remainingMs % (60 * 1000)) / 1000);
+
+      let text = '';
+      if (hrs > 0) text += `${hrs}h `;
+      if (mins > 0 || hrs > 0) text += `${mins}m `;
+      text += `${secs}s`;
+      cooldownRemainingText = text;
+      canUnlockSelf = false;
+    }
+  }
 
   return (
-    <PortalShell>
+    <PortalShell userEmail={user?.email}>
       <div className="max-w-7xl mx-auto">
         <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
@@ -288,6 +400,67 @@ export default function BlogEditPage() {
             </button>
           </div>
         </div>
+
+        {blog.status === 'REJECTED' && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8 p-6 bg-red-50 border border-red-200 rounded-[28px] shadow-card flex flex-col md:flex-row md:items-center justify-between gap-6"
+          >
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-red-700">
+                <AlertTriangle className="w-6 h-6 shrink-0" />
+                <h2 className="text-lg font-black tracking-tight text-red-800">Blog Post Locked (Blind AI Rejection)</h2>
+              </div>
+              <p className="text-sm text-red-600 font-semibold max-w-2xl">
+                This blog post was locked because of a low score or expired timer during the vetting quiz.
+                {cooldownRemainingText ? (
+                  <span> Cooldown active: you can unlock this post in <strong className="font-mono">{cooldownRemainingText}</strong> to try again.</span>
+                ) : (
+                  <span> Cooldown has expired. You can now unlock this post.</span>
+                )}
+              </p>
+              {unlockError && (
+                <p className="text-xs text-red-500 font-bold bg-white/80 p-2 rounded-lg border border-red-150 inline-block">
+                  Error: {unlockError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              {isAdmin && (
+                <button
+                  onClick={handleUnlock}
+                  disabled={unlocking}
+                  className="px-5 py-3 bg-zinc-950 hover:bg-zinc-800 text-white font-black rounded-xl text-xs uppercase tracking-widest shadow-md transition-all flex items-center gap-2 cursor-pointer font-sans"
+                >
+                  {unlocking ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={12} className="text-brand" />
+                  )}
+                  Admin Override Unlock
+                </button>
+              )}
+
+              <button
+                onClick={handleUnlock}
+                disabled={unlocking || (!canUnlockSelf && !isAdmin)}
+                className={`px-5 py-3 font-black rounded-xl text-xs uppercase tracking-widest shadow-md transition-all flex items-center gap-2 ${canUnlockSelf || isAdmin
+                    ? 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                    : 'bg-zinc-100 border border-zinc-200 text-zinc-400 cursor-not-allowed shadow-none'
+                  }`}
+              >
+                {unlocking ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Send size={12} />
+                )}
+                Unlock Post
+              </button>
+            </div>
+          </motion.div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Editor */}
@@ -560,15 +733,14 @@ export default function BlogEditPage() {
                     {aiDetecting && <Loader2 size={10} className="animate-spin text-brand" />}
                   </span>
                   <span
-                    className={`font-bold text-xs px-2 py-0.5 rounded-lg ${
-                      aiScore === null
+                    className={`font-bold text-xs px-2 py-0.5 rounded-lg ${aiScore === null
                         ? 'bg-zinc-100 text-zinc-400'
                         : aiScore >= 80
                           ? 'bg-red-50 text-red-600'
                           : aiScore >= 60
                             ? 'bg-amber-50 text-amber-600'
                             : 'bg-emerald-50 text-emerald-600'
-                    }`}
+                      }`}
                   >
                     {aiScore === null ? '—' : `${aiScore}%`}
                   </span>
