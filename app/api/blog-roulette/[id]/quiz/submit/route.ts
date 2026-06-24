@@ -29,11 +29,11 @@ Return ONLY a JSON array of 3 booleans, e.g. [true, false, true].
 
 PAIRS:
 ${questions
-  .map(
-    (q, i) =>
-      `Q${i + 1}: ${q.q}\nEXPECTED: ${q.expected_topic}\nANSWER: ${answers[i]}\n`,
-  )
-  .join('\n')}`;
+      .map(
+        (q, i) =>
+          `Q${i + 1}: ${q.q}\nEXPECTED: ${q.expected_topic}\nANSWER: ${answers[i]}\n`,
+      )
+      .join('\n')}`;
 
   const raw = await geminiGenerate(prompt, { maxRetries: 1 });
   const match = raw.match(/\[[^\]]*\]/);
@@ -88,6 +88,52 @@ export async function POST(
     return NextResponse.json({ error: 'No active attempt' }, { status: 409 });
   }
 
+  // Find previous attempt if this is a retry
+  let prevAttempt: any = null;
+  if (attempt.attempt_number === 2) {
+    const { data: prev } = await supabase
+      .from('roulette_quiz_attempts')
+      .select('*')
+      .eq('blog_id', id)
+      .eq('attempt_number', 1)
+      .maybeSingle();
+    prevAttempt = prev;
+  }
+
+  // Check if the attempt has expired (5 minutes + 15 seconds grace period for network latency)
+  const FIVE_MINUTES_MS = 5 * 60 * 1000;
+  const timeElapsed = Date.now() - new Date(attempt.created_at).getTime();
+  if (timeElapsed > FIVE_MINUTES_MS + 15000) {
+    const isLastAttempt = attempt.attempt_number > BLOG_RULES.QUIZ_RETRY_LIMIT;
+    const result = isLastAttempt ? 'REJECT' : 'SOFT_FAIL';
+
+    await supabase
+      .from('roulette_quiz_attempts')
+      .update({
+        answers: parsed.data.answers,
+        score: 0,
+        result,
+        completed_at: new Date().toISOString(),
+      })
+      .eq('id', attempt.id);
+
+    const nextStatus = result === 'REJECT' ? 'REJECTED' : 'SUBMITTED';
+    await supabase
+      .from('roulette_blogs')
+      .update({ status: nextStatus })
+      .eq('id', id);
+
+    return NextResponse.json({
+      passed: false,
+      correct: 0,
+      per_question: [false, false, false],
+      result,
+      next_status: nextStatus,
+      can_retry: result === 'SOFT_FAIL',
+      error: 'Time expired! Your submission was graded as 0.',
+    });
+  }
+
   const questions = attempt.questions as RouletteQuizQuestion[];
   let scored: { correct: number; per: boolean[] };
   if (!GEMINI_KEY || process.env.MOCK_AI_PIPELINE === 'true') {
@@ -102,9 +148,38 @@ export async function POST(
     }
   }
 
+  // If it's a retry, preserve previously correct answers
+  if (prevAttempt) {
+    const per = scored.per.map((isCorrect, idx) => {
+      if ((prevAttempt.questions?.[idx] as any)?.correct === true) {
+        return true;
+      }
+      return isCorrect;
+    });
+    scored = {
+      per,
+      correct: per.filter(Boolean).length
+    };
+  }
+
   const passed = scored.correct >= BLOG_RULES.QUIZ_PASS_THRESHOLD;
-  const isLastAttempt = attempt.attempt_number > BLOG_RULES.QUIZ_RETRY_LIMIT;
-  const result = passed ? 'PASS' : isLastAttempt ? 'REJECT' : 'SOFT_FAIL';
+  let result: 'PASS' | 'SOFT_FAIL' | 'REJECT';
+  if (passed) {
+    result = 'PASS';
+  } else if (scored.correct < 2) {
+    // If they get < 2 correct (i.e. < 2/3), it is an immediate hard rejection/lockout
+    result = 'REJECT';
+  } else {
+    // They got 2/3 correct: check if they have retries left
+    const isLastAttempt = attempt.attempt_number > BLOG_RULES.QUIZ_RETRY_LIMIT;
+    result = isLastAttempt ? 'REJECT' : 'SOFT_FAIL';
+  }
+
+  // Save attempt results with correctness metadata
+  const questionsWithGrading = questions.map((q, idx) => ({
+    ...q,
+    correct: scored.per[idx]
+  }));
 
   await supabase
     .from('roulette_quiz_attempts')
@@ -112,6 +187,7 @@ export async function POST(
       answers: parsed.data.answers,
       score: scored.correct,
       result,
+      questions: questionsWithGrading,
       completed_at: new Date().toISOString(),
     })
     .eq('id', attempt.id);

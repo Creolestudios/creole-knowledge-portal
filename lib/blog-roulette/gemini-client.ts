@@ -206,23 +206,23 @@ export function fallbackGradeAnswers(
 ): { correct: number; per: boolean[] } {
   const per: boolean[] = answers.map((answer, i) => {
     const a = answer.trim().toLowerCase();
-    if (a.length < 10) return false; // too short = empty
+    if (a.length < 8) return false; // too short = empty
 
     const q = questions[i];
     const topic = q.expected_topic.toLowerCase();
     const questionText = q.q.toLowerCase();
     const combined = topic + ' ' + questionText;
 
-    // Simple keyword overlap check
-    const answerWords = new Set(a.split(/\s+/).filter((w) => w.length > 3));
-    const referenceWords = new Set(combined.split(/\s+/).filter((w) => w.length > 4));
+    // Simple keyword overlap check (allow 3+ letter words like api, aws, git, sql)
+    const answerWords = new Set(a.split(/\s+/).filter((w) => w.length > 2));
+    const referenceWords = new Set(combined.split(/\s+/).filter((w) => w.length > 3));
     let overlap = 0;
     for (const w of answerWords) {
       if (referenceWords.has(w)) overlap++;
     }
 
-    // If at least a few key terms match, count it as plausible
-    return overlap >= 3;
+    // If at least 1 key term matches and length is reasonable, count as correct
+    return overlap >= 1;
   });
 
   return { correct: per.filter(Boolean).length, per };

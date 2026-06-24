@@ -28,7 +28,7 @@ export default function PortalShell({
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex">
-      <aside className="w-72 bg-[#0a0a0a] text-white flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0">
+      <aside className="w-72 bg-[#0a0a0a] text-white flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0 sticky top-0 h-screen">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
 
         <div className="flex items-center gap-3 mb-12 relative z-10">

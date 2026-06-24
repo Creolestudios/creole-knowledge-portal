@@ -5,7 +5,7 @@ import {
   geminiGenerate,
   fallbackQuizQuestions,
 } from '@/lib/blog-roulette/gemini-client';
-import type { RouletteQuizQuestion } from '@/lib/blog-roulette/types';
+import { BLOG_RULES, type RouletteQuizQuestion } from '@/lib/blog-roulette/types';
 
 export const runtime = 'nodejs';
 
@@ -79,30 +79,122 @@ export async function POST(
     );
   }
 
-  let questions: RouletteQuizQuestion[];
-  if (!GEMINI_KEY || process.env.MOCK_AI_PIPELINE === 'true') {
-    console.warn('[quiz/generate] Using rule-based fallback generator (mock or missing API key)');
-    questions = fallbackQuizQuestions(text);
-  } else {
-    try {
-      questions = await generateWithGemini(text);
-    } catch (err: any) {
-      console.warn('[quiz/generate] Gemini API failed, falling back to rule-based generator:', err.message || err);
-      questions = fallbackQuizQuestions(text);
-    }
-  }
-
   // Determine attempt_number
   const { count } = await supabase
     .from('roulette_quiz_attempts')
     .select('id', { count: 'exact', head: true })
     .eq('blog_id', id);
 
+  const attemptNumber = (count ?? 0) + 1;
+
+  // Find previous attempt if this is a retry
+  let prevAttempt: any = null;
+  if (attemptNumber === 2) {
+    const { data: prev } = await supabase
+      .from('roulette_quiz_attempts')
+      .select('*')
+      .eq('blog_id', id)
+      .eq('attempt_number', 1)
+      .maybeSingle();
+    prevAttempt = prev;
+  }
+
+  let questions: RouletteQuizQuestion[];
+  if (attemptNumber === 2 && prevAttempt) {
+    // Reuse questions from attempt 1
+    questions = (prevAttempt.questions as any[]).map(q => ({
+      q: q.q,
+      expected_topic: q.expected_topic
+    }));
+  } else {
+    if (!GEMINI_KEY || process.env.MOCK_AI_PIPELINE === 'true') {
+      console.warn('[quiz/generate] Using rule-based fallback generator (mock or missing API key)');
+      questions = fallbackQuizQuestions(text);
+    } else {
+      try {
+        questions = await generateWithGemini(text);
+      } catch (err: any) {
+        console.warn('[quiz/generate] Gemini API failed, falling back to rule-based generator:', err.message || err);
+        questions = fallbackQuizQuestions(text);
+      }
+    }
+  }
+
+  // Find any active incomplete attempts
+  const { data: incompleteAttempts } = await supabase
+    .from('roulette_quiz_attempts')
+    .select('*')
+    .eq('blog_id', id)
+    .is('completed_at', null);
+
+  const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+  if (incompleteAttempts && incompleteAttempts.length > 0) {
+    for (const attemptItem of incompleteAttempts) {
+      const timePassed = Date.now() - new Date(attemptItem.created_at).getTime();
+
+      if (timePassed < FIVE_MINUTES_MS) {
+        // Active attempt within time limit: REUSE IT
+        const safeQuestions = (attemptItem.questions as RouletteQuizQuestion[]).map(
+          (q) => ({ q: q.q }),
+        );
+        
+        // Find which indices were incorrect in the previous attempt (attempt 1)
+        let incompleteIncorrectIndices: number[] = [];
+        let incompletePrevAnswers: string[] | null = null;
+        if (attemptItem.attempt_number === 2 && prevAttempt) {
+          incompleteIncorrectIndices = (prevAttempt.questions as any[]).map((q, idx) => q.correct === false ? idx : -1).filter(idx => idx !== -1);
+          incompletePrevAnswers = prevAttempt.answers;
+        }
+
+        return NextResponse.json({
+          attempt_id: attemptItem.id,
+          questions: safeQuestions,
+          created_at: attemptItem.created_at,
+          used_fallback: !GEMINI_KEY,
+          prev_answers: incompletePrevAnswers,
+          incorrect_indices: incompleteIncorrectIndices,
+        });
+      } else {
+        // Expired attempt: mark it as completed with score 0
+        const isLastAttempt = attemptItem.attempt_number > BLOG_RULES.QUIZ_RETRY_LIMIT;
+        const result = isLastAttempt ? 'REJECT' : 'SOFT_FAIL';
+
+        await supabase
+          .from('roulette_quiz_attempts')
+          .update({
+            answers: ['(expired - time limit reached)', '(expired - time limit reached)', '(expired - time limit reached)'],
+            score: 0,
+            result,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', attemptItem.id);
+
+        if (result === 'REJECT') {
+          await supabase
+            .from('roulette_blogs')
+            .update({ status: 'REJECTED' })
+            .eq('id', id);
+          return NextResponse.json(
+            { error: 'Previous quiz attempt expired. Post is now locked.' },
+            { status: 409 },
+          );
+        } else {
+          await supabase
+            .from('roulette_blogs')
+            .update({ status: 'SUBMITTED' })
+            .eq('id', id);
+          // Allow them to start a new quiz by continuing the loop
+        }
+      }
+    }
+  }
+
   const { data: attempt } = await supabase
     .from('roulette_quiz_attempts')
     .insert({
       blog_id: id,
-      attempt_number: (count ?? 0) + 1,
+      attempt_number: attemptNumber,
       questions,
     })
     .select('*')
@@ -118,9 +210,16 @@ export async function POST(
     (q) => ({ q: q.q }),
   );
 
+  const incorrectIndices = prevAttempt
+    ? (prevAttempt.questions as any[]).map((q, idx) => q.correct === false ? idx : -1).filter(idx => idx !== -1)
+    : [];
+
   return NextResponse.json({
     attempt_id: attempt!.id,
     questions: safeQuestions,
+    created_at: attempt!.created_at,
     used_fallback: !GEMINI_KEY,
+    prev_answers: prevAttempt ? prevAttempt.answers : null,
+    incorrect_indices: incorrectIndices,
   });
 }
