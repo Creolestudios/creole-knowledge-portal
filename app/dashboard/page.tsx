@@ -19,7 +19,8 @@ import {
   CheckCircle,
   ExternalLink,
   Clock,
-  Code
+  Code,
+  ArrowLeft
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
 import { motion, AnimatePresence } from 'motion/react';
@@ -176,9 +177,17 @@ export default function DashboardPage() {
 
   // Brief states
   const [brief, setBrief] = useState<any>(null);
+  const [meta, setMeta] = useState<any>(null);
+  const [seriesCompleted, setSeriesCompleted] = useState(false);
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
+
+  // Trending states
+  const [trendingBlogs, setTrendingBlogs] = useState<any[]>([]);
+  const [loadingTrending, setLoadingTrending] = useState(false);
+  const [activeTrendingBlog, setActiveTrendingBlog] = useState<any>(null);
 
   const supabase = createClient();
   const router = useRouter();
@@ -189,14 +198,43 @@ export default function DashboardPage() {
       const res = await fetch('/api/digests/latest');
       if (res.ok) {
         const data = await res.json();
-        if (data.success && data.blog) {
-          setBrief(data.blog);
+        if (data.success) {
+          if (data.blog) {
+            setBrief(data.blog);
+            setMeta(data.meta || null);
+            setSeriesCompleted(false);
+          } else if (data.seriesCompleted) {
+            setBrief(null);
+            setMeta(null);
+            setSeriesCompleted(true);
+          } else {
+            setBrief(null);
+            setMeta(null);
+            setSeriesCompleted(false);
+          }
         }
       }
     } catch (e) {
       console.error('Error fetching brief:', e);
     } finally {
       setLoadingBrief(false);
+    }
+  };
+
+  const fetchTrendingBlogs = async () => {
+    setLoadingTrending(true);
+    try {
+      const res = await fetch('/api/digests/trending');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.blogs) {
+          setTrendingBlogs(data.blogs);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching trending:', e);
+    } finally {
+      setLoadingTrending(false);
     }
   };
 
@@ -235,8 +273,11 @@ export default function DashboardPage() {
       setProfile(userProfile);
       setLoading(false);
 
-      // Get latest daily briefing if available
-      await fetchLatestBrief();
+      // Fetch daily briefing and trending blogs
+      await Promise.all([
+        fetchLatestBrief(),
+        fetchTrendingBlogs()
+      ]);
     }
     getInitialData();
   }, [supabase, router]);
@@ -245,27 +286,30 @@ export default function DashboardPage() {
     if (!user) return;
     setGenerating(true);
     setBrief(null);
+    setMeta(null);
+    setSeriesCompleted(false);
+    setActiveTrendingBlog(null);
 
     // Custom simulated steps to give extremely premium, immersive feel
     const steps = [
       'Accessing Administrative registered urls...',
       'Crawling developer feeds from Hacker News and Dev.to...',
-      'Mapping tech stack: ' + ((profile?.primary_tech_stack || []).join(', ') || 'WordPress') + '...',
-      'Evaluating interest matches...',
-      'Calling Gemini 2.5 Flash for deep synthesis...',
-      'Structuring morning technical brief...',
-      'Saving article briefing to Creole database...'
+      'Selecting the best matching article using LLM Reranking...',
+      'Executing Chromium-based page scrape...',
+      'Running LLM cleanup & extraction...',
+      'Synthesizing full masterclass technical tutorial...',
+      'Splitting content into 20-min daily segments...'
     ];
 
     let currentStep = 0;
     setGenerationStep(steps[currentStep]);
 
     const stepInterval = setInterval(() => {
-      if (currentStep < steps.length - 2) {
+      if (currentStep < steps.length - 1) {
         currentStep++;
         setGenerationStep(steps[currentStep]);
       }
-    }, 3500);
+    }, 4000);
 
     try {
       const res = await fetch('/api/digests/generate', {
@@ -277,10 +321,14 @@ export default function DashboardPage() {
       clearInterval(stepInterval);
 
       if (res.ok) {
-        setGenerationStep('Finalizing your Morning Brief...');
+        setGenerationStep('Finalizing your Day 1 Course Segment...');
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
+          setMeta(data.meta || null);
+          setSeriesCompleted(false);
+          // Re-fetch trending for new content ideas
+          fetchTrendingBlogs();
         } else {
           alert('Generation completed but briefing was not retrieved.');
         }
@@ -293,6 +341,32 @@ export default function DashboardPage() {
       alert(`Network error: ${e.message || e}`);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleCompleteDay = async () => {
+    if (!brief || completing) return;
+    setCompleting(true);
+    try {
+      const res = await fetch('/api/digests/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blogId: brief.id })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          await fetchLatestBrief();
+        } else {
+          alert('Failed to update progress.');
+        }
+      } else {
+        alert('Error completing day.');
+      }
+    } catch (e) {
+      console.error('Error completing day:', e);
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -326,7 +400,12 @@ export default function DashboardPage() {
 
         <nav className="flex-1 space-y-1 relative z-10">
           <button
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-900/50 text-brand border border-brand/20 shadow-sm text-left"
+            onClick={() => setActiveTrendingBlog(null)}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group text-left border ${
+              !activeTrendingBlog 
+                ? 'bg-zinc-900/50 text-brand border-brand/20 shadow-sm'
+                : 'text-zinc-500 hover:text-white hover:bg-zinc-900 border-transparent'
+            }`}
           >
             <Home size={20} />
             <span className="font-semibold text-sm">Morning Brief</span>
@@ -334,11 +413,11 @@ export default function DashboardPage() {
 
           <div className="h-4" />
 
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left">
+          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left border border-transparent">
             <Bell size={20} className="group-hover:rotate-12 transition-transform" />
             <span className="font-medium text-sm">Notifications</span>
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left">
+          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left border border-transparent">
             <Settings size={20} className="group-hover:rotate-90 transition-transform" />
             <span className="font-medium text-sm">Settings</span>
           </button>
@@ -409,11 +488,17 @@ export default function DashboardPage() {
                   <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
                   AI Factory Digest
                 </div>
-                <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">Your Morning Briefing</h1>
-                <p className="text-zinc-500 text-base">Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.</p>
+                <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">
+                  {activeTrendingBlog ? 'Trending Tech Briefing' : 'Your Morning Briefing'}
+                </h1>
+                <p className="text-zinc-500 text-base">
+                  {activeTrendingBlog 
+                    ? `Currently reading a trending topic in your stack: ${activeTrendingBlog.title}`
+                    : 'Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.'}
+                </p>
               </div>
 
-              {hasBrief && !generating && (
+              {((hasBrief || seriesCompleted) && !generating && !activeTrendingBlog) && (
                 <button
                   onClick={handleGenerateBriefing}
                   className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
@@ -429,6 +514,7 @@ export default function DashboardPage() {
               {loadingBrief ? (
                 /* LOADING PREVIOUS BRIEFING */
                 <motion.div
+                  key="loading-brief"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -440,6 +526,7 @@ export default function DashboardPage() {
               ) : generating ? (
                 /* ACTIVE AI SYNTHESIS PROCESS */
                 <motion.div
+                  key="generating-brief"
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.95 }}
@@ -456,7 +543,7 @@ export default function DashboardPage() {
                     <div className="space-y-3">
                       <h2 className="text-3xl font-black tracking-tight">AI Factory is Synthesizing...</h2>
                       <p className="text-zinc-400 text-sm max-w-md mx-auto">
-                        Scraping network resources, ranking global developer trends, and compiling a personalized deep-dive technical brief.
+                        Scraping source materials, ranking developer tutorials, and chunking a personalized deep-dive technical masterclass course.
                       </p>
                     </div>
 
@@ -472,37 +559,213 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </motion.div>
+              ) : activeTrendingBlog ? (
+                /* TRENDING ARTICLE DETAIL READER */
+                <motion.div
+                  key="trending-reader"
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card relative overflow-hidden"
+                >
+                  <button
+                    onClick={() => setActiveTrendingBlog(null)}
+                    className="mb-8 px-4 py-2.5 bg-zinc-50 hover:bg-zinc-100 text-zinc-700 border rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+                  >
+                    <ArrowLeft size={14} />
+                    <span>Back to Daily Masterclass</span>
+                  </button>
+
+                  <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-6 border-b pb-6 border-zinc-100">
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-brand/10 text-brand border border-brand/20 rounded-lg">
+                      <Sparkles size={12} />
+                      <span>Trending Insight</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
+                      <Clock size={12} className="text-zinc-500" />
+                      <span>{JSON.parse(activeTrendingBlog.summary || '{}').readingTime || 5} min read</span>
+                    </div>
+                    <span className="ml-auto text-zinc-400">Published {new Date(activeTrendingBlog.published_at).toLocaleDateString()}</span>
+                  </div>
+
+                  <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-8">
+                    {activeTrendingBlog.title}
+                  </h2>
+
+                  <PremiumMarkdownRenderer content={activeTrendingBlog.content} />
+                </motion.div>
+              ) : seriesCompleted ? (
+                /* SERIES COMPLETION SCREEN */
+                <motion.div
+                  key="series-completed"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="p-16 bg-gradient-to-tr from-zinc-950 via-zinc-900 to-indigo-950 rounded-[48px] border border-zinc-800 text-white relative overflow-hidden shadow-2xl text-center"
+                >
+                  <div className="absolute top-0 right-0 w-80 h-80 bg-brand/10 blur-[120px] pointer-events-none" />
+                  <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-indigo-500/10 blur-[120px] pointer-events-none" />
+
+                  <div className="max-w-xl mx-auto space-y-8 relative z-10 py-10">
+                    <div className="w-20 h-20 bg-brand/10 border border-brand/20 rounded-[28px] mx-auto flex items-center justify-center text-brand">
+                      <CheckCircle size={40} />
+                    </div>
+
+                    <div className="space-y-4">
+                      <h2 className="text-4xl font-black tracking-tight leading-none">Course Series Completed!</h2>
+                      <p className="text-zinc-400 text-base leading-relaxed">
+                        Fantastic effort! You have read all parts of your personalized masterclass. Ready for your next daily tech curriculum?
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleGenerateBriefing}
+                      className="px-10 py-5 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 transition-all text-sm uppercase tracking-widest cursor-pointer"
+                    >
+                      Synthesize Next Series
+                    </button>
+                  </div>
+                </motion.div>
               ) : hasBrief ? (
                 /* BRIEFING ACTIVE AND LOADED */
                 <motion.div
+                  key="briefing-active"
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="grid grid-cols-1 lg:grid-cols-3 gap-8"
                 >
                   {/* Left major briefing reader */}
-                  <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
-                    <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-6 border-b pb-6 border-zinc-100">
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
-                        <Clock size={12} className="text-zinc-500" />
-                        <span>15 min read</span>
+                  <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card relative overflow-hidden">
+                    {meta && !meta.unlocked ? (
+                      /* LOCKED STATE */
+                      <div className="py-20 flex flex-col items-center justify-center text-center space-y-8 relative z-10">
+                        <div className="w-20 h-20 bg-zinc-50 border border-zinc-200 rounded-[28px] mx-auto flex items-center justify-center text-zinc-400 shadow-sm">
+                          <Clock size={36} className="animate-pulse" />
+                        </div>
+                        <div className="space-y-3 max-w-md mx-auto">
+                          <span className="px-3.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                            Locked Until Tomorrow
+                          </span>
+                          <h3 className="text-2xl font-black text-zinc-900 tracking-tight leading-tight pt-2">
+                            {brief.title}
+                          </h3>
+                          <p className="text-zinc-500 text-sm leading-relaxed">
+                            You have completed today's daily reading chapter. The next step of your learning path is being prepared and will unlock on:
+                          </p>
+                          <div className="bg-zinc-50 border rounded-2xl p-4 font-mono text-xs font-bold text-zinc-800 inline-block mt-2">
+                            {new Date(meta.unlockedAt).toLocaleDateString('en-US', {
+                              weekday: 'long',
+                              month: 'long',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })} at midnight
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
-                        <Sparkles size={12} className="text-brand" />
-                        <span>Gemini 2.5 Flash</span>
-                      </div>
-                      <span className="ml-auto text-zinc-400">Published {new Date(brief.published_at).toLocaleDateString()}</span>
-                    </div>
+                    ) : (
+                      /* ACTIVE BRIEFING CONTENT */
+                      <>
+                        <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-6 border-b pb-6 border-zinc-100">
+                          <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
+                            <Clock size={12} className="text-zinc-500" />
+                            <span>{meta?.readingTime || 20} min read</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
+                            <Sparkles size={12} className="text-brand" />
+                            <span>Gemini 2.5 Flash</span>
+                          </div>
+                          <span className="ml-auto text-zinc-400">Published {new Date(brief.published_at).toLocaleDateString()}</span>
+                        </div>
 
-                    <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-8">
-                      {brief.title}
-                    </h2>
+                        <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-8">
+                          {brief.title}
+                        </h2>
 
-                    {/* Premium rendered content */}
-                    <PremiumMarkdownRenderer content={brief.content} />
+                        <PremiumMarkdownRenderer content={brief.content} />
+
+                        {meta && !meta.completed && (
+                          <div className="mt-12 pt-8 border-t border-zinc-100 flex justify-end">
+                            <button
+                              onClick={handleCompleteDay}
+                              disabled={completing}
+                              className="px-8 py-4 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 transition-all text-xs uppercase tracking-widest cursor-pointer flex items-center gap-2"
+                            >
+                              {completing ? (
+                                <>
+                                  <Loader2 size={14} className="animate-spin" />
+                                  Completing Day...
+                                </>
+                              ) : (
+                                <>
+                                  <CheckCircle size={14} />
+                                  Complete Today's Reading
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
 
                   {/* Right side widgets/takeaways sidebar */}
                   <div className="space-y-8">
+                    {/* Series Progress card */}
+                    {meta && (
+                      <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
+                        <h3 className="text-lg font-black text-zinc-900 mb-2 flex items-center gap-2">
+                          <LayoutDashboard size={18} className="text-brand" />
+                          Series Progress
+                        </h3>
+                        <p className="text-xs text-zinc-500 mb-4 font-semibold uppercase tracking-wider">
+                          {meta.seriesTitle}
+                        </p>
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center text-xs font-bold text-zinc-700">
+                            <span>Part {meta.partNumber} of {meta.totalParts}</span>
+                            <span>{Math.round(((meta.partNumber - 1) / meta.totalParts) * 100)}% Complete</span>
+                          </div>
+                          
+                          {/* Progress dots or bar */}
+                          <div className="w-full bg-zinc-100 h-2 rounded-full overflow-hidden flex gap-0.5">
+                            {Array.from({ length: meta.totalParts }).map((_, idx) => {
+                              const partNum = idx + 1;
+                              const isCompleted = partNum < meta.partNumber;
+                              const isActive = partNum === meta.partNumber;
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`flex-1 h-full rounded-sm transition-all ${
+                                    isCompleted ? 'bg-brand' : isActive ? 'bg-zinc-400' : 'bg-zinc-200'
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                          
+                          {/* Timeline bullet list */}
+                          <div className="pt-2 space-y-2">
+                            {Array.from({ length: meta.totalParts }).map((_, idx) => {
+                              const partNum = idx + 1;
+                              const isCompleted = partNum < meta.partNumber;
+                              const isActive = partNum === meta.partNumber;
+                              return (
+                                <div key={idx} className="flex items-center gap-3 text-xs">
+                                  <div className={`w-2 h-2 rounded-full ${
+                                    isCompleted ? 'bg-brand shadow-brand' : isActive ? 'bg-zinc-400 ring-2 ring-zinc-300' : 'bg-zinc-200'
+                                  }`} />
+                                  <span className={`font-semibold ${
+                                    isCompleted ? 'text-zinc-500 line-through' : isActive ? 'text-zinc-950 font-bold' : 'text-zinc-400'
+                                  }`}>
+                                    Day {partNum} {isActive ? '(Today)' : ''}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Key features / tags */}
                     <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
                       <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
@@ -527,15 +790,15 @@ export default function DashboardPage() {
                       <ul className="space-y-4">
                         <li className="flex gap-3 text-sm text-zinc-600 font-medium">
                           <CheckCircle size={16} className="text-brand shrink-0 mt-0.5" />
-                          <span>Leverage AI trends directly to improve WordPress/PHP development workflows.</span>
+                          <span>Apply the masterclass practices directly to code implementation.</span>
                         </li>
                         <li className="flex gap-3 text-sm text-zinc-600 font-medium">
                           <CheckCircle size={16} className="text-brand shrink-0 mt-0.5" />
-                          <span>Evaluate the cited developer resources on latest API designs and tools.</span>
+                          <span>Review full-length code snippets and analyze key architectural details.</span>
                         </li>
                         <li className="flex gap-3 text-sm text-zinc-600 font-medium">
                           <CheckCircle size={16} className="text-brand shrink-0 mt-0.5" />
-                          <span>Integrate modern React and Next.js libraries for high-end rendering.</span>
+                          <span>Proceed to tomorrow's daily segment once unlocked.</span>
                         </li>
                       </ul>
                     </div>
@@ -573,6 +836,7 @@ export default function DashboardPage() {
               ) : (
                 /* EMPTY STATE / SYNTHESIZE NOW CALL OUT */
                 <motion.div
+                  key="briefing-empty"
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
                   className="p-12 bg-gradient-to-tr from-zinc-950 via-zinc-900 to-indigo-950 rounded-[48px] border border-zinc-800 text-white relative overflow-hidden shadow-2xl"
@@ -589,7 +853,7 @@ export default function DashboardPage() {
                     <div className="space-y-4">
                       <h2 className="text-4xl font-black tracking-tight leading-none">Your Daily Tech Briefing is Ready.</h2>
                       <p className="text-zinc-400 text-base leading-relaxed">
-                        Synthesize your personalized technical morning briefing dynamically. We compile insights from Hacker News, Dev.to feeds, and administrative sources, mapping directly to your technology stack.
+                        Synthesize your personalized technical masterclass course. We compile insights from Hacker News, Dev.to feeds, and administrative sources, mapping directly to your technology stack.
                       </p>
                     </div>
 
@@ -603,6 +867,62 @@ export default function DashboardPage() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Trending Section */}
+            {trendingBlogs.length > 0 && !activeTrendingBlog && !generating && (
+              <div className="mt-20 border-t border-zinc-200/60 pt-16">
+                <div className="flex items-center gap-2 mb-8">
+                  <Sparkles size={22} className="text-brand" />
+                  <h3 className="text-2xl font-black text-zinc-900 tracking-tight">Trending in Your Stack</h3>
+                </div>
+
+                {loadingTrending ? (
+                  <div className="flex items-center gap-2 text-zinc-400 py-6">
+                    <Loader2 size={16} className="animate-spin" />
+                    <span className="text-sm font-semibold">Refreshing trending topics...</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {trendingBlogs.map((tBlog) => {
+                      let parsedMeta: any = {};
+                      try {
+                        parsedMeta = JSON.parse(tBlog.summary || '{}');
+                      } catch (e) {}
+
+                      return (
+                        <div
+                          key={tBlog.id}
+                          onClick={() => {
+                            setActiveTrendingBlog(tBlog);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="bg-white hover:border-brand/40 border border-zinc-200/60 rounded-[32px] p-8 shadow-card-sm hover:shadow-card transition-all cursor-pointer flex flex-col justify-between group relative overflow-hidden"
+                        >
+                          <div className="space-y-4">
+                            <span className="px-3.5 py-1.5 bg-brand/10 text-brand rounded-xl text-[10px] font-bold uppercase tracking-widest inline-block border border-brand/20">
+                              {parsedMeta.topic || 'Trending Tech'}
+                            </span>
+                            <h4 className="text-lg font-black text-zinc-900 group-hover:text-brand transition-colors leading-snug">
+                              {tBlog.title}
+                            </h4>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[10px] font-bold text-zinc-400 uppercase tracking-wider mt-8 pt-6 border-t border-zinc-100">
+                            <span className="flex items-center gap-1.5">
+                              <Clock size={12} className="text-zinc-500" />
+                              {parsedMeta.readingTime || 5} min read
+                            </span>
+                            <span className="group-hover:translate-x-1.5 transition-transform flex items-center gap-1 text-zinc-700">
+                              Read Insight →
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
         </div>
