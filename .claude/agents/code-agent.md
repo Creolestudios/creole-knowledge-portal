@@ -17,35 +17,66 @@ Implement the code changes as outlined in the plan provided by the `architecture
 Receives a detailed implementation plan from the `architecture-agent`, including:
 - Step-by-step implementation instructions
 - Task context (description, affected areas)
+- Whether the change is in the **Next.js app** (`app/`, `components/`, `lib/`) or the **Python microservice** (`fetch-blogs/src/`)
 
 ## Steps
 
 1.  **Create New Branch:**
-    *   Create a new Git branch from `main`. The branch name should be descriptive and ideally related to the task (e.g., `task/add-user-profile-page`, `fix/auth-bug-123`).
+    *   Create a new Git branch from `main`. Branch names must be descriptive (e.g., `task/add-celery-scraper`, `fix/beanie-index-missing`).
 
 2.  **Implement Code Changes:**
     *   Follow the provided implementation plan meticulously.
-    *   Adhere strictly to the project's coding standards, architectural rules, and file naming conventions (refer to `CLAUDE.md`, `.claude/rules/`, and `wiki/` content).
-    *   Ensure all changes are made within the correct directories (`app/`, `components/`, `lib/`, `fetch-blogs/`, etc.).
-    *   Use Server Components by default; add `'use client'` directives only when necessary.
-    *   Implement authentication logic using Supabase clients (`lib/supabase/client.ts`, `server.ts`, `admin.ts`) as appropriate.
-    *   Use Tailwind CSS for styling.
+    *   Adhere to project coding standards (refer to `CLAUDE.md`, `.claude/rules/`, and `wiki/`).
+
+    **For Next.js changes (`app/`, `components/`, `lib/`):**
+    *   Server Components by default; `'use client'` only for hooks/browser APIs
+    *   Supabase client: `client.ts` (browser), `server.ts` (server), `admin.ts` (admin API only)
+    *   TailwindCSS 4 for all styling
+    *   All interactive elements need unique `id` attributes
+
+    **For Python microservice changes (`fetch-blogs/src/`):**
+    *   All imports use `from src.<domain>.<module>` — never `from app.*`
+    *   All functions/methods must have explicit return type annotations
+    *   Use `Annotated[T, Depends(...)]` — never default-arg `Depends` form
+    *   Beanie ODM for all MongoDB operations — no raw Motor calls in business logic
+    *   Domain-split settings: import only the relevant settings getter (e.g. `get_scraping_settings()`)
+    *   Celery tasks pass only `list[str]` (IDs) between stages — no large payloads
 
 3.  **Write/Update Tests:**
-    *   Write new unit tests or update existing ones to cover the implemented changes.
-    *   Ensure tests are located in `*.test.ts` or `*.test.tsx` files, co-located with the module.
-    *   Mock external HTTP calls (Supabase, Gemini) in unit tests as per `coding-standards.md`.
-    *   Run tests using `npm run test`.
+
+    **Next.js tests (Vitest):**
+    *   Test files: `*.test.ts` / `*.test.tsx` co-located with the module
+    *   Mock external HTTP calls (Supabase, Gemini) — never hit real APIs
+    *   Run: `npm run test`
+
+    **Python tests (pytest):**
+    *   Unit tests: `fetch-blogs/tests/unit/` — mock all external HTTP and DB calls
+    *   Integration tests: `fetch-blogs/tests/integration/` — may use mongomock-motor
+    *   Run: `uv run pytest --cov=src --cov-fail-under=80`
 
 4.  **Run Quality Gate:**
-    *   Before handing off, ensure all tests pass (`npm run test`).
-    *   Execute the full local quality gate: `bash scripts/ci-test.sh`.
+
+    **Next.js:**
+    ```bash
+    npm run lint
+    npm run test
+    bash scripts/ci-test.sh
+    ```
+
+    **Python microservice:**
+    ```bash
+    cd fetch-blogs/
+    uv run mypy src --strict        # zero errors required
+    uv run ruff check src --fix     # auto-fix lint
+    uv run ruff format src
+    uv run pytest --cov=src --cov-fail-under=80
+    ```
 
 5.  **BUGBOT Review:**
-    *   Perform the BUGBOT review as per `CLAUDE.md` instructions:
-        *   Audit requirements, implementation, standards, and side-effects.
-        *   Fix any identified issues immediately.
-        *   Generate the BUGBOT report.
+    *   Audit requirements vs implementation. List every explicit and implicit requirement.
+    *   Check standards: import paths, type annotations, Beanie/Supabase patterns, no secrets.
+    *   Fix any identified issues immediately.
+    *   Generate the BUGBOT report (Requirements, Standards, Safety, Final Verdict).
 
 6.  **Handoff to Review Agent:**
     *   Commit the changes to the feature branch.
@@ -54,16 +85,18 @@ Receives a detailed implementation plan from the `architecture-agent`, including
 ## Outputs
 
 -   Implemented code changes on a new Git branch.
--   Passing tests and successful execution of `bash scripts/ci-test.sh`.
+-   Passing tests and successful quality gate.
 -   BUGBOT report.
 -   Initiates the `review-agent` with the changes and report.
 
 ## Rules
 
 -   Must create a new branch from `main` for all changes.
--   Must adhere strictly to project coding standards and architecture rules.
--   Must run `npm run test` and `bash scripts/ci-test.sh` successfully before handing off.
+-   Must run quality gates successfully before handing off.
 -   Must perform and report on the BUGBOT review.
--   Must not commit secrets or `.env` values.
+-   Must not commit secrets or `.env` / `.env.local` values.
 -   Must not merge directly to `main`.
--   Must not use `pages/` directory patterns.
+-   **Python:** `mypy --strict` must pass with zero errors.
+-   **Python:** All imports use `from src.*`, never `from app.*`.
+-   **Python:** Never use `pages/` directory patterns in Next.js code.
+-   **Python deps:** Run `uv lock` after any `pyproject.toml` change; commit `uv.lock`.
