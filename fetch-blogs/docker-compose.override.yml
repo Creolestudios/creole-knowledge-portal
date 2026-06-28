@@ -1,0 +1,56 @@
+# Local dev overrides — auto-merged when you run: docker compose up
+# Adds: hot reload, source mounts, exposed data ports for local tooling
+
+version: "3.9"
+
+services:
+
+  fastapi-api:
+    command: >
+      sh -c "bash scripts/prestart.sh &&
+             fastapi run --reload src/main.py"
+    volumes:
+      - .:/app
+    environment:
+      APP_ENVIRONMENT: local
+      APP_LOG_LEVEL: DEBUG
+
+  # Dev: --pool=solo enables debugger breakpoints; -c 1 keeps logs readable
+  celery-scrape:
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q scrape_queue -c 2 -n scrape@%h --loglevel=debug --pool=solo
+    volumes: [.:/app]
+
+  celery-extract:
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q extract_queue -c 1 -n extract@%h --loglevel=debug --pool=solo
+    volumes: [.:/app]
+
+  celery-rank:
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q rank_queue -c 1 -n rank@%h --loglevel=debug --pool=solo
+    volumes: [.:/app]
+
+  celery-generate:
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q generate_queue -c 1 -n generate@%h --loglevel=debug --pool=solo
+    volumes: [.:/app]
+
+  celery-publish:
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q publish_queue -c 1 -n publish@%h --loglevel=debug --pool=solo
+    volumes: [.:/app]
+
+  # Expose data ports for local tooling (MongoDB Compass, RedisInsight)
+  mongo:
+    ports:
+      - "27017:27017"
+
+  redis:
+    ports:
+      - "6379:6379"
