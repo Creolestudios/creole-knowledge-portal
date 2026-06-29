@@ -19,7 +19,8 @@ import {
   CheckCircle,
   ExternalLink,
   Clock,
-  Code
+  Code,
+  Calendar
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
 import { motion, AnimatePresence } from 'motion/react';
@@ -169,6 +170,155 @@ function parseInlineMarkdown(text: string) {
   return parts.length > 0 ? parts : text;
 }
 
+function DashboardCalendar() {
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"
+  ];
+
+  // Helper: days of current month
+  const firstDayIndex = new Date(year, month, 1).getDay();
+  const totalDays = new Date(year, month + 1, 0).getDate();
+
+  // Create list of days (padding + days)
+  const daysArray: (number | null)[] = [];
+  // padding days
+  for (let i = 0; i < firstDayIndex; i++) {
+    daysArray.push(null);
+  }
+  // current month days
+  for (let i = 1; i <= totalDays; i++) {
+    daysArray.push(i);
+  }
+
+  // Status logic: all past days = unattempted, today & future = future (inactive)
+  // When real quiz API data is available, this function will be replaced
+  // to fetch and check each day's quiz result from the database.
+  const getDayStatus = (dayNum: number | null): string => {
+    if (!dayNum) return 'empty';
+
+    const today = new Date();
+    const todayZero = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const cellDateZero = new Date(year, month, dayNum);
+
+    if (cellDateZero >= todayZero) {
+      return 'future'; // Today and future days are inactive/grayed out
+    }
+
+    // All days before today: unattempted (red)
+    return 'unattempted';
+  };
+
+  const handlePrevMonth = () => {
+    setCurrentDate(new Date(year, month - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentDate(new Date(year, month + 1, 1));
+  };
+
+  return (
+    <div className="bg-white rounded-[32px] p-6 border border-zinc-100 shadow-card">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-black text-zinc-900 flex items-center gap-2">
+          <Calendar size={16} className="text-brand" />
+          Quiz Activity
+        </h3>
+        <div className="flex items-center gap-1">
+          <button 
+            onClick={handlePrevMonth}
+            className="p-1 hover:bg-zinc-50 border rounded text-zinc-600 transition-colors cursor-pointer text-[10px] font-bold"
+          >
+            &lt;
+          </button>
+          <span className="text-[10px] font-bold text-zinc-700 min-w-[70px] text-center">
+            {monthNames[month]} {year}
+          </span>
+          <button 
+            onClick={handleNextMonth}
+            className="p-1 hover:bg-zinc-50 border rounded text-zinc-600 transition-colors cursor-pointer text-[10px] font-bold"
+          >
+            &gt;
+          </button>
+        </div>
+      </div>
+
+      {/* Weekday headers */}
+      <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-2">
+        <span>S</span>
+        <span>M</span>
+        <span>T</span>
+        <span>W</span>
+        <span>T</span>
+        <span>F</span>
+        <span>S</span>
+      </div>
+
+      {/* Days grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {daysArray.map((day, idx) => {
+          const status = getDayStatus(day);
+          
+          let bgClass = "bg-transparent text-transparent pointer-events-none";
+          let tooltip = "";
+          
+          if (day !== null) {
+            const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
+            if (status === 'unattempted') {
+              bgClass = "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100";
+              tooltip = `Day ${day}: Not Attempted`;
+            } else if (status === 'passed') {
+              bgClass = "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100";
+              tooltip = `Day ${day}: Quiz Passed`;
+            } else if (status === 'failed') {
+              bgClass = "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100";
+              tooltip = `Day ${day}: Attempted, Not Passed`;
+            } else {
+              // future or unknown
+              bgClass = "bg-zinc-50 text-zinc-400 border border-zinc-100";
+              tooltip = `Day ${day}`;
+            }
+            if (isToday) {
+              bgClass += " ring-2 ring-brand ring-offset-1 font-black";
+            }
+          }
+
+          return (
+            <div
+              key={idx}
+              title={tooltip}
+              className={`aspect-square flex items-center justify-center text-[10px] font-semibold rounded transition-all duration-150 cursor-help ${bgClass}`}
+            >
+              {day}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="mt-3 pt-3 border-t border-zinc-100 flex justify-between items-center text-[8px] font-bold text-zinc-500">
+        <div className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded bg-emerald-500 border border-emerald-600 block shrink-0" />
+          <span>Passed</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded bg-amber-500 border border-amber-600 block shrink-0" />
+          <span>Attempted</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded bg-rose-500 border border-rose-600 block shrink-0" />
+          <span>No Attempt</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
@@ -311,7 +461,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#f8f9fa] flex">
       {/* Sidebar */}
-      <aside className="w-72 bg-[#0a0a0a] text-white flex flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0">
+      <aside className="w-72 bg-[#0a0a0a] text-white flex flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0 h-screen sticky top-0">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
 
         <div className="flex items-center gap-3 mb-12 relative z-10">
@@ -503,6 +653,8 @@ export default function DashboardPage() {
 
                   {/* Right side widgets/takeaways sidebar */}
                   <div className="space-y-8">
+                    <DashboardCalendar />
+
                     {/* Key features / tags */}
                     <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
                       <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
