@@ -6,6 +6,7 @@ import structlog
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
 
+# pyrefly: ignore [missing-import]
 from src.core.config import get_mongo_settings
 
 log = structlog.get_logger(__name__)

@@ -9,11 +9,19 @@ Next.js communicates with this service via `GET /api/v1/digests/{user_id}/latest
 ## Quick Commands
 
 ```bash
+# Development
 uv sync                                                 # Install dependencies and setup venv
-uv run fastapi dev src/main.py                          # Run local dev server (auto-reload on port 8000)
-uv run celery -A src.workers.celery_app worker -l info  # Start worker processes
-docker compose up                                       # Run entire stack (API, MongoDB, Redis, Workers)
-bash scripts/test.sh                                    # Run type checking (mypy), linting (ruff), and tests
+uv run fastapi dev src/main.py                          # Start local dev server (auto-reload on port 8000)
+uv run celery -A src.workers.celery_app worker -l info  # Start Celery worker processes
+
+# Formatting & Linting
+uv run ruff format src                                  # Format codebase
+uv run ruff check src --fix                             # Run linter and auto-fix violations
+uv run mypy src --strict                                # Run strict type checking
+
+# Execution & Testing
+docker compose up                                       # Run full stack in Docker (API, DB, Redis, Workers)
+bash scripts/test.sh                                    # Run full quality gate (mypy + ruff + pytest)
 ```
 
 ---
