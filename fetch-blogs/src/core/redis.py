@@ -54,6 +54,7 @@ async def ping_redis() -> bool:
     try:
         client = get_redis_client()
         result = await client.ping()
+        # pyrefly: ignore [unnecessary-type-conversion]
         return bool(result)
     except Exception:
         return False

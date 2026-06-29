@@ -123,3 +123,12 @@ omit = ["tests/*", "src/config/source_registry.py"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 80
+
+# ── pyright ───────────────────────────────────────────────────────────────────
+[tool.pyright]
+include = ["src"]
+exclude = ["**/__pycache__", ".venv"]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["src", "."]
+reportMissingImports = "none"
