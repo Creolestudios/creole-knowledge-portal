@@ -1,3 +1,4 @@
+const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 
 const content = fs.readFileSync('.env', 'utf8');
@@ -27,10 +28,7 @@ fetch(url, {
 })
 .then(res => res.json())
 .then(schema => {
-  console.log('--- daily_30_curation definition properties ---');
-  console.log(schema.definitions.daily_30_curation?.properties);
-  console.log('--- blogs definition properties ---');
-  console.log(schema.definitions.blogs?.properties);
+  console.log('Paths:', Object.keys(schema.paths));
 })
 .catch(err => {
   console.error('Fetch error:', err);
