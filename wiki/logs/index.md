@@ -10,6 +10,7 @@ This section provides a chronological record of all significant changes, feature
 
 ## 📅 Timeline
 
+- [[wiki/logs/2026-07-04|2026-07-04]] - Blog Roulette: un-bypassed Google Drive publishing (native Google Doc upload, no Pandoc).
 - [[wiki/logs/2026-06-13|2026-06-13]] - Complete Wiki generation and architectural documentation.
 - [[wiki/logs/2026-05-20|2026-05-20]]
 - [[wiki/logs/2026-05-19|2026-05-19]]

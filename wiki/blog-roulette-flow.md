@@ -15,7 +15,7 @@ Based on the `BLOG_ROULETTE_FLOW.docx` specification, the Blog Roulette platform
 4. **Drafting**: Markdown editor with live sidebar validation (word count, code blocks, diagrams).
 5. **Checklist Gate**: Automatic validation of constraints before submission.
 6. **AI Vetting**: LLM-generated quiz (3 deep questions) to verify human authorship.
-7. **Publishing**: Markdown -> Pandoc -> .docx -> Google Drive API (share with marketing team).
+7. **Publishing**: HTML body -> Google Drive API native Google Doc import (`text/html` source, `application/vnd.google-apps.document` target) -> share with marketing team. (Originally spec'd as Markdown -> Pandoc -> .docx -> Drive; switched to a direct native-Doc import as of [[wiki/logs/2026-07-04|2026-07-04]] to avoid a system Pandoc dependency.)
 8. **State Management**: Lifecycle state machine (DRAFT -> SUBMITTED -> QUIZ -> PUBLISHED/REJECTED).
 
 ## Technology Stack
