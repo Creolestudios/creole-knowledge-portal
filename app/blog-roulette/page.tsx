@@ -14,6 +14,8 @@ import {
   Loader2,
   Sparkles,
   Award,
+  ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
 import PortalShell from '@/components/blog-roulette/portal-shell';
 import type { RouletteBlog, BlogStatus } from '@/lib/blog-roulette/types';
@@ -56,6 +58,47 @@ export default function BlogRouletteListPage() {
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
   const [blogs, setBlogs] = useState<RouletteBlog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
+
+  async function handleRetryPublish(
+    e: React.MouseEvent<HTMLButtonElement>,
+    blogId: string,
+  ) {
+    e.preventDefault();
+    e.stopPropagation();
+    setRetryingId(blogId);
+    setRetryErrors((prev) => ({ ...prev, [blogId]: '' }));
+
+    try {
+      const res = await fetch(`/api/blog-roulette/${blogId}/publish`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Retry failed');
+
+      setBlogs((prev) =>
+        prev.map((b) =>
+          b.id === blogId
+            ? {
+                ...b,
+                status: 'PUBLISHED',
+                drive_url: data.webViewLink ?? b.drive_url,
+                drive_file_id: data.fileId ?? b.drive_file_id,
+              }
+            : b,
+        ),
+      );
+    } catch (err: any) {
+      console.error('[blog-roulette] Retry publish failed:', err);
+      setRetryErrors((prev) => ({
+        ...prev,
+        [blogId]: err.message || 'Retry failed. Please try again.',
+      }));
+    } finally {
+      setRetryingId(null);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -193,6 +236,43 @@ export default function BlogRouletteListPage() {
                       {new Date(b.updated_at).toLocaleDateString()}
                     </span>
                   </div>
+
+                  {b.status === 'PUBLISHED' && b.drive_url && (
+                    <a
+                      id={`drive-link-${b.id}`}
+                      href={b.drive_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-4 inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-brand hover:underline"
+                    >
+                      <ExternalLink size={12} />
+                      View Google Doc
+                    </a>
+                  )}
+
+                  {b.status === 'PUBLISH_FAILED' && (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        id={`retry-publish-${b.id}`}
+                        disabled={retryingId === b.id}
+                        onClick={(e) => handleRetryPublish(e, b.id)}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        <RefreshCw
+                          size={12}
+                          className={retryingId === b.id ? 'animate-spin' : ''}
+                        />
+                        {retryingId === b.id ? 'Retrying…' : 'Retry Publish'}
+                      </button>
+                      {retryErrors[b.id] && (
+                        <p className="mt-1 text-[10px] font-semibold text-red-500">
+                          {retryErrors[b.id]}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </Link>
               );
             })}

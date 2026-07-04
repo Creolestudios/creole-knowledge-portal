@@ -106,6 +106,58 @@ export async function uploadBlogToDrive(
 }
 
 /**
+ * Uploads blog HTML content to a configured Google Drive folder as a native
+ * Google Doc. Drive converts the HTML source directly to Docs format on
+ * upload, so no Pandoc/.docx intermediate step is required.
+ */
+export async function uploadBlogAsGoogleDoc(
+  blog: { title: string; slug: string | null },
+  authorEmail: string,
+  htmlContent: string
+): Promise<{ fileId: string; webViewLink: string }> {
+  const folderId = process.env.DRIVE_FOLDER_ID;
+  if (!folderId) {
+    throw new Error('DRIVE_FOLDER_ID is not configured in the environment.');
+  }
+
+  const drive = getDriveClient();
+
+  const cleanAuthor = authorEmail.split('@')[0] || 'author';
+  const cleanSlug = blog.slug || 'untitled';
+  const fileName = `${cleanAuthor}-${cleanSlug}`;
+
+  const fullHtml = `<html><body><h1>${blog.title}</h1>${htmlContent}</body></html>`;
+  const bufferStream = new Readable();
+  bufferStream.push(Buffer.from(fullHtml, 'utf-8'));
+  bufferStream.push(null);
+
+  console.log(`[google-drive] Uploading "${fileName}" as Google Doc to folder "${folderId}"...`);
+
+  const response = await drive.files.create({
+    requestBody: {
+      name: fileName,
+      parents: [folderId],
+      mimeType: 'application/vnd.google-apps.document',
+    },
+    media: {
+      mimeType: 'text/html',
+      body: bufferStream,
+    },
+    fields: 'id, webViewLink',
+  });
+
+  if (!response.data.id || !response.data.webViewLink) {
+    throw new Error('Upload to Google Drive succeeded, but returned no file metadata.');
+  }
+
+  console.log(`[google-drive] Google Doc created. File ID: ${response.data.id}`);
+  return {
+    fileId: response.data.id,
+    webViewLink: response.data.webViewLink,
+  };
+}
+
+/**
  * Loop permissions to share file with marketing emails and send notification.
  */
 export async function shareBlogWithMarketing(

@@ -1,3 +1,5 @@
+import { uploadBlogAsGoogleDoc, shareBlogWithMarketing } from './google-drive';
+
 /**
  * Helper to award a "Knowledge Badge" and 100 points to the author in the leaderboard.
  */
@@ -49,13 +51,14 @@ export async function awardBadgeAndPoints(userId: string, supabase: any) {
 }
 
 /**
- * Executes the publishing pipeline for a blog post (Bypassed GDrive Flow):
+ * Executes the publishing pipeline for a blog post:
  * 1. Fetches blog details.
  * 2. Sets blog status to 'PUBLISHING'.
- * 3. Bypasses Pandoc document conversion and Google Drive upload.
+ * 3. Uploads the blog body as a native Google Doc and shares it with marketing.
  * 4. Awards Knowledge Badge and 100 points to the author in the leaderboard.
- * 5. Logs success transaction metadata to roulette_publish_logs with placeholder values.
- * 6. Marks status as 'PUBLISHED' (or rolls back to 'PUBLISH_FAILED' on error).
+ * 5. Logs success transaction metadata to roulette_publish_logs.
+ * 6. Marks status as 'PUBLISHED' with the real Drive link (or rolls back to
+ *    'PUBLISH_FAILED' on error).
  */
 export async function runPublishPipeline(
   blogId: string,
@@ -80,15 +83,16 @@ export async function runPublishPipeline(
     .eq('id', blogId);
 
   try {
-    // ==========================================
-    // BYPASSED: Pandoc & Google Drive integration
-    // ==========================================
-    const fileId = 'bypassed_gdrive';
-    const webViewLink = 'bypassed_link';
-    const sharedEmails: string[] = [];
-    // ==========================================
+    // 3. Upload blog content to Drive as a native Google Doc and share it
+    console.log(`[publisher] Uploading blog ${blogId} to Google Drive...`);
+    const { fileId, webViewLink } = await uploadBlogAsGoogleDoc(
+      { title: blog.title, slug: blog.slug },
+      triggeringUserEmail,
+      blog.body_html || ''
+    );
+    const sharedEmails = await shareBlogWithMarketing(fileId, triggeringUserEmail);
 
-    // 3. Award Knowledge Badge and points to the author
+    // 3b. Award Knowledge Badge and points to the author
     console.log(`[publisher] Awarding Knowledge Badge and points to user ${blog.author_id}...`);
     await awardBadgeAndPoints(blog.author_id, supabase);
 
@@ -108,6 +112,8 @@ export async function runPublishPipeline(
       .update({
         status: 'PUBLISHED',
         published_at: new Date().toISOString(),
+        drive_url: webViewLink,
+        drive_file_id: fileId,
       })
       .eq('id', blogId);
 
