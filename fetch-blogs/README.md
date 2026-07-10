@@ -28,9 +28,9 @@ bash scripts/test.sh                                    # Run full quality gate 
 
 ## Current Status & Scope
 
-This service is in a staged scaffolding phase:
-* **Active**: Configuration validation, database and Redis connection pooling, Celery worker setup, and health check APIs (`/health`, `/health/live`, `/health/ready`).
-* **Stubs**: Blog scrapers, text extractors, vector search rankers, LLM synthesizer, and database document models are placeholders to be implemented.
+This service is in a staged implementation phase:
+* **Active**: Configuration validation, database and Redis connection pooling, Celery worker setup, health check APIs (`/health`, `/health/live`, `/health/ready`), and the rank stage's Article/UserProfile contracts plus deterministic scoring, vector similarity, and Gemini-assisted re-ranking with fallback.
+* **Stubs**: Blog scrapers, text extractors, digest synthesis, publisher, and several API route handlers remain placeholders to be implemented.
 
 ---
 
