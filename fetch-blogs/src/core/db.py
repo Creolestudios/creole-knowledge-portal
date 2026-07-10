@@ -22,13 +22,10 @@ async def init_db() -> None:
     log.info("db: connecting", uri=cfg.URI, db=cfg.DB_NAME)
     _client = AsyncIOMotorClient(cfg.URI)
 
-    # Register Beanie models as they are implemented
-    document_models: list[type] = []
-    # from src.models.article import Article        # ← uncomment when ready
-    # from src.models.digest  import DailyDigest   # ← uncomment when ready
-    # from src.models.profile import UserProfile    # ← uncomment when ready
-    # from src.models.job     import PipelineJob    # ← uncomment when ready
-    # from src.models.admin   import AdminConfig    # ← uncomment when ready
+    from src.models.article import Article
+    from src.models.profile import UserProfile
+
+    document_models: list[type] = [Article, UserProfile]
 
     await init_beanie(
         database=_client[cfg.DB_NAME],

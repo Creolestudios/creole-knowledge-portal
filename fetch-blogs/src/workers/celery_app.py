@@ -25,7 +25,7 @@ celery_app = Celery(
         # Uncomment each module as you implement the stage:
         # "src.workers.scraper_tasks",
         # "src.workers.extractor_tasks",
-        # "src.workers.ranker_tasks",
+        "src.workers.ranker_tasks",
         # "src.workers.generator_tasks",
         # "src.workers.publisher_tasks",
     ],

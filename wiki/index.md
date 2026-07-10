@@ -11,6 +11,7 @@ Welcome to the wiki for the Creole Knowledge Portal project! This wiki serves as
 ## Main Sections
 
 *   [[pages/architecture.md|Architecture]]
+*   [[pages/fetch-blogs-walkthrough.md|Fetch Blogs Microservice Walkthrough]]
 *   [[pages/setup-guide.md|Setup Guide]]
 *   [[pages/roadmap.md|Roadmap]]
 *   [[pages/notion-integration.md|Notion Task Integration]]
