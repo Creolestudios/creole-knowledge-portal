@@ -1,4 +1,6 @@
-# ── Stage 1: dependency resolution (cached layer) ─────────────────────────────
+# Production image only — local dev runs FastAPI on the host via uv.
+#
+# Stage 1: install Python deps (cached between builds)
 FROM python:3.11-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
@@ -11,7 +13,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-workspace --no-dev
 
-# ── Stage 2: Playwright browser install ───────────────────────────────────────
+# Stage 2: Chromium for Crawl4AI scraping
 FROM builder AS playwright-stage
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,10 +24,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN uv run playwright install chromium
 
-# ── Stage 3: final runtime image ──────────────────────────────────────────────
+# Stage 3: slim runtime image
 FROM python:3.11-slim AS runtime
 
-# Install curl (used by HEALTHCHECK) and MongoDB shell (used by prestart.sh)
+# curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl && \
     rm -rf /var/lib/apt/lists/*

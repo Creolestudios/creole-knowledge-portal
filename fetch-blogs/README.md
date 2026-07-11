@@ -9,10 +9,14 @@ Next.js communicates with this service via `GET /api/v1/digests/{user_id}/latest
 ## Quick Commands
 
 ```bash
-# Development
-uv sync                                                 # Install dependencies and setup venv
-uv run fastapi dev src/main.py                          # Start local dev server (auto-reload on port 8000)
-uv run celery -A src.workers.celery_app worker -l info  # Start Celery worker processes
+# Local dev — infra in Docker, app on your machine
+uv sync
+docker compose up -d                                    # Mongo + Redis
+uv run fastapi dev src/main.py                          # hot reload on :8000
+uv run celery -A src.workers.celery_app worker -l info  # optional, if you need workers locally
+
+# Production — everything in Docker
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # Formatting & Linting
 uv run ruff format src                                  # Format codebase
@@ -20,7 +24,6 @@ uv run ruff check src --fix                             # Run linter and auto-fi
 uv run mypy src --strict                                # Run strict type checking
 
 # Execution & Testing
-docker compose up                                       # Run full stack in Docker (API, DB, Redis, Workers)
 bash scripts/test.sh                                    # Run full quality gate (mypy + ruff + pytest)
 ```
 
@@ -51,6 +54,18 @@ Settings are split by domain (e.g. `MongoSettings`, `RedisSettings`) using `pyda
 
 ---
 
+## Docker
+
+| Mode | Command | What runs |
+|------|---------|-----------|
+| **Dev** | `docker compose up -d` | MongoDB + Redis only |
+| **Dev API** | `uv run fastapi dev src/main.py` | FastAPI on host (hot reload, port 8000) |
+| **Prod** | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` | Full stack: API (4 workers), Celery, Flower |
+
+Dev `.env` points at `localhost` because the app runs on your laptop while Mongo and Redis live in Docker. Production compose swaps those for `mongo` / `redis` on the internal network — you don't need a second env file.
+
+---
+
 ## Project Layout
 
 ```
@@ -69,7 +84,8 @@ fetch-blogs/
 │   └── publisher/            # Persistence handlers
 ├── tests/                    # Unit and integration tests (mocked db/network)
 ├── scripts/                  # Lifespan/wait scripts and test runners
-└── docker-compose.yml        # Multi-container local execution setup
+├── docker-compose.yml      # Dev: Mongo + Redis
+└── docker-compose.prod.yml # Prod: adds API, workers, Flower
 ```
 
 ---
