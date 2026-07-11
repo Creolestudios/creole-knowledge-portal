@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import AnyUrl, Field
+from pydantic import AnyUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,15 @@ class AppSettings(BaseSettings):
     ENVIRONMENT: Environment = Environment.LOCAL
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: AnyUrl | None = None
+
+    @field_validator("SENTRY_DSN", mode="before")
+    @classmethod
+    def blank_sentry_dsn_is_none(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def show_docs(self) -> bool:
