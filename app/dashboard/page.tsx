@@ -20,10 +20,15 @@ import {
   ExternalLink,
   Clock,
   Code,
-  Calendar
+  Calendar,
+  History,
+  Activity
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
 import { motion, AnimatePresence } from 'motion/react';
+import DailyBlogTab from '@/components/dashboard/DailyBlogTab';
+import PastBlogsTab from '@/components/dashboard/PastBlogsTab';
+import ActivityTab from '@/components/dashboard/ActivityTab';
 
 interface MarkdownBlock {
   type: 'code' | 'h1' | 'h2' | 'h3' | 'li' | 'blockquote' | 'empty' | 'p';
@@ -323,6 +328,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'daily' | 'past' | 'activity'>('daily');
 
   // Brief states
   const [brief, setBrief] = useState<any>(null);
@@ -476,10 +482,27 @@ export default function DashboardPage() {
 
         <nav className="flex-1 space-y-1 relative z-10">
           <button
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-900/50 text-brand border border-brand/20 shadow-sm text-left"
+            onClick={() => setActiveTab('daily')}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group ${activeTab === 'daily' ? 'bg-zinc-900/50 text-brand border border-brand/20 shadow-sm' : 'text-zinc-500 hover:text-white hover:bg-zinc-900 border border-transparent'} text-left`}
           >
             <Home size={20} />
             <span className="font-semibold text-sm">Morning Brief</span>
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('past')}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group ${activeTab === 'past' ? 'bg-zinc-900/50 text-brand border border-brand/20 shadow-sm' : 'text-zinc-500 hover:text-white hover:bg-zinc-900 border border-transparent'} text-left`}
+          >
+            <History size={20} />
+            <span className="font-semibold text-sm">Past Briefings</span>
+          </button>
+          
+          <button
+            onClick={() => setActiveTab('activity')}
+            className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group ${activeTab === 'activity' ? 'bg-zinc-900/50 text-brand border border-brand/20 shadow-sm' : 'text-zinc-500 hover:text-white hover:bg-zinc-900 border border-transparent'} text-left`}
+          >
+            <Activity size={20} />
+            <span className="font-semibold text-sm">Activity Tracker</span>
           </button>
 
           <div className="h-4" />
@@ -552,209 +575,10 @@ export default function DashboardPage() {
         {/* Content Area */}
         <div className="p-10 flex-1 overflow-y-auto">
           <div className="max-w-6xl mx-auto">
-            {/* Top section */}
-            <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
-              <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand/10 border border-brand/20 rounded-full text-brand text-[10px] font-bold uppercase tracking-widest mb-4">
-                  <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-                  AI Factory Digest
-                </div>
-                <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">Your Morning Briefing</h1>
-                <p className="text-zinc-500 text-base">Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.</p>
-              </div>
-
-              {hasBrief && !generating && (
-                <button
-                  onClick={handleGenerateBriefing}
-                  className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
-                >
-                  <RefreshCw size={15} />
-                  Regenerate Briefing
-                </button>
-              )}
-            </div>
-
-            {/* Main view state switcher */}
-            <AnimatePresence mode="wait">
-              {loadingBrief ? (
-                /* LOADING PREVIOUS BRIEFING */
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="bg-white rounded-[32px] p-20 border border-zinc-100 shadow-card flex flex-col items-center justify-center text-center space-y-4"
-                >
-                  <Loader2 className="w-10 h-10 text-brand animate-spin" />
-                  <p className="text-zinc-500 font-semibold text-lg">Retrieving your latest briefing...</p>
-                </motion.div>
-              ) : generating ? (
-                /* ACTIVE AI SYNTHESIS PROCESS */
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="p-12 bg-gradient-to-tr from-zinc-950 via-zinc-900 to-indigo-950 rounded-[48px] border border-zinc-800 text-white relative overflow-hidden shadow-2xl"
-                >
-                  <div className="absolute top-0 right-0 w-80 h-80 bg-brand/10 blur-[120px] pointer-events-none" />
-                  <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-indigo-500/10 blur-[120px] pointer-events-none" />
-
-                  <div className="max-w-2xl mx-auto text-center space-y-8 relative z-10 py-10">
-                    <div className="w-20 h-20 bg-brand/10 border border-brand/20 rounded-[28px] mx-auto flex items-center justify-center text-brand animate-bounce">
-                      <Sparkles size={40} />
-                    </div>
-
-                    <div className="space-y-3">
-                      <h2 className="text-3xl font-black tracking-tight">AI Factory is Synthesizing...</h2>
-                      <p className="text-zinc-400 text-sm max-w-md mx-auto">
-                        Scraping network resources, ranking global developer trends, and compiling a personalized deep-dive technical brief.
-                      </p>
-                    </div>
-
-                    {/* Glowing Progress bar */}
-                    <div className="w-full bg-zinc-800 h-2.5 rounded-full overflow-hidden relative shadow-inner">
-                      <div className="absolute top-0 left-0 h-full bg-brand rounded-full animate-progress-loading w-[85%] shadow-brand" />
-                    </div>
-
-                    {/* Step logger */}
-                    <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5 inline-block min-w-[320px]">
-                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-2">Current Pipeline Process</span>
-                      <p className="text-brand font-mono text-xs font-bold animate-pulse">{generationStep}</p>
-                    </div>
-                  </div>
-                </motion.div>
-              ) : hasBrief ? (
-                /* BRIEFING ACTIVE AND LOADED */
-                <motion.div
-                  initial={{ opacity: 0, y: 15 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="grid grid-cols-1 lg:grid-cols-3 gap-8"
-                >
-                  {/* Left major briefing reader */}
-                  <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
-                    <div className="flex flex-wrap items-center gap-3 text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-6 border-b pb-6 border-zinc-100">
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
-                        <Clock size={12} className="text-zinc-500" />
-                        <span>15 min read</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 rounded-lg border">
-                        <Sparkles size={12} className="text-brand" />
-                        <span>Gemini 2.5 Flash</span>
-                      </div>
-                      <span className="ml-auto text-zinc-400">Published {new Date(brief.published_at).toLocaleDateString()}</span>
-                    </div>
-
-                    <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-8">
-                      {brief.title}
-                    </h2>
-
-                    {/* Premium rendered content */}
-                    <PremiumMarkdownRenderer content={brief.content} />
-                  </div>
-
-                  {/* Right side widgets/takeaways sidebar */}
-                  <div className="space-y-8">
-                    <DashboardCalendar />
-
-                    {/* Key features / tags */}
-                    <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                      <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
-                        <BookOpen size={18} className="text-brand" />
-                        Curation Focus
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {brief.tags?.map((tag: string, idx: number) => (
-                          <span key={idx} className="px-3.5 py-1.5 bg-zinc-50 border text-zinc-600 rounded-xl text-xs font-bold capitalize">
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Actionable Next Steps */}
-                    <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                      <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
-                        <CheckCircle size={18} className="text-brand" />
-                        Daily Takeaways
-                      </h3>
-                      <ul className="space-y-4">
-                        <li className="flex gap-3 text-sm text-zinc-600 font-medium">
-                          <CheckCircle size={16} className="text-brand shrink-0 mt-0.5" />
-                          <span>Leverage AI trends directly to improve WordPress/PHP development workflows.</span>
-                        </li>
-                        <li className="flex gap-3 text-sm text-zinc-600 font-medium">
-                          <CheckCircle size={16} className="text-brand shrink-0 mt-0.5" />
-                          <span>Evaluate the cited developer resources on latest API designs and tools.</span>
-                        </li>
-                        <li className="flex gap-3 text-sm text-zinc-600 font-medium">
-                          <CheckCircle size={16} className="text-brand shrink-0 mt-0.5" />
-                          <span>Integrate modern React and Next.js libraries for high-end rendering.</span>
-                        </li>
-                      </ul>
-                    </div>
-
-                    {/* Source context citation transparency widget */}
-                    <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                      <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Sources evaluated</span>
-                      <h4 className="text-lg font-black text-zinc-900 mb-4">Network Context</h4>
-                      <div className="space-y-3">
-                        <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
-                          <div>
-                            <p className="text-xs font-bold text-zinc-900 leading-tight">Dev.to API</p>
-                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-semibold mt-0.5">Top Tech Trends</p>
-                          </div>
-                          <ExternalLink size={14} className="text-zinc-400 group-hover:text-brand transition-colors" />
-                        </div>
-                        <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
-                          <div>
-                            <p className="text-xs font-bold text-zinc-900 leading-tight">Hacker News API</p>
-                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-semibold mt-0.5">Global Hacker Curation</p>
-                          </div>
-                          <ExternalLink size={14} className="text-zinc-400 group-hover:text-brand transition-colors" />
-                        </div>
-                        <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
-                          <div>
-                            <p className="text-xs font-bold text-zinc-900 leading-tight">Admin URL Sources</p>
-                            <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-semibold mt-0.5">Times of India Curation</p>
-                          </div>
-                          <ExternalLink size={14} className="text-zinc-400 group-hover:text-brand transition-colors" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              ) : (
-                /* EMPTY STATE / SYNTHESIZE NOW CALL OUT */
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="p-12 bg-gradient-to-tr from-zinc-950 via-zinc-900 to-indigo-950 rounded-[48px] border border-zinc-800 text-white relative overflow-hidden shadow-2xl"
-                >
-                  {/* Neon glow grids */}
-                  <div className="absolute top-0 right-0 w-96 h-96 bg-brand/10 blur-[130px] pointer-events-none" />
-                  <div className="absolute -bottom-20 -left-20 w-96 h-96 bg-indigo-500/10 blur-[130px] pointer-events-none" />
-
-                  <div className="max-w-xl text-left space-y-8 relative z-10 py-10 md:pl-8">
-                    <div className="w-16 h-16 bg-brand/10 border border-brand/20 rounded-2xl flex items-center justify-center text-brand">
-                      <Sparkles size={32} />
-                    </div>
-
-                    <div className="space-y-4">
-                      <h2 className="text-4xl font-black tracking-tight leading-none">Your Daily Tech Briefing is Ready.</h2>
-                      <p className="text-zinc-400 text-base leading-relaxed">
-                        Synthesize your personalized technical morning briefing dynamically. We compile insights from Hacker News, Dev.to feeds, and administrative sources, mapping directly to your technology stack.
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={handleGenerateBriefing}
-                      className="px-10 py-5 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 transition-all text-sm uppercase tracking-widest cursor-pointer"
-                    >
-                      Synthesize Morning Briefing
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* Tabs View */}
+            {activeTab === 'daily' && <DailyBlogTab user={user} profile={profile} />}
+            {activeTab === 'past' && <PastBlogsTab />}
+            {activeTab === 'activity' && <ActivityTab user={user} />}
 
           </div>
         </div>
