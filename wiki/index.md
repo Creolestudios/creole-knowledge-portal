@@ -1,20 +1,20 @@
 ---
 title: Creole Knowledge Portal Wiki
-created: 2026-05-16
-updated: 2026-05-16
-tags: index, moc
+tags: [moc, root, documentation]
+created: 2026-05-27
+updated: 2026-06-13s
 ---
-# Creole Knowledge Portal Wiki
 
-Welcome to the wiki for the Creole Knowledge Portal project! This wiki serves as a central hub for understanding the project's architecture, setup, components, and decision-making processes.
+# Welcome to the Creole Knowledge Portal Wiki
 
-## Main Sections
+This is the central knowledge base and Map of Content (MOC) for the **Creole Knowledge Portal** project.
 
 *   [[pages/architecture.md|Architecture]]
 *   [[pages/fetch-blogs-walkthrough.md|Fetch Blogs Microservice Walkthrough]]
 *   [[pages/setup-guide.md|Setup Guide]]
 *   [[pages/roadmap.md|Roadmap]]
 *   [[pages/notion-integration.md|Notion Task Integration]]
+*   [[pages/gatekeeper-plan.md|Gatekeeper Module Design]]
 *   [[components/index.md|Components]]
 *   [[decisions/index.md|Architectural Decisions]]
 *   [[logs/index.md|Changelogs]]

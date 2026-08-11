@@ -11,6 +11,7 @@ import {
   calculateReadingTime,
   chunkBlogSemantically
 } from '@/lib/synthesis/blog-compiler';
+import { generateQuizForBlog } from '@/lib/ai/quiz-generator';
 
 interface SourceArticle {
   title: string;
@@ -288,6 +289,16 @@ export async function POST(request: Request) {
         display_order: 0,
         curation_notes: `Personalized brief Part 1 for user ${userId}`
       });
+
+    // Automatically generate a technical quiz for today's part (best-effort).
+    try {
+      console.log('[Quiz Factory] Starting automated quiz generation for blog_id:', insertedBlogs[0].id);
+      await generateQuizForBlog(insertedBlogs[0].id, insertedBlogs[0].content);
+      console.log('[Quiz Factory] Quiz successfully generated.');
+      insertedBlogs[0].quiz_generated = true;
+    } catch (quizError) {
+      console.error('[Quiz Factory] Failed to generate quiz for blog:', quizError);
+    }
 
     return NextResponse.json({
       success: true,

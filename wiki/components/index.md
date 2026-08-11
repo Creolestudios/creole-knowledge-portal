@@ -1,15 +1,29 @@
 ---
-title: Components
-created: 2026-05-16
-updated: 2026-05-16
-tags: index, components, moc
+title: Components Map of Content
+tags: [moc, components, documentation]
+created: 2026-05-27
+updated: 2026-06-13
 ---
-# Components
 
-This section provides an overview of the major components within the Creole Knowledge Portal. Each major component has its own documentation page.
+# Components Map of Content (MOC)
 
-*   [[components/Auth.md|Authentication Components]]
-*   [[components/DigestCard.md|Digest Card Component]]
-*   [[components/Layout.md|Layout Components]]
+This page lists and describes all primary React and UI components used in the **Creole Knowledge Portal** application.
 
-TODO: Add more component MOC entries as they are discovered.
+---
+
+## 🏗️ Interactive & Stateful Components
+
+- [[components/user-management|User Management]]: Admin panel component for searching, viewing, and modifying user profiles, tech stacks, and interest sets.
+- [[components/logout-button|Logout Button]]: Authentication helper component providing sidebar and default styling variations for session termination.
+- [[components/Auth|Authentication Components]]: Authentication forms and client-side credential controllers.
+- [[components/DigestCard|Digest Card Component]]: Renders the morning briefings and daily newsletter digests.
+- [[components/Layout|Layout Components]]: Shell layout wrapper, sidebar, and workspace grid structures.
+
+---
+
+## 🛠️ General Guidelines
+
+1. **State Ownership**: React state should be managed locally using standard React hooks (`useState`, `useEffect`) and shared using client-side libraries only when required.
+2. **Icons**: Use the standard `lucide-react` library for all icons to maintain visual consistency.
+3. **Animations**: Use `motion/react` (Framer Motion) for all transition animations. Ensure components use clean enter/exit stages via `<AnimatePresence>`.
+4. **Styling**: Component styles should strictly leverage Tailwind CSS utility classes and design tokens declared in `app/globals.css`.

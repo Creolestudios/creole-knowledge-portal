@@ -15,12 +15,14 @@ import {
   CheckCircle2,
   Loader2,
   ExternalLink,
-  Home
+  Home,
+  ShieldAlert
 } from 'lucide-react';
 
 import UserManagement from '@/components/user-management';
+import SubmissionsModeration from '@/components/submissions-moderation';
 
-type Tab = 'sources' | 'users';
+type Tab = 'sources' | 'users' | 'submissions';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('sources');
@@ -213,6 +215,16 @@ export default function AdminDashboard() {
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
             <span>Users</span>
           </button>
+          <button
+            onClick={() => setActiveTab('submissions')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'submissions'
+                ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+              }`}
+          >
+            <ShieldAlert className="w-5 h-5" />
+            <span>Submissions</span>
+          </button>
 
           <div className="h-px bg-zinc-800 my-4" />
 
@@ -256,7 +268,10 @@ export default function AdminDashboard() {
               <Globe className="w-4 h-4" />
             </button>
             <button onClick={() => setActiveTab('users')} className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+            </button>
+            <button onClick={() => setActiveTab('submissions')} className={`p-2 rounded-md ${activeTab === 'submissions' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
+              <ShieldAlert className="w-4 h-4" />
             </button>
             <button onClick={handleSignOut} className="p-2 text-zinc-400 hover:text-white ml-2 border-l border-zinc-700 pl-4">
               <LogOut className="w-4 h-4" />
@@ -398,7 +413,7 @@ export default function AdminDashboard() {
                   </p>
                 </div>
               </motion.div>
-            ) : (
+            ) : activeTab === 'users' ? (
               <motion.div
                 key="users"
                 initial={{ opacity: 0, y: 20 }}
@@ -407,6 +422,16 @@ export default function AdminDashboard() {
                 transition={{ duration: 0.2 }}
               >
                 <UserManagement />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="submissions"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <SubmissionsModeration />
               </motion.div>
             )}
           </AnimatePresence>
