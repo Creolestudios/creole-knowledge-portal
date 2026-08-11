@@ -9,6 +9,8 @@ config:
     - subnet-0d6aa100da345f0b3
   ckp:listenerPriorityBase: "1100"
   ckp:ecsDesiredCount: "1"
+  ckp:ecsCpu: "1024"
+  ckp:ecsMemory: "2048"
   ckp:webDesiredCount: "1"
   ckp:apiDesiredCount: "1"
   ckp:workersDesiredCount: "1"

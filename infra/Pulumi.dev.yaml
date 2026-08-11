@@ -15,3 +15,5 @@ config:
   ckp:apiDesiredCount: "0"
   ckp:webImage: 761341389675.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-web:latest
   ckp:webDesiredCount: "1"
+  ckp:ecsCpu: "1024"
+  ckp:ecsMemory: "2048"
