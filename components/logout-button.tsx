@@ -13,6 +13,9 @@ export default function LogoutButton({ variant = 'default' }: LogoutButtonProps)
   const router = useRouter();
 
   const handleLogout = async () => {
+    // Clear mock session and gamification cookies
+    document.cookie = "mock-user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    document.cookie = "mock_gamification_stats=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     await supabase.auth.signOut();
     router.push('/');
     router.refresh();

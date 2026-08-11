@@ -16,7 +16,7 @@ import {
   Loader2,
   ExternalLink,
   Home,
-  ShieldAlert
+  ShieldAlert,
 } from 'lucide-react';
 
 import UserManagement from '@/components/user-management';
@@ -63,8 +63,10 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user || user.email?.toLowerCase() !== ADMIN_EMAIL) {
         router.push('/');
         return;
       }
@@ -411,13 +413,9 @@ export default function AdminDashboard() {
                     className="w-full py-4 border-2 border-dashed border-zinc-100 rounded-2xl flex items-center justify-center space-x-2 text-zinc-400 hover:text-[#34c4f2] hover:border-[#34c4f2]/30 hover:bg-[#34c4f2]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
                   >
                     <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
-<<<<<<< HEAD
-                    <span className="font-bold text-sm uppercase tracking-widest">Add Another URL</span>
-=======
                     <span className="font-bold text-sm uppercase tracking-widest">
                       Add Another URL
                     </span>
->>>>>>> origin/feat/quiz-knowledge-validation
                   </button>
                 </div>
 
