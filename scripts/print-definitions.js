@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const content = fs.readFileSync('.env.local', 'utf8');
+const content = fs.readFileSync('.env', 'utf8');
 const env = {};
 content.split('\n').forEach(line => {
   line = line.trim();
