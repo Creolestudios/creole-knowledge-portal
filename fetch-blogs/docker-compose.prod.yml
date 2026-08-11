@@ -1,0 +1,86 @@
+# Production overlay — API, Celery workers, and Flower.
+#
+# docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Containers talk to mongo/redis by service name, not localhost.
+# Don't use this file for day-to-day dev — run the API with uv instead.
+
+x-worker-common: &worker-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file: .env
+  environment:
+    APP_ENVIRONMENT: production
+    APP_LOG_LEVEL: INFO
+    MONGO_URI: mongodb://mongo:27017
+    REDIS_URL: redis://redis:6379/0
+    REDIS_RESULT_URL: redis://redis:6379/1
+  depends_on:
+    mongo:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks: [app-net]
+  restart: unless-stopped
+
+services:
+  # API + scheduler
+  fastapi-api:
+    <<: *worker-common
+    command: >
+      sh -c "bash scripts/prestart.sh &&
+             fastapi run --workers 4 src/main.py"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # One worker per pipeline queue
+  celery-scrape:
+    <<: *worker-common
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q scrape_queue -c 4 -n scrape@%h --loglevel=info
+
+  celery-extract:
+    <<: *worker-common
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q extract_queue -c 2 -n extract@%h --loglevel=info
+
+  celery-rank:
+    <<: *worker-common
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q rank_queue -c 2 -n rank@%h --loglevel=info
+
+  celery-generate:
+    <<: *worker-common
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q generate_queue -c 2 -n generate@%h --loglevel=info --time-limit=700
+
+  celery-publish:
+    <<: *worker-common
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q publish_queue -c 4 -n publish@%h --loglevel=info
+
+  # Celery task monitor (http://localhost:5555)
+  flower:
+    image: mher/flower:2.0
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      FLOWER_PORT: "5555"
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [app-net]
+    restart: unless-stopped
