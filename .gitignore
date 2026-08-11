@@ -21,3 +21,12 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# IDE / Agent caches
+.claude/
+.gemini/
+.mcp.json
+tsconfig.tsbuildinfo
+
+# Reports
+reports/
