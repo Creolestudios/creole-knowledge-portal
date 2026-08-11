@@ -10,7 +10,7 @@ Internal office tool for **personalized morning tech blog recommendations** and 
 | Auth & Postgres | Supabase (Magic Link, Google OAuth, user profiles, quiz) |
 | Blog pipeline | `fetch-blogs/` — Python, FastAPI, Celery, MongoDB, Redis |
 | AI | Google Gemini |
-| Production infra | AWS ECS Fargate (Pulumi) — see [`infra/README.md`](infra/README.md) |
+| Production infra | AWS ECS Fargate — **Pulumi only** (no AWS CLI for resource creation) — see [`infra/README.md`](infra/README.md) |
 
 ## Quick start (local dev)
 
@@ -94,6 +94,8 @@ Deploy uses OIDC — **no AWS access keys** and **no app secrets** in GitHub. Se
 Setup steps: [`.github/OIDC-SETUP.md`](.github/OIDC-SETUP.md).
 
 ### AWS / Pulumi / ECS
+
+**Policy:** AWS CLI-created CKP infrastructure is invalid. Create and change AWS resources only with Pulumi (`infra/`). Read-only `aws` describe is fine for verification.
 
 Pulumi encrypted config → AWS Secrets Manager → ECS task `secrets`. Keys match [`infra/components/app-secrets.ts`](infra/components/app-secrets.ts).
 
@@ -192,7 +194,7 @@ Same hostname, path-based routing — **not** `api.ckp.nikcreations.com`.
 
 HTTP on the custom domain **301s to HTTPS**. There is no `api.ckp.nikcreations.com` and no CloudFront distribution.
 
-Full deploy + secrets → **[infra/README.md](infra/README.md)**
+Full deploy + secrets → **[infra/README.md](infra/README.md)**. Platform resources (ALB, cluster, OIDC) live in [`infra/components/platform.ts`](infra/components/platform.ts) and were imported from a one-time CLI bootstrap. The only remaining CLI leftover is the Pulumi S3 state bucket (chicken-and-egg backend).
 
 Other docs:
 
