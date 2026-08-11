@@ -1,0 +1,104 @@
+{
+  "app": {
+    "name": "creole-knowledge-portal",
+    "short_name": "ckp",
+    "service_type": "multi-service",
+    "version": "0.1.0"
+  },
+  "services": {
+    "web": {
+      "framework": "nextjs",
+      "port": 3000,
+      "rendering_mode": "ssr",
+      "image_repository": "${ECR_REGISTRY}/ckp-web",
+      "healthcheck": {
+        "path": "/"
+      }
+    },
+    "api": {
+      "framework": "fastapi",
+      "port": 8000,
+      "source_path": "fetch-blogs",
+      "image_repository": "${ECR_REGISTRY}/ckp-api",
+      "healthcheck": {
+        "path": "/api/v1/health"
+      }
+    },
+    "workers": {
+      "framework": "celery",
+      "broker": "redis",
+      "image_repository": "${ECR_REGISTRY}/ckp-workers",
+      "notes": "No HTTP port — Celery worker processes background jobs (scrape, rank, generate). Scale via ECS desiredCount; health via CloudWatch logs and Redis broker connectivity."
+    }
+  },
+  "container": {
+    "web_port": 3000,
+    "api_port": 8000
+  },
+  "runtime": {
+    "cpu": 256,
+    "memory": 512,
+    "desired_count": {
+      "web": 1,
+      "api": 1,
+      "workers": 1
+    }
+  },
+  "environment": {
+    "public": [
+      "NODE_ENV",
+      "PORT",
+      "HOSTNAME",
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "NEXT_PUBLIC_API_URL"
+    ],
+    "secrets": [
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "GEMINI_API_KEY",
+      "MONGO_URI",
+      "REDIS_URL",
+      "REDIS_RESULT_URL"
+    ]
+  },
+  "database": {
+    "required": true,
+    "topology": "dedicated-in-shared-vpc",
+    "engines": {
+      "mongodb": {
+        "purpose": "fetch-blogs article store, job state, digests",
+        "provision": "documentdb-or-atlas",
+        "notes": "Pulumi placeholder in infra/components/data-stores.ts — use DocumentDB in VPC or MongoDB Atlas with VPC peering."
+      },
+      "redis": {
+        "purpose": "Celery broker and result backend",
+        "provision": "elasticache",
+        "notes": "Pulumi placeholder in infra/components/data-stores.ts — ElastiCache Redis cluster in private subnets."
+      },
+      "supabase_postgres": {
+        "purpose": "Auth, user profiles, quiz data",
+        "provision": "external",
+        "notes": "Supabase hosted PostgreSQL — NOT managed by this Pulumi stack. Configure via Secrets Manager / env at deploy time."
+      }
+    }
+  },
+  "networking": {
+    "compute_target": "ecs_fargate",
+    "requires_vpc": true,
+    "load_balancer": true,
+    "public_ingress": true,
+    "path_prefix": "/ckp",
+    "existing_network": true,
+    "config_keys": [
+      "sharedVpcId",
+      "sharedPrivateSubnetIds",
+      "sharedPublicSubnetIds",
+      "sharedVpcCidrBlock",
+      "sharedAlbListenerArn",
+      "sharedAlbSecurityGroupId",
+      "sharedAlbDnsName",
+      "sharedEcsClusterArn",
+      "sharedEcsClusterName"
+    ]
+  }
+}

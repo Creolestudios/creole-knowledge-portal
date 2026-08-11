@@ -1,0 +1,378 @@
+import * as pulumi from "@pulumi/pulumi";
+import * as aws from "@pulumi/aws";
+import { createDataStorePlaceholders } from "./components/data-stores";
+
+const config = new pulumi.Config("ckp");
+const projectConfig = new pulumi.Config();
+const awsConfig = new pulumi.Config("aws");
+
+const appName = config.get("appName") ?? "creole-knowledge-portal";
+const environment = config.get("environment") ?? pulumi.getStack();
+const owner = projectConfig.get("owner") ?? "CKP-Team";
+const awsRegion = (awsConfig.get("region") ?? "us-east-1") as aws.Region;
+
+// Existing shared platform — supplied via config (stogo-factory / TGN pattern).
+// Do NOT create VPC, subnets, or ECS cluster in this stack.
+const sharedVpcId = config.require("sharedVpcId");
+const sharedPrivateSubnetIds = config.requireObject<string[]>("sharedPrivateSubnetIds");
+const sharedAlbListenerArn = config.require("sharedAlbListenerArn");
+const sharedAlbSecurityGroupId = config.require("sharedAlbSecurityGroupId");
+const sharedAlbDnsName = config.require("sharedAlbDnsName");
+const sharedEcsClusterArn = config.require("sharedEcsClusterArn");
+const sharedEcsClusterName = config.require("sharedEcsClusterName");
+const sharedVpcCidrBlock = config.get("sharedVpcCidrBlock") ?? "10.0.0.0/16";
+
+const webPort = config.getNumber("webPort") ?? 3000;
+const apiPort = config.getNumber("apiPort") ?? 8000;
+const listenerPriorityBase = config.getNumber("listenerPriorityBase") ?? 1000;
+const desiredCount = config.getNumber("ecsDesiredCount") ?? 1;
+const webDesiredCount = config.getNumber("webDesiredCount") ?? desiredCount;
+const apiDesiredCount = config.getNumber("apiDesiredCount") ?? desiredCount;
+const cpu = config.get("ecsCpu") ?? "256";
+const memory = config.get("ecsMemory") ?? "512";
+
+const webImage = config.get("webImage");
+const apiImage = config.get("apiImage");
+const workersImage = config.get("workersImage");
+
+export const defaultTags = {
+  Project: appName,
+  Environment: environment,
+  Lifecycle: "ephemeral",
+  Owner: owner,
+  ManagedBy: "Pulumi",
+  Stack: pulumi.getStack(),
+};
+
+const awsProvider = new aws.Provider("aws-provider", {
+  region: awsRegion,
+  defaultTags: { tags: defaultTags },
+});
+
+const fargateSg = new aws.ec2.SecurityGroup(
+  `${appName}-fargate-sg`,
+  {
+    vpcId: sharedVpcId,
+    description: "Allow CKP web and API traffic from shared ALB",
+    ingress: [
+      {
+        protocol: "tcp",
+        fromPort: webPort,
+        toPort: webPort,
+        securityGroups: [sharedAlbSecurityGroupId],
+      },
+      {
+        protocol: "tcp",
+        fromPort: apiPort,
+        toPort: apiPort,
+        securityGroups: [sharedAlbSecurityGroupId],
+      },
+    ],
+    egress: [
+      { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] },
+    ],
+    tags: { Name: `${appName}-fargate-sg-${environment}`, Component: "compute", ...defaultTags },
+  },
+  { provider: awsProvider }
+);
+
+const dataStores = createDataStorePlaceholders({
+  appName,
+  environment,
+  vpcId: sharedVpcId,
+  privateSubnetIds: sharedPrivateSubnetIds,
+  vpcCidrBlock: sharedVpcCidrBlock,
+  fargateSecurityGroupId: fargateSg.id,
+  provider: awsProvider,
+  tags: defaultTags,
+});
+
+const webRepo = new aws.ecr.Repository(`${appName}-web-repo`, {
+  name: `${appName}-web`,
+  forceDelete: environment !== "prod",
+  imageScanningConfiguration: { scanOnPush: true },
+  tags: { Name: `${appName}-web-${environment}`, Component: "registry", ...defaultTags },
+}, { provider: awsProvider });
+
+const apiRepo = new aws.ecr.Repository(`${appName}-api-repo`, {
+  name: `${appName}-api`,
+  forceDelete: environment !== "prod",
+  imageScanningConfiguration: { scanOnPush: true },
+  tags: { Name: `${appName}-api-${environment}`, Component: "registry", ...defaultTags },
+}, { provider: awsProvider });
+
+const workersRepo = new aws.ecr.Repository(`${appName}-workers-repo`, {
+  name: `${appName}-workers`,
+  forceDelete: environment !== "prod",
+  imageScanningConfiguration: { scanOnPush: true },
+  tags: { Name: `${appName}-workers-${environment}`, Component: "registry", ...defaultTags },
+}, { provider: awsProvider });
+
+const albTargetGroupName = (suffix: string) => `ckp-${environment}-${suffix}`.slice(0, 32);
+
+const resolvedWebImage = webImage ?? pulumi.interpolate`${webRepo.repositoryUrl}:latest`;
+const resolvedApiImage = apiImage ?? pulumi.interpolate`${apiRepo.repositoryUrl}:latest`;
+const resolvedWorkersImage = workersImage ?? pulumi.interpolate`${workersRepo.repositoryUrl}:latest`;
+
+const webTg = new aws.lb.TargetGroup(`${appName}-web-tg`, {
+  name: albTargetGroupName("web"),
+  port: webPort,
+  protocol: "HTTP",
+  targetType: "ip",
+  vpcId: sharedVpcId,
+  healthCheck: { path: "/", matcher: "200-399" },
+  tags: { Name: `${appName}-web-tg-${environment}`, Component: "routing", ...defaultTags },
+}, { provider: awsProvider });
+
+const apiTg = new aws.lb.TargetGroup(`${appName}-api-tg`, {
+  name: albTargetGroupName("api"),
+  port: apiPort,
+  protocol: "HTTP",
+  targetType: "ip",
+  vpcId: sharedVpcId,
+  healthCheck: { path: "/api/v1/health", matcher: "200" },
+  tags: { Name: `${appName}-api-tg-${environment}`, Component: "routing", ...defaultTags },
+}, { provider: awsProvider });
+
+new aws.lb.ListenerRule(`${appName}-api-rule`, {
+  listenerArn: sharedAlbListenerArn,
+  priority: listenerPriorityBase,
+  actions: [{ type: "forward", targetGroupArn: apiTg.arn }],
+  conditions: [{ pathPattern: { values: [`/${appName}/api/*`] } }],
+  tags: { Name: `${appName}-api-rule-${environment}`, Component: "routing", ...defaultTags },
+}, { provider: awsProvider });
+
+new aws.lb.ListenerRule(`${appName}-web-rule`, {
+  listenerArn: sharedAlbListenerArn,
+  priority: listenerPriorityBase + 1,
+  actions: [{ type: "forward", targetGroupArn: webTg.arn }],
+  conditions: [
+    { pathPattern: { values: [`/${appName}/*`, `/${appName}`] } },
+  ],
+  tags: { Name: `${appName}-web-rule-${environment}`, Component: "routing", ...defaultTags },
+}, { provider: awsProvider });
+
+const apiPublicUrl = pulumi.interpolate`http://${sharedAlbDnsName}/${appName}/api`;
+
+const executionRole = new aws.iam.Role(`${appName}-ecs-exec-role`, {
+  assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
+    Service: "ecs-tasks.amazonaws.com",
+  }),
+  tags: { Name: `${appName}-ecs-exec-${environment}`, Component: "iam", ...defaultTags },
+}, { provider: awsProvider });
+
+new aws.iam.RolePolicyAttachment(`${appName}-ecs-exec-policy`, {
+  role: executionRole.name,
+  policyArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+}, { provider: awsProvider });
+
+const logGroup = new aws.cloudwatch.LogGroup(`${appName}-logs`, {
+  retentionInDays: environment === "prod" ? 30 : 3,
+  tags: { Name: `${appName}-logs-${environment}`, Component: "logs", ...defaultTags },
+}, { provider: awsProvider });
+
+const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
+  family: `${appName}-api`,
+  cpu,
+  memory,
+  networkMode: "awsvpc",
+  requiresCompatibilities: ["FARGATE"],
+  executionRoleArn: executionRole.arn,
+  containerDefinitions: pulumi
+    .all([resolvedApiImage, logGroup.name, dataStores.mongoUri, dataStores.redisUrl])
+    .apply(([image, log, mongo, redis]) =>
+      JSON.stringify([
+        {
+          name: "api",
+          image,
+          portMappings: [{ containerPort: apiPort, hostPort: apiPort }],
+          environment: [
+            { name: "NODE_ENV", value: "production" },
+            { name: "HOSTNAME", value: "0.0.0.0" },
+            { name: "PORT", value: String(apiPort) },
+            { name: "MONGO_URI", value: mongo },
+            { name: "REDIS_URL", value: redis },
+            { name: "REDIS_RESULT_URL", value: redis },
+          ],
+          logConfiguration: {
+            logDriver: "awslogs",
+            options: {
+              "awslogs-group": log,
+              "awslogs-region": awsRegion,
+              "awslogs-stream-prefix": "api",
+            },
+          },
+        },
+      ])
+    ),
+  tags: { Name: `${appName}-api-task-${environment}`, Component: "compute", ...defaultTags },
+}, { provider: awsProvider });
+
+const webTask = new aws.ecs.TaskDefinition(`${appName}-web-task`, {
+  family: `${appName}-web`,
+  cpu,
+  memory,
+  networkMode: "awsvpc",
+  requiresCompatibilities: ["FARGATE"],
+  executionRoleArn: executionRole.arn,
+  containerDefinitions: pulumi
+    .all([resolvedWebImage, logGroup.name, apiPublicUrl])
+    .apply(([image, log, apiUrl]) =>
+      JSON.stringify([
+        {
+          name: "web",
+          image,
+          portMappings: [{ containerPort: webPort, hostPort: webPort }],
+          environment: [
+            { name: "NODE_ENV", value: "production" },
+            { name: "HOSTNAME", value: "0.0.0.0" },
+            { name: "PORT", value: String(webPort) },
+            { name: "NEXT_PUBLIC_API_URL", value: apiUrl },
+          ],
+          logConfiguration: {
+            logDriver: "awslogs",
+            options: {
+              "awslogs-group": log,
+              "awslogs-region": awsRegion,
+              "awslogs-stream-prefix": "web",
+            },
+          },
+        },
+      ])
+    ),
+  tags: { Name: `${appName}-web-task-${environment}`, Component: "compute", ...defaultTags },
+}, { provider: awsProvider });
+
+// Celery workers — no ALB attachment; scale independently.
+const workersTask = new aws.ecs.TaskDefinition(`${appName}-workers-task`, {
+  family: `${appName}-workers`,
+  cpu,
+  memory,
+  networkMode: "awsvpc",
+  requiresCompatibilities: ["FARGATE"],
+  executionRoleArn: executionRole.arn,
+  containerDefinitions: pulumi
+    .all([resolvedWorkersImage, logGroup.name, dataStores.mongoUri, dataStores.redisUrl])
+    .apply(([image, log, mongo, redis]) =>
+      JSON.stringify([
+        {
+          name: "workers",
+          image,
+          command: ["celery", "-A", "src.workers.celery_app", "worker", "--loglevel=info"],
+          environment: [
+            { name: "NODE_ENV", value: "production" },
+            { name: "MONGO_URI", value: mongo },
+            { name: "REDIS_URL", value: redis },
+            { name: "REDIS_RESULT_URL", value: redis },
+            { name: "CELERY_BROKER_URL", value: redis },
+          ],
+          logConfiguration: {
+            logDriver: "awslogs",
+            options: {
+              "awslogs-group": log,
+              "awslogs-region": awsRegion,
+              "awslogs-stream-prefix": "workers",
+            },
+          },
+        },
+      ])
+    ),
+  tags: { Name: `${appName}-workers-task-${environment}`, Component: "compute", ...defaultTags },
+}, { provider: awsProvider });
+
+new aws.ecs.Service(`${appName}-api-service`, {
+  cluster: sharedEcsClusterArn,
+  taskDefinition: apiTask.arn,
+  desiredCount: apiDesiredCount,
+  launchType: "FARGATE",
+  networkConfiguration: {
+    subnets: sharedPrivateSubnetIds,
+    securityGroups: [fargateSg.id],
+  },
+  loadBalancers: [
+    { targetGroupArn: apiTg.arn, containerName: "api", containerPort: apiPort },
+  ],
+  tags: { Name: `${appName}-api-service-${environment}`, Component: "compute", ...defaultTags },
+}, { provider: awsProvider, dependsOn: [apiTg] });
+
+new aws.ecs.Service(`${appName}-web-service`, {
+  cluster: sharedEcsClusterArn,
+  taskDefinition: webTask.arn,
+  desiredCount: webDesiredCount,
+  launchType: "FARGATE",
+  networkConfiguration: {
+    subnets: sharedPrivateSubnetIds,
+    securityGroups: [fargateSg.id],
+  },
+  loadBalancers: [
+    { targetGroupArn: webTg.arn, containerName: "web", containerPort: webPort },
+  ],
+  tags: { Name: `${appName}-web-service-${environment}`, Component: "compute", ...defaultTags },
+}, { provider: awsProvider, dependsOn: [webTg] });
+
+new aws.ecs.Service(`${appName}-workers-service`, {
+  cluster: sharedEcsClusterArn,
+  taskDefinition: workersTask.arn,
+  desiredCount: config.getNumber("workersDesiredCount") ?? 1,
+  launchType: "FARGATE",
+  networkConfiguration: {
+    subnets: sharedPrivateSubnetIds,
+    securityGroups: [fargateSg.id],
+  },
+  tags: { Name: `${appName}-workers-service-${environment}`, Component: "compute", ...defaultTags },
+}, { provider: awsProvider });
+
+
+// Route53 delegated subdomain — user adds NS at nikcreations.com registrar.
+const domainName = config.get("domainName") ?? "ckp.nikcreations.com";
+const sharedAlbName = config.get("sharedAlbName") ?? "ckp-shared-alb";
+
+const hostedZone = new aws.route53.Zone(
+  `${appName}-zone`,
+  {
+    name: domainName,
+    comment: `CKP ${environment} — delegate NS at parent domain`,
+    tags: { Name: `${appName}-zone-${environment}`, Component: "dns", ...defaultTags },
+  },
+  { provider: awsProvider }
+);
+
+const sharedAlbLookup = aws.lb.getLoadBalancerOutput(
+  { name: sharedAlbName },
+  { provider: awsProvider }
+);
+
+new aws.route53.Record(
+  `${appName}-alb-a`,
+  {
+    zoneId: hostedZone.zoneId,
+    name: domainName,
+    type: "A",
+    aliases: [
+      {
+        name: sharedAlbLookup.dnsName,
+        zoneId: sharedAlbLookup.zoneId,
+        evaluateTargetHealth: true,
+      },
+    ],
+  },
+  { provider: awsProvider }
+);
+
+export const projectTag = appName;
+export const environmentName = environment;
+export const webRepositoryUrl = webRepo.repositoryUrl;
+export const apiRepositoryUrl = apiRepo.repositoryUrl;
+export const workersRepositoryUrl = workersRepo.repositoryUrl;
+export const applicationUrl = pulumi.interpolate`http://${sharedAlbDnsName}/${appName}`;
+export const apiUrl = apiPublicUrl;
+export const ecsClusterArn = sharedEcsClusterArn;
+export const ecsClusterName = sharedEcsClusterName;
+export const appSecurityGroupId = fargateSg.id;
+export const redisSecurityGroupId = dataStores.redisSecurityGroupId;
+export const mongoSecurityGroupId = dataStores.mongoSecurityGroupId;
+
+export const route53ZoneId = hostedZone.zoneId;
+export const route53NameServers = hostedZone.nameServers;
+export const domainNameOutput = domainName;
+

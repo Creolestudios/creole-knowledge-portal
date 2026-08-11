@@ -15,3 +15,5 @@ dist/
 .gitignore
 tests/
 *.md
+../infra/
+../.pulumi/

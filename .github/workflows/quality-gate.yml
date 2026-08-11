@@ -1,0 +1,90 @@
+name: Quality Gate
+
+on:
+  pull_request:
+    branches: [main, feat/infra]
+  push:
+    branches: [main, feat/infra]
+
+concurrency:
+  group: quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nextjs:
+    name: Next.js — lint, test, build
+    runs-on: ubuntu-latest
+    env:
+      # Placeholders for CI — real values live in GitHub Environment secrets at deploy time.
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
+      GEMINI_API_KEY: ci-placeholder-gemini-key
+      APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+  python-quality:
+    name: fetch-blogs — Python quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: fetch-blogs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.9.x"
+
+      - name: Install deps
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check src
+
+      - name: Format check
+        run: uv run ruff format --check src
+
+      # mypy --strict and full pytest+coverage gate: enable once fetch-blogs CI debt is cleared.
+      # See wiki/logs/2026-08-11.md — known failures on feat/infra as of 2026-08-11.
+      - name: Unit tests (no coverage gate yet)
+        run: uv run pytest -q
+
+  infra-typecheck:
+    name: infra — TypeScript typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
