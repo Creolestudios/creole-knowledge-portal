@@ -21,4 +21,3 @@ htmlcov/
 dist/
 build/
 *.egg-info/
-wiki/
