@@ -1,0 +1,105 @@
+{
+  "digest_id": "blog-2026-06-30",
+  "date": "2026-06-30",
+  "title": "Server Components, Edge Caching & The New React Data Layer",
+  "estimated_read_minutes": 20,
+  "tags": ["React 19", "Next.js", "Edge", "Performance", "TypeScript"],
+  "sections": {
+    "trending": {
+      "heading": "Trending for you",
+      "content": "## Why everyone is rewiring their data layer\n\nThis week the developer feeds are dominated by one theme: **moving data fetching out of the client**. With React 19 stabilizing Server Components, teams at scale are reporting **30–50% smaller client bundles** by deleting `useEffect` data-loading code.\n\n### The shift in three points\n\n- **Fetch on the server, stream to the client.** Server Components let you `await` directly in the component body — no loading spinners wired through state.\n- **Cache at the edge.** Pairing server fetches with edge caching (`revalidate`) turns a 400ms render into a sub-50ms one for repeat visitors.\n- **Type-safety end to end.** Because the fetch and the render live in the same file, your `DigestOutput` type flows straight into JSX with zero serialization guesswork.\n\n> Takeaway: if your dashboard still loads its first screen from a client `useEffect`, you are leaving both performance and DX on the table.\n\n### What changed in practice\n\nThe pattern that's winning is small: a thin **server data layer** that every route imports, returning fully typed objects. Components stay dumb renderers. This is exactly the shape this portal now uses for its blog and activity data.",
+      "sources": [
+        {
+          "id": 1,
+          "title": "React 19 Server Components, one year in",
+          "url": "https://react.dev/blog",
+          "author": "React Team",
+          "source_domain": "react.dev",
+          "published_at": "2026-06-28"
+        },
+        {
+          "id": 2,
+          "title": "We deleted 40% of our client bundle",
+          "url": "https://dev.to/example/server-components",
+          "author": "A. Rivera",
+          "source_domain": "dev.to",
+          "published_at": "2026-06-27"
+        }
+      ]
+    },
+    "continueToLearn": {
+      "heading": "Continue to learn",
+      "content": "## Deepening yesterday: caching that doesn't bite back\n\nYou read about edge caching above. The follow-on skill is knowing **when not to cache** — and how to invalidate without shipping stale data to users.\n\n### Three caching modes you should be able to name\n\n- **Static (`force-cache`)** — content that's the same for everyone, like a marketing page.\n- **Time-based (`revalidate: 60`)** — content that can be slightly stale, like a daily digest.\n- **Dynamic (`no-store`)** — per-user, must-be-fresh content, like an auth'd dashboard header.\n\n### A worked example\n\n```ts\n// Daily digest: fine to be a minute stale\nexport const revalidate = 60;\n\nasync function getDigest(userId: string) {\n  const res = await fetch(`/api/digests/${userId}/latest`, {\n    next: { revalidate: 60 },\n  });\n  return res.json();\n}\n```\n\n> Rule of thumb: cache by *how personalized* and *how fresh* the data must be — those two axes decide the mode for you.\n\nTomorrow's continue-to-learn block will build on this with **cache tags** and on-demand revalidation.",
+      "sources": [
+        {
+          "id": 3,
+          "title": "Next.js caching, demystified",
+          "url": "https://nextjs.org/docs/app/building-your-application/caching",
+          "author": "Vercel",
+          "source_domain": "nextjs.org",
+          "published_at": "2026-06-20"
+        }
+      ]
+    }
+  },
+  "quiz": {
+    "quiz_id": "quiz-2026-06-30",
+    "questions": [
+      {
+        "id": "q1",
+        "prompt": "What is the main benefit of React Server Components highlighted today?",
+        "options": [
+          "Larger client bundles for more features",
+          "Smaller client bundles by moving data fetching to the server",
+          "Replacing TypeScript with plain JavaScript",
+          "Removing the need for any caching"
+        ],
+        "answerIndex": 1
+      },
+      {
+        "id": "q2",
+        "prompt": "Which caching mode suits a daily digest that can be slightly stale?",
+        "options": [
+          "Dynamic (no-store)",
+          "Static (force-cache)",
+          "Time-based (revalidate: 60)",
+          "No caching at all"
+        ],
+        "answerIndex": 2
+      },
+      {
+        "id": "q3",
+        "prompt": "In a Server Component, how do you load initial data?",
+        "options": [
+          "With a client useEffect hook",
+          "By awaiting directly in the component body",
+          "Only through a global Redux store",
+          "By polling every second"
+        ],
+        "answerIndex": 1
+      },
+      {
+        "id": "q4",
+        "prompt": "Which caching mode fits a per-user authenticated dashboard header?",
+        "options": [
+          "Dynamic (no-store)",
+          "Static (force-cache)",
+          "Time-based (revalidate: 3600)",
+          "Edge static caching"
+        ],
+        "answerIndex": 0
+      },
+      {
+        "id": "q5",
+        "prompt": "What makes end-to-end type safety easier with Server Components?",
+        "options": [
+          "The fetch and render live in the same file",
+          "Types are inferred from the network at runtime",
+          "Serialization is no longer possible",
+          "Client and server use different type systems"
+        ],
+        "answerIndex": 0
+      }
+    ]
+  }
+}
