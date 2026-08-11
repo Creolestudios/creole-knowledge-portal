@@ -1,0 +1,231 @@
+{
+  "2026-06-29": {
+    "digest_id": "blog-2026-06-29",
+    "date": "2026-06-29",
+    "title": "Type-Safe APIs: From Zod to End-to-End Inference",
+    "estimated_read_minutes": 18,
+    "tags": ["TypeScript", "Zod", "API", "Validation"],
+    "sections": {
+      "trending": {
+        "heading": "Trending for you",
+        "content": "## Validation is having a moment\n\nTeams are standardizing on **runtime schema validation** at the network boundary. The headline: validate once, infer everywhere.\n\n- **Parse, don't validate.** A parsed object carries proof of its shape in the type system.\n- **Single source of truth.** One schema generates both the runtime check and the static type.\n- **Better errors.** Structured validation errors beat `undefined is not a function` at 2am.",
+        "sources": [
+          {
+            "id": 1,
+            "title": "Parse, don't validate",
+            "url": "https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/",
+            "author": "A. King",
+            "source_domain": "lexi-lambda.github.io",
+            "published_at": "2026-06-26"
+          }
+        ]
+      },
+      "continueToLearn": {
+        "heading": "Continue to learn",
+        "content": "## Inferring types from schemas\n\nYesterday you saw why validation matters. Today: how a schema becomes a type for free.\n\n```ts\nconst User = z.object({ id: z.string(), age: z.number() });\ntype User = z.infer<typeof User>; // { id: string; age: number }\n```\n\n> One declaration, two guarantees: runtime safety and compile-time types.",
+        "sources": [
+          {
+            "id": 2,
+            "title": "Zod inference guide",
+            "url": "https://zod.dev",
+            "author": "C. McDonnell",
+            "source_domain": "zod.dev",
+            "published_at": "2026-06-22"
+          }
+        ]
+      }
+    },
+    "quiz": {
+      "quiz_id": "quiz-2026-06-29",
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "What does 'parse, don't validate' mean?",
+          "options": [
+            "Skip validation entirely",
+            "A parsed value carries its shape in the type system",
+            "Validate only in production",
+            "Use regex for everything"
+          ],
+          "answerIndex": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "What does z.infer give you?",
+          "options": [
+            "A runtime logger",
+            "A static type derived from a schema",
+            "A database migration",
+            "An HTTP client"
+          ],
+          "answerIndex": 1
+        }
+      ]
+    }
+  },
+  "2026-06-27": {
+    "digest_id": "blog-2026-06-27",
+    "date": "2026-06-27",
+    "title": "CSS in 2026: Container Queries Go Mainstream",
+    "estimated_read_minutes": 15,
+    "tags": ["CSS", "Responsive", "Frontend"],
+    "sections": {
+      "trending": {
+        "heading": "Trending for you",
+        "content": "## Components that respond to their container, not the viewport\n\n**Container queries** let a card adapt based on the space it's given — finally making truly reusable components possible.\n\n- Style by available width, not screen width.\n- Drop the media-query gymnastics for component layouts.\n- Ship one component that looks right in a sidebar and a full-width hero.",
+        "sources": [
+          {
+            "id": 1,
+            "title": "Container queries land everywhere",
+            "url": "https://web.dev/container-queries",
+            "author": "web.dev",
+            "source_domain": "web.dev",
+            "published_at": "2026-06-25"
+          }
+        ]
+      },
+      "continueToLearn": {
+        "heading": "Continue to learn",
+        "content": "## Naming containers\n\n```css\n.card { container-type: inline-size; }\n@container (min-width: 400px) {\n  .card__title { font-size: 1.5rem; }\n}\n```\n\n> The component declares it is a container; children query it. Composition, not coordination.",
+        "sources": [
+          {
+            "id": 2,
+            "title": "MDN: container-type",
+            "url": "https://developer.mozilla.org/en-US/docs/Web/CSS/container-type",
+            "author": "MDN",
+            "source_domain": "developer.mozilla.org",
+            "published_at": "2026-06-18"
+          }
+        ]
+      }
+    },
+    "quiz": {
+      "quiz_id": "quiz-2026-06-27",
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Container queries let an element respond to what?",
+          "options": [
+            "The viewport width only",
+            "The space its container provides",
+            "The user's scroll speed",
+            "The device battery level"
+          ],
+          "answerIndex": 1
+        }
+      ]
+    }
+  },
+  "2026-06-25": {
+    "digest_id": "blog-2026-06-25",
+    "date": "2026-06-25",
+    "title": "Postgres for App Developers: Indexes You Actually Need",
+    "estimated_read_minutes": 17,
+    "tags": ["Postgres", "Database", "Performance"],
+    "sections": {
+      "trending": {
+        "heading": "Trending for you",
+        "content": "## The four indexes that cover 90% of app queries\n\n- **B-tree** for equality and ranges (the default, usually right).\n- **Partial** for `WHERE status = 'active'` style hot paths.\n- **Composite** when you always filter by the same two columns together.\n- **GIN** for JSONB and full-text search.\n\n> Indexes speed reads and slow writes — add them where you read often, not everywhere.",
+        "sources": [
+          {
+            "id": 1,
+            "title": "Use the index, Luke",
+            "url": "https://use-the-index-luke.com",
+            "author": "M. Winand",
+            "source_domain": "use-the-index-luke.com",
+            "published_at": "2026-06-23"
+          }
+        ]
+      },
+      "continueToLearn": {
+        "heading": "Continue to learn",
+        "content": "## Reading EXPLAIN ANALYZE\n\n```sql\nEXPLAIN ANALYZE SELECT * FROM digests WHERE user_id = $1;\n```\n\nLook for `Seq Scan` on large tables — that's your signal a missing index is hurting.",
+        "sources": [
+          {
+            "id": 2,
+            "title": "Understanding EXPLAIN",
+            "url": "https://www.postgresql.org/docs/current/using-explain.html",
+            "author": "PostgreSQL",
+            "source_domain": "postgresql.org",
+            "published_at": "2026-06-10"
+          }
+        ]
+      }
+    },
+    "quiz": {
+      "quiz_id": "quiz-2026-06-25",
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "Which index type is best for JSONB and full-text search?",
+          "options": ["B-tree", "GIN", "Partial", "Hash"],
+          "answerIndex": 1
+        },
+        {
+          "id": "q2",
+          "prompt": "What does a Seq Scan on a large table often indicate?",
+          "options": [
+            "Optimal performance",
+            "A possibly missing index",
+            "A network error",
+            "A successful cache hit"
+          ],
+          "answerIndex": 1
+        }
+      ]
+    }
+  },
+  "2026-06-23": {
+    "digest_id": "blog-2026-06-23",
+    "date": "2026-06-23",
+    "title": "Shipping Accessible Components by Default",
+    "estimated_read_minutes": 16,
+    "tags": ["Accessibility", "ARIA", "Frontend"],
+    "sections": {
+      "trending": {
+        "heading": "Trending for you",
+        "content": "## Accessibility is a build-time concern now\n\n- Prefer **semantic HTML** before reaching for ARIA.\n- Every interactive element needs a **focus state** and a **name**.\n- Test with a keyboard only — if you can't Tab to it, neither can many users.",
+        "sources": [
+          {
+            "id": 1,
+            "title": "ARIA Authoring Practices",
+            "url": "https://www.w3.org/WAI/ARIA/apg/",
+            "author": "W3C",
+            "source_domain": "w3.org",
+            "published_at": "2026-06-19"
+          }
+        ]
+      },
+      "continueToLearn": {
+        "heading": "Continue to learn",
+        "content": "## The first rule of ARIA\n\n> The first rule of ARIA is: don't use ARIA if a native element does the job. A `<button>` beats a `<div role=\"button\">` every time.",
+        "sources": [
+          {
+            "id": 2,
+            "title": "Using ARIA",
+            "url": "https://www.w3.org/TR/using-aria/",
+            "author": "W3C",
+            "source_domain": "w3.org",
+            "published_at": "2026-06-12"
+          }
+        ]
+      }
+    },
+    "quiz": {
+      "quiz_id": "quiz-2026-06-23",
+      "questions": [
+        {
+          "id": "q1",
+          "prompt": "What is the first rule of ARIA?",
+          "options": [
+            "Always add role attributes",
+            "Don't use ARIA if a native element does the job",
+            "Hide content from screen readers",
+            "Use ARIA only in production"
+          ],
+          "answerIndex": 1
+        }
+      ]
+    }
+  }
+}
