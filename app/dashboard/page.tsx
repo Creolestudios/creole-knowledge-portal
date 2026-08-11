@@ -3,142 +3,125 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
-import {
-  LogOut,
-  User,
-  LayoutDashboard,
-  Settings,
-  Bell,
+import { 
+  LogOut, 
+  User, 
+  LayoutDashboard, 
+  Settings, 
+  Bell, 
   Search,
   Home,
   UserCircle,
   Loader2,
-  ShieldCheck,
   Sparkles,
   RefreshCw,
   BookOpen,
   CheckCircle,
   ExternalLink,
   Clock,
-  Code,
-  Target,
-  Trophy
+  Code
 } from 'lucide-react';
-import Link from 'next/link';
 import LogoutButton from '@/components/logout-button';
+import Link from 'next/link';
+import { PenSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { QuizRunner } from '@/components/quiz/quiz-runner';
 
 // A high-fidelity, zero-dependency Markdown renderer
 function PremiumMarkdownRenderer({ content }: { content: string }) {
   const lines = content.split('\n');
-  const blocks: any[] = [];
   let inCodeBlock = false;
   let codeLines: string[] = [];
 
-  for (let idx = 0; idx < lines.length; idx++) {
-    const line = lines[idx];
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith('```')) {
-      if (inCodeBlock) {
-        inCodeBlock = false;
-        blocks.push({
-          type: 'code',
-          code: codeLines.join('\n'),
-          key: idx,
-        });
-        codeLines = [];
-      } else {
-        inCodeBlock = true;
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeLines.push(line);
-      continue;
-    }
-
-    if (trimmed.startsWith('# ')) {
-      blocks.push({ type: 'h1', text: trimmed.substring(2), key: idx });
-    } else if (trimmed.startsWith('## ')) {
-      blocks.push({ type: 'h2', text: trimmed.substring(3), key: idx });
-    } else if (trimmed.startsWith('### ')) {
-      blocks.push({ type: 'h3', text: trimmed.substring(4), key: idx });
-    } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      blocks.push({ type: 'li', text: trimmed.substring(2), key: idx });
-    } else if (trimmed.startsWith('> ')) {
-      blocks.push({ type: 'quote', text: trimmed.substring(2), key: idx });
-    } else if (trimmed === '') {
-      blocks.push({ type: 'spacer', key: idx });
-    } else {
-      blocks.push({ type: 'p', text: line, key: idx });
-    }
-  }
-
   return (
     <div className="space-y-6 text-zinc-700 leading-relaxed font-sans">
-      {blocks.map((block) => {
-        switch (block.type) {
-          case 'code':
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+
+        // Handle Code Blocks
+        if (trimmed.startsWith('```')) {
+          if (inCodeBlock) {
+            inCodeBlock = false;
+            const code = codeLines.join('\n');
+            codeLines = [];
             return (
-              <div key={block.key} className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-[#0f0f11] my-6 font-mono text-xs shadow-lg">
+              <div key={idx} className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-[#0f0f11] my-6 font-mono text-xs shadow-lg">
                 <div className="flex items-center justify-between px-6 py-3 bg-[#16161a] border-b border-zinc-800 text-zinc-400">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-brand">Code Snippet</span>
                   <button 
-                    onClick={() => navigator.clipboard.writeText(block.code)}
+                    onClick={() => navigator.clipboard.writeText(code)}
                     className="hover:text-white transition-colors text-[10px] font-bold uppercase tracking-widest cursor-pointer"
                   >
                     Copy
                   </button>
                 </div>
                 <pre className="p-6 overflow-x-auto text-zinc-300">
-                  <code>{block.code}</code>
+                  <code>{code}</code>
                 </pre>
               </div>
             );
-          case 'h1':
-            return (
-              <h1 key={block.key} className="text-3xl font-black text-zinc-900 mt-10 mb-4 tracking-tight leading-tight">
-                {block.text}
-              </h1>
-            );
-          case 'h2':
-            return (
-              <h2 key={block.key} className="text-2xl font-black text-zinc-900 mt-8 mb-4 border-b pb-3 border-zinc-100 tracking-tight leading-tight flex items-center gap-2">
-                <span className="w-1.5 h-6 bg-brand rounded-full inline-block" />
-                {block.text}
-              </h2>
-            );
-          case 'h3':
-            return (
-              <h3 key={block.key} className="text-lg font-extrabold text-zinc-900 mt-6 mb-3 tracking-tight">
-                {block.text}
-              </h3>
-            );
-          case 'li':
-            return (
-              <li key={block.key} className="ml-6 list-disc text-sm py-1.5 font-medium text-zinc-600 pl-2">
-                {parseInlineMarkdown(block.text)}
-              </li>
-            );
-          case 'quote':
-            return (
-              <div key={block.key} className="p-6 bg-brand/5 border-l-4 border-brand rounded-r-2xl my-6 text-zinc-700 italic text-sm shadow-sm">
-                {parseInlineMarkdown(block.text)}
-              </div>
-            );
-          case 'spacer':
-            return <div key={block.key} className="h-2" />;
-          case 'p':
-          default:
-            return (
-              <p key={block.key} className="text-zinc-600 text-[15px] leading-relaxed">
-                {parseInlineMarkdown(block.text)}
-              </p>
-            );
+          } else {
+            inCodeBlock = true;
+            return null;
+          }
         }
+
+        if (inCodeBlock) {
+          codeLines.push(line);
+          return null;
+        }
+
+        // Headings
+        if (trimmed.startsWith('# ')) {
+          return (
+            <h1 key={idx} className="text-3xl font-black text-zinc-900 mt-10 mb-4 tracking-tight leading-tight">
+              {trimmed.replace('# ', '')}
+            </h1>
+          );
+        }
+        if (trimmed.startsWith('## ')) {
+          return (
+            <h2 key={idx} className="text-2xl font-black text-zinc-900 mt-8 mb-4 border-b pb-3 border-zinc-100 tracking-tight leading-tight flex items-center gap-2">
+              <span className="w-1.5 h-6 bg-brand rounded-full inline-block" />
+              {trimmed.replace('## ', '')}
+            </h2>
+          );
+        }
+        if (trimmed.startsWith('### ')) {
+          return (
+            <h3 key={idx} className="text-lg font-extrabold text-zinc-900 mt-6 mb-3 tracking-tight">
+              {trimmed.replace('### ', '')}
+            </h3>
+          );
+        }
+
+        // Lists
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          const listText = trimmed.substring(2);
+          // Inline bold parsing
+          return (
+            <li key={idx} className="ml-6 list-disc text-sm py-1.5 font-medium text-zinc-600 pl-2">
+              {parseInlineMarkdown(listText)}
+            </li>
+          );
+        }
+
+        // Blockquote / Tip / Note alert box
+        if (trimmed.startsWith('> ')) {
+          return (
+            <div key={idx} className="p-6 bg-brand/5 border-l-4 border-brand rounded-r-2xl my-6 text-zinc-700 italic text-sm shadow-sm">
+              {parseInlineMarkdown(trimmed.substring(2))}
+            </div>
+          );
+        }
+
+        if (trimmed === '') return <div key={idx} className="h-2" />;
+
+        // Standard Paragraphs
+        return (
+          <p key={idx} className="text-zinc-600 text-[15px] leading-relaxed">
+            {parseInlineMarkdown(line)}
+          </p>
+        );
       })}
     </div>
   );
@@ -177,40 +160,12 @@ export default function DashboardPage() {
   
   // Brief states
   const [brief, setBrief] = useState<any>(null);
-  const [quizStatus, setQuizStatus] = useState<any>(null);
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
   
   const supabase = createClient();
   const router = useRouter();
-
-  async function fetchLatestBrief() {
-    setLoadingBrief(true);
-    try {
-      const res = await fetch('/api/digests/latest');
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.blog) {
-          setBrief(data.blog);
-          // Check quiz status
-          try {
-            const statusRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
-            if (statusRes.ok) {
-              const statusData = await statusRes.json();
-              setQuizStatus(statusData);
-            }
-          } catch (e) {
-            console.error('Error fetching quiz status:', e);
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching brief:', e);
-    } finally {
-      setLoadingBrief(false);
-    }
-  }
 
   useEffect(() => {
     async function getInitialData() {
@@ -253,11 +208,27 @@ export default function DashboardPage() {
     getInitialData();
   }, [supabase, router]);
 
+  const fetchLatestBrief = async () => {
+    setLoadingBrief(true);
+    try {
+      const res = await fetch('/api/digests/latest');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.blog) {
+          setBrief(data.blog);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching brief:', e);
+    } finally {
+      setLoadingBrief(false);
+    }
+  };
+
   const handleGenerateBriefing = async () => {
     if (!user) return;
     setGenerating(true);
     setBrief(null);
-    setQuizStatus(null);
     
     // Custom simulated steps to give extremely premium, immersive feel
     const steps = [
@@ -322,46 +293,39 @@ export default function DashboardPage() {
   const hasBrief = !!brief;
   
   return (
-    <div className="h-screen overflow-hidden bg-[#f8f9fa] flex">
+    <div className="min-h-screen bg-[#f8f9fa] flex">
       {/* Sidebar */}
       <aside className="w-72 bg-[#0a0a0a] text-white flex flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
-
+        
         <div className="flex items-center gap-3 mb-12 relative z-10">
           <div className="w-10 h-10 bg-brand rounded-lg flex items-center justify-center shadow-brand">
             <span className="text-black font-black text-xl">C</span>
           </div>
           <div>
             <span className="font-bold text-lg block leading-none">Creole</span>
-            <span className="text-[10px] text-brand uppercase tracking-widest font-bold">
-              Portal
-            </span>
+            <span className="text-[10px] text-brand uppercase tracking-widest font-bold">Portal</span>
           </div>
         </div>
 
         <nav className="flex-1 space-y-1 relative z-10">
           <button
-            onClick={() => router.push('/dashboard')}
             className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-900/50 text-brand border border-brand/20 shadow-sm text-left"
           >
             <Home size={20} />
             <span className="font-semibold text-sm">Morning Brief</span>
           </button>
-          <button
-            onClick={() => router.push('/dashboard/gatekeeper')}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer text-left"
+
+          <Link
+            href="/blog-roulette"
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left"
           >
-            <ShieldCheck size={20} className="group-hover:scale-110 transition-transform" />
-            <span className="font-semibold text-sm">Blog Submissions</span>
-          </button>
-          <button
-            onClick={() => router.push('/dashboard/quizzes')}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer text-left"
-          >
-            <Trophy size={20} className="group-hover:scale-110 transition-transform" />
-            <span className="font-semibold text-sm">My Quizzes</span>
-          </button>
+            <PenSquare size={20} />
+            <span className="font-medium text-sm">Blog Roulette</span>
+          </Link>
+
           <div className="h-4" />
+
           <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left">
             <Bell size={20} className="group-hover:rotate-12 transition-transform" />
             <span className="font-medium text-sm">Notifications</span>
@@ -383,18 +347,15 @@ export default function DashboardPage() {
         <header className="h-20 bg-white border-b border-zinc-200 px-10 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-4 flex-1">
             <div className="relative w-full max-w-md">
-              <Search
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400"
-                size={16}
-              />
-              <input
-                type="text"
-                placeholder="Search portal resources..."
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Search portal resources..." 
                 className="w-full pl-12 pr-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand text-sm transition-all"
               />
             </div>
           </div>
-
+          
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
               <div className="text-right hidden sm:block">
@@ -421,35 +382,15 @@ export default function DashboardPage() {
                 <h1 id="dashboard-welcome" className="text-4xl font-black text-zinc-900 tracking-tight mb-3">Your Morning Briefing</h1>
                 <p className="text-zinc-500 text-base">Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.</p>
               </div>
+
               {hasBrief && !generating && (
-                <div className="flex items-center gap-3 shrink-0">
-                  <button 
-                    onClick={handleGenerateBriefing}
-                    className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer"
-                  >
-                    <RefreshCw size={15} />
-                    Regenerate Briefing
-                  </button>
-                  {quizStatus?.completed ? (
-                    <div className="px-6 py-3 bg-zinc-100 text-zinc-400 font-bold rounded-xl border border-zinc-200 flex items-center gap-2 text-sm cursor-not-allowed">
-                      <CheckCircle size={15} className="text-emerald-500" />
-                      Quiz Completed
-                    </div>
-                  ) : quizStatus?.inProgress ? (
-                    <div className="px-6 py-3 bg-zinc-900 text-zinc-500 font-bold rounded-xl border border-zinc-800 shadow-sm transition-all flex items-center gap-2 text-sm cursor-not-allowed">
-                      <Clock size={15} className="text-zinc-600" />
-                      Quiz in Progress...
-                    </div>
-                  ) : (
-                    <Link 
-                      href={`/dashboard/quiz/${brief.id}`}
-                      className="px-6 py-3 bg-zinc-900 hover:bg-black text-white font-bold rounded-xl border border-zinc-800 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer"
-                    >
-                      <Target size={15} className="text-brand" />
-                      Take Quiz
-                    </Link>
-                  )}
-                </div>
+                <button 
+                  onClick={handleGenerateBriefing}
+                  className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
+                >
+                  <RefreshCw size={15} />
+                  Regenerate Briefing
+                </button>
               )}
             </div>
 
