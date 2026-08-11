@@ -4,10 +4,40 @@ import { useState, useEffect } from 'react';
 import { CalendarSearch, Loader2, Calendar } from 'lucide-react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 
-export default function PastBlogsTab() {
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+export default function PastBlogsTab({
+  selected,
+  onSelect,
+}: {
+  selected?: string | null;
+  onSelect?: (date: string | null) => void;
+} = {}) {
+  const [selectedDate, setSelectedDate] = useState<string | null>(selected || null);
   const [blog, setBlog] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (selected) {
+      setSelectedDate(selected);
+      const fetchBlogForDate = async (dateStr: string) => {
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/digests/past?date=${dateStr}`);
+          if (res.ok) {
+            const data = await res.json();
+            setBlog(data.blog || null);
+          } else {
+            setBlog(null);
+          }
+        } catch (e) {
+          console.error(e);
+          setBlog(null);
+        } finally {
+          setLoading(false);
+        }
+      };
+      void fetchBlogForDate(selected);
+    }
+  }, [selected]);
   
   // Basic calendar data
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -38,6 +68,9 @@ export default function PastBlogsTab() {
     if (d > new Date()) return;
     
     setSelectedDate(dateStr);
+    if (onSelect) {
+      onSelect(dateStr);
+    }
     setLoading(true);
     
     try {
