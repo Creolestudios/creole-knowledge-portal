@@ -1,36 +1,37 @@
 ---
 title: Layout Components
+tags: [components, layout, ui]
 created: 2026-05-16
-updated: 2026-05-16
-tags: components, layout, ui
+updated: 2026-06-13
 ---
-# Layout Components
+# 🖼️ Layout Components
 
-This section covers the core layout components that structure the application's user interface.
+Documentation for the structural components that define the application's shell.
 
-## `MainLayout`
+## 🏗️ Core Layouts
 
-- **Purpose:** Provides the overall page structure, including navigation, headers, and footers.
-- **File:** `components/Layout/MainLayout.tsx` (assumed path)
-- **Features:**
-    - Wraps page content.
-    - Includes a persistent header (e.g., with logo, user profile/login button).
-    - May include a persistent navigation sidebar or footer.
-    - Handles routing based on user authentication status (redirecting to login if not authenticated for protected routes).
-- **Dependencies:** Authentication components, navigation elements.
+### Main Application Layout
+- **File**: `app/layout.tsx`
+- **Purpose**: The root layout for the entire application.
+- **Responsibilities**:
+  - Configures the HTML `<html>` and `<body>` tags.
+  - Loads global styles (`globals.css`).
+  - Wraps all pages in the necessary providers (e.g., Theme, Auth).
 
-## `AdminLayout`
+### Dashboard Layout
+- **Purpose**: Provides the consistent shell for the authenticated user's experience.
+- **Features**:
+  - Navigation header.
+  - User profile context.
+  - Responsive container for digest content.
 
-- **Purpose:** Provides a distinct layout for admin-specific pages.
-- **File:** `components/Layout/AdminLayout.tsx` (assumed path)
-- **Features:**
-    - Similar to `MainLayout` but with admin-specific navigation or branding.
-    - Ensures only authenticated admin users can access these routes.
+### Admin Layout
+- **Purpose**: A restricted shell for administrative tasks.
+- **Features**:
+  - Admin-specific navigation.
+  - High-privilege action warnings.
 
-## `Sidebar` / `Navbar` / `Footer` (if applicable)
-
-- **Purpose:** Individual components for distinct layout sections.
-- **File:** (e.g., `components/Layout/Sidebar.tsx`, `components/Layout/Navbar.tsx`, `components/Layout/Footer.tsx`)
-- **Features:** Specific UI elements and functionality for each part of the layout.
-
-TODO: Refine based on actual file structure and component implementations in the `components/Layout/` directory.
+## 🎨 Styling Standards
+- **Global Styles**: Managed in `app/globals.css`.
+- **Brand Tokens**: Uses custom Tailwind tokens like `bg-brand` and `text-brand`.
+- **Theming**: Defaults to a dark-mode centric palette (`bg-[#0a0a0a]`).
