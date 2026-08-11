@@ -87,18 +87,13 @@
     "requires_vpc": true,
     "load_balancer": true,
     "public_ingress": true,
-    "path_prefix": "/ckp",
-    "existing_network": true,
+    "path_prefix": "/creole-knowledge-portal",
+    "existing_network": false,
+    "notes": "Default VPC is AWS-owned (looked up). ALB, listeners, ECS cluster, OIDC, and deploy role are Pulumi-managed (imported). Do not create CKP AWS resources with the AWS CLI.",
     "config_keys": [
-      "sharedVpcId",
-      "sharedPrivateSubnetIds",
-      "sharedPublicSubnetIds",
-      "sharedVpcCidrBlock",
-      "sharedAlbListenerArn",
-      "sharedAlbSecurityGroupId",
-      "sharedAlbDnsName",
-      "sharedEcsClusterArn",
-      "sharedEcsClusterName"
+      "albSubnetIds",
+      "domainName",
+      "githubRepo"
     ]
   }
 }

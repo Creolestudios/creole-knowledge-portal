@@ -1,12 +1,12 @@
 # Creole Knowledge Portal — Infrastructure & Secrets
 
-Pulumi stack for deploying CKP to **AWS ECS Fargate** on the TGN **Option 3** pattern (shared VPC + ALB). External data stores only — no RDS, DocumentDB, or ElastiCache.
+Pulumi stack for deploying CKP to **AWS ECS Fargate**. **AWS CLI-created infrastructure is invalid** — create and change AWS resources only with Pulumi. Former CLI bootstrap (ALB, cluster, HTTP listener, OIDC, deploy role) was **imported** into this stack. External data stores only — no RDS, DocumentDB, or ElastiCache.
 
 ## Overview
 
 | Decision | Detail |
 |----------|--------|
-| **Pattern** | Option 3 — compute in shared VPC; **data stores are external** |
+| **Pattern** | Single Pulumi stack owns platform + app; **data stores are external** |
 | **Compute** | ECS Fargate: Next.js web (:3000), FastAPI api (:8000), Celery workers |
 | **Postgres / Auth** | [Supabase](https://supabase.com) |
 | **MongoDB** | [MongoDB Atlas](https://www.mongodb.com/atlas) |
@@ -22,6 +22,35 @@ Pulumi stack for deploying CKP to **AWS ECS Fargate** on the TGN **Option 3** pa
 | Stack | `dev` (project `creole-knowledge-portal`) |
 
 See also: [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md), [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md), [`prototype.config.yaml`](../prototype.config.yaml).
+
+---
+
+## Ownership policy (no AWS CLI)
+
+Do **not** use the AWS CLI (or console) to create CKP resources. Extend [`components/platform.ts`](./components/platform.ts) or `index.ts` and run `pulumi up`. Read-only `aws … describe` is OK for verification.
+
+### Imported into stack `dev` (was CLI bootstrap)
+
+| Pulumi name | AWS type | Imported ID |
+|-------------|----------|-------------|
+| `ckp-shared-alb-sg` | Security group | `sg-04f7dda0f8d56fadd` |
+| `ckp-shared-alb` | ALB | `arn:…:loadbalancer/app/ckp-shared-alb/9d5d020a6e55f819` |
+| `ckp-shared-http-listener` | HTTP :80 listener | `arn:…/listener/…/18c48acf310a9913` |
+| `ckp-shared-cluster` | ECS cluster `ckp-shared` | cluster name / ARN |
+| `ckp-github-oidc` | GitHub OIDC provider | `arn:aws:iam::761341389675:oidc-provider/token.actions.githubusercontent.com` |
+| `ckp-github-deploy-role` | IAM role | `ckp-github-deploy-dev` |
+| `ckp-github-deploy-policy` | Inline policy | `ckp-github-deploy-dev:ckp-pulumi-deploy` |
+
+These resources are **protected** in Pulumi (`protect: true`) and tagged `ManagedBy=Pulumi`. OIDC thumbprint is `6938fd4d98bab03fa0217a5d6397dd4a4f5e5e5e`.
+
+### Still not Pulumi-created (by design)
+
+| Resource | Why |
+|----------|-----|
+| AWS default VPC + subnets | AWS-owned; looked up (`aws.ec2.getVpc`) |
+| S3 `pulumi-state-761341389675` | Pulumi backend — chicken-and-egg. **Only allowed CLI leftover.** Do not recreate unless the bucket is gone. See [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md). |
+| KMS alias `ckp-pulumi-secrets` | Secrets provider for stack config (same bootstrap class as the state bucket) |
+| Supabase / Atlas / Redis | External SaaS |
 
 ---
 
@@ -169,7 +198,7 @@ In **Supabase Dashboard → Authentication → URL Configuration**:
 
 ## Deploy flow
 
-### 1. Bootstrap infrastructure
+### 1. Apply the Pulumi stack
 
 ```bash
 export AWS_PROFILE=cloud_user
@@ -180,7 +209,7 @@ pulumi preview
 pulumi up
 ```
 
-Creates: ECR repos, Secrets Manager secrets (when config is set), security groups, ALB rules, ECS services, CloudWatch logs, Route53 zone.
+Owns: shared ALB + SG + listeners, ECS cluster, GitHub OIDC + deploy role, ECR, Secrets Manager (when config is set), Fargate SGs, ALB rules, ECS services, CloudWatch logs, ACM, Route53 zone. Platform resources are imported and protected — `pulumi up` must not replace the ALB or cluster.
 
 ### 2. Build and push Docker images
 
@@ -237,7 +266,7 @@ These are **outside** this Pulumi stack:
 | Upstash / Redis Cloud instance + TLS URL | Provider dashboard |
 | Supabase project + redirect URLs | [Supabase dashboard](https://app.supabase.com) |
 | GitHub OIDC deploy role | Set repo variable `AWS_GHA_DEPLOY_ROLE_ARN` — see [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md) |
-| Shared VPC / ALB / ECS cluster IDs | Platform team → `pulumi config set ckp:sharedVpcId ...` |
+| Shared VPC / ALB / ECS cluster | Default VPC looked up; ALB + cluster owned by this stack (`components/platform.ts`) — imported, not CLI |
 
 ---
 
@@ -269,9 +298,11 @@ These are **outside** this Pulumi stack:
 
 ## What this stack creates / does not create
 
-**Creates:** ECR, Secrets Manager (when config set), Fargate SGs, ALB target groups + rules, ECS services, CloudWatch logs, Route53 zone.
+**Creates / owns (Pulumi):** default-VPC lookup, ALB + SG, HTTP/HTTPS listeners, ECS cluster, GitHub OIDC + deploy role, ECR, Secrets Manager (when config set), Fargate SGs, target groups + rules, ECS services, ACM cert, CloudWatch logs, Route53 zone.
 
-**Does not create:** VPC, subnets, ECS cluster, ALB, Supabase, Atlas, Redis, RDS, DocumentDB, ElastiCache.
+**Does not create:** AWS default VPC/subnets (looked up), Pulumi S3 state bucket (only allowed CLI leftover), Supabase, Atlas, Redis, RDS, DocumentDB, ElastiCache.
+
+**Do not use AWS CLI to add more CKP infra** — extend [`components/platform.ts`](./components/platform.ts) or `index.ts` and `pulumi up`.
 
 **Placeholder modules:** [`components/data-stores.ts`](./components/data-stores.ts) retains SGs for future in-VPC stores; production uses external Atlas + Redis only.
 
