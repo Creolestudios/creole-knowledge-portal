@@ -43,11 +43,13 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // For local testing, allow bypassing auth if ?mockUser=true is present or cookie exists
-  const isMock = request.nextUrl.searchParams.has('mockUser') || request.cookies.has('mock-user');
+  // Dev-only auth bypass — disabled in production (NODE_ENV=production).
+  const allowMock =
+    process.env.NODE_ENV !== 'production' &&
+    (request.nextUrl.searchParams.has('mockUser') || request.cookies.has('mock-user'));
   let user = null;
 
-  if (isMock) {
+  if (allowMock) {
     user = {
       id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004', // priyadhanani125@gmail.com user_id
       email: 'priyadhanani125@gmail.com',

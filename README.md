@@ -16,7 +16,7 @@ Internal office tool for **personalized morning tech blog recommendations** and 
 
 ### Prerequisites
 
-- Node.js 18+ or 20+
+- Node.js 20+
 - npm 9+
 - A Supabase project ([dashboard](https://app.supabase.com))
 - A Gemini API key ([AI Studio](https://aistudio.google.com/app/apikey))
@@ -35,7 +35,7 @@ npm install
 cp .env.example .env.local
 ```
 
-Edit `.env.local` with your values (see [Secrets setup](#secrets-setup-local-development) below).
+Edit `.env.local` with your values (see table below). **Do not set `NEXT_PUBLIC_BASE_PATH` locally** — the app runs at `/` on port 3000.
 
 ### 3. Run the web app
 
@@ -59,34 +59,59 @@ See [`fetch-blogs/README.md`](fetch-blogs/README.md) for API env vars (`MONGO_UR
 
 ---
 
-## Secrets setup (local development)
+## Environment variables (local web app)
 
-> **Never commit secrets.** `.env.local` and `fetch-blogs/.env` are gitignored. Do not paste real keys into PRs, wiki pages, or committed config files.
+Copy from [`.env.example`](.env.example). Never commit `.env.local`.
 
-### Web app — `.env.local`
-
-Copy from [`.env.example`](.env.example):
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL (`https://xxx.supabase.co`) — safe for browser |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon/public key — safe for browser |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes (server) | Supabase service role key — **server-side only**, never expose to client |
-| `GEMINI_API_KEY` | Yes (server) | Google Gemini API key for AI digest and quiz features |
-| `APP_URL` | Yes | App base URL — `http://localhost:3000` for local dev |
+| Variable | Required | Scope | Description |
+|----------|----------|-------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Browser + server | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Browser + server | Supabase anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server only | Supabase service role — never expose to client |
+| `GEMINI_API_KEY` | Yes | Server only | Google Gemini for digest + quiz AI |
+| `APP_URL` | Yes | Server | Base URL — `http://localhost:3000` for local dev |
+| `NEXT_PUBLIC_BASE_PATH` | No | Build | Leave unset locally. Production Docker/ECS sets `/creole-knowledge-portal` |
 
 **Where to get values**
 
-- **Supabase:** Dashboard → your project → Settings → API
+- **Supabase:** Dashboard → Settings → API
 - **Gemini:** [AI Studio](https://aistudio.google.com/app/apikey)
 
 **Supabase redirect URLs (local):** Authentication → URL Configuration → add `http://localhost:3000/auth/callback`.
 
-### Production / AWS deploy secrets
+---
 
-Production secrets (Pulumi config, AWS Secrets Manager, ECS, Atlas, Upstash, etc.) are documented in:
+## Production Docker build
 
-**→ [infra/README.md](infra/README.md)**
+`NEXT_PUBLIC_*` variables are **inlined at build time** by Next.js. They must be passed as Docker build-args (not only at ECS runtime):
+
+```bash
+docker build \
+  --build-arg NEXT_PUBLIC_BASE_PATH=/creole-knowledge-portal \
+  --build-arg NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co \
+  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key \
+  -t ckp-web .
+```
+
+Server-only secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`) are injected at **ECS runtime** via AWS Secrets Manager — see [`infra/README.md`](infra/README.md).
+
+---
+
+## ALB path prefix (`basePath`)
+
+Production serves the web app under **`/creole-knowledge-portal`** (matches `ckp:appName` in Pulumi and [`prototype.config.yaml`](prototype.config.yaml)).
+
+- Configured via `NEXT_PUBLIC_BASE_PATH=/creole-knowledge-portal` at Docker build time
+- [`next.config.ts`](next.config.ts) reads `process.env.NEXT_PUBLIC_BASE_PATH`
+- Local dev has no basePath — routes stay at `/`, `/dashboard`, etc.
+
+---
+
+## Dev-only mock auth bypass
+
+For local testing without Supabase login, append `?mockUser=true` to any URL. This sets a `mock-user` cookie and uses a fixed demo identity.
+
+**Disabled in production** (`NODE_ENV=production`) — enforced in [`middleware.ts`](middleware.ts), API routes, and [`lib/dev/mock-user.ts`](lib/dev/mock-user.ts).
 
 ---
 
@@ -95,12 +120,14 @@ Production secrets (Pulumi config, AWS Secrets Manager, ECS, Atlas, Upstash, etc
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Start Next.js dev server on port 3000 |
-| `npm run build` | Production build |
+| `npm run build` | Production build (needs Supabase/Gemini env vars) |
 | `npm run start` | Run production build locally |
-| `npm run lint` | ESLint |
+| `npm run lint` | ESLint (Next.js app only; excludes `infra/`, `fetch-blogs/`) |
 | `npm run test` | Vitest unit tests |
 | `npm run test:e2e` | Playwright end-to-end tests |
 | `bash scripts/ci-test.sh` | Full local quality gate |
+
+CI uses placeholder env vars — see [`.github/workflows/quality-gate.yml`](.github/workflows/quality-gate.yml).
 
 ---
 
@@ -112,7 +139,9 @@ Three services in production: **web** (Next.js), **api** (FastAPI), **workers** 
 Browser → Next.js (Supabase auth) → FastAPI / Celery → MongoDB + Redis + Gemini
 ```
 
-Deeper docs:
+**Production deploy:** all secrets, ECS env mapping, Docker push, DNS, and Supabase redirect URLs → **[infra/README.md](infra/README.md)**
+
+Other docs:
 
 - [`wiki/pages/architecture.md`](wiki/pages/architecture.md) — system design
 - [`CLAUDE.md`](CLAUDE.md) — agent/coding harness and folder map

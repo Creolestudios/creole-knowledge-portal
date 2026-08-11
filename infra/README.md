@@ -1,6 +1,6 @@
 # Creole Knowledge Portal — Infrastructure & Secrets
 
-Pulumi stack for deploying CKP to **AWS ECS Fargate** on the TGN **Option 3** pattern (shared VPC + ALB). This guide is written for someone new to the project.
+Pulumi stack for deploying CKP to **AWS ECS Fargate** on the TGN **Option 3** pattern (shared VPC + ALB). External data stores only — no RDS, DocumentDB, or ElastiCache.
 
 ## Overview
 
@@ -8,12 +8,10 @@ Pulumi stack for deploying CKP to **AWS ECS Fargate** on the TGN **Option 3** pa
 |----------|--------|
 | **Pattern** | Option 3 — compute in shared VPC; **data stores are external** |
 | **Compute** | ECS Fargate: Next.js web (:3000), FastAPI api (:8000), Celery workers |
-| **Postgres / Auth** | [Supabase](https://supabase.com) — auth, user profiles, quiz data |
-| **MongoDB** | [MongoDB Atlas](https://www.mongodb.com/atlas) — fetch-blogs article store, job state |
-| **Redis** | External provider (Upstash, Redis Cloud, etc.) — Celery broker + result backend |
-| **NOT used** | AWS RDS, DocumentDB, ElastiCache — no AWS-managed databases in this stack |
-
-Secrets are **never committed**. Pulumi stores encrypted config in stack state; production values flow through **AWS Secrets Manager** (created/managed by Pulumi) and into ECS task definitions at deploy time.
+| **Postgres / Auth** | [Supabase](https://supabase.com) |
+| **MongoDB** | [MongoDB Atlas](https://www.mongodb.com/atlas) |
+| **Redis** | External (Upstash, Redis Cloud, etc.) — Celery broker + result backend |
+| **Secrets** | Pulumi encrypted config → AWS Secrets Manager → ECS task `secrets` |
 
 | Item | Value |
 |------|-------|
@@ -23,250 +21,113 @@ Secrets are **never committed**. Pulumi stores encrypted config in stack state; 
 | Pulumi backend | `s3://pulumi-state-761341389675?region=us-east-1&awssdk=v2` |
 | Stack | `dev` (project `creole-knowledge-portal`) |
 
-See also: [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md), [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md), repo-root [`prototype.config.yaml`](../prototype.config.yaml).
-
-## Architecture
-
-```mermaid
-flowchart TB
-  subgraph AWS["AWS (this stack)"]
-    ALB["Shared ALB"]
-    Web["ECS: Next.js web"]
-    API["ECS: FastAPI api"]
-    Workers["ECS: Celery workers"]
-    SM["Secrets Manager"]
-    ECR["ECR repos"]
-  end
-  subgraph External["External data stores"]
-    Supa["Supabase Postgres + Auth"]
-    Atlas["MongoDB Atlas"]
-    Redis["Redis (Upstash / etc.)"]
-  end
-  ALB --> Web
-  ALB --> API
-  SM --> Web
-  SM --> API
-  SM --> Workers
-  Web --> Supa
-  API --> Supa
-  API --> Atlas
-  API --> Redis
-  Workers --> Atlas
-  Workers --> Redis
-```
-
-## Prerequisites
-
-Before your first deploy, ensure you have:
-
-1. **AWS CLI** configured with profile `cloud_user` (account `761341389675`).
-2. **Pulumi CLI** (`pulumi`) and **Node.js 20+**.
-3. **Shared platform IDs** from your platform team: VPC, private subnets, shared ALB listener ARN, ECS cluster ARN (see [Network config](#network-config-non-secret) below).
-4. **Supabase project** — URL, anon key, service role key ([Supabase dashboard](https://app.supabase.com) → Settings → API).
-5. **MongoDB Atlas cluster** — connection string with database user ([Atlas](https://cloud.mongodb.com)).
-6. **Redis instance** — broker URL from Upstash, Redis Cloud, or similar.
-7. **Google Gemini API key** — [AI Studio](https://aistudio.google.com/app/apikey) (used by Next.js and fetch-blogs).
-
-Log in to the Pulumi backend:
-
-```bash
-export AWS_PROFILE=cloud_user
-export AWS_REGION=us-east-1
-pulumi login 's3://pulumi-state-761341389675?region=us-east-1&awssdk=v2'
-cd infra
-npm install
-pulumi stack select --create dev
-```
+See also: [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md), [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md), [`prototype.config.yaml`](../prototype.config.yaml).
 
 ---
 
 ## Secrets setup (start here)
 
-This is the main onboarding path for new team members.
-
 ### Rules
 
-- **Never** commit real secrets to git (`.env.local`, `Pulumi.*.yaml` with plaintext secrets, etc.).
-- Use `pulumi config set --secret` for all sensitive Pulumi keys — values are encrypted in stack state.
-- For production ECS, secrets are stored in **AWS Secrets Manager** and referenced by ARN in task definitions (not baked into Docker images).
-- Local development uses `.env.local` (web) and `fetch-blogs/.env` — see [root README](../README.md#secrets-setup-local-development).
+- **Never** commit real secrets to git.
+- Use `pulumi config set --secret` for sensitive values — encrypted in stack state.
+- Pulumi creates **AWS Secrets Manager** resources ([`components/app-secrets.ts`](./components/app-secrets.ts)) and ECS tasks reference them by ARN.
+- If a Pulumi secret is not set, the stack falls back to plain env placeholders from [`components/data-stores.ts`](./components/data-stores.ts) (mongo/redis only).
 
-### All secrets and config keys
+### Pulumi config keys → ECS env vars
 
-| Pulumi config key | ECS / runtime env var | Used by | Where to get it | Status in stack |
-|-------------------|----------------------|---------|-----------------|-----------------|
-| `ckp:mongoUri` | `MONGO_URI` | api, workers | MongoDB Atlas → Connect → connection string | **Wired** — passed to task env from config |
-| `ckp:redisUrl` | `REDIS_URL`, `REDIS_RESULT_URL`, `CELERY_BROKER_URL` | api, workers | Upstash / Redis Cloud dashboard | **Wired** — passed to task env from config |
-| `ckp:supabaseUrl` | `NEXT_PUBLIC_SUPABASE_URL` | web | Supabase → Settings → API → Project URL | Planned — Secrets Manager |
-| `ckp:supabaseAnonKey` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | web | Supabase → Settings → API → anon public key | Planned — Secrets Manager |
-| `ckp:supabaseServiceRoleKey` | `SUPABASE_SERVICE_ROLE_KEY` | web (server routes) | Supabase → Settings → API → service_role key | Planned — Secrets Manager |
-| `ckp:geminiApiKey` | `GEMINI_API_KEY` | web | Google AI Studio API key | Planned — Secrets Manager |
-| `ckp:llmGeminiApiKey` | `LLM_GEMINI_API_KEY` | api, workers | Same Gemini key (fetch-blogs uses `LLM_` prefix) | Planned — Secrets Manager |
+| Pulumi config key | Secrets Manager path | ECS env var | Service(s) |
+|-------------------|---------------------|-------------|------------|
+| `ckp:supabaseUrl` | `{appName}/{env}/supabase-url` | `NEXT_PUBLIC_SUPABASE_URL` | web |
+| `ckp:supabaseAnonKey` *(secret)* | `{appName}/{env}/supabase-anon-key` | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | web |
+| `ckp:supabaseServiceRoleKey` *(secret)* | `{appName}/{env}/supabase-service-role-key` | `SUPABASE_SERVICE_ROLE_KEY` | web |
+| `ckp:geminiApiKey` *(secret)* | `{appName}/{env}/gemini-api-key` | `GEMINI_API_KEY` | web |
+| `ckp:llmGeminiApiKey` *(secret)* | `{appName}/{env}/llm-gemini-api-key` | `LLM_GEMINI_API_KEY` | api, workers |
+| `ckp:mongoUri` *(secret)* | `{appName}/{env}/mongo-uri` | `MONGO_URI` | api, workers |
+| `ckp:redisUrl` | `{appName}/{env}/redis-url` | `REDIS_URL`, `REDIS_RESULT_URL`, `CELERY_BROKER_URL` | api, workers |
 
-Non-secret runtime config (computed or plain config):
+`{appName}` defaults to `creole-knowledge-portal`; `{env}` is the stack name (e.g. `dev`).
 
-| Source | ECS env var | Used by |
+If `ckp:llmGeminiApiKey` is unset, the stack reuses `ckp:geminiApiKey` for the LLM secret.
+
+### Non-secret runtime config
+
+| Source | ECS env var | Service |
 |--------|-------------|---------|
-| Pulumi output / ALB DNS | `NEXT_PUBLIC_API_URL` | web |
-| `ckp:domainName` | (Route53 + Supabase redirect URLs) | dns, auth |
+| Pulumi / ALB DNS | `NEXT_PUBLIC_API_URL` | web |
+| `ckp:appName` | `NEXT_PUBLIC_BASE_PATH` | web |
+| Static | `NODE_ENV`, `PORT`, `HOSTNAME` | web, api |
 
-### Step 1 — Set Pulumi secrets (deploy machine or CI)
+> **Build-time vs runtime:** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are also required as **Docker build-args** (inlined into the client bundle). ECS runtime secrets cover server-side middleware and SSR. See root [README](../README.md#production-docker-build).
 
-Run from `infra/` with stack `dev` selected:
+### Set secrets (deploy machine or CI)
 
 ```bash
 export AWS_PROFILE=cloud_user
-pulumi stack select dev
+cd infra && pulumi stack select dev
 
-# MongoDB Atlas — REQUIRED today (api + workers won't connect without it)
+# MongoDB Atlas — required for api + workers
 pulumi config set --secret ckp:mongoUri 'mongodb+srv://USER:PASSWORD@cluster.mongodb.net/ckp?retryWrites=true&w=majority'
 
-# External Redis — REQUIRED today
+# External Redis — required for api + workers
 pulumi config set ckp:redisUrl 'rediss://default:YOUR_TOKEN@your-redis.upstash.io:6379/0'
 
-# Supabase — set before web service can authenticate in production
+# Supabase — required for web auth in production
 pulumi config set ckp:supabaseUrl 'https://your-project-id.supabase.co'
 pulumi config set --secret ckp:supabaseAnonKey 'your-anon-key'
 pulumi config set --secret ckp:supabaseServiceRoleKey 'your-service-role-key'
 
 # Gemini — web uses GEMINI_API_KEY; fetch-blogs uses LLM_GEMINI_API_KEY
 pulumi config set --secret ckp:geminiApiKey 'your-gemini-api-key'
-pulumi config set --secret ckp:llmGeminiApiKey 'your-gemini-api-key'
+pulumi config set --secret ckp:llmGeminiApiKey 'your-gemini-api-key'   # optional if same key
 ```
 
-Verify encrypted values are stored (shows `[secret]`):
+Verify:
 
 ```bash
-pulumi config
+pulumi config   # sensitive values show [secret]
+pulumi preview  # creates/updates Secrets Manager + ECS task definitions
 ```
-
-Copy [`Pulumi.example.yaml`](./Pulumi.example.yaml) for non-secret keys; never paste real secrets into committed YAML — use the commands above instead.
-
-### Step 2 — AWS Secrets Manager flow
-
-**Target pattern** (full wiring in progress):
-
-1. **Pulumi creates** `aws.secretsmanager.Secret` resources per app secret (e.g. `ckp/dev/supabase-service-role`).
-2. **Secret values** are populated from `pulumi config set --secret` at deploy time — not checked into git.
-3. **ECS task definitions** reference secrets via `secrets` (not plain `environment`):
-
-   ```json
-   {
-     "name": "SUPABASE_SERVICE_ROLE_KEY",
-     "valueFrom": "arn:aws:secretsmanager:us-east-1:761341389675:secret:ckp/dev/supabase-service-role:SUPABASE_SERVICE_ROLE_KEY::"
-   }
-   ```
-
-4. **Execution role** needs `secretsmanager:GetSecretValue` on those ARNs.
-
-**Current state:** `MONGO_URI` and Redis URLs are injected from Pulumi config directly into api/workers task definitions ([`index.ts`](./index.ts)). Supabase and Gemini keys are **not yet** in ECS — set Pulumi secrets now so they are ready when Secrets Manager wiring lands.
-
-### Step 3 — GitHub Actions variables
-
-Deploy workflows use **OIDC** (no long-lived AWS access keys). Full setup: [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md).
-
-| GitHub setting | Type | Value / purpose |
-|----------------|------|-----------------|
-| `AWS_GHA_DEPLOY_ROLE_ARN` | **Repository variable** | IAM role ARN, e.g. `arn:aws:iam::761341389675:role/ckp-github-deploy-dev` |
-
-Optional: GitHub **Environments** (`dev`, `prod`) with approval gates before `pulumi up`.
-
-The deploy workflow ([`.github/workflows/deploy-infra.yml`](../.github/workflows/deploy-infra.yml)) skips Pulumi jobs until `AWS_GHA_DEPLOY_ROLE_ARN` is set.
-
-### Step 4 — Local dev vs production
-
-| Environment | Where secrets live | Files |
-|-------------|-------------------|-------|
-| **Local (web)** | Developer machine | `.env.local` (gitignored) — copy from [`.env.example`](../.env.example) |
-| **Local (api/workers)** | Developer machine | `fetch-blogs/.env` — copy from [`fetch-blogs/.env.example`](../fetch-blogs/.env.example) |
-| **Production (ECS)** | AWS Secrets Manager + Pulumi encrypted config | Never in repo or Docker layers |
 
 ---
 
-## MongoDB Atlas setup
+## Service scaling guidance
 
-1. Create a cluster in Atlas (M10+ recommended for production; free tier OK for dev).
-2. **Database user** — create a user with `readWrite` on the `ckp` database (or your chosen DB name).
-3. **Network access** — ECS tasks run in private subnets with outbound NAT. Either:
-   - Add the **NAT gateway elastic IP(s)** for your VPC to Atlas IP Access List, or
-   - Use **Atlas Private Endpoint / VPC peering** for production, or
-   - Temporarily allow `0.0.0.0/0` for dev only (Atlas still requires username/password).
-4. **Connection string format:**
+| Config key | Default (`Pulumi.example.yaml`) | Notes |
+|------------|--------------------------------|-------|
+| `ckp:webDesiredCount` | `1` | Web UI — scale after image + Supabase secrets are set |
+| `ckp:apiDesiredCount` | `1` | FastAPI — set to `0` in dev until `mongoUri` + `redisUrl` are real |
+| `ckp:workersDesiredCount` | `1` | Celery — set to `0` until Redis + Mongo are reachable |
+| `ckp:ecsDesiredCount` | `1` | Fallback when per-service counts are omitted |
 
-   ```
-   mongodb+srv://<user>:<password>@<cluster>.mongodb.net/ckp?retryWrites=true&w=majority
-   ```
-
-5. Set in Pulumi:
-
-   ```bash
-   pulumi config set --secret ckp:mongoUri 'mongodb+srv://...'
-   ```
-
-Local fetch-blogs uses `MONGO_URI=mongodb://localhost:27017` via docker-compose.
+Current dev stack (`Pulumi.dev.yaml`) may keep `apiDesiredCount: 0` and `workersDesiredCount: 0` until external stores are configured.
 
 ---
 
-## External Redis setup
+## ALB routing & custom domain
 
-Use any managed Redis with TLS support (recommended: **Upstash** or **Redis Cloud**).
+| Route | ALB path pattern | Container health check |
+|-------|------------------|------------------------|
+| Web | `/creole-knowledge-portal`, `/creole-knowledge-portal/*` | `/creole-knowledge-portal` |
+| API | `/creole-knowledge-portal/api/*` | `/api/v1/health` (direct to container) |
 
-- **Broker:** database `0` → `REDIS_URL` / `CELERY_BROKER_URL`
-- **Results:** database `1` → `REDIS_RESULT_URL` (can use same host, different DB index)
+| URL | Purpose |
+|-----|---------|
+| `http://<alb-dns>/creole-knowledge-portal/` | Web app |
+| `http://<alb-dns>/creole-knowledge-portal/api/v1/health` | API health (via ALB) |
+| `https://ckp.nikcreations.com/creole-knowledge-portal/` | Production (after Route53 NS delegation) |
 
-Example Upstash URL:
+`NEXT_PUBLIC_API_URL` is set to `http://<alb-dns>/creole-knowledge-portal` (no trailing `/api` — clients append `/api/v1/...`).
 
-```
-rediss://default:YOUR_TOKEN@your-endpoint.upstash.io:6379/0
-```
-
-Set in Pulumi:
-
-```bash
-pulumi config set ckp:redisUrl 'rediss://default:YOUR_TOKEN@your-endpoint.upstash.io:6379/0'
-```
-
-> **Note:** Current ECS task definitions use one URL for both broker and result backend. Use separate DB indexes on the same instance, or extend the stack to support `ckp:redisResultUrl`.
-
----
-
-## Supabase redirect URLs (production)
-
-Default production domain from Pulumi: `ckp.nikcreations.com` (override with `ckp:domainName`).
+### Supabase redirect URLs
 
 In **Supabase Dashboard → Authentication → URL Configuration**:
 
 | Setting | Value |
 |---------|-------|
-| **Site URL** | `https://ckp.nikcreations.com` |
-| **Redirect URLs** | `https://ckp.nikcreations.com/auth/callback` |
-| | `http://localhost:3000/auth/callback` (local dev) |
-
-Google OAuth (if enabled) must also list the production callback URL in Google Cloud Console.
-
-Auth callback handler: [`app/auth/callback/route.ts`](../app/auth/callback/route.ts).
-
----
-
-## Network config (non-secret)
-
-Required shared-platform keys (from your VPC/ALB operator):
-
-```bash
-pulumi config set ckp:environment dev
-pulumi config set ckp:appName creole-knowledge-portal
-pulumi config set ckp:sharedVpcId vpc-xxxxxxxx
-pulumi config set --path 'ckp:sharedPrivateSubnetIds[0]' subnet-xxxxxxxx
-pulumi config set --path 'ckp:sharedPrivateSubnetIds[1]' subnet-yyyyyyyy
-pulumi config set ckp:sharedVpcCidrBlock 10.0.0.0/16
-pulumi config set ckp:sharedAlbListenerArn arn:aws:elasticloadbalancing:...
-pulumi config set ckp:sharedAlbSecurityGroupId sg-xxxxxxxx
-pulumi config set ckp:sharedAlbDnsName shared-alb-xxxxx.us-east-1.elb.amazonaws.com
-pulumi config set ckp:sharedEcsClusterArn arn:aws:ecs:us-east-1:761341389675:cluster/...
-pulumi config set ckp:sharedEcsClusterName shared-cluster
-pulumi config set ckp:listenerPriorityBase 1100
-pulumi config set ckp:domainName ckp.nikcreations.com
-```
+| **Site URL** | `https://ckp.nikcreations.com/creole-knowledge-portal` |
+| **Redirect URLs** | `https://ckp.nikcreations.com/creole-knowledge-portal/auth/callback` |
+| | `http://localhost:3000/auth/callback` (local dev, no basePath) |
 
 ---
 
@@ -277,60 +138,70 @@ pulumi config set ckp:domainName ckp.nikcreations.com
 ```bash
 export AWS_PROFILE=cloud_user
 cd infra
+npm install
+pulumi stack select dev
 pulumi preview
 pulumi up
 ```
 
-Creates: ECR repos, security groups, ALB target groups + listener rules, ECS services, CloudWatch logs, Route53 hosted zone.
+Creates: ECR repos, Secrets Manager secrets (when config is set), security groups, ALB rules, ECS services, CloudWatch logs, Route53 zone.
 
 ### 2. Build and push Docker images
 
-Use ECR URLs from stack outputs:
-
 ```bash
-# Authenticate to ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 761341389675.dkr.ecr.us-east-1.amazonaws.com
+# Authenticate
+aws ecr get-login-password --region us-east-1 | \
+  docker login --username AWS --password-stdin 761341389675.dkr.ecr.us-east-1.amazonaws.com
 
-# Web (repo root)
-docker build -t ckp-web .
-docker tag ckp-web:latest <webRepositoryUrl>:v1
-docker push <webRepositoryUrl>:v1
+WEB_REPO=$(pulumi stack output webRepositoryUrl)
+API_REPO=$(pulumi stack output apiRepositoryUrl)
+WORKERS_REPO=$(pulumi stack output workersRepositoryUrl)
 
-# API + workers (fetch-blogs/)
+# Web — repo root; NEXT_PUBLIC_* must be build-args
+docker build \
+  --build-arg NEXT_PUBLIC_BASE_PATH=/creole-knowledge-portal \
+  --build-arg NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co \
+  --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key \
+  -t ckp-web .
+docker tag ckp-web:latest ${WEB_REPO}:v1
+docker push ${WEB_REPO}:v1
+
+# API + workers — fetch-blogs/ (same image, different ECS command for workers)
 docker build -t ckp-api ./fetch-blogs
-docker tag ckp-api:latest <apiRepositoryUrl>:v1
-docker push <apiRepositoryUrl>:v1
-
-docker tag ckp-api:latest <workersRepositoryUrl>:v1
-docker push <workersRepositoryUrl>:v1
+docker tag ckp-api:latest ${API_REPO}:v1
+docker push ${API_REPO}:v1
+docker tag ckp-api:latest ${WORKERS_REPO}:v1
+docker push ${WORKERS_REPO}:v1
 ```
 
 ### 3. Point ECS at new images
 
 ```bash
-pulumi config set ckp:webImage <webRepositoryUrl>:v1
-pulumi config set ckp:apiImage <apiRepositoryUrl>:v1
-pulumi config set ckp:workersImage <workersRepositoryUrl>:v1
+pulumi config set ckp:webImage ${WEB_REPO}:v1
+pulumi config set ckp:apiImage ${API_REPO}:v1
+pulumi config set ckp:workersImage ${WORKERS_REPO}:v1
+pulumi config set ckp:apiDesiredCount 1
+pulumi config set ckp:workersDesiredCount 1
 pulumi up
 ```
 
 ### 4. DNS delegation
 
-After `pulumi up`, note the stack output `route53NameServers`. Add NS records at the parent domain (`nikcreations.com`) to delegate `ckp.nikcreations.com` to Route53.
+After `pulumi up`, add NS records at `nikcreations.com` using stack output `route53NameServers`.
 
-### 5. Verify health
+---
 
-| Service | URL |
-|---------|-----|
-| Web | `http://<alb-dns>/creole-knowledge-portal/` |
-| API | `http://<alb-dns>/creole-knowledge-portal/api/api/v1/health` |
-| Production (after DNS) | `https://ckp.nikcreations.com/` |
+## Manual setup checklist
 
-### 6. Teardown (ephemeral sandbox)
+These are **outside** this Pulumi stack:
 
-```bash
-pulumi destroy
-```
+| Task | Where |
+|------|-------|
+| MongoDB Atlas cluster + IP allowlist (NAT gateway IPs) | [Atlas](https://cloud.mongodb.com) |
+| Upstash / Redis Cloud instance + TLS URL | Provider dashboard |
+| Supabase project + redirect URLs | [Supabase dashboard](https://app.supabase.com) |
+| GitHub OIDC deploy role | Set repo variable `AWS_GHA_DEPLOY_ROLE_ARN` — see [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md) |
+| Shared VPC / ALB / ECS cluster IDs | Platform team → `pulumi config set ckp:sharedVpcId ...` |
 
 ---
 
@@ -347,24 +218,23 @@ pulumi destroy
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `pulumi preview` fails on missing config | Shared VPC keys not set | Complete [Network config](#network-config-non-secret) |
-| API/workers crash on startup | Missing `mongoUri` or `redisUrl` | `pulumi config set --secret ckp:mongoUri '...'` and `pulumi config set ckp:redisUrl '...'` |
-| Mongo connection timeout from ECS | Atlas IP allowlist | Add NAT gateway IP or enable VPC peering |
-| Web login redirect fails | Supabase redirect URLs | Add production callback URL in Supabase dashboard |
-| `AccessDenied` on `pulumi up` in GHA | OIDC role or trust policy | See [OIDC-SETUP.md](../.github/OIDC-SETUP.md) |
-| Deploy workflow skipped | Missing `AWS_GHA_DEPLOY_ROLE_ARN` | Set repo variable in GitHub Settings |
-| Wrong AWS account | Profile mismatch | `export AWS_PROFILE=cloud_user` and verify with `aws sts get-caller-identity` |
-| Secrets visible in git | Accidental commit | Rotate compromised secrets; use `pulumi config set --secret` only |
+| Web 404 at ALB root | basePath | Use `/creole-knowledge-portal/` not `/` |
+| API 404 via ALB | Path prefix mismatch | Hit `/creole-knowledge-portal/api/v1/health` |
+| ECS task fails to start | Missing Secrets Manager permission | Re-run `pulumi up` (execution role policy) |
+| api/workers crash | Placeholder mongo/redis | Set real `ckp:mongoUri` and `ckp:redisUrl` |
+| Mongo timeout | Atlas IP allowlist | Add VPC NAT gateway IP |
+| Login redirect fails | Supabase URLs | Include basePath in callback URL |
+| GHA deploy skipped | Missing OIDC var | Set `AWS_GHA_DEPLOY_ROLE_ARN` |
 
 ---
 
 ## What this stack creates / does not create
 
-**Creates:** ECR (`ckp-web`, `ckp-api`, `ckp-workers`), Fargate security groups, ALB target groups + rules, ECS services, CloudWatch log group, Route53 zone.
+**Creates:** ECR, Secrets Manager (when config set), Fargate SGs, ALB target groups + rules, ECS services, CloudWatch logs, Route53 zone.
 
-**Does not create:** VPC, subnets, ECS cluster, shared ALB, Supabase project, Atlas cluster, Redis instance, RDS, DocumentDB, ElastiCache.
+**Does not create:** VPC, subnets, ECS cluster, ALB, Supabase, Atlas, Redis, RDS, DocumentDB, ElastiCache.
 
-**Placeholder modules:** [`components/data-stores.ts`](./components/data-stores.ts) retains security groups from the Option 3 template; ElastiCache/DocumentDB provisioning is intentionally **not** used — external providers only.
+**Placeholder modules:** [`components/data-stores.ts`](./components/data-stores.ts) retains SGs for future in-VPC stores; production uses external Atlas + Redis only.
 
 ---
 
@@ -372,5 +242,5 @@ pulumi destroy
 
 Infra is deploy-only. Local dev does not require Pulumi:
 
-- **Web:** `npm run dev` (see [root README](../README.md))
+- **Web:** `npm run dev` — see [root README](../README.md)
 - **API + workers:** `fetch-blogs/docker-compose.yml`

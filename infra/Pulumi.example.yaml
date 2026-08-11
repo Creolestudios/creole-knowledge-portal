@@ -13,7 +13,10 @@ config:
   ckp:sharedEcsClusterName: shared-cluster
   ckp:listenerPriorityBase: "1100"
   ckp:ecsDesiredCount: "1"
+  ckp:webDesiredCount: "1"
+  ckp:apiDesiredCount: "1"
   ckp:workersDesiredCount: "1"
+  # Dev stack may set apiDesiredCount/workersDesiredCount to 0 until secrets are configured.
   # Until ElastiCache/DocumentDB are provisioned:
   ckp:redisUrl: redis://placeholder:6379/0
   # ckp:mongoUri — set with: pulumi config set --secret ckp:mongoUri 'mongodb://...'

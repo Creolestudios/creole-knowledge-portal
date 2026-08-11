@@ -5,7 +5,7 @@ import { RefreshCw, Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 
-export default function DailyBlogTab({ user, profile }: { user: any; profile: any }) {
+export default function DailyBlogTab({ user, profile }: { user?: any; profile?: any }) {
   const [brief, setBrief] = useState<any>(null);
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
