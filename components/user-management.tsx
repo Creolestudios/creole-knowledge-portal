@@ -57,14 +57,13 @@ export default function UserManagement() {
   const supabase = createClient();
   
   const fetchUsers = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await fetch('/api/admin/users');
       if (!res.ok) throw new Error('Failed to fetch users');
       const data = await res.json();
       setUsers(data);
-    } catch (err) {
-      setToast({ message: err instanceof Error ? err.message : 'Failed to fetch users', type: 'error' });
+    } catch (err: any) {
+      setToast({ message: err.message, type: 'error' });
     } finally {
       setLoading(false);
     }

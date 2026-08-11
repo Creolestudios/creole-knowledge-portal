@@ -15,12 +15,16 @@ import {
   CheckCircle2,
   Loader2,
   ExternalLink,
-  Home
+  Home,
+  ShieldAlert
 } from 'lucide-react';
 
 import UserManagement from '@/components/user-management';
+import SubmissionsModeration from '@/components/submissions-moderation';
 
-type Tab = 'sources' | 'users';
+const ADMIN_EMAIL = 'priya.dhanani@creolestudios.com';
+
+type Tab = 'sources' | 'users' | 'submissions';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('sources');
@@ -44,7 +48,7 @@ export default function AdminDashboard() {
       if (error) throw error;
 
       if (data && data.length > 0) {
-        setUrls(data.map(item => item.url));
+        setUrls(data.map((item) => item.url));
       }
     } catch (err: any) {
       console.error('Error fetching sources:', err);
@@ -107,7 +111,7 @@ export default function AdminDashboard() {
   };
 
   const validateUrls = () => {
-    const filtered = urls.filter(u => u.trim() !== '');
+    const filtered = urls.filter((u) => u.trim() !== '');
     if (filtered.length === 0) {
       throw new Error('At least one blog source URL is required.');
     }
@@ -139,14 +143,12 @@ export default function AdminDashboard() {
       if (deleteError) throw deleteError;
 
       // Insert new
-      const { error: insertError } = await supabase
-        .from('blog_sources')
-        .insert(
-          validatedUrls.map(url => ({
-            url,
-            added_by: user.id
-          }))
-        );
+      const { error: insertError } = await supabase.from('blog_sources').insert(
+        validatedUrls.map((url) => ({
+          url,
+          added_by: user.id,
+        }))
+      );
 
       if (insertError) throw insertError;
 
@@ -192,26 +194,56 @@ export default function AdminDashboard() {
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <div className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-4 px-3 mt-2">Menu</div>
+          <div className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-4 px-3 mt-2">
+            Menu
+          </div>
           <button
             onClick={() => setActiveTab('sources')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'sources'
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'sources'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
                 : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+            }`}
           >
             <Globe className="w-5 h-5" />
             <span>Blog Sources</span>
           </button>
           <button
             onClick={() => setActiveTab('users')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'users'
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'users'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
                 : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
+            }`}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
             <span>Users</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('submissions')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'submissions'
+                ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+            }`}
+          >
+            <ShieldAlert className="w-5 h-5" />
+            <span>Submissions</span>
           </button>
 
           <div className="h-px bg-zinc-800 my-4" />
@@ -228,7 +260,9 @@ export default function AdminDashboard() {
         {/* User / Sign Out */}
         <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
           <div className="px-3 mb-4">
-            <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Logged In As</p>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">
+              Logged In As
+            </p>
             <p className="text-sm font-medium text-zinc-300 truncate">{user?.email}</p>
           </div>
           <button
@@ -252,13 +286,43 @@ export default function AdminDashboard() {
             <h1 className="font-bold text-sm">Admin Console</h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setActiveTab('sources')} className={`p-2 rounded-md ${activeTab === 'sources' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
+            <button
+              onClick={() => setActiveTab('sources')}
+              className={`p-2 rounded-md ${activeTab === 'sources' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}
+            >
               <Globe className="w-4 h-4" />
             </button>
-            <button onClick={() => setActiveTab('users')} className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
             </button>
-            <button onClick={handleSignOut} className="p-2 text-zinc-400 hover:text-white ml-2 border-l border-zinc-700 pl-4">
+            <button
+              onClick={() => setActiveTab('submissions')}
+              className={`p-2 rounded-md ${activeTab === 'submissions' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}
+            >
+              <ShieldAlert className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleSignOut}
+              className="p-2 text-zinc-400 hover:text-white ml-2 border-l border-zinc-700 pl-4"
+            >
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -296,10 +360,13 @@ export default function AdminDashboard() {
                     <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">
                       Source URL List
                     </span>
-                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${urls.length >= 10
-                        ? 'bg-red-50 text-red-500 border-red-100'
-                        : 'bg-zinc-50 text-zinc-500 border-zinc-100'
-                      }`}>
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${
+                        urls.length >= 10
+                          ? 'bg-red-50 text-red-500 border-red-100'
+                          : 'bg-zinc-50 text-zinc-500 border-zinc-100'
+                      }`}
+                    >
                       {urls.length} / 10 URLs Added
                     </span>
                   </div>
@@ -344,7 +411,13 @@ export default function AdminDashboard() {
                     className="w-full py-4 border-2 border-dashed border-zinc-100 rounded-2xl flex items-center justify-center space-x-2 text-zinc-400 hover:text-[#34c4f2] hover:border-[#34c4f2]/30 hover:bg-[#34c4f2]/5 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
                   >
                     <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+<<<<<<< HEAD
                     <span className="font-bold text-sm uppercase tracking-widest">Add Another URL</span>
+=======
+                    <span className="font-bold text-sm uppercase tracking-widest">
+                      Add Another URL
+                    </span>
+>>>>>>> origin/feat/quiz-knowledge-validation
                   </button>
                 </div>
 
@@ -398,7 +471,7 @@ export default function AdminDashboard() {
                   </p>
                 </div>
               </motion.div>
-            ) : (
+            ) : activeTab === 'users' ? (
               <motion.div
                 key="users"
                 initial={{ opacity: 0, y: 20 }}
@@ -407,6 +480,16 @@ export default function AdminDashboard() {
                 transition={{ duration: 0.2 }}
               >
                 <UserManagement />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="submissions"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <SubmissionsModeration />
               </motion.div>
             )}
           </AnimatePresence>

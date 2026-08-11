@@ -1,20 +1,37 @@
 ---
 title: Creole Knowledge Portal Wiki
-created: 2026-05-16
-updated: 2026-05-16
-tags: index, moc
+tags: [moc, root, documentation]
+created: 2026-05-27
+updated: 2026-06-13s
 ---
-# Creole Knowledge Portal Wiki
 
-Welcome to the wiki for the Creole Knowledge Portal project! This wiki serves as a central hub for understanding the project's architecture, setup, components, and decision-making processes.
+# Welcome to the Creole Knowledge Portal Wiki
 
-## Main Sections
+This is the central knowledge base and Map of Content (MOC) for the **Creole Knowledge Portal** project.
 
-*   [[pages/architecture.md|Architecture]]
-*   [[pages/fetch-blogs-walkthrough.md|Fetch Blogs Microservice Walkthrough]]
-*   [[pages/setup-guide.md|Setup Guide]]
-*   [[pages/roadmap.md|Roadmap]]
-*   [[pages/notion-integration.md|Notion Task Integration]]
-*   [[components/index.md|Components]]
-*   [[decisions/index.md|Architectural Decisions]]
-*   [[logs/index.md|Changelogs]]
+The Creole Knowledge Portal is an internal office application designed to deliver personalized morning tech blog recommendations and daily AI-driven digests to employees. It is tailored to individual roles, experience levels, and technology stacks.
+
+---
+
+## 🗺️ Wiki Map of Content (MOC)
+
+### 📖 Guides and Overview
+
+- [[pages/architecture|System Architecture]]: Architectural design, data model, and system flow diagrams.
+- [[pages/fetch-blogs-walkthrough|Fetch Blogs Microservice Walkthrough]]: Walkthrough of the python scraping and curation engine.
+- [[pages/setup-guide|Setup & Installation Guide]]: Quickstart, environments configuration, and local running guidelines.
+- [[pages/roadmap|Product Roadmap]]: Next steps, planned features, and known issues.
+- [[pages/gatekeeper-plan|Gatekeeper Module Design]]: Architectural design and implementation plan for AI validation and technical quiz gatekeeping.
+- [[pages/notion-integration|Notion Task Integration]]: Documentation about notion tasks integration.
+
+### 🧱 Codebase Components
+
+- [[components/index|Components MOC]]: Discover reusable UI components like `[[components/user-management|UserManagement]]` and `[[components/logout-button|LogoutButton]]`.
+
+### ⚡ Architectural Decisions
+
+- [[decisions/index|Architectural Decision Records (ADRs)]]: Records of architectural choices made during development (Next.js App Router, Supabase Auth, Middleware Route Guards, and planned crawler services).
+
+### 📋 History & Logs
+
+- [[logs/index|Changelogs Index]]: The list of chronological updates, additions, fixes, and removals.
