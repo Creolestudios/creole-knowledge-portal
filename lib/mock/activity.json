@@ -1,0 +1,9 @@
+[
+  { "date": "2026-06-29", "readSeconds": 1080, "quizTaken": true, "quizScore": 2, "quizTotal": 2 },
+  { "date": "2026-06-28", "readSeconds": 640, "quizTaken": false, "quizScore": 0, "quizTotal": 0 },
+  { "date": "2026-06-27", "readSeconds": 905, "quizTaken": true, "quizScore": 1, "quizTotal": 1 },
+  { "date": "2026-06-26", "readSeconds": 1200, "quizTaken": true, "quizScore": 4, "quizTotal": 5 },
+  { "date": "2026-06-25", "readSeconds": 1015, "quizTaken": true, "quizScore": 1, "quizTotal": 2 },
+  { "date": "2026-06-24", "readSeconds": 0, "quizTaken": false, "quizScore": 0, "quizTotal": 0 },
+  { "date": "2026-06-23", "readSeconds": 780, "quizTaken": true, "quizScore": 1, "quizTotal": 1 }
+]

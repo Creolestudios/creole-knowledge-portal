@@ -1,36 +1,30 @@
 ---
 title: Digest Card Component
+tags: [components, digest]
 created: 2026-05-16
-updated: 2026-05-16
-tags: components, digest
+updated: 2026-06-13
 ---
-# Digest Card Component
+# 📄 Digest Card Component
 
-This component is responsible for displaying a single article digest item on the user's dashboard.
+The `DigestCard` is the central UI element for presenting synthesized AI content to the user.
 
-- **File:** `components/DigestCard.tsx` (assumed path)
+## 🎯 Purpose
+To provide a concise, scannable summary of a technical article that encourages the user to read the full synthesis or the original source.
 
-## Props
+## 🛠️ Implementation
 
-*   `article`: An object conforming to the `Article` or `DigestOutput` structure (depending on exact implementation), containing details like headline, TLDR, source, URL, etc.
-*   `index`: The index of this digest in the list (for potential styling or tracking).
+### Props
+The component expects a data structure matching the `DigestOutput` contract from the blog fetch module:
+- `headline`: String.
+- `tldr`: Array of strings (bullet points).
+- `sources`: Array of source objects (title, url, author).
+- `estimated_read_minutes`: Number.
 
-## Features
+### Styling & Animation
+- **Framework**: Tailwind CSS 4.
+- **Animations**: Uses `motion/react` for smooth entry and hover transitions.
+- **Theme**: Adheres to the brand identity (e.g., `bg-brand` accents).
 
-*   Displays the article headline and a brief summary (TLDR).
-*   Shows the source domain and author.
-*   Provides a link to the original article.
-*   May include estimated reading time or other metadata.
-*   Uses `motion` for animations (as per coding standards).
-
-## Styling
-
-*   Utilizes Tailwind CSS for styling.
-*   Likely uses a predefined panel background color (e.g., `bg-[#0a0a0a]` or `bg-[#f8f9fa]`).
-
-## Dependencies
-
-*   `motion/react` for animations.
-*   `clsx` and `tailwind-merge` for flexible class name management.
-
-TODO: Add more details once the exact structure of the `article` prop is confirmed.
+## 🔗 Related Files
+- `app/dashboard/page.tsx`: Consumes the `DigestCard` to render the daily list.
+- `fetch-blogs/src/models/`: Defines the Pydantic models that map to these props.

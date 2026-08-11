@@ -11,8 +11,8 @@ import {
   calculateReadingTime,
   chunkBlogSemantically
 } from '@/lib/synthesis/blog-compiler';
-import { GoogleGenAI } from '@google/genai';
 import { generateQuizForBlog } from '@/lib/ai/quiz-generator';
+
 interface SourceArticle {
   title: string;
   url: string;
