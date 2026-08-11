@@ -1,19 +1,43 @@
 # Blog Fetch Module — Architecture Rules
 
 ## Overview
-The blog fetch system (`fetch-blogs/`) is a **Python/FastAPI** service that runs alongside the Next.js frontend. It provides personalized daily tech article digests via a REST API consumed by the Next.js dashboard.
+The `fetch-blogs/` directory is a **fully standalone Python microservice** living inside
+the Next.js monorepo. It has **zero runtime coupling** to Next.js. The Next.js app
+reads its output via HTTP only.
+
+## Package Layout (Locked)
+- Source root: `fetch-blogs/src/` — all internal imports use `from src.<domain>.<module>`
+- Package manager: `uv` — all deps pinned in `uv.lock`, committed to version control
+- Entry point: `src/main.py` → `create_app()` factory → `app = create_app()`
+
+## Tech Stack (Locked)
+| Layer | Technology | Notes |
+|---|---|---|
+| Framework | FastAPI 0.115+ | `Annotated[T, Depends(...)]` only |
+| ORM | Beanie ODM 1.26+ | Pydantic v2 Documents |
+| Async driver | Motor 3.4+ | Managed by Beanie |
+| Queue broker | Redis 7 `db=0` | Celery broker |
+| Queue results | Redis 7 `db=1` | Celery result backend |
+| Workers | Celery 5.4+ | 5 queues, 1 container per queue |
+| Type checking | `mypy --strict` | Zero errors required |
+| Linting | `ruff 0.6+` | ANN + full rule set |
+| Pre-commit | ruff + mypy + detect-secrets | Runs on every `git commit` |
+| Containers | Docker Compose | All services: API, 5 workers, Flower, Mongo, Redis |
+| Scraping | Crawl4AI (Playwright) | Baked into Docker image |
+| LLM / Embeddings | Gemini 2.0 Flash + text-embedding-004 | Free tier; Ollama fallback |
+| Monitoring | Flower `:5555` | Celery dashboard |
 
 ## Three Strategies (Always Build Independently)
 - **Strategy A** — Traditional: RSS + free APIs + TF-IDF/BM25 ranking (zero LLM cost)
-- **Strategy B** — LLM-Powered: Crawl4AI/Jina + Gemini embeddings + semantic re-ranking
-- **Strategy C** — Hybrid (preferred): Strategy A fetch pipeline + Strategy B ranking
+- **Strategy B** — LLM-Powered: Crawl4AI + Gemini embeddings + semantic re-ranking
+- **Strategy C** — Hybrid (preferred): Strategy A fetch pipeline + Strategy B ranking + Gemini synthesis
 
 > Default to Strategy C in production. Benchmark all three before choosing per user profile.
 
 ## Content Policy (Non-Negotiable)
 - Always check and respect `robots.txt` before scraping any domain
-- Maintain a `blocklist.txt` of domains that disallow scraping
-- Use `robots.txt` cache — don't re-fetch on every request
+- Use `src/config/robots_cache.py` — Redis-cached, never re-fetch on every request
+- Maintain a blocklist of domains that disallow scraping
 - Never scrape paywalled content
 
 ## Free-Tier API Constraints
@@ -24,32 +48,61 @@ The blog fetch system (`fetch-blogs/`) is a **Python/FastAPI** service that runs
 | Reddit API | 60 req/min | `tenacity` retry with backoff |
 | Google Custom Search | 100/day | Cache results aggressively |
 
-## Data Flow
-1. User profile → query generation → RSS + API fetch
-2. Content extraction (`newspaper3k` / `readability-lxml` / `trafilatura`)
-3. Dedup (URL + semantic similarity)
-4. Scoring (TF-IDF + authority + recency + engagement + complexity fit)
-5. LLM re-ranking (Gemini free / Ollama fallback)
-6. Synthesis → structured JSON → stored in `daily_digests` table
-7. Next.js dashboard consumes via `/api/digests/{user_id}/latest`
+## Settings — Domain Split (Mandatory)
+Each module imports **only its own settings class**:
 
-## Output Contract (for Next.js)
-The digest JSON shape must match exactly — the frontend depends on it:
+| Domain | Class | Env Prefix |
+|---|---|---|
+| App / FastAPI | `AppSettings` | `APP_` |
+| MongoDB | `MongoSettings` | `MONGO_` |
+| Redis / Celery | `RedisSettings` | `REDIS_` |
+| Auth / JWT | `AuthSettings` | `AUTH_` |
+| LLM / Gemini | `LLMSettings` | `LLM_` |
+| Scraping / Cron | `ScrapingSettings` | `SCRAPING_` |
+
+Never import from another domain's settings class.
+
+## Beanie Document Conventions
+- Document class → one MongoDB collection
+- `class Settings.name` must be `lower_case_snake` (e.g. `"daily_digests"`)
+- All indexes declared in `Settings.indexes` — Beanie auto-creates on startup
+- Never call raw Motor methods in business logic — use Beanie Document methods
+- Register every Document in `src/core/db.init_beanie()` document_models list
+
+## Celery Task Chain
+```
+scrape_queue → extract_queue → rank_queue → generate_queue → publish_queue
+```
+- Each stage receives and returns only `list[str]` (article IDs) — no large Redis payloads
+- Every task: `acks_late=True`, `max_retries=3`, `default_retry_delay=60`
+- Each worker container handles exactly one queue
+
+## Data Flow
+1. APScheduler (cron `SCRAPING_CRON_SCHEDULE`) or `POST /api/v1/pipeline/trigger`
+2. `scrape_queue` — feedparser/HN/Dev.to/Reddit → Article documents inserted to Mongo
+3. `extract_queue` — Crawl4AI content extraction → updates Article.body_text + embedding
+4. `rank_queue` — numpy cosine sim + Gemini re-rank → sets Article.quality_score
+5. `generate_queue` — Gemini synthesis → builds DigestArticle JSON
+6. `publish_queue` — Beanie upsert → DailyDigest document written
+7. Next.js calls `GET /api/v1/digests/{user_id}/latest` → receives DigestOut
+
+## Output Contract (for Next.js) — Source of Truth
+The digest JSON shape **must exactly match** this TypeScript interface:
 ```typescript
 interface DigestOutput {
-  digest_id: string;          // UUID
-  generated_at: string;       // ISO timestamp
+  digest_id: string;                   // MongoDB _id as string
+  generated_at: string;                // ISO 8601 UTC timestamp
   user_id: string;
   strategy_used: 'A' | 'B' | 'C';
-  reading_time_minutes: number; // target: 15–20
-  word_count: number;           // target: 3750–5000
+  reading_time_minutes: number;        // target: 15–20
+  word_count: number;                  // target: 3750–5000
   article: {
     headline: string;
     tldr: string[];
     sections: Array<{
       title: string;
-      content: string;           // Markdown
-      sources_cited: number[];
+      content: string;                 // Markdown
+      sources_cited: number[];         // indexes into article.sources[]
       estimated_read_minutes: number;
     }>;
     key_takeaways: string[];
@@ -59,7 +112,7 @@ interface DigestOutput {
       url: string;
       author: string;
       source_domain: string;
-      published_at: string;
+      published_at: string;            // ISO 8601
     }>;
     further_reading: Array<{ title: string; url: string }>;
   };
@@ -72,41 +125,27 @@ interface DigestOutput {
 }
 ```
 
-## Database Schema (PostgreSQL + pgvector)
-Tables: `articles`, `user_profiles`, `daily_digests`
-Vector column: `embedding vector(768)` — use `hnsw` index for cosine similarity
+**Do not change this shape without coordinating with the Frontend Developer agent.**
+
+## FastAPI Endpoints
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/health` | Liveness + Redis + Mongo ping |
+| POST | `/api/v1/pipeline/trigger` | Enqueue pipeline (requires `X-Internal-Token`) |
+| GET | `/api/v1/pipeline/status/{task_id}` | Poll job status |
+| GET | `/api/v1/digests/{user_id}/latest` | Latest digest (consumed by Next.js) |
+| GET | `/api/v1/digests/{user_id}/history` | Past digests |
+| POST | `/api/v1/profiles` | Create/update user profile |
+| GET | `/api/v1/profiles/{id}` | Get user profile |
 
 ## Synthesis Rules
 - Target word count: 3,750–5,000 (midpoint: 4,375)
 - Reading speed: 250 WPM prose / 100 WPM code / +12s per image
 - Max 2 refinement iterations on word count
-- Use Gemini 2.0 Flash first; fall back to Ollama (Llama 3.1 8B or Mistral 7B)
+- LLM priority: Gemini 2.0 Flash → Gemini 1.5 Pro → Llama 3.1 8B (Ollama) → Mistral 7B (Ollama)
 
-## Python Module Structure
-```
-fetch-blogs/
-├── src/
-│   ├── models/        # Pydantic v2 models
-│   ├── scrapers/      # Strategy A: RSS, HN, Dev.to, Reddit
-│   ├── ai_pipeline/   # Strategy B: Crawl4AI, embeddings
-│   ├── hybrid/        # Strategy C: combined pipeline
-│   ├── scoring/       # TF-IDF, BM25, composite scorer
-│   ├── storage/       # SQLAlchemy + pgvector repository
-│   ├── synthesis/     # Dedup, clustering, LLM synthesis
-│   ├── api/           # FastAPI routes
-│   ├── scheduler/     # APScheduler daily job
-│   ├── benchmark/     # A vs B vs C comparison
-│   └── config/        # Settings, source registry
-├── tests/
-├── pyproject.toml
-└── README.md
-```
-
-## FastAPI Endpoints
-- `POST /api/profiles` — create/update user profile
-- `GET  /api/profiles/{id}` — get user profile
-- `POST /api/digests/generate` — trigger manual digest
-- `GET  /api/digests/{user_id}/latest` — latest digest (consumed by Next.js)
-- `GET  /api/digests/{user_id}/history` — past digests
-- `POST /api/benchmark/run` — run all 3 strategies
-- `GET  /api/health` — health check
+## Atlas Migration Path (Future)
+When article volume exceeds ~100k, replace `src/ranker/vector_search.py` only:
+- Current: numpy cosine over Motor cursor (self-hosted Mongo)
+- Future: `$vectorSearch` aggregation (MongoDB Atlas)
+- Everything else: zero changes
