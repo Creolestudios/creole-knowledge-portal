@@ -9,5 +9,6 @@ tags: index, moc, pages
 This section contains important overview pages for the Creole Knowledge Portal project.
 
 *   [[pages/architecture.md|Architecture Overview]]
+*   [[pages/fetch-blogs-walkthrough.md|Fetch Blogs Microservice Walkthrough]]
 *   [[pages/setup-guide.md|Setup Guide]]
 *   [[pages/roadmap.md|Roadmap & Known Issues]]
