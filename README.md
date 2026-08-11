@@ -59,7 +59,11 @@ See [`fetch-blogs/README.md`](fetch-blogs/README.md) for API env vars (`MONGO_UR
 
 ---
 
-## Environment variables (local web app)
+## Secrets & environment
+
+App secrets **do not** go in GitHub Actions secrets. Local values live in `.env.local`. Production values are set with `pulumi config set --secret`, stored in **AWS Secrets Manager**, and injected into ECS at runtime. Full commands: [`infra/README.md`](infra/README.md).
+
+### Local (`.env.local`)
 
 Copy from [`.env.example`](.env.example). Never commit `.env.local`.
 
@@ -78,6 +82,44 @@ Copy from [`.env.example`](.env.example). Never commit `.env.local`.
 - **Gemini:** [AI Studio](https://aistudio.google.com/app/apikey)
 
 **Supabase redirect URLs (local):** Authentication → URL Configuration → add `http://localhost:3000/auth/callback`.
+
+### GitHub (Actions)
+
+Deploy uses OIDC — **no AWS access keys** and **no app secrets** in GitHub. Set this as a repository **variable** (not a secret):
+
+| Name | Type | Where | Purpose |
+|------|------|-------|---------|
+| `AWS_GHA_DEPLOY_ROLE_ARN` | Repository **variable** (not secret) | Settings → Secrets and variables → Actions → **Variables** | OIDC role `arn:aws:iam::761341389675:role/ckp-github-deploy-dev` |
+
+Setup steps: [`.github/OIDC-SETUP.md`](.github/OIDC-SETUP.md).
+
+### AWS / Pulumi / ECS
+
+Pulumi encrypted config → AWS Secrets Manager → ECS task `secrets`. Keys match [`infra/components/app-secrets.ts`](infra/components/app-secrets.ts).
+
+| Pulumi config (`pulumi config set`) | `--secret` | ECS env var | Service(s) |
+|-------------------------------------|------------|-------------|------------|
+| `ckp:mongoUri` | yes | `MONGO_URI` | api, workers |
+| `ckp:redisUrl` | optional | `REDIS_URL`, `REDIS_RESULT_URL`, `CELERY_BROKER_URL` | api, workers |
+| `ckp:supabaseUrl` | no | `NEXT_PUBLIC_SUPABASE_URL` | web |
+| `ckp:supabaseAnonKey` | yes | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | web |
+| `ckp:supabaseServiceRoleKey` | yes | `SUPABASE_SERVICE_ROLE_KEY` | web |
+| `ckp:geminiApiKey` | yes | `GEMINI_API_KEY` | web |
+| `ckp:llmGeminiApiKey` | yes | `LLM_GEMINI_API_KEY` | api, workers |
+
+If `ckp:llmGeminiApiKey` is unset, the stack reuses `ckp:geminiApiKey` for the LLM secret.
+
+**Docker build-args** (inlined into the Next.js client bundle — not only ECS runtime):
+
+| Build-arg | Value |
+|-----------|--------|
+| `NEXT_PUBLIC_BASE_PATH` | `/creole-knowledge-portal` |
+| `NEXT_PUBLIC_SUPABASE_URL` | same as `ckp:supabaseUrl` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | same as `ckp:supabaseAnonKey` |
+
+Server-only secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `MONGO_URI`, `REDIS_URL`, `LLM_GEMINI_API_KEY`) are **not** build-args — they are injected at ECS runtime via Secrets Manager.
+
+Commands and Secrets Manager paths → [`infra/README.md`](infra/README.md#secrets-setup-start-here).
 
 ---
 
@@ -162,10 +204,7 @@ Other docs:
 
 | Branch | Purpose |
 |--------|---------|
-| `main` | Application releases |
-| `feat/infra` | Infrastructure (Pulumi), CI deploy workflows, secrets documentation |
-
-Infra and deploy changes land on `feat/infra` until the production path is merged to `main`.
+| `main` | Application releases (includes Pulumi infra, deploy CI, and secrets docs) |
 
 ## License
 

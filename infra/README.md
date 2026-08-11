@@ -25,11 +25,24 @@ See also: [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md), [`.github/OIDC-SETUP.md`](
 
 ---
 
+## GitHub Actions variable (required for CI deploy)
+
+App secrets **do not** go in GitHub. The only GitHub setting for deploy is a repository **variable** (Settings → Secrets and variables → Actions → **Variables**):
+
+| Name | Type | Value | Purpose |
+|------|------|-------|---------|
+| `AWS_GHA_DEPLOY_ROLE_ARN` | Repository **variable** (not a secret) | `arn:aws:iam::761341389675:role/ckp-github-deploy-dev` | OIDC role assumed by [deploy-infra.yml](../.github/workflows/deploy-infra.yml) |
+
+No `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Full OIDC steps: [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md).
+
+---
+
 ## Secrets setup (start here)
 
 ### Rules
 
 - **Never** commit real secrets to git.
+- **Never** put app secrets (`GEMINI_API_KEY`, Supabase keys, Mongo/Redis URIs) in GitHub Actions secrets.
 - Use `pulumi config set --secret` for sensitive values — encrypted in stack state.
 - Pulumi creates **AWS Secrets Manager** resources ([`components/app-secrets.ts`](./components/app-secrets.ts)) and ECS tasks reference them by ARN.
 - If a Pulumi secret is not set, the stack falls back to plain env placeholders from [`components/data-stores.ts`](./components/data-stores.ts) (mongo/redis only).
@@ -230,10 +243,12 @@ These are **outside** this Pulumi stack:
 
 ## CI / GitHub Actions
 
+**Required variable** (see [GitHub Actions variable](#github-actions-variable-required-for-ci-deploy) above): `AWS_GHA_DEPLOY_ROLE_ARN`.
+
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| [quality-gate.yml](../.github/workflows/quality-gate.yml) | PR + push to `main`, `feat/infra` | Lint, test, build (Next.js + fetch-blogs + infra typecheck) |
-| [deploy-infra.yml](../.github/workflows/deploy-infra.yml) | `workflow_dispatch`, push to `feat/infra` | Pulumi preview/up via OIDC |
+| [quality-gate.yml](../.github/workflows/quality-gate.yml) | PR + push to `main` | Lint, test, build (Next.js + fetch-blogs + infra typecheck) |
+| [deploy-infra.yml](../.github/workflows/deploy-infra.yml) | `workflow_dispatch`, push to `main` | Pulumi preview/up via OIDC |
 
 ---
 
