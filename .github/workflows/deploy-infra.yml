@@ -5,7 +5,7 @@ name: Deploy Infrastructure
 #
 # Triggers:
 #   - workflow_dispatch: manual preview or up (stack defaults to dev)
-#   - push to feat/infra (infra/** only): auto-preview when OIDC role var is configured
+#   - push to main (infra/** only): auto-preview when OIDC role var is configured
 
 on:
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
         default: dev
         type: string
   push:
-    branches: [feat/infra]
+    branches: [main]
     paths:
       - "infra/**"
       - ".github/workflows/deploy-infra.yml"
