@@ -11,9 +11,13 @@
     "format:check": "prettier --check . || true",
     "format:report": "prettier --check . > reports/prettier-report.txt 2>&1 || true",
     "test": "vitest run || true",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
     "test:report": "vitest run --reporter=json --outputFile=reports/test-report.json || true",
     "audit:report": "npm audit --json > reports/npm-audit-report.json || true",
-    "clean": "next clean"
+    "clean": "next clean",
+    "agent": "npx tsx .agent/index.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
@@ -32,6 +36,7 @@
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "4.1.11",
     "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^20",
@@ -43,6 +48,7 @@
     "firebase-tools": "^15.0.0",
     "prettier": "^3.8.3",
     "tailwindcss": "4.1.11",
+    "tsx": "^4.22.4",
     "tw-animate-css": "^1.4.0",
     "typescript": "5.9.3",
     "vitest": "^4.1.5"

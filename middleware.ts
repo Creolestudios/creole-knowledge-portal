@@ -43,24 +43,51 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Use getUser() to verify the session
+  // Dev-only auth bypass — disabled in production (NODE_ENV=production).
+  const allowMock =
+    process.env.NODE_ENV !== 'production' &&
+    (request.nextUrl.searchParams.has('mockUser') || request.cookies.has('mock-user'));
   let user = null;
-  try {
-    const { data } = await supabase.auth.getUser();
-    user = data.user;
-  } catch (err) {
-    console.error('[Middleware] getUser error:', err);
+
+  if (allowMock) {
+    user = {
+      id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004', // priyadhanani125@gmail.com user_id
+      email: 'priyadhanani125@gmail.com',
+    } as any;
+    if (request.nextUrl.searchParams.has('mockUser')) {
+      response.cookies.set('mock-user', 'true', { path: '/' });
+    }
+  } else {
+    try {
+      const { data } = await supabase.auth.getUser();
+      user = data.user;
+    } catch (err) {
+      console.error('[Middleware] getUser error:', err);
+    }
   }
 
   // Protected route logic
   const isDashboard = request.nextUrl.pathname.startsWith('/dashboard');
   const isAdminDashboard = request.nextUrl.pathname.startsWith('/admin');
   const isLoginPage = request.nextUrl.pathname === '/';
-  
-  const normalizedEmail = user?.email?.toLowerCase().trim();
-  const isAdminEmail = normalizedEmail === 'priya.dhanani@creolestudios.com';
 
-  console.log(`[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdminEmail}`);
+  let isAdmin = false;
+  if (user) {
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+      if (profile) {
+        isAdmin = profile.role === 'admin';
+      }
+    } catch (err) {
+      console.error('[Middleware] error fetching profile role:', err);
+    }
+  }
+
+  console.log(`[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdmin}`);
 
   // Function to create a redirect response that preserves cookies
   const redirect = (url: string) => {
@@ -82,13 +109,13 @@ export async function middleware(request: NextRequest) {
     return redirect('/');
   }
 
-  // 2. If logged in as admin and trying to access root or standard dashboard -> redirect to admin dashboard
-  if (user && isAdminEmail && (isLoginPage || isDashboard)) {
+  // 2. If logged in as admin and trying to access root -> redirect to admin dashboard (but allow access to standard dashboard)
+  if (user && isAdmin && isLoginPage) {
     return redirect('/admin/dashboard');
   }
 
   // 3. If logged in as non-admin and trying to access root or admin dashboard -> redirect to standard dashboard
-  if (user && !isAdminEmail) {
+  if (user && !isAdmin) {
     if (isLoginPage || isAdminDashboard) {
       return redirect('/dashboard');
     }

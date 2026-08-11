@@ -5,4 +5,20 @@ coverage/
 *.log
 .env*
 !.env.example
-.claude
+playwright-report/
+test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+wiki/

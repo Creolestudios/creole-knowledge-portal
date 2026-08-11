@@ -1,0 +1,25 @@
+secretsprovider: awskms://alias/ckp-pulumi-secrets?region=us-east-1
+encryptedkey: AQICAHjUpAYTZVY8JP1VZnlKMsHaWjtUuTHDSy+pM5wjIG2S0AEe7Cw8Z3RvLexULEEgIxWJAAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMSyGBAFgDZ2VkDB9WAgEQgDur5Gjmd0wSllWCuTeAx1WujAhTiRxUXnVl4iiWC5FxjBOZUpfKXsypFG3wA0OFUDb/CbxPbyj0Zq+cRQ==
+config:
+  ckp:environment: dev
+  ckp:appName: creole-knowledge-portal
+  ckp:sharedVpcId: vpc-09e25770623d8816f
+  ckp:sharedVpcCidrBlock: 172.31.0.0/16
+  ckp:sharedPrivateSubnetIds:
+    - subnet-02b389cd8b541b61b
+    - subnet-0d6aa100da345f0b3
+  ckp:sharedAlbListenerArn: arn:aws:elasticloadbalancing:us-east-1:761341389675:listener/app/ckp-shared-alb/9d5d020a6e55f819/18c48acf310a9913
+  ckp:sharedAlbSecurityGroupId: sg-04f7dda0f8d56fadd
+  ckp:sharedAlbDnsName: ckp-shared-alb-495275305.us-east-1.elb.amazonaws.com
+  ckp:sharedEcsClusterArn: arn:aws:ecs:us-east-1:761341389675:cluster/ckp-shared
+  ckp:sharedEcsClusterName: ckp-shared
+  ckp:sharedAlbName: ckp-shared-alb
+  ckp:domainName: ckp.nikcreations.com
+  ckp:listenerPriorityBase: "1100"
+  ckp:ecsDesiredCount: "1"
+  ckp:workersDesiredCount: "0"
+  ckp:redisUrl: redis://placeholder:6379/0
+  aws:region: us-east-1
+  ckp:apiDesiredCount: "0"
+  ckp:webImage: 761341389675.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-web:latest
+  ckp:webDesiredCount: "1"

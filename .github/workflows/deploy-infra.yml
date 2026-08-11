@@ -1,0 +1,103 @@
+name: Deploy Infrastructure
+
+# Pulumi preview/up against the S3 backend in AWS account 761341389675 (cloud_user).
+# Requires GitHub OIDC role — see .github/OIDC-SETUP.md.
+#
+# Triggers:
+#   - workflow_dispatch: manual preview or up (stack defaults to dev)
+#   - push to main (infra/** only): auto-preview when OIDC role var is configured
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Pulumi command
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - up
+      stack:
+        description: Pulumi stack name
+        required: true
+        default: dev
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/deploy-infra.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ACCOUNT_ID: "761341389675"
+  PULUMI_BACKEND_URL: s3://pulumi-state-761341389675?region=us-east-1&awssdk=v2
+
+jobs:
+  oidc-not-configured:
+    if: vars.AWS_GHA_DEPLOY_ROLE_ARN == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: OIDC role not configured
+        run: |
+          echo "::warning::Repository variable AWS_GHA_DEPLOY_ROLE_ARN is not set."
+          echo "Deploy workflows are skipped until GitHub OIDC is configured."
+          echo "See .github/OIDC-SETUP.md"
+
+  pulumi:
+    if: vars.AWS_GHA_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_GHA_DEPLOY_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install infra dependencies
+        run: npm ci
+
+      - uses: pulumi/setup-pulumi@v2
+        with:
+          pulumi-version: ^3.0.0
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: gha-ckp-infra-${{ github.run_id }}
+
+      - name: Confirm target account
+        run: |
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          echo "Running Pulumi as account: $ACCT"
+          test "$ACCT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account ($ACCT)!"; exit 1; }
+
+      - name: Select stack
+        run: |
+          STACK="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.stack || 'dev' }}"
+          echo "STACK=$STACK" >> "$GITHUB_ENV"
+          pulumi stack select "$STACK" --create
+
+      - name: Pulumi preview
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'preview')
+        run: pulumi preview --non-interactive
+        continue-on-error: true
+
+      - name: Pulumi up
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'up'
+        run: pulumi up --yes --non-interactive
