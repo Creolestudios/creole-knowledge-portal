@@ -1,0 +1,8 @@
+{
+  "include": ["fetch-blogs/src"],
+  "exclude": ["**/__pycache__", "fetch-blogs/.venv"],
+  "venvPath": "fetch-blogs",
+  "venv": ".venv",
+  "extraPaths": ["fetch-blogs/src", "fetch-blogs"],
+  "reportMissingImports": "none"
+}
