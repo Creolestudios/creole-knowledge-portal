@@ -10,7 +10,7 @@ Internal office tool for **personalized morning tech blog recommendations** and 
 | Auth & Postgres | Supabase (Magic Link, Google OAuth, user profiles, quiz) |
 | Blog pipeline | `fetch-blogs/` — Python, FastAPI, Celery, MongoDB, Redis |
 | AI | Google Gemini |
-| Production infra | AWS ECS Fargate — **Pulumi only** (no AWS CLI for resource creation) — see [`infra/README.md`](infra/README.md) |
+| Production infra | AWS ECS Fargate — **Pulumi only** (no AWS CLI for resource creation) — default/dev task size **1024 CPU / 2 GB** — see [`infra/README.md`](infra/README.md) |
 
 ## Quick start (local dev)
 

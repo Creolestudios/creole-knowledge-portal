@@ -7,7 +7,7 @@ Pulumi stack for deploying CKP to **AWS ECS Fargate**. **AWS CLI-created infrast
 | Decision | Detail |
 |----------|--------|
 | **Pattern** | Single Pulumi stack owns platform + app; **data stores are external** |
-| **Compute** | ECS Fargate: Next.js web (:3000), FastAPI api (:8000), Celery workers |
+| **Compute** | ECS Fargate: Next.js web (:3000), FastAPI api (:8000), Celery workers — **1024 CPU / 2 GB** (valid Fargate pair) |
 | **Postgres / Auth** | [Supabase](https://supabase.com) |
 | **MongoDB** | [MongoDB Atlas](https://www.mongodb.com/atlas) |
 | **Redis** | External (Upstash, Redis Cloud, etc.) — Celery broker + result backend |
@@ -141,8 +141,10 @@ pulumi preview  # creates/updates Secrets Manager + ECS task definitions
 | `ckp:apiDesiredCount` | `1` | FastAPI — set to `0` in dev until `mongoUri` + `redisUrl` are real |
 | `ckp:workersDesiredCount` | `1` | Celery — set to `0` until Redis + Mongo are reachable |
 | `ckp:ecsDesiredCount` | `1` | Fallback when per-service counts are omitted |
+| `ckp:ecsCpu` | `1024` | Fargate CPU units (1 vCPU). Must be a valid pair with `ecsMemory` |
+| `ckp:ecsMemory` | `2048` | Fargate memory (MiB) — **2 GB**. Pair with `ecsCpu: 1024` (not 256/2048) |
 
-Current dev stack (`Pulumi.dev.yaml`) may keep `apiDesiredCount: 0` and `workersDesiredCount: 0` until external stores are configured.
+Default and **dev** task size is **1024 CPU / 2 GB**. Current dev stack (`Pulumi.dev.yaml`) may keep `apiDesiredCount: 0` and `workersDesiredCount: 0` until external stores are configured.
 
 ---
 

@@ -30,8 +30,8 @@ const listenerPriorityBase = config.getNumber("listenerPriorityBase") ?? 1000;
 const desiredCount = config.getNumber("ecsDesiredCount") ?? 1;
 const webDesiredCount = config.getNumber("webDesiredCount") ?? desiredCount;
 const apiDesiredCount = config.getNumber("apiDesiredCount") ?? desiredCount;
-const cpu = config.get("ecsCpu") ?? "256";
-const memory = config.get("ecsMemory") ?? "512";
+const cpu = config.get("ecsCpu") ?? "1024";
+const memory = config.get("ecsMemory") ?? "2048";
 
 const webImage = config.get("webImage");
 const apiImage = config.get("apiImage");
