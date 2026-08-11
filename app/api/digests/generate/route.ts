@@ -11,7 +11,7 @@ import {
   calculateReadingTime,
   chunkBlogSemantically
 } from '@/lib/synthesis/blog-compiler';
-
+import { generateQuizForBlog } from '@/lib/ai/quiz-generator';
 interface SourceArticle {
   title: string;
   url: string;
@@ -288,6 +288,19 @@ export async function POST(request: Request) {
         display_order: 0,
         curation_notes: `Personalized brief Part 1 for user ${userId}`
       });
+
+    // Automatically generate technical quiz based on the newly synthesized blog content
+    try {
+      console.log('[Quiz Factory] Starting automated quiz generation for blog_id:', insertedBlogs[0].id);
+      await generateQuizForBlog(insertedBlogs[0].id, insertedBlogs[0].content);
+      console.log('[Quiz Factory] Quiz successfully generated.');
+      
+      // Update the response object so the frontend knows the quiz is ready immediately
+      insertedBlogs[0].quiz_generated = true;
+    } catch (quizError) {
+      console.error('[Quiz Factory] Failed to generate quiz for blog:', quizError);
+      // We don't throw here to ensure the blog is still returned successfully even if quiz generation fails occasionally
+    }
 
     return NextResponse.json({
       success: true,
