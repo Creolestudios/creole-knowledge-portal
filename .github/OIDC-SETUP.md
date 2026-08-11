@@ -75,7 +75,7 @@ Optional: use GitHub **Environments** (`dev`, `prod`) with protection rules befo
 
 ## 4. Verify
 
-1. Push to `feat/infra` with the variable set → **Deploy Infrastructure** runs `pulumi preview`.
+1. Push to `main` with the variable set → **Deploy Infrastructure** runs `pulumi preview`.
 2. **Actions → Deploy Infrastructure → Run workflow** → choose `preview` or `up`, stack `dev`.
 
 ## References
