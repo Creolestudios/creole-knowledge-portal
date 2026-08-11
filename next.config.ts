@@ -1,6 +1,10 @@
 import type {NextConfig} from 'next';
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+
 const nextConfig: NextConfig = {
+  basePath,
+  assetPrefix: basePath || undefined,
   reactStrictMode: true,
   eslint: {
     ignoreDuringBuilds: true,
@@ -21,6 +25,7 @@ const nextConfig: NextConfig = {
   },
   output: 'standalone',
   transpilePackages: ['motion'],
+  outputFileTracingRoot: process.cwd(),
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
     // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
