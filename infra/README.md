@@ -234,11 +234,12 @@ docker tag ckp-web:latest ${WEB_REPO}:v1
 docker push ${WEB_REPO}:v1
 
 # API + workers — fetch-blogs/ (same image, different ECS command for workers)
-docker build -t ckp-api ./fetch-blogs
-docker tag ckp-api:latest ${API_REPO}:v1
-docker push ${API_REPO}:v1
-docker tag ckp-api:latest ${WORKERS_REPO}:v1
-docker push ${WORKERS_REPO}:v1
+# Fargate is linux/amd64 — required on Apple Silicon
+docker build --platform linux/amd64 -t ckp-api ./fetch-blogs
+docker tag ckp-api:latest ${API_REPO}:latest
+docker push ${API_REPO}:latest
+docker tag ckp-api:latest ${WORKERS_REPO}:latest
+docker push ${WORKERS_REPO}:latest
 ```
 
 ### 3. Point ECS at new images
