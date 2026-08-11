@@ -257,7 +257,6 @@ export default function AdminDashboard() {
             <Home className="w-5 h-5" />
             <span>User Dashboard</span>
           </button>
-          </button>
         </nav>
 
         {/* User / Sign Out */}

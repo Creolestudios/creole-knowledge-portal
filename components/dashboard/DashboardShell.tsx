@@ -30,11 +30,24 @@ export default function DashboardShell({
   displayName,
   displayDomain,
   footer,
+  user,
+  profile,
 }: {
   displayName: string;
   displayDomain: string;
   footer: ReactNode;
+  user?: any;
+  profile?: any;
 }) {
+  const mockUser = {
+    id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004',
+    email: 'priyadhanani125@gmail.com',
+  };
+  const mockProfile = {
+    primary_tech_stack: ['Next.js', 'React', 'TypeScript'],
+  };
+  const activeUser = user || mockUser;
+  const activeProfile = profile || mockProfile;
   const [active, setActive] = useState<TabKey>('daily');
   const [stats, setStats] = useState<WeeklyStats | null>(null);
   const [streak, setStreak] = useState(0);
@@ -228,9 +241,9 @@ export default function DashboardShell({
               </p>
             </div>
 
-            {active === 'daily' && <DailyBlogTab />}
+            {active === 'daily' && <DailyBlogTab user={activeUser} profile={activeProfile} />}
             {active === 'past' && <PastBlogsTab selected={pastDate} onSelect={setPastDate} />}
-            {active === 'activity' && <ActivityTab />}
+            {active === 'activity' && <ActivityTab user={activeUser} />}
           </div>
         </div>
       </main>

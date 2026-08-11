@@ -75,6 +75,8 @@ export default function DashboardPage() {
     <DashboardShell
       displayName={profile?.current_role || user.email?.split('@')[0] || 'there'}
       displayDomain={user.email?.split('@')[1] || ''}
+      user={user}
+      profile={profile}
       footer={<LogoutButton variant="sidebar" />}
     />
   );
