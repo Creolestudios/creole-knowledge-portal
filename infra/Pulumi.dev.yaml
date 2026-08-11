@@ -21,3 +21,5 @@ config:
   ckp:redisUrl: redis://placeholder:6379/0
   aws:region: us-east-1
   ckp:apiDesiredCount: "0"
+  ckp:webImage: 761341389675.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-web:latest
+  ckp:webDesiredCount: "1"

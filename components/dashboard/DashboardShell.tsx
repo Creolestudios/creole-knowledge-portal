@@ -229,7 +229,7 @@ export default function DashboardShell({
             </div>
 
             {active === 'daily' && <DailyBlogTab />}
-            {active === 'past' && <PastBlogsTab selected={pastDate} onSelect={setPastDate} />}
+            {active === 'past' && <PastBlogsTab />}
             {active === 'activity' && <ActivityTab />}
           </div>
         </div>

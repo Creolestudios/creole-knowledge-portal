@@ -54,7 +54,7 @@ You MUST respond ONLY with a valid JSON object strictly matching this format:
       }
     });
 
-    let rawText = response.text.trim();
+    let rawText = (response.text ?? '').trim();
     if (rawText.startsWith('\`\`\`json')) {
       rawText = rawText.replace(/^\`\`\`json\n/, '').replace(/\n\`\`\`$/, '');
     }

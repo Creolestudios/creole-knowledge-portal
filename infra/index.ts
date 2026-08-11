@@ -1,5 +1,6 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import { createAppSecrets } from "./components/app-secrets";
 import { createDataStorePlaceholders } from "./components/data-stores";
 
 const config = new pulumi.Config("ckp");
@@ -87,6 +88,15 @@ const dataStores = createDataStorePlaceholders({
   tags: defaultTags,
 });
 
+const appSecrets = createAppSecrets({
+  appName,
+  environment,
+  provider: awsProvider,
+  tags: defaultTags,
+});
+
+const basePath = `/${appName}`;
+
 const webRepo = new aws.ecr.Repository(`${appName}-web-repo`, {
   name: `${appName}-web`,
   forceDelete: environment !== "prod",
@@ -120,7 +130,7 @@ const webTg = new aws.lb.TargetGroup(`${appName}-web-tg`, {
   protocol: "HTTP",
   targetType: "ip",
   vpcId: sharedVpcId,
-  healthCheck: { path: "/", matcher: "200-399" },
+  healthCheck: { path: basePath, matcher: "200-399" },
   tags: { Name: `${appName}-web-tg-${environment}`, Component: "routing", ...defaultTags },
 }, { provider: awsProvider });
 
@@ -152,7 +162,7 @@ new aws.lb.ListenerRule(`${appName}-web-rule`, {
   tags: { Name: `${appName}-web-rule-${environment}`, Component: "routing", ...defaultTags },
 }, { provider: awsProvider });
 
-const apiPublicUrl = pulumi.interpolate`http://${sharedAlbDnsName}/${appName}/api`;
+const apiPublicUrl = pulumi.interpolate`http://${sharedAlbDnsName}/${appName}`;
 
 const executionRole = new aws.iam.Role(`${appName}-ecs-exec-role`, {
   assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
@@ -165,6 +175,45 @@ new aws.iam.RolePolicyAttachment(`${appName}-ecs-exec-policy`, {
   role: executionRole.name,
   policyArn: "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
 }, { provider: awsProvider });
+
+if (appSecrets.allArns.length > 0) {
+  new aws.iam.RolePolicy(
+    `${appName}-ecs-secrets-policy`,
+    {
+      role: executionRole.id,
+      policy: pulumi.all(appSecrets.allArns).apply((arns) =>
+        JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Effect: "Allow",
+              Action: ["secretsmanager:GetSecretValue"],
+              Resource: arns,
+            },
+          ],
+        })
+      ),
+    },
+    { provider: awsProvider }
+  );
+}
+
+type EcsEnvVar = { name: string; value: string };
+type EcsSecretRef = { name: string; valueFrom: string };
+
+function envOrSecret(
+  envName: string,
+  secretArn: string | undefined,
+  fallback: string,
+  env: EcsEnvVar[],
+  secrets: EcsSecretRef[]
+): void {
+  if (secretArn) {
+    secrets.push({ name: envName, valueFrom: secretArn });
+  } else {
+    env.push({ name: envName, value: fallback });
+  }
+}
 
 const logGroup = new aws.cloudwatch.LogGroup(`${appName}-logs`, {
   retentionInDays: environment === "prod" ? 30 : 3,
@@ -179,21 +228,37 @@ const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
   requiresCompatibilities: ["FARGATE"],
   executionRoleArn: executionRole.arn,
   containerDefinitions: pulumi
-    .all([resolvedApiImage, logGroup.name, dataStores.mongoUri, dataStores.redisUrl])
-    .apply(([image, log, mongo, redis]) =>
-      JSON.stringify([
+    .all([
+      resolvedApiImage,
+      logGroup.name,
+      dataStores.mongoUri,
+      dataStores.redisUrl,
+      appSecrets.mongoUri?.arn ?? pulumi.output(""),
+      appSecrets.redisUrl?.arn ?? pulumi.output(""),
+      appSecrets.llmGeminiApiKey?.arn ?? pulumi.output(""),
+    ])
+    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn]) => {
+      const environment: EcsEnvVar[] = [
+        { name: "NODE_ENV", value: "production" },
+        { name: "HOSTNAME", value: "0.0.0.0" },
+        { name: "PORT", value: String(apiPort) },
+        { name: "APP_ENVIRONMENT", value: "production" },
+      ];
+      const secrets: EcsSecretRef[] = [];
+      envOrSecret("MONGO_URI", mongoArn || undefined, mongoFallback, environment, secrets);
+      envOrSecret("REDIS_URL", redisArn || undefined, redisFallback, environment, secrets);
+      envOrSecret("REDIS_RESULT_URL", redisArn || undefined, redisFallback, environment, secrets);
+      envOrSecret("CELERY_BROKER_URL", redisArn || undefined, redisFallback, environment, secrets);
+      if (llmArn) {
+        secrets.push({ name: "LLM_GEMINI_API_KEY", valueFrom: llmArn });
+      }
+      return JSON.stringify([
         {
           name: "api",
           image,
           portMappings: [{ containerPort: apiPort, hostPort: apiPort }],
-          environment: [
-            { name: "NODE_ENV", value: "production" },
-            { name: "HOSTNAME", value: "0.0.0.0" },
-            { name: "PORT", value: String(apiPort) },
-            { name: "MONGO_URI", value: mongo },
-            { name: "REDIS_URL", value: redis },
-            { name: "REDIS_RESULT_URL", value: redis },
-          ],
+          environment,
+          secrets: secrets.length > 0 ? secrets : undefined,
           logConfiguration: {
             logDriver: "awslogs",
             options: {
@@ -203,8 +268,8 @@ const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
             },
           },
         },
-      ])
-    ),
+      ]);
+    }),
   tags: { Name: `${appName}-api-task-${environment}`, Component: "compute", ...defaultTags },
 }, { provider: awsProvider });
 
@@ -216,19 +281,35 @@ const webTask = new aws.ecs.TaskDefinition(`${appName}-web-task`, {
   requiresCompatibilities: ["FARGATE"],
   executionRoleArn: executionRole.arn,
   containerDefinitions: pulumi
-    .all([resolvedWebImage, logGroup.name, apiPublicUrl])
-    .apply(([image, log, apiUrl]) =>
-      JSON.stringify([
+    .all([
+      resolvedWebImage,
+      logGroup.name,
+      apiPublicUrl,
+      appSecrets.supabaseUrl?.arn ?? pulumi.output(""),
+      appSecrets.supabaseAnonKey?.arn ?? pulumi.output(""),
+      appSecrets.supabaseServiceRoleKey?.arn ?? pulumi.output(""),
+      appSecrets.geminiApiKey?.arn ?? pulumi.output(""),
+    ])
+    .apply(([image, log, apiUrl, supaUrlArn, supaAnonArn, supaServiceArn, geminiArn]) => {
+      const environment: EcsEnvVar[] = [
+        { name: "NODE_ENV", value: "production" },
+        { name: "HOSTNAME", value: "0.0.0.0" },
+        { name: "PORT", value: String(webPort) },
+        { name: "NEXT_PUBLIC_API_URL", value: apiUrl },
+        { name: "NEXT_PUBLIC_BASE_PATH", value: basePath },
+      ];
+      const secrets: EcsSecretRef[] = [];
+      if (supaUrlArn) secrets.push({ name: "NEXT_PUBLIC_SUPABASE_URL", valueFrom: supaUrlArn });
+      if (supaAnonArn) secrets.push({ name: "NEXT_PUBLIC_SUPABASE_ANON_KEY", valueFrom: supaAnonArn });
+      if (supaServiceArn) secrets.push({ name: "SUPABASE_SERVICE_ROLE_KEY", valueFrom: supaServiceArn });
+      if (geminiArn) secrets.push({ name: "GEMINI_API_KEY", valueFrom: geminiArn });
+      return JSON.stringify([
         {
           name: "web",
           image,
           portMappings: [{ containerPort: webPort, hostPort: webPort }],
-          environment: [
-            { name: "NODE_ENV", value: "production" },
-            { name: "HOSTNAME", value: "0.0.0.0" },
-            { name: "PORT", value: String(webPort) },
-            { name: "NEXT_PUBLIC_API_URL", value: apiUrl },
-          ],
+          environment,
+          secrets: secrets.length > 0 ? secrets : undefined,
           logConfiguration: {
             logDriver: "awslogs",
             options: {
@@ -238,8 +319,8 @@ const webTask = new aws.ecs.TaskDefinition(`${appName}-web-task`, {
             },
           },
         },
-      ])
-    ),
+      ]);
+    }),
   tags: { Name: `${appName}-web-task-${environment}`, Component: "compute", ...defaultTags },
 }, { provider: awsProvider });
 
@@ -252,20 +333,34 @@ const workersTask = new aws.ecs.TaskDefinition(`${appName}-workers-task`, {
   requiresCompatibilities: ["FARGATE"],
   executionRoleArn: executionRole.arn,
   containerDefinitions: pulumi
-    .all([resolvedWorkersImage, logGroup.name, dataStores.mongoUri, dataStores.redisUrl])
-    .apply(([image, log, mongo, redis]) =>
-      JSON.stringify([
+    .all([
+      resolvedWorkersImage,
+      logGroup.name,
+      dataStores.mongoUri,
+      dataStores.redisUrl,
+      appSecrets.mongoUri?.arn ?? pulumi.output(""),
+      appSecrets.redisUrl?.arn ?? pulumi.output(""),
+      appSecrets.llmGeminiApiKey?.arn ?? pulumi.output(""),
+    ])
+    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn]) => {
+      const environment: EcsEnvVar[] = [
+        { name: "NODE_ENV", value: "production" },
+      ];
+      const secrets: EcsSecretRef[] = [];
+      envOrSecret("MONGO_URI", mongoArn || undefined, mongoFallback, environment, secrets);
+      envOrSecret("REDIS_URL", redisArn || undefined, redisFallback, environment, secrets);
+      envOrSecret("REDIS_RESULT_URL", redisArn || undefined, redisFallback, environment, secrets);
+      envOrSecret("CELERY_BROKER_URL", redisArn || undefined, redisFallback, environment, secrets);
+      if (llmArn) {
+        secrets.push({ name: "LLM_GEMINI_API_KEY", valueFrom: llmArn });
+      }
+      return JSON.stringify([
         {
           name: "workers",
           image,
           command: ["celery", "-A", "src.workers.celery_app", "worker", "--loglevel=info"],
-          environment: [
-            { name: "NODE_ENV", value: "production" },
-            { name: "MONGO_URI", value: mongo },
-            { name: "REDIS_URL", value: redis },
-            { name: "REDIS_RESULT_URL", value: redis },
-            { name: "CELERY_BROKER_URL", value: redis },
-          ],
+          environment,
+          secrets: secrets.length > 0 ? secrets : undefined,
           logConfiguration: {
             logDriver: "awslogs",
             options: {
@@ -275,8 +370,8 @@ const workersTask = new aws.ecs.TaskDefinition(`${appName}-workers-task`, {
             },
           },
         },
-      ])
-    ),
+      ]);
+    }),
   tags: { Name: `${appName}-workers-task-${environment}`, Component: "compute", ...defaultTags },
 }, { provider: awsProvider });
 
@@ -288,6 +383,7 @@ new aws.ecs.Service(`${appName}-api-service`, {
   networkConfiguration: {
     subnets: sharedPrivateSubnetIds,
     securityGroups: [fargateSg.id],
+    assignPublicIp: true,
   },
   loadBalancers: [
     { targetGroupArn: apiTg.arn, containerName: "api", containerPort: apiPort },
@@ -303,6 +399,7 @@ new aws.ecs.Service(`${appName}-web-service`, {
   networkConfiguration: {
     subnets: sharedPrivateSubnetIds,
     securityGroups: [fargateSg.id],
+    assignPublicIp: true,
   },
   loadBalancers: [
     { targetGroupArn: webTg.arn, containerName: "web", containerPort: webPort },
@@ -318,6 +415,7 @@ new aws.ecs.Service(`${appName}-workers-service`, {
   networkConfiguration: {
     subnets: sharedPrivateSubnetIds,
     securityGroups: [fargateSg.id],
+    assignPublicIp: true,
   },
   tags: { Name: `${appName}-workers-service-${environment}`, Component: "compute", ...defaultTags },
 }, { provider: awsProvider });

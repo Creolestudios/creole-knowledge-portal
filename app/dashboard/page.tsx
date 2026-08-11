@@ -29,6 +29,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import DailyBlogTab from '@/components/dashboard/DailyBlogTab';
 import PastBlogsTab from '@/components/dashboard/PastBlogsTab';
 import ActivityTab from '@/components/dashboard/ActivityTab';
+import { MOCK_USER, isMockUserAllowed } from '@/lib/dev/mock-user';
 
 interface MarkdownBlock {
   type: 'code' | 'h1' | 'h2' | 'h3' | 'li' | 'blockquote' | 'empty' | 'p';
@@ -360,14 +361,13 @@ export default function DashboardPage() {
     async function getInitialData() {
       // Check query param or cookie
       const params = new URLSearchParams(window.location.search);
-      const isMock = params.has('mockUser') || document.cookie.includes('mock-user=true');
+      const isMock =
+        isMockUserAllowed() &&
+        (params.has('mockUser') || document.cookie.includes('mock-user=true'));
 
       let currentUser = null;
       if (isMock) {
-        currentUser = {
-          id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004', // priyadhanani125@gmail.com user_id
-          email: 'priyadhanani125@gmail.com'
-        };
+        currentUser = MOCK_USER;
         setUser(currentUser);
         // Set mock-user cookie in document
         document.cookie = "mock-user=true; path=/; max-age=3600";
