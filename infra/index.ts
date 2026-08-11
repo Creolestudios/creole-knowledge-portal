@@ -2,6 +2,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { createAppSecrets } from "./components/app-secrets";
 import { createDataStorePlaceholders } from "./components/data-stores";
+import { createSharedPlatform } from "./components/platform";
 
 const config = new pulumi.Config("ckp");
 const projectConfig = new pulumi.Config();
@@ -12,16 +13,16 @@ const environment = config.get("environment") ?? pulumi.getStack();
 const owner = projectConfig.get("owner") ?? "CKP-Team";
 const awsRegion = (awsConfig.get("region") ?? "us-east-1") as aws.Region;
 
-// Existing shared platform — supplied via config (stogo-factory / TGN pattern).
-// Do NOT create VPC, subnets, or ECS cluster in this stack.
-const sharedVpcId = config.require("sharedVpcId");
-const sharedPrivateSubnetIds = config.requireObject<string[]>("sharedPrivateSubnetIds");
-const sharedAlbListenerArn = config.require("sharedAlbListenerArn");
-const sharedAlbSecurityGroupId = config.require("sharedAlbSecurityGroupId");
-const sharedAlbDnsName = config.require("sharedAlbDnsName");
-const sharedEcsClusterArn = config.require("sharedEcsClusterArn");
-const sharedEcsClusterName = config.require("sharedEcsClusterName");
-const sharedVpcCidrBlock = config.get("sharedVpcCidrBlock") ?? "10.0.0.0/16";
+// Default VPC is AWS-owned (looked up). ALB/cluster/SG/OIDC are Pulumi-managed (imported).
+const defaultVpc = aws.ec2.getVpcOutput({ default: true });
+const sharedVpcId = defaultVpc.id;
+const sharedVpcCidrBlock = defaultVpc.cidrBlock;
+const githubRepo = config.get("githubRepo") ?? "Creolestudios/creole-knowledge-portal";
+const albSubnetIds =
+  config.getObject<string[]>("albSubnetIds") ?? [
+    "subnet-02b389cd8b541b61b",
+    "subnet-0d6aa100da345f0b3",
+  ];
 
 const webPort = config.getNumber("webPort") ?? 3000;
 const apiPort = config.getNumber("apiPort") ?? 8000;
@@ -35,6 +36,7 @@ const memory = config.get("ecsMemory") ?? "512";
 const webImage = config.get("webImage");
 const apiImage = config.get("apiImage");
 const workersImage = config.get("workersImage");
+const domainName = config.get("domainName") ?? "ckp.nikcreations.com";
 
 export const defaultTags = {
   Project: appName,
@@ -49,6 +51,23 @@ const awsProvider = new aws.Provider("aws-provider", {
   region: awsRegion,
   defaultTags: { tags: defaultTags },
 });
+
+const platform = createSharedPlatform({
+  appName,
+  environment,
+  vpcId: sharedVpcId,
+  publicSubnetIds: albSubnetIds,
+  githubRepo,
+  provider: awsProvider,
+  tags: defaultTags,
+});
+
+const sharedAlbSecurityGroupId = platform.albSg.id;
+const sharedAlbListenerArn = platform.httpListener.arn;
+const sharedAlbDnsName = platform.alb.dnsName;
+const sharedEcsClusterArn = platform.cluster.arn;
+const sharedEcsClusterName = platform.cluster.name;
+const sharedPrivateSubnetIds = albSubnetIds;
 
 const fargateSg = new aws.ec2.SecurityGroup(
   `${appName}-fargate-sg`,
@@ -162,7 +181,7 @@ new aws.lb.ListenerRule(`${appName}-web-rule`, {
   tags: { Name: `${appName}-web-rule-${environment}`, Component: "routing", ...defaultTags },
 }, { provider: awsProvider });
 
-const apiPublicUrl = pulumi.interpolate`http://${sharedAlbDnsName}/${appName}`;
+const apiPublicUrl = pulumi.interpolate`https://${domainName}/${appName}`;
 
 const executionRole = new aws.iam.Role(`${appName}-ecs-exec-role`, {
   assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
@@ -422,9 +441,6 @@ new aws.ecs.Service(`${appName}-workers-service`, {
 
 
 // Route53 delegated subdomain — user adds NS at nikcreations.com registrar.
-const domainName = config.get("domainName") ?? "ckp.nikcreations.com";
-const sharedAlbName = config.get("sharedAlbName") ?? "ckp-shared-alb";
-
 const hostedZone = new aws.route53.Zone(
   `${appName}-zone`,
   {
@@ -432,11 +448,6 @@ const hostedZone = new aws.route53.Zone(
     comment: `CKP ${environment} — delegate NS at parent domain`,
     tags: { Name: `${appName}-zone-${environment}`, Component: "dns", ...defaultTags },
   },
-  { provider: awsProvider }
-);
-
-const sharedAlbLookup = aws.lb.getLoadBalancerOutput(
-  { name: sharedAlbName },
   { provider: awsProvider }
 );
 
@@ -448,11 +459,118 @@ new aws.route53.Record(
     type: "A",
     aliases: [
       {
-        name: sharedAlbLookup.dnsName,
-        zoneId: sharedAlbLookup.zoneId,
+        name: platform.alb.dnsName,
+        zoneId: platform.alb.zoneId,
         evaluateTargetHealth: true,
       },
     ],
+  },
+  { provider: awsProvider }
+);
+
+// HTTPS on the shared ALB (no CloudFront). ACM cert is DNS-validated in this zone.
+const certificate = new aws.acm.Certificate(
+  `${appName}-cert`,
+  {
+    domainName,
+    validationMethod: "DNS",
+    tags: { Name: `${appName}-cert-${environment}`, Component: "tls", ...defaultTags },
+  },
+  { provider: awsProvider }
+);
+
+const certValidationOption = certificate.domainValidationOptions[0];
+
+const certValidationRecord = new aws.route53.Record(
+  `${appName}-cert-validation`,
+  {
+    zoneId: hostedZone.zoneId,
+    name: certValidationOption.resourceRecordName,
+    type: certValidationOption.resourceRecordType,
+    records: [certValidationOption.resourceRecordValue],
+    ttl: 60,
+    allowOverwrite: true,
+  },
+  { provider: awsProvider }
+);
+
+const certificateValidation = new aws.acm.CertificateValidation(
+  `${appName}-cert-validated`,
+  {
+    certificateArn: certificate.arn,
+    validationRecordFqdns: [certValidationRecord.fqdn],
+  },
+  { provider: awsProvider }
+);
+
+const httpsListener = new aws.lb.Listener(
+  `${appName}-https-listener`,
+  {
+    loadBalancerArn: platform.alb.arn,
+    port: 443,
+    protocol: "HTTPS",
+    sslPolicy: "ELBSecurityPolicy-TLS13-1-2-2021-06",
+    certificateArn: certificateValidation.certificateArn,
+    defaultActions: [
+      {
+        type: "fixed-response",
+        fixedResponse: {
+          contentType: "text/plain",
+          messageBody: "Not Found",
+          statusCode: "404",
+        },
+      },
+    ],
+    tags: { Name: `${appName}-https-${environment}`, Component: "tls", ...defaultTags },
+  },
+  { provider: awsProvider }
+);
+
+new aws.lb.ListenerRule(
+  `${appName}-https-api-rule`,
+  {
+    listenerArn: httpsListener.arn,
+    priority: listenerPriorityBase,
+    actions: [{ type: "forward", targetGroupArn: apiTg.arn }],
+    conditions: [{ pathPattern: { values: [`/${appName}/api/*`] } }],
+    tags: { Name: `${appName}-https-api-rule-${environment}`, Component: "routing", ...defaultTags },
+  },
+  { provider: awsProvider }
+);
+
+new aws.lb.ListenerRule(
+  `${appName}-https-web-rule`,
+  {
+    listenerArn: httpsListener.arn,
+    priority: listenerPriorityBase + 1,
+    actions: [{ type: "forward", targetGroupArn: webTg.arn }],
+    conditions: [{ pathPattern: { values: [`/${appName}/*`, `/${appName}`] } }],
+    tags: { Name: `${appName}-https-web-rule-${environment}`, Component: "routing", ...defaultTags },
+  },
+  { provider: awsProvider }
+);
+
+// Redirect custom-domain HTTP → HTTPS. ALB DNS on :80 stays available for debugging.
+new aws.lb.ListenerRule(
+  `${appName}-http-to-https`,
+  {
+    listenerArn: sharedAlbListenerArn,
+    priority: 10,
+    actions: [
+      {
+        type: "redirect",
+        redirect: {
+          protocol: "HTTPS",
+          port: "443",
+          statusCode: "HTTP_301",
+          host: "#{host}",
+          path: "/#{path}",
+          query: "#{query}",
+        },
+      },
+    ],
+    conditions: [{ hostHeader: { values: [domainName] } }],
+    tags: { Name: `${appName}-http-to-https-${environment}`, Component: "tls", ...defaultTags },
   },
   { provider: awsProvider }
 );
@@ -462,8 +580,10 @@ export const environmentName = environment;
 export const webRepositoryUrl = webRepo.repositoryUrl;
 export const apiRepositoryUrl = apiRepo.repositoryUrl;
 export const workersRepositoryUrl = workersRepo.repositoryUrl;
-export const applicationUrl = pulumi.interpolate`http://${sharedAlbDnsName}/${appName}`;
+export const applicationUrl = pulumi.interpolate`https://${domainName}/${appName}`;
 export const apiUrl = apiPublicUrl;
+export const httpsListenerArn = httpsListener.arn;
+export const certificateArn = certificate.arn;
 export const ecsClusterArn = sharedEcsClusterArn;
 export const ecsClusterName = sharedEcsClusterName;
 export const appSecurityGroupId = fargateSg.id;
@@ -473,4 +593,8 @@ export const mongoSecurityGroupId = dataStores.mongoSecurityGroupId;
 export const route53ZoneId = hostedZone.zoneId;
 export const route53NameServers = hostedZone.nameServers;
 export const domainNameOutput = domainName;
+export const sharedAlbArn = platform.alb.arn;
+export const sharedAlbDnsNameOutput = platform.alb.dnsName;
+export const githubDeployRoleArn = platform.deployRole.arn;
+export const githubOidcProviderArn = platform.oidcProvider.arn;
 

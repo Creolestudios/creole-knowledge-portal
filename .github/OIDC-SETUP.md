@@ -9,6 +9,12 @@ Use **OIDC** (no long-lived AWS access keys) for `.github/workflows/deploy-infra
 | Pulumi state bucket | `s3://pulumi-state-761341389675?region=us-east-1&awssdk=v2` |
 | Repository variable | `AWS_GHA_DEPLOY_ROLE_ARN` — IAM role ARN for GHA to assume |
 
+**Status (2026-08-11):** OIDC provider and deploy role already created in account `761341389675`.
+
+| Name | Value |
+|------|-------|
+| `AWS_GHA_DEPLOY_ROLE_ARN` | `arn:aws:iam::761341389675:role/ckp-github-deploy-dev` |
+
 ## 1. Create the GitHub OIDC provider (once per account)
 
 If `aws iam list-open-id-connect-providers` returns empty:
@@ -20,7 +26,7 @@ export AWS_REGION=us-east-1
 aws iam create-open-id-connect-provider \
   --url https://token.actions.githubusercontent.com \
   --client-id-list sts.amazonaws.com \
-  --thumbprint-list 6938fd4d98bab03fa0217a5d6397dd4a4f5e5e5
+  --thumbprint-list 6938fd4d98bab03fa0217a5d6397dd4a4f5e5e5e
 ```
 
 ## 2. Create the deploy role

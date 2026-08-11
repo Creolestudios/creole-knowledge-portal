@@ -111,13 +111,35 @@ Current dev stack (`Pulumi.dev.yaml`) may keep `apiDesiredCount: 0` and `workers
 | Web | `/creole-knowledge-portal`, `/creole-knowledge-portal/*` | `/creole-knowledge-portal` |
 | API | `/creole-knowledge-portal/api/*` | `/api/v1/health` (direct to container) |
 
-| URL | Purpose |
-|-----|---------|
-| `http://<alb-dns>/creole-knowledge-portal/` | Web app |
-| `http://<alb-dns>/creole-knowledge-portal/api/v1/health` | API health (via ALB) |
-| `https://ckp.nikcreations.com/creole-knowledge-portal/` | Production (after Route53 NS delegation) |
+| URL | Purpose | Status |
+|-----|---------|--------|
+| `https://ckp.nikcreations.com/creole-knowledge-portal/` | Web app | HTTPS on shared ALB (ACM) |
+| `https://ckp.nikcreations.com/creole-knowledge-portal/api/v1/health` | API health | Not live until `apiDesiredCount=1` |
+| `http://ckp.nikcreations.com/...` | HTTP custom domain | **301 → HTTPS** (host-header rule) |
+| `http://ckp-shared-alb-495275305.us-east-1.elb.amazonaws.com/creole-knowledge-portal/` | ALB DNS (debug) | HTTP only — no redirect |
 
-`NEXT_PUBLIC_API_URL` is set to `http://<alb-dns>/creole-knowledge-portal` (no trailing `/api` — clients append `/api/v1/...`).
+**Not using CloudFront.** TLS terminates on the ALB. There is no `api.ckp.nikcreations.com`.
+
+`NEXT_PUBLIC_API_URL` is `https://ckp.nikcreations.com/creole-knowledge-portal` (clients append `/api/v1/...`).
+
+### DNS (already delegated)
+
+Hosted zone `ckp.nikcreations.com` (Route53 `Z08236051M6RDZHQDVAUN`). NS at the parent `nikcreations.com` (Cloudflare):
+
+1. `ns-1277.awsdns-31.org`
+2. `ns-1670.awsdns-16.co.uk`
+3. `ns-423.awsdns-52.com`
+4. `ns-525.awsdns-01.net`
+
+### HTTPS (ALB + ACM, no CloudFront)
+
+Pulumi creates:
+
+1. ACM certificate for `ckp.nikcreations.com` (DNS validation in this Route53 zone)
+2. ALB HTTPS listener `:443` with the same path rules as HTTP
+3. HTTP → HTTPS redirect when `Host` is `ckp.nikcreations.com`
+
+CloudFront / WAF is **not** in this stack (TGN TotalMed used it optionally). Add later if you need CDN or edge WAF.
 
 ### Supabase redirect URLs
 
@@ -127,6 +149,7 @@ In **Supabase Dashboard → Authentication → URL Configuration**:
 |---------|-------|
 | **Site URL** | `https://ckp.nikcreations.com/creole-knowledge-portal` |
 | **Redirect URLs** | `https://ckp.nikcreations.com/creole-knowledge-portal/auth/callback` |
+| | `http://ckp-shared-alb-495275305.us-east-1.elb.amazonaws.com/creole-knowledge-portal/auth/callback` |
 | | `http://localhost:3000/auth/callback` (local dev, no basePath) |
 
 ---
@@ -187,7 +210,7 @@ pulumi up
 
 ### 4. DNS delegation
 
-After `pulumi up`, add NS records at `nikcreations.com` using stack output `route53NameServers`.
+After `pulumi up`, add NS records at `nikcreations.com` using stack output `route53NameServers` (already done for `ckp`). HTTPS is provisioned by this stack (ACM + ALB :443).
 
 ---
 
@@ -218,6 +241,7 @@ These are **outside** this Pulumi stack:
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
+| `https://ckp.nikcreations.com` connection refused | Cert or :443 listener not ready | Wait for ACM validation; `pulumi up`; confirm SG allows 443 |
 | Web 404 at ALB root | basePath | Use `/creole-knowledge-portal/` not `/` |
 | API 404 via ALB | Path prefix mismatch | Hit `/creole-knowledge-portal/api/v1/health` |
 | ECS task fails to start | Missing Secrets Manager permission | Re-run `pulumi up` (execution role policy) |

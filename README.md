@@ -139,7 +139,18 @@ Three services in production: **web** (Next.js), **api** (FastAPI), **workers** 
 Browser → Next.js (Supabase auth) → FastAPI / Celery → MongoDB + Redis + Gemini
 ```
 
-**Production deploy:** all secrets, ECS env mapping, Docker push, DNS, and Supabase redirect URLs → **[infra/README.md](infra/README.md)**
+### Production URLs (current)
+
+Same hostname, path-based routing — **not** `api.ckp.nikcreations.com`.
+
+| URL | Service | Status |
+|-----|---------|--------|
+| [https://ckp.nikcreations.com/creole-knowledge-portal/](https://ckp.nikcreations.com/creole-knowledge-portal/) | Frontend (Next.js) | HTTPS on ALB (ACM) — **not CloudFront** |
+| `https://ckp.nikcreations.com/creole-knowledge-portal/api/` | Python API (FastAPI) | **Not live** (`apiDesiredCount=0`) |
+
+HTTP on the custom domain **301s to HTTPS**. There is no `api.ckp.nikcreations.com` and no CloudFront distribution.
+
+Full deploy + secrets → **[infra/README.md](infra/README.md)**
 
 Other docs:
 
