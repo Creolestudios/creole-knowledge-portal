@@ -1,0 +1,19 @@
+config:
+  ckp:environment: dev
+  ckp:appName: creole-knowledge-portal
+  ckp:sharedVpcId: vpc-REPLACE
+  ckp:sharedPrivateSubnetIds:
+    - subnet-REPLACE-a
+    - subnet-REPLACE-b
+  ckp:sharedVpcCidrBlock: 10.0.0.0/16
+  ckp:sharedAlbListenerArn: arn:aws:elasticloadbalancing:us-east-1:ACCOUNT:listener/app/shared-alb/ID/ID
+  ckp:sharedAlbSecurityGroupId: sg-REPLACE
+  ckp:sharedAlbDnsName: shared-alb-123456789.us-east-1.elb.amazonaws.com
+  ckp:sharedEcsClusterArn: arn:aws:ecs:us-east-1:ACCOUNT:cluster/shared-cluster
+  ckp:sharedEcsClusterName: shared-cluster
+  ckp:listenerPriorityBase: "1100"
+  ckp:ecsDesiredCount: "1"
+  ckp:workersDesiredCount: "1"
+  # Until ElastiCache/DocumentDB are provisioned:
+  ckp:redisUrl: redis://placeholder:6379/0
+  # ckp:mongoUri — set with: pulumi config set --secret ckp:mongoUri 'mongodb://...'

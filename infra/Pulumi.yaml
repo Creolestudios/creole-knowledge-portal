@@ -1,0 +1,5 @@
+name: creole-knowledge-portal
+runtime: nodejs
+description: CKP Option 3 infra — shared VPC, dedicated Mongo/Redis, ECS Fargate (web + api + workers)
+backend:
+  url: s3://pulumi-state-761341389675?region=us-east-1&awssdk=v2
