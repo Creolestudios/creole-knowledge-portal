@@ -17,7 +17,6 @@ export default function PastBlogsTab({
 
   useEffect(() => {
     if (selected) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedDate(selected);
       const fetchBlogForDate = async (dateStr: string) => {
         setLoading(true);
@@ -178,7 +177,7 @@ export default function PastBlogsTab({
           <div className="bg-white rounded-[32px] p-8 sm:p-16 border border-zinc-100 shadow-card text-center space-y-3">
             <CalendarSearch size={32} className="text-zinc-300 mx-auto" />
             <p className="text-zinc-500 font-semibold">
-              Pick a highlighted date from the calendar to read that day&apos;s past briefing.
+              Pick a highlighted date from the calendar to read that day's past briefing.
             </p>
           </div>
         )}
