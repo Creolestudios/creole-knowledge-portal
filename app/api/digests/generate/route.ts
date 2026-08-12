@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
+import { mockUserFromCookie } from '@/lib/dev/mock-user';
 import crypto from 'crypto';
 import {
   scrapeUrlContent,
@@ -39,12 +40,9 @@ export async function POST(request: Request) {
       let { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         const cookieStore = await cookies();
-        const mockCookie = cookieStore.get('mock-user');
-        if (mockCookie && mockCookie.value === 'true') {
-          user = {
-            id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004',
-            email: 'priyadhanani125@gmail.com'
-          } as any;
+        const mockUser = mockUserFromCookie(cookieStore.get('mock-user')?.value);
+        if (mockUser) {
+          user = mockUser as any;
         }
       }
       if (user) {
@@ -290,7 +288,7 @@ export async function POST(request: Request) {
         curation_notes: `Personalized brief Part 1 for user ${userId}`
       });
 
-    // Automatically generate technical quiz based on the newly synthesized blog content
+    // Automatically generate a technical quiz for today's part (best-effort).
     try {
       console.log('[Quiz Factory] Starting automated quiz generation for blog_id:', insertedBlogs[0].id);
       await generateQuizForBlog(insertedBlogs[0].id, insertedBlogs[0].content);
@@ -300,7 +298,6 @@ export async function POST(request: Request) {
       insertedBlogs[0].quiz_generated = true;
     } catch (quizError) {
       console.error('[Quiz Factory] Failed to generate quiz for blog:', quizError);
-      // We don't throw here to ensure the blog is still returned successfully even if quiz generation fails occasionally
     }
 
     return NextResponse.json({

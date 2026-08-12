@@ -15,6 +15,7 @@ Welcome to the wiki for the Creole Knowledge Portal project! This wiki serves as
 *   [[pages/setup-guide.md|Setup Guide]]
 *   [[pages/roadmap.md|Roadmap]]
 *   [[pages/notion-integration.md|Notion Task Integration]]
+*   [[pages/gatekeeper-plan.md|Gatekeeper Module Design]]
 *   [[components/index.md|Components]]
 *   [[decisions/index.md|Architectural Decisions]]
 *   [[logs/index.md|Changelogs]]

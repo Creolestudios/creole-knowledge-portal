@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
+import { mockUserFromCookie } from '@/lib/dev/mock-user';
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,12 +11,9 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       const cookieStore = await cookies();
-      const mockCookie = cookieStore.get('mock-user');
-      if (mockCookie && mockCookie.value === 'true') {
-        user = {
-          id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004',
-          email: 'priyadhanani125@gmail.com'
-        } as any;
+      const mockUser = mockUserFromCookie(cookieStore.get('mock-user')?.value);
+      if (mockUser) {
+        user = mockUser as any;
       }
     }
 
