@@ -1,0 +1,19 @@
+config:
+  ckp:environment: dev
+  ckp:appName: creole-knowledge-portal
+  ckp:domainName: ckp.nikcreations.com
+  ckp:githubRepo: Creolestudios/creole-knowledge-portal
+  # ALB/Fargate subnets in the default VPC (looked up). Override only if needed.
+  ckp:albSubnetIds:
+    - subnet-02b389cd8b541b61b
+    - subnet-0d6aa100da345f0b3
+  ckp:listenerPriorityBase: "1100"
+  ckp:ecsDesiredCount: "1"
+  ckp:ecsCpu: "1024"
+  ckp:ecsMemory: "2048"
+  ckp:webDesiredCount: "1"
+  ckp:apiDesiredCount: "1"
+  ckp:workersDesiredCount: "1"
+  # Dev stack may set apiDesiredCount/workersDesiredCount to 0 until secrets are configured.
+  ckp:redisUrl: redis://placeholder:6379/0
+  # ckp:mongoUri — set with: pulumi config set --secret ckp:mongoUri 'mongodb://...'

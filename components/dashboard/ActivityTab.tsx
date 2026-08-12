@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Activity, CheckCircle, XCircle, MinusCircle, Flame } from 'lucide-react';
 
-export default function ActivityTab({ user }: { user: any }) {
+export default function ActivityTab({ user }: { user?: any }) {
   const [records, setRecords] = useState<any[]>([]);
   const [streak, setStreak] = useState(0);
   const [loading, setLoading] = useState(true);

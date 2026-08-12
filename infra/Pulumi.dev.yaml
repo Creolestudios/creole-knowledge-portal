@@ -1,0 +1,19 @@
+secretsprovider: awskms://alias/ckp-pulumi-secrets?region=us-east-1
+encryptedkey: AQICAHjUpAYTZVY8JP1VZnlKMsHaWjtUuTHDSy+pM5wjIG2S0AEe7Cw8Z3RvLexULEEgIxWJAAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMSyGBAFgDZ2VkDB9WAgEQgDur5Gjmd0wSllWCuTeAx1WujAhTiRxUXnVl4iiWC5FxjBOZUpfKXsypFG3wA0OFUDb/CbxPbyj0Zq+cRQ==
+config:
+  ckp:environment: dev
+  ckp:appName: creole-knowledge-portal
+  ckp:domainName: ckp.nikcreations.com
+  ckp:albSubnetIds:
+    - subnet-02b389cd8b541b61b
+    - subnet-0d6aa100da345f0b3
+  ckp:listenerPriorityBase: "1100"
+  ckp:ecsDesiredCount: "1"
+  ckp:workersDesiredCount: "0"
+  ckp:redisUrl: redis://placeholder:6379/0
+  aws:region: us-east-1
+  ckp:apiDesiredCount: "0"
+  ckp:webImage: 761341389675.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-web:latest
+  ckp:webDesiredCount: "1"
+  ckp:ecsCpu: "1024"
+  ckp:ecsMemory: "2048"

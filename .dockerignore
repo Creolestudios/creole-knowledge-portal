@@ -1,0 +1,25 @@
+# Exclude Pulumi infra from application Docker builds
+infra/
+.pulumi/
+*.pulumi.*
+
+# Python fetch-blogs service (separate image)
+fetch-blogs/
+
+# Standard Node/Next exclusions
+node_modules/
+.next/
+.git/
+.env*
+!.env.example
+wiki/
+reports/
+TGN/
+.claude/
+.cursor/
+.agent/
+*.md
+!README.md
+playwright-report/
+test-results/
+coverage/
