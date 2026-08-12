@@ -54,6 +54,126 @@ Settings are split by domain (e.g. `MongoSettings`, `RedisSettings`) using `pyda
 
 ---
 
+## MongoDB + Beanie Storage Pattern
+
+This service stores app data in MongoDB using Beanie ODM. Beanie is initialized in [src/core/db.py](src/core/db.py), and the active document models are defined in [src/models/article.py](src/models/article.py) and [src/models/profile.py](src/models/profile.py).
+
+### 1) Database connection setup
+
+The settings layer defines the Mongo connection values in [src/core/config.py](src/core/config.py):
+
+```python
+class MongoSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="MONGO_", extra="ignore")
+
+    URI: str = "mongodb://localhost:27017"
+    DB_NAME: str = "knowledge_portal"
+```
+
+At startup, the app creates an `AsyncIOMotorClient` and registers Beanie document models:
+
+```python
+_client = AsyncIOMotorClient(cfg.URI)
+
+await init_beanie(
+    database=_client[cfg.DB_NAME],
+    document_models=[Article, UserProfile],
+)
+```
+
+This happens inside `init_db()` during the FastAPI lifespan. The connection is closed in `close_db()` during shutdown.
+
+### 2) How data is stored
+
+Each Beanie document becomes a MongoDB collection.
+
+#### Article collection
+
+The `Article` model maps to the `articles` collection. It stores:
+- canonical metadata: URL, title, source domain, author, published date
+- content: summary, body text, topics, tags, embedding
+- scoring data: `quality_score`, `ranking_breakdown`, `llm_rerank_reason`, `ranked_at`
+- timestamps: `created_at`, `updated_at`
+
+```python
+class Article(Document):
+    url: Indexed(HttpUrl, unique=True)
+    title: str
+    source_domain: Indexed(str)
+    author: str = ""
+    summary: str = ""
+    body_text: str = ""
+    topics: list[str] = Field(default_factory=list)
+    embedding: list[float] = Field(default_factory=list)
+    quality_score: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    class Settings:
+        name = "articles"
+        indexes = [
+            "source_domain",
+            "published_at",
+            "quality_score",
+            "topics",
+            "tech_stack",
+        ]
+```
+
+Because it subclasses `Document`, Beanie automatically serializes it into MongoDB documents with an ObjectId `_id` field and stores the typed fields as BSON values.
+
+#### User profile collection
+
+The `UserProfile` model maps to the `user_profiles` collection and stores preferences used for ranking and digest generation:
+
+```python
+class UserProfile(Document):
+    user_id: Indexed(str, unique=True)
+    name: str = ""
+    years_of_experience: int = Field(default=0, ge=0)
+    primary_tech_stack: list[str] = Field(default_factory=list)
+    secondary_tech_stack: list[str] = Field(default_factory=list)
+    interests: list[str] = Field(default_factory=list)
+    preferred_sources: list[str] = Field(default_factory=list)
+    profile_embedding: list[float] = Field(default_factory=list)
+```
+
+Each profile is uniquely keyed by `user_id`, which lets the app fetch or upsert personalization state quickly.
+
+### 3) What gets persisted in MongoDB
+
+In practice, the data flow is:
+1. Scrapers collect article metadata and raw content.
+2. Extractors enrich the article with `summary`, `body_text`, and `embedding`.
+3. Ranking logic updates `quality_score` and `ranking_breakdown`.
+4. User personalization is saved in `user_profiles`.
+5. Beanie writes those typed Python objects directly to MongoDB collections.
+
+### 4) Indexing and querying
+
+Beanie indexes are declared inside each model's `Settings.indexes`. For example:
+- `Article` is indexed by `source_domain`, `quality_score`, and topics for fast relevance queries
+- `UserProfile` is indexed by `user_id` for fast profile lookup
+
+This keeps common access patterns cheap without writing raw Motor queries in business logic.
+
+### 5) Local setup
+
+For local development, the repo expects a MongoDB instance on `mongodb://localhost:27017` and Redis on `redis://localhost:6379`. You can bring those up with:
+
+```bash
+cd fetch-blogs
+docker compose up -d
+```
+
+Then start the FastAPI app on the host:
+
+```bash
+uv run fastapi dev src/main.py
+```
+
+This matches the project convention where infrastructure runs in Docker while the app runs locally.
+
+---
+
 ## Docker
 
 | Mode | Command | What runs |
