@@ -47,7 +47,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   };
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLatestBrief();
   }, []);
 
@@ -278,7 +277,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
             <h2 className="text-2xl font-black mb-4">Daily Quiz</h2>
-            <p className="text-zinc-600 mb-6">Test your comprehension of today&apos;s blog.</p>
+            <p className="text-zinc-600 mb-6">Test your comprehension of today's blog.</p>
             <div className="space-y-3 mb-6">
               <button className="w-full text-left p-4 border rounded-xl hover:border-brand font-medium">A) Server-Side Rendering (SSR)</button>
               <button className="w-full text-left p-4 border rounded-xl hover:border-brand font-medium">B) Client-Side Rendering (CSR)</button>

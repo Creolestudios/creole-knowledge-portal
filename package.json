@@ -17,11 +17,7 @@
     "test:report": "vitest run --reporter=json --outputFile=reports/test-report.json || true",
     "audit:report": "npm audit --json > reports/npm-audit-report.json || true",
     "clean": "next clean",
-    "agent": "npx tsx .agent/index.ts",
-    "prepare": "husky || true",
-    "test:smoke": "npx vitest run --coverage",
-    "test:newman": "node tests/run-newman-cloud.mjs",
-    "test:all": "npm run test:smoke && npm run test:newman"
+    "agent": "npx tsx .agent/index.ts"
   },
   "dependencies": {
     "@google/genai": "^1.17.0",
@@ -32,7 +28,6 @@
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cs-devtest": "^1.1.11",
     "google-trends-api": "^4.9.2",
     "googleapis": "^173.0.0",
     "lucide-react": "^0.553.0",
