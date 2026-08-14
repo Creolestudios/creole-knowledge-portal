@@ -11,6 +11,10 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'blog-1' }),
 }));
 
+vi.mock('@/components/dashboard/DashboardShell', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+}));
+
 const mockGetUser = vi.fn();
 const mockOrder = vi.fn();
 vi.mock('@/lib/supabase/client', () => ({

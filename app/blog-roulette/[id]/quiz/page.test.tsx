@@ -18,8 +18,8 @@ vi.mock('@/lib/supabase/client', () => ({
 // The page runs a 1s countdown ticker while the quiz is in progress, which
 // re-renders its whole subtree. Stubbing the heavy chrome keeps each tick cheap
 // so waitFor() isn't starved when the suite runs in parallel.
-vi.mock('@/components/blog-roulette/portal-shell', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+vi.mock('@/components/dashboard/DashboardShell', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
 function fetchImpl(map: Record<string, any>) {

@@ -17,7 +17,8 @@ import {
   ExternalLink,
   RefreshCw,
 } from 'lucide-react';
-import PortalShell from '@/components/blog-roulette/portal-shell';
+import LogoutButton from '@/components/logout-button';
+import DashboardShell from '@/components/dashboard/DashboardShell';
 import type { RouletteBlog, BlogStatus } from '@/lib/blog-roulette/types';
 
 const STATUS_STYLES: Record<BlogStatus, { label: string; cls: string }> = {
@@ -123,7 +124,12 @@ export default function BlogRouletteListPage() {
   }, [supabase, router]);
 
   return (
-    <PortalShell userEmail={user?.email}>
+    <DashboardShell
+      displayName={user?.email?.split('@')[0] ?? 'Author'}
+      displayDomain={user?.email?.split('@')[1] ?? 'creole'}
+      footer={<LogoutButton variant="sidebar" />}
+      user={user}
+    >
       <div className="max-w-6xl mx-auto">
         <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
@@ -276,6 +282,6 @@ export default function BlogRouletteListPage() {
           </div>
         )}
       </div>
-    </PortalShell>
+    </DashboardShell>
   );
 }

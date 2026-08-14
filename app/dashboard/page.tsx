@@ -10,12 +10,8 @@ import type { UserProfileSchema } from '@/types/contracts';
 
 /**
  * User dashboard. Auth/profile is fetched here (Supabase); the layout, the
- * three vertical nav tabs, the active tab content, and the sidebar activity
- * widget all live in `DashboardShell`, which reads from the mock data layer in
- * `lib/data/`.
- *
- * NOTE(live): to serve real digests, swap the mock reads in `lib/data/blogs.ts`
- * for the `/api/digests/*` proxy routes — no component changes needed.
+ * navigation tabs, the active tab content, and the sidebar activity widget
+ * all live in `DashboardShell`.
  */
 export default function DashboardPage() {
   const [user, setUser] = useState<Pick<SupabaseUser, 'id' | 'email'> | null>(null);

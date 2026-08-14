@@ -12,7 +12,8 @@ import {
   Minus,
   Hash,
 } from 'lucide-react';
-import PortalShell from '@/components/blog-roulette/portal-shell';
+import LogoutButton from '@/components/logout-button';
+import DashboardShell from '@/components/dashboard/DashboardShell';
 import type {
   KeywordSuggestion,
   TrendDirection,
@@ -93,7 +94,11 @@ export default function NewBlogPage() {
   const longTail = suggestions.filter((s) => s.type === 'long_tail');
 
   return (
-    <PortalShell>
+    <DashboardShell
+      displayName="Author"
+      displayDomain="creole"
+      footer={<LogoutButton variant="sidebar" />}
+    >
       <div className="max-w-4xl mx-auto">
         <div className="mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand/10 border border-brand/20 rounded-full text-brand text-[10px] font-bold uppercase tracking-widest mb-4">
@@ -228,6 +233,6 @@ export default function NewBlogPage() {
           </button>
         </div>
       </div>
-    </PortalShell>
+    </DashboardShell>
   );
 }

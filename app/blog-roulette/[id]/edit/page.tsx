@@ -18,10 +18,11 @@ import {
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react';
-import PortalShell from '@/components/blog-roulette/portal-shell';
 import ChecklistSidebar from '@/components/blog-roulette/checklist-sidebar';
 import PreviewPane from '@/components/blog-roulette/preview-pane';
 import PublishedBlogView from '@/components/blog-roulette/published-blog-view';
+import LogoutButton from '@/components/logout-button';
+import DashboardShell from '@/components/dashboard/DashboardShell';
 import {
   runCheckpoints,
   type CheckpointResult,
@@ -30,6 +31,24 @@ import { BLOG_RULES, type RouletteBlog } from '@/lib/blog-roulette/types';
 import { createClient } from '@/lib/supabase/client';
 
 const TINY_API_KEY = process.env.NEXT_PUBLIC_TINYMCE_API_KEY ?? 'no-api-key';
+
+function EditShell({
+  children,
+  email,
+}: {
+  children: React.ReactNode;
+  email?: string;
+}) {
+  return (
+    <DashboardShell
+      displayName={email?.split('@')[0] ?? 'Author'}
+      displayDomain={email?.split('@')[1] ?? 'creole'}
+      footer={<LogoutButton variant="sidebar" />}
+    >
+      {children}
+    </DashboardShell>
+  );
+}
 
 export default function BlogEditPage() {
   const router = useRouter();
@@ -306,19 +325,19 @@ export default function BlogEditPage() {
 
   if (loading || !blog) {
     return (
-      <PortalShell>
+      <EditShell email={user?.email}>
         <div className="flex items-center justify-center min-h-[400px]">
           <Loader2 className="w-8 h-8 text-brand animate-spin" />
         </div>
-      </PortalShell>
+      </EditShell>
     );
   }
 
   if (blog.status === 'PUBLISHED' || blog.status === 'PUBLISHING' || blog.status === 'PASSED') {
     return (
-      <PortalShell userEmail={user?.email}>
+      <EditShell email={user?.email}>
         <PublishedBlogView blog={blog} tags={tags} />
-      </PortalShell>
+      </EditShell>
     );
   }
 
@@ -352,7 +371,7 @@ export default function BlogEditPage() {
   }
 
   return (
-    <PortalShell userEmail={user?.email}>
+    <EditShell email={user?.email}>
       <div className="max-w-7xl mx-auto">
         <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
@@ -751,6 +770,6 @@ export default function BlogEditPage() {
           </aside>
         </div>
       </div>
-    </PortalShell>
+    </EditShell>
   );
 }

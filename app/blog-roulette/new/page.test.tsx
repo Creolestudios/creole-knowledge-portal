@@ -9,6 +9,10 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/blog-roulette/new',
 }));
 
+vi.mock('@/components/dashboard/DashboardShell', () => ({
+  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+}));
+
 vi.mock('@/lib/supabase/client', () => ({
   createClient: vi.fn().mockReturnValue({ auth: { signOut: vi.fn().mockResolvedValue({}) } }),
 }));

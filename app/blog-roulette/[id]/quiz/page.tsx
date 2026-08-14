@@ -11,7 +11,8 @@ import {
   ArrowRight,
   Clock,
 } from 'lucide-react';
-import PortalShell from '@/components/blog-roulette/portal-shell';
+import LogoutButton from '@/components/logout-button';
+import DashboardShell from '@/components/dashboard/DashboardShell';
 
 interface QuizQuestion {
   q: string;
@@ -202,7 +203,11 @@ export default function QuizPage() {
   }
 
   return (
-    <PortalShell>
+    <DashboardShell
+      displayName="Author"
+      displayDomain="creole"
+      footer={<LogoutButton variant="sidebar" />}
+    >
       <div className="max-w-3xl mx-auto">
         <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -494,6 +499,6 @@ export default function QuizPage() {
           )}
         </AnimatePresence>
       </div>
-    </PortalShell>
+    </DashboardShell>
   );
 }
