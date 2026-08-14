@@ -234,6 +234,28 @@ function envOrSecret(
   }
 }
 
+/**
+ * Builds the Mongo/Redis/Celery env-or-secret entries shared by the API and
+ * worker task definitions, plus the optional Gemini LLM key secret.
+ */
+function buildCeleryEnvSecrets(
+  mongoArn: string | undefined,
+  redisArn: string | undefined,
+  llmArn: string | undefined,
+  mongoFallback: string,
+  redisFallback: string,
+  env: EcsEnvVar[],
+  secrets: EcsSecretRef[]
+): void {
+  envOrSecret("MONGO_URI", mongoArn, mongoFallback, env, secrets);
+  envOrSecret("REDIS_URL", redisArn, redisFallback, env, secrets);
+  envOrSecret("REDIS_RESULT_URL", redisArn, redisFallback, env, secrets);
+  envOrSecret("CELERY_BROKER_URL", redisArn, redisFallback, env, secrets);
+  if (llmArn) {
+    secrets.push({ name: "LLM_GEMINI_API_KEY", valueFrom: llmArn });
+  }
+}
+
 const logGroup = new aws.cloudwatch.LogGroup(`${appName}-logs`, {
   retentionInDays: environment === "prod" ? 30 : 3,
   tags: { Name: `${appName}-logs-${environment}`, Component: "logs", ...defaultTags },
@@ -264,13 +286,7 @@ const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
         { name: "APP_ENVIRONMENT", value: "production" },
       ];
       const secrets: EcsSecretRef[] = [];
-      envOrSecret("MONGO_URI", mongoArn || undefined, mongoFallback, environment, secrets);
-      envOrSecret("REDIS_URL", redisArn || undefined, redisFallback, environment, secrets);
-      envOrSecret("REDIS_RESULT_URL", redisArn || undefined, redisFallback, environment, secrets);
-      envOrSecret("CELERY_BROKER_URL", redisArn || undefined, redisFallback, environment, secrets);
-      if (llmArn) {
-        secrets.push({ name: "LLM_GEMINI_API_KEY", valueFrom: llmArn });
-      }
+      buildCeleryEnvSecrets(mongoArn || undefined, redisArn || undefined, llmArn || undefined, mongoFallback, redisFallback, environment, secrets);
       return JSON.stringify([
         {
           name: "api",
@@ -366,13 +382,7 @@ const workersTask = new aws.ecs.TaskDefinition(`${appName}-workers-task`, {
         { name: "NODE_ENV", value: "production" },
       ];
       const secrets: EcsSecretRef[] = [];
-      envOrSecret("MONGO_URI", mongoArn || undefined, mongoFallback, environment, secrets);
-      envOrSecret("REDIS_URL", redisArn || undefined, redisFallback, environment, secrets);
-      envOrSecret("REDIS_RESULT_URL", redisArn || undefined, redisFallback, environment, secrets);
-      envOrSecret("CELERY_BROKER_URL", redisArn || undefined, redisFallback, environment, secrets);
-      if (llmArn) {
-        secrets.push({ name: "LLM_GEMINI_API_KEY", valueFrom: llmArn });
-      }
+      buildCeleryEnvSecrets(mongoArn || undefined, redisArn || undefined, llmArn || undefined, mongoFallback, redisFallback, environment, secrets);
       return JSON.stringify([
         {
           name: "workers",

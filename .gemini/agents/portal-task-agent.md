@@ -10,7 +10,7 @@ mcpServers:
     command: "npx"
     args: ["-y", "@notionhq/notion-mcp-server"]
     env:
-      NOTION_TOKEN: "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"
+      NOTION_TOKEN: "***REMOVED-NOTION-TOKEN***"
 ---
 
 # Portal Task Agent

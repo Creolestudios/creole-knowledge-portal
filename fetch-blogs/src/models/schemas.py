@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 class UserProfile(BaseModel):
     user_id: str
@@ -25,7 +30,7 @@ class Article(BaseModel):
     author: Optional[str] = None
     source_domain: str
     published_at: Optional[datetime] = None
-    scraped_at: datetime = Field(default_factory=datetime.utcnow)
+    scraped_at: datetime = Field(default_factory=_utcnow)
     body_text: str
     body_markdown: Optional[str] = None
     word_count: int = 0
@@ -66,7 +71,7 @@ class DigestMetadata(BaseModel):
 
 class DailyDigest(BaseModel):
     digest_id: str
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=_utcnow)
     user_id: str
     strategy_used: str = "C"
     reading_time_minutes: float = 0.0

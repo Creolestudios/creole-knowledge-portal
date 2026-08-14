@@ -34,7 +34,7 @@ async def init_db() -> None:
     log.info("db: ready")
 
 
-async def close_db() -> None:
+def close_db() -> None:
     """Close the MongoDB connection pool."""
     if _client is not None:
         _client.close()

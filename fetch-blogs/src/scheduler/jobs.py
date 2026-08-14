@@ -1,6 +1,6 @@
 import logging
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 from src.config import settings
 from src.hybrid.coordinator import run_hybrid_pipeline
 
@@ -36,7 +36,7 @@ async def trigger_daily_briefings_job():
     Cron Job scheduled for 9:00 AM daily.
     Iterates through all users, runs the scrapers + Gemini synthesis, and saves to MongoDB.
     """
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     logger.info(f"Starting scheduled daily briefing cron job at {start_time.isoformat()}...")
     
     user_ids = await fetch_all_user_ids()
@@ -58,5 +58,5 @@ async def trigger_daily_briefings_job():
             
     logger.info(
         f"Scheduled cron job finished. Successes: {success_count}, Failures: {failure_count}, "
-        f"Duration: {(datetime.utcnow() - start_time).total_seconds()}s"
+        f"Duration: {(datetime.now(timezone.utc) - start_time).total_seconds()}s"
     )

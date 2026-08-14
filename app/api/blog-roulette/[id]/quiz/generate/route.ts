@@ -6,6 +6,7 @@ import {
   fallbackQuizQuestions,
 } from '@/lib/blog-roulette/gemini-client';
 import { BLOG_RULES, type RouletteQuizQuestion } from '@/lib/blog-roulette/types';
+import { requireUserAndBlog } from '@/lib/blog-roulette/route-helpers';
 
 export const runtime = 'nodejs';
 
@@ -15,7 +16,7 @@ function stripHtml(html: string) {
   return html
     .replace(/<style[\s\S]*?<\/style>/g, '')
     .replace(/<script[\s\S]*?<\/script>/g, '')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/<[^>]{1,10000}>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -37,7 +38,7 @@ BLOG CONTENT:
 ${text.slice(0, 12000)}`;
 
   const raw = await geminiGenerate(prompt, { maxRetries: 2 });
-  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+  const jsonMatch = raw.match(/\[[\s\S]{0,50000}\]/);
   if (!jsonMatch) throw new Error('Gemini returned non-JSON');
   const parsed = JSON.parse(jsonMatch[0]) as RouletteQuizQuestion[];
   if (!Array.isArray(parsed) || parsed.length !== 3) {
@@ -52,18 +53,11 @@ export async function POST(
 ) {
   const { id } = await ctx.params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { data: blog } = await supabase
-    .from('roulette_blogs')
-    .select('*')
-    .eq('id', id)
-    .eq('author_id', user.id)
-    .single();
-  if (!blog) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const auth = await requireUserAndBlog(supabase, id, { restrictToAuthor: true });
+  if ('error' in auth) return auth.error;
+  const { blog } = auth;
+
   if (blog.status !== 'SUBMITTED' && blog.status !== 'QUIZ_IN_PROGRESS') {
     return NextResponse.json(
       { error: `Cannot start quiz in status ${blog.status}` },

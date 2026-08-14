@@ -55,6 +55,30 @@ function getDriveClient() {
 }
 
 /**
+ * Returns the configured Drive upload folder ID, or throws if unset.
+ */
+function getFolderIdOrThrow(): string {
+  const folderId = process.env.DRIVE_FOLDER_ID;
+  if (!folderId) {
+    throw new Error('DRIVE_FOLDER_ID is not configured in the environment.');
+  }
+  return folderId;
+}
+
+/**
+ * Validates a Drive files.create response contains the fields callers need.
+ */
+function assertUploadResult(data: {
+  id?: string | null;
+  webViewLink?: string | null;
+}): { fileId: string; webViewLink: string } {
+  if (!data.id || !data.webViewLink) {
+    throw new Error('Upload to Google Drive succeeded, but returned no file metadata.');
+  }
+  return { fileId: data.id, webViewLink: data.webViewLink };
+}
+
+/**
  * Uploads a document Buffer to a configured Google Drive folder.
  */
 export async function uploadBlogToDrive(
@@ -62,10 +86,7 @@ export async function uploadBlogToDrive(
   authorEmail: string,
   docxBuffer: Buffer
 ): Promise<{ fileId: string; webViewLink: string }> {
-  const folderId = process.env.DRIVE_FOLDER_ID;
-  if (!folderId) {
-    throw new Error('DRIVE_FOLDER_ID is not configured in the environment.');
-  }
+  const folderId = getFolderIdOrThrow();
 
   const drive = getDriveClient();
 
@@ -94,15 +115,9 @@ export async function uploadBlogToDrive(
     fields: 'id, webViewLink',
   });
 
-  if (!response.data.id || !response.data.webViewLink) {
-    throw new Error('Upload to Google Drive succeeded, but returned no file metadata.');
-  }
-
-  console.log(`[google-drive] Upload successful. File ID: ${response.data.id}`);
-  return {
-    fileId: response.data.id,
-    webViewLink: response.data.webViewLink,
-  };
+  const result = assertUploadResult(response.data);
+  console.log(`[google-drive] Upload successful. File ID: ${result.fileId}`);
+  return result;
 }
 
 /**
@@ -115,10 +130,7 @@ export async function uploadBlogAsGoogleDoc(
   authorEmail: string,
   htmlContent: string
 ): Promise<{ fileId: string; webViewLink: string }> {
-  const folderId = process.env.DRIVE_FOLDER_ID;
-  if (!folderId) {
-    throw new Error('DRIVE_FOLDER_ID is not configured in the environment.');
-  }
+  const folderId = getFolderIdOrThrow();
 
   const drive = getDriveClient();
 
@@ -146,15 +158,9 @@ export async function uploadBlogAsGoogleDoc(
     fields: 'id, webViewLink',
   });
 
-  if (!response.data.id || !response.data.webViewLink) {
-    throw new Error('Upload to Google Drive succeeded, but returned no file metadata.');
-  }
-
-  console.log(`[google-drive] Google Doc created. File ID: ${response.data.id}`);
-  return {
-    fileId: response.data.id,
-    webViewLink: response.data.webViewLink,
-  };
+  const result = assertUploadResult(response.data);
+  console.log(`[google-drive] Google Doc created. File ID: ${result.fileId}`);
+  return result;
 }
 
 /**

@@ -360,7 +360,7 @@ export default function UserManagement() {
                         type="number"
                         min="0"
                         value={formData.years_of_experience}
-                        onChange={(e) => setFormData({ ...formData, years_of_experience: parseInt(e.target.value) || 0 })}
+                        onChange={(e) => setFormData({ ...formData, years_of_experience: Number.parseInt(e.target.value) || 0 })}
                         className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all font-mono"
                       />
                     </div>

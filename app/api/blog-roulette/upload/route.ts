@@ -51,7 +51,7 @@ export async function POST(req: Request) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const ext = file.name.split('.').pop() ?? 'png';
-  const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const path = `${user.id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
 
   const { error: uploadError, data } = await supabaseAdmin.storage
     .from('blog-images')

@@ -13,18 +13,21 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN mkdir -p public
 ENV NEXT_TELEMETRY_DISABLED=1
-# Placeholders for `next build` static analysis — override at ECS runtime via task env/secrets.
+# NEXT_PUBLIC_* build args are safe to embed — they're already browser-exposed at runtime.
 ARG NEXT_PUBLIC_BASE_PATH=/creole-knowledge-portal
 ARG NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-placeholder-anon-key
-ARG SUPABASE_SERVICE_ROLE_KEY=ci-placeholder-service-role-key
-ARG GEMINI_API_KEY=ci-placeholder-gemini-key
 ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY
-ENV GEMINI_API_KEY=$GEMINI_API_KEY
-RUN npm run build
+# Server-only secrets are passed only to this single RUN step's process env —
+# never as ARG/ENV — so no secret-shaped value is ever persisted as an image
+# layer or visible via `docker history`/`docker inspect`. `next build` only
+# needs these vars to be present, not real; actual values are injected at
+# ECS runtime via task env/Secrets Manager.
+RUN SUPABASE_SERVICE_ROLE_KEY=build-time-placeholder-not-a-secret \
+    GEMINI_API_KEY=build-time-placeholder-not-a-secret \
+    npm run build
 
 FROM base AS runner
 WORKDIR /app

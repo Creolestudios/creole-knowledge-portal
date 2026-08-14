@@ -1,6 +1,6 @@
 import logging
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from src.scrapers.extractor import extract_article_content, get_domain
 from src.models.schemas import Article
@@ -28,7 +28,7 @@ def fetch_hn_top_stories(limit: int = 5) -> List[Article]:
                             if not url:
                                 continue
                                 
-                            published_at = datetime.fromtimestamp(item.get("time", datetime.utcnow().timestamp()))
+                            published_at = datetime.fromtimestamp(item.get("time", datetime.now(timezone.utc).timestamp()))
                             
                             body_text = item.get("title", "")
                             

@@ -7,6 +7,7 @@ import {
   fallbackGradeAnswers,
 } from '@/lib/blog-roulette/gemini-client';
 import { BLOG_RULES, type RouletteQuizQuestion } from '@/lib/blog-roulette/types';
+import { requireUserAndBlog } from '@/lib/blog-roulette/route-helpers';
 
 export const runtime = 'nodejs';
 
@@ -36,7 +37,7 @@ ${questions
       .join('\n')}`;
 
   const raw = await geminiGenerate(prompt, { maxRetries: 1 });
-  const match = raw.match(/\[[^\]]*\]/);
+  const match = raw.match(/\[[^\]]{0,2000}\]/);
   if (!match) throw new Error('Grader returned non-JSON');
   const arr = JSON.parse(match[0]) as boolean[];
   if (!Array.isArray(arr) || arr.length !== 3) {
@@ -57,18 +58,11 @@ export async function POST(
   }
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { data: blog } = await supabase
-    .from('roulette_blogs')
-    .select('*')
-    .eq('id', id)
-    .eq('author_id', user.id)
-    .single();
-  if (!blog) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const auth = await requireUserAndBlog(supabase, id, { restrictToAuthor: true });
+  if ('error' in auth) return auth.error;
+  const { user, blog } = auth;
+
   if (blog.status !== 'QUIZ_IN_PROGRESS') {
     return NextResponse.json(
       { error: `Cannot submit in status ${blog.status}` },
