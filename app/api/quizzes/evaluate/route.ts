@@ -57,8 +57,8 @@ export async function POST(request: Request) {
       pointsAwarded = isCorrect ? 1 : 0;
     } else if (question.question_type === 'multiple') {
       // Expecting array of strings for MS
-      const correctArray = (question.correct_answers || []).map((s: string) => s.toLowerCase().trim()).sort();
-      const userArray = (Array.isArray(userAnswer) ? userAnswer : [userAnswer]).map((s: string) => String(s).toLowerCase().trim()).sort();
+      const correctArray = (question.correct_answers || []).map((s: string) => s.toLowerCase().trim()).sort((a: string, b: string) => a.localeCompare(b));
+      const userArray = (Array.isArray(userAnswer) ? userAnswer : [userAnswer]).map((s: string) => String(s).toLowerCase().trim()).sort((a: string, b: string) => a.localeCompare(b));
       
       isCorrect = correctArray.length === userArray.length && correctArray.every((v: string, i: number) => v === userArray[i]);
       pointsAwarded = isCorrect ? 2 : 0;

@@ -147,7 +147,7 @@ function CodeBlock({ code }: { code: string }) {
 
 /** Inline Markdown parser for bold (**text**) and links ([text](url)). */
 function parseInlineMarkdown(text: string): ReactNode {
-  const regex = /(\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\))/g;
+  const regex = /(\*\*([^*]{1,500})\*\*|\[([^\]]{1,300})\]\(([^)]{1,1000})\))/g;
   const parts: ReactNode[] = [];
   let lastIdx = 0;
   let match: RegExpExecArray | null = regex.exec(text);

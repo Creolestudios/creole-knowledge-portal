@@ -1,82 +1,114 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './route';
-import { NextResponse } from 'next/server';
 
 const mockGetUser = vi.fn();
-const mockSelect = vi.fn();
-const mockInsert = vi.fn();
-const mockEq = vi.fn();
-const mockOrder = vi.fn();
-const mockLimit = vi.fn();
 
-// Mock Supabase Server Client (for auth)
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockImplementation(() => ({
-    auth: {
-      getUser: mockGetUser
-    }
-  }))
+    auth: { getUser: mockGetUser },
+  })),
 }));
 
-// Mock Supabase Admin Client (for DB operations)
-vi.mock('@/lib/supabase/admin', () => {
-  return {
-    supabaseAdmin: {
-      from: vi.fn(() => {
-        const chain: any = {
-          select: vi.fn().mockReturnThis(),
-          insert: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          order: vi.fn().mockReturnThis(),
-          limit: vi.fn().mockReturnThis(),
-          single: vi.fn().mockReturnThis(),
-          then: vi.fn((resolve) => {
-            resolve(mockDbResponse);
-          })
-        };
-        return chain;
-      })
-    }
-  };
-});
+let mockDbResponses: any[] = [];
 
-let mockDbResponse: any = {};
+vi.mock('@/lib/supabase/admin', () => ({
+  supabaseAdmin: {
+    from: vi.fn(() => {
+      const chain: any = {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        single: vi.fn().mockReturnThis(),
+        then: vi.fn((resolve) => {
+          const res = mockDbResponses.length > 0 ? mockDbResponses.shift() : { data: null, error: null };
+          resolve(res);
+        }),
+      };
+      return chain;
+    }),
+  },
+}));
+
+function mockRequest(body: unknown) {
+  return new Request('http://localhost/api/quizzes/start', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
 
 describe('POST /api/quizzes/start', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDbResponse = {};
+    mockDbResponses = [];
   });
 
-  const mockRequest = (body: any) => new Request('http://localhost:3000/api/quizzes/start', {
-    method: 'POST',
-    body: JSON.stringify(body)
-  });
-
-  it('should return 401 if user is not authenticated', async () => {
+  it('returns 401 when there is no authenticated user', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
-    
-    const response = await POST(mockRequest({ blogId: 1 }));
-    expect(response.status).toBe(401);
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(401);
   });
 
-  it('should return 400 if blogId is missing', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-123' } } });
-    
-    const response = await POST(mockRequest({}));
-    expect(response.status).toBe(400);
+  it('requires a blogId', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const res = await POST(mockRequest({}));
+    expect(res.status).toBe(400);
   });
 
-  it('should return error if quiz is already completed', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-123' } } });
-    
-    // Mock the 'quiz_attempts' select count check returning 1
-    mockDbResponse = { count: 1, error: null };
+  it('rejects a retry when an attempt already exists', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockDbResponses = [{ count: 1, error: null }];
 
-    const response = await POST(mockRequest({ blogId: 1 }));
-    const data = await response.json();
-    
-    expect(response.status).toBe(403);
-    expect(data.error).toBe('You have already attempted the quiz for this blog.');
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 when no quiz questions exist for the blog', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockDbResponses = [
+      { count: 0, error: null }, // attempt count
+      { data: [], error: null }, // questions
+    ];
+
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 500 when persisting the new attempt fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockDbResponses = [
+      { count: 0, error: null },
+      { data: [{ id: 'q1', question_type: 'single', difficulty: 'easy', question: 'Q?', options: null, code_snippet: null }], error: null },
+      { data: null, error: { message: 'insert failed' } },
+    ];
+
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(500);
+  });
+
+  it('starts a quiz attempt, shuffles questions, and returns them', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const questions = [
+      { id: 'q1', question_type: 'single', difficulty: 'easy', question: 'Q1?', options: null, code_snippet: null },
+      { id: 'q2', question_type: 'single', difficulty: 'easy', question: 'Q2?', options: null, code_snippet: null },
+    ];
+    mockDbResponses = [
+      { count: 0, error: null },
+      { data: questions, error: null },
+      { data: { id: 'attempt-1', started_at: '2026-08-14T00:00:00Z' }, error: null },
+    ];
+
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.attemptId).toBe('attempt-1');
+    expect(body.questions).toHaveLength(2);
+    expect(body.startedAt).toBe('2026-08-14T00:00:00Z');
+  });
+
+  it('returns 500 on an unexpected error', async () => {
+    mockGetUser.mockRejectedValue(new Error('boom'));
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(500);
   });
 });

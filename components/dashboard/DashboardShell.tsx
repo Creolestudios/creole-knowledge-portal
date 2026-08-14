@@ -125,7 +125,7 @@ export default function DashboardShell({
         </div>
 
         {/* Vertical tab navigation */}
-        <nav role="tablist" aria-label="Dashboard sections" className="space-y-1.5 relative z-10">
+        <div role="tablist" aria-label="Dashboard sections" className="space-y-1.5 relative z-10">
           {TABS.map((tab) => {
             const isActive = active === tab.key;
             return (
@@ -156,7 +156,7 @@ export default function DashboardShell({
               </button>
             );
           })}
-        </nav>
+        </div>
 
         {/* Reading streak */}
         <div className="mt-6 relative z-10 flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-900/40 border border-zinc-800">

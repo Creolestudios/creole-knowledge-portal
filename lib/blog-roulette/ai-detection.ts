@@ -14,7 +14,7 @@ function stripHtml(html: string): string {
   return html
     .replace(/<style[\s\S]*?<\/style>/g, '')
     .replace(/<script[\s\S]*?<\/script>/g, '')
-    .replace(/<[^>]+>/g, ' ')
+    .replace(/<[^>]{1,10000}>/g, ' ')
     .replace(/&#?\w+;/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -94,7 +94,7 @@ BLOG CONTENT (first 8000 chars):
 ${text.slice(0, 8000)}`;
 
   const raw = await geminiGenerate(prompt, { maxRetries: 1 });
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  const jsonMatch = raw.match(/\{[\s\S]{0,50000}\}/);
   if (!jsonMatch) {
     throw new Error('Gemini returned non-JSON for AI detection');
   }

@@ -1,6 +1,6 @@
 import logging
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List
 from src.scrapers.extractor import extract_article_content, get_domain
 from src.models.schemas import Article
@@ -33,7 +33,7 @@ def fetch_devto_articles(tag: str = None, limit: int = 10) -> List[Article]:
                         continue
                     
                     published_str = item.get("published_at")
-                    published_at = datetime.utcnow()
+                    published_at = datetime.now(timezone.utc)
                     if published_str:
                         try:
                             # Parse ISO timestamp

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { buildQuizReviewData } from '@/lib/quizzes/review';
 
 export async function POST(request: Request) {
   try {
@@ -65,21 +66,7 @@ export async function POST(request: Request) {
       .eq('blog_id', attempt.blog_id)
       .limit(5);
 
-    const reviewData = (questions || []).map((q: any) => {
-      const ans = answers.find((a: any) => a.question_id === q.id);
-      return {
-        questionId: q.id,
-        question: q.question,
-        questionType: q.question_type,
-        options: q.options,
-        correctAnswers: q.correct_answers,
-        explanation: q.explanation,
-        userAnswer: ans?.user_answer || null,
-        isCorrect: ans?.is_correct || false,
-        pointsAwarded: ans?.points_awarded || 0,
-        evaluationReason: ans?.evaluation_reason || 'No answer provided.'
-      };
-    });
+    const reviewData = buildQuizReviewData(questions || [], answers);
 
     return NextResponse.json({
       success: true,

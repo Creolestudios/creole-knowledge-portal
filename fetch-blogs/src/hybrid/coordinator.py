@@ -1,6 +1,7 @@
 import logging
+import math
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 from src.config import settings
 from src.models.schemas import UserProfile, Article, DailyDigest
 from src.scrapers.devto_scraper import fetch_devto_articles
@@ -149,7 +150,7 @@ async def run_hybrid_pipeline(user_id: str) -> DailyDigest:
     scraped_sources.append({
         "url": hn_url,
         "type": "hacker_news",
-        "scraped_at": datetime.utcnow(),
+        "scraped_at": datetime.now(timezone.utc),
         "articles_count": hn_articles_count,
         "status": hn_status
     })
@@ -174,7 +175,7 @@ async def run_hybrid_pipeline(user_id: str) -> DailyDigest:
             "url": devto_url,
             "type": "devto",
             "tag": tag,
-            "scraped_at": datetime.utcnow(),
+            "scraped_at": datetime.now(timezone.utc),
             "articles_count": devto_articles_count,
             "status": devto_status
         })
@@ -194,7 +195,7 @@ async def run_hybrid_pipeline(user_id: str) -> DailyDigest:
         scraped_sources.append({
             "url": feed,
             "type": "rss",
-            "scraped_at": datetime.utcnow(),
+            "scraped_at": datetime.now(timezone.utc),
             "articles_count": rss_articles_count,
             "status": rss_status
         })
@@ -234,7 +235,7 @@ async def run_hybrid_pipeline(user_id: str) -> DailyDigest:
         profile_embedding = []
 
     # 3c. Semantic ranking via cosine similarity
-    if profile_embedding and any(v != 0.0 for v in profile_embedding):
+    if profile_embedding and any(not math.isclose(v, 0.0, abs_tol=1e-9) for v in profile_embedding):
         logger.info("Running semantic cosine similarity ranking...")
         semantically_ranked = semantic_rank(pre_semantic_pool, profile_embedding, top_n=20)
     else:
@@ -303,7 +304,7 @@ async def run_hybrid_pipeline(user_id: str) -> DailyDigest:
     # 5. Save digest inside MongoDB
     try:
         # Delete today's previous digest if any to allow overwrite
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         await db.daily_digests.delete_many({
             "user_id": user_id,
             "generated_at": {"$gte": today_start}
