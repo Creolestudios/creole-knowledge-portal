@@ -1,24 +1,9 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin, requireAdminUser } from '@/lib/supabase/admin';
 
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if calling user is admin
-    const { data: callingProfile, error: callError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
-
-    if (callError || callingProfile?.role !== 'admin') {
+    if (!(await requireAdminUser())) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -62,21 +47,7 @@ export async function GET() {
 
 export async function PUT(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Check if calling user is admin
-    const { data: callingProfile, error: callError } = await supabaseAdmin
-      .from('user_profiles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
-
-    if (callError || callingProfile?.role !== 'admin') {
+    if (!(await requireAdminUser())) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

@@ -1,6 +1,6 @@
 import feedparser
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from typing import List
 from src.scrapers.extractor import extract_article_content, get_domain
@@ -27,7 +27,7 @@ def parse_rss_feed(feed_url: str, limit: int = 5) -> List[Article]:
             title = getattr(entry, "title", "Untitled Feed Item")
             
             # Parse published date
-            published_at = datetime.utcnow()
+            published_at = datetime.now(timezone.utc)
             for date_key in ("published_parsed", "updated_parsed", "created_parsed"):
                 date_val = getattr(entry, date_key, None)
                 if date_val:

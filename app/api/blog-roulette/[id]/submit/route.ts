@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { runCheckpoints } from '@/lib/blog-roulette/validators';
+import { requireUserAndBlog } from '@/lib/blog-roulette/route-helpers';
 
 export const runtime = 'nodejs';
 
@@ -10,18 +11,11 @@ export async function POST(
 ) {
   const { id } = await ctx.params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { data: blog } = await supabase
-    .from('roulette_blogs')
-    .select('*')
-    .eq('id', id)
-    .eq('author_id', user.id)
-    .single();
-  if (!blog) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const auth = await requireUserAndBlog(supabase, id, { restrictToAuthor: true });
+  if ('error' in auth) return auth.error;
+  const { blog } = auth;
+
   if (blog.status !== 'DRAFT') {
     return NextResponse.json(
       { error: 'Blog already submitted' },

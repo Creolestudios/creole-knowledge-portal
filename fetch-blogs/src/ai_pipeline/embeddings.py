@@ -1,4 +1,5 @@
 import logging
+import math
 import google.generativeai as genai
 from src.config import settings
 
@@ -49,7 +50,7 @@ def calculate_cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float
     norm_a = sum(a * a for a in vec_a) ** 0.5
     norm_b = sum(b * b for b in vec_b) ** 0.5
     
-    if norm_a == 0.0 or norm_b == 0.0:
+    if math.isclose(norm_a, 0.0, abs_tol=1e-9) or math.isclose(norm_b, 0.0, abs_tol=1e-9):
         return 0.0
         
     return dot_product / (norm_a * norm_b)

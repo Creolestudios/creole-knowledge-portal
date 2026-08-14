@@ -39,7 +39,7 @@ def cosine_similarity(query_embedding: list[float], article_embedding: list[floa
     article = np.array(article_embedding, dtype=np.float64)
     query_norm = float(np.linalg.norm(query))
     article_norm = float(np.linalg.norm(article))
-    if query_norm == 0.0 or article_norm == 0.0:
+    if math.isclose(query_norm, 0.0, abs_tol=1e-9) or math.isclose(article_norm, 0.0, abs_tol=1e-9):
         return 0.0
 
     raw_similarity = float(np.dot(query, article) / (query_norm * article_norm))

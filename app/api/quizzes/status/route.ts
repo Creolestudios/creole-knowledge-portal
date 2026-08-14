@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { buildQuizReviewData } from '@/lib/quizzes/review';
 
 export async function GET(request: Request) {
   try {
@@ -48,22 +49,8 @@ export async function GET(request: Request) {
 
         const answers = fullAttempt?.quiz_answers || [];
 
-        const reviewData = (questions || []).map((q: any) => {
-          const ans = answers.find((a: any) => a.question_id === q.id);
-          return {
-            questionId: q.id,
-            question: q.question,
-            questionType: q.question_type,
-            options: q.options,
-            correctAnswers: q.correct_answers,
-            explanation: q.explanation,
-            userAnswer: ans?.user_answer || null,
-            isCorrect: ans?.is_correct || false,
-            pointsAwarded: ans?.points_awarded || 0,
-            evaluationReason: ans?.evaluation_reason || 'No answer provided.'
-          };
-        });
-        
+        const reviewData = buildQuizReviewData(questions || [], answers);
+
         return NextResponse.json({
           completed: true,
           result: {
@@ -119,21 +106,7 @@ export async function GET(request: Request) {
 
           const finalAnswers = finalAttempt?.quiz_answers || [];
 
-          const reviewData = (questions || []).map((q: any) => {
-            const ans = finalAnswers.find((a: any) => a.question_id === q.id);
-            return {
-              questionId: q.id,
-              question: q.question,
-              questionType: q.question_type,
-              options: q.options,
-              correctAnswers: q.correct_answers,
-              explanation: q.explanation,
-              userAnswer: ans?.user_answer || null,
-              isCorrect: ans?.is_correct || false,
-              pointsAwarded: ans?.points_awarded || 0,
-              evaluationReason: ans?.evaluation_reason || 'Time expired.'
-            };
-          });
+          const reviewData = buildQuizReviewData(questions || [], finalAnswers, 'Time expired.');
 
           return NextResponse.json({
             completed: true,

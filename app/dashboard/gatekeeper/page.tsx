@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
   LogOut,
-  User,
   Settings,
   Bell,
   Search,
@@ -23,6 +22,7 @@ import {
   ArrowRight
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
+import DashboardHeaderBar from '@/components/dashboard/DashboardHeaderBar';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface ValidationReport {
@@ -324,30 +324,11 @@ export default function GatekeeperPage() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-20 bg-white border-b border-zinc-200 px-10 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-4 flex-1">
-            <h1 className="text-xl font-extrabold text-zinc-950 flex items-center gap-2">
-              <ShieldCheck className="text-brand" />
-              <span>AI Gatekeeper Console</span>
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-zinc-900 leading-tight capitalize">
-                  {user.email?.split('@')[0]}
-                </p>
-                <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
-                  {user.email?.split('@')[1]}
-                </p>
-              </div>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center border bg-zinc-50 border-zinc-200 text-zinc-600">
-                <User size={20} />
-              </div>
-            </div>
-          </div>
-        </header>
+        <DashboardHeaderBar
+          icon={<ShieldCheck className="text-brand" />}
+          title="AI Gatekeeper Console"
+          user={user}
+        />
 
         {/* Content Area */}
         <div className="p-10 flex-1 overflow-y-auto">
@@ -465,7 +446,7 @@ export default function GatekeeperPage() {
                                         : 'bg-zinc-200 text-zinc-600'
                                     }`}
                                   >
-                                    {String.fromCharCode(65 + oIndex)}
+                                    {String.fromCodePoint(65 + oIndex)}
                                   </span>
                                   <span>{option}</span>
                                 </button>
@@ -597,8 +578,9 @@ export default function GatekeeperPage() {
                     // Input Form
                     <form onSubmit={handleBlogSubmit} className="space-y-6">
                       <div className="space-y-2">
-                        <label className="text-sm font-bold text-zinc-700 block">Blog Title</label>
+                        <label htmlFor="gatekeeper-blog-title" className="text-sm font-bold text-zinc-700 block">Blog Title</label>
                         <input
+                          id="gatekeeper-blog-title"
                           type="text"
                           required
                           value={title}
@@ -609,10 +591,11 @@ export default function GatekeeperPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <label className="text-sm font-bold text-zinc-700 block">
+                        <label htmlFor="gatekeeper-blog-content" className="text-sm font-bold text-zinc-700 block">
                           Blog Content (Markdown supported)
                         </label>
                         <textarea
+                          id="gatekeeper-blog-content"
                           required
                           rows={12}
                           value={content}
@@ -678,7 +661,7 @@ export default function GatekeeperPage() {
                           {sub.validationReport && (
                             <div className="flex items-center gap-4 text-xs font-semibold text-zinc-500">
                               <span className="flex items-center gap-1">
-                                Quality Score:
+                                Quality Score:{' '}
                                 <span
                                   className={`font-black ${
                                     sub.validationReport.qualityScore >= 70
@@ -690,7 +673,7 @@ export default function GatekeeperPage() {
                                 </span>
                               </span>
                               <span className="flex items-center gap-1">
-                                Duplicate Check:
+                                Duplicate Check:{' '}
                                 <span
                                   className={`font-black ${
                                     sub.validationReport.plagiarismOverlap > 30

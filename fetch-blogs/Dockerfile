@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrandr2 libgbm1 libasound2 curl && \
     rm -rf /var/lib/apt/lists/*
 
+# Installed outside $HOME so it stays readable by the non-root runtime user below.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN uv run playwright install chromium
 
 # Stage 3: slim runtime image
@@ -33,18 +35,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=playwright-stage /app/.venv /app/.venv
-COPY --from=playwright-stage /root/.cache/ms-playwright /root/.cache/ms-playwright
+COPY --from=playwright-stage /ms-playwright /ms-playwright
 
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
 
 COPY src ./src
 COPY scripts ./scripts
 
-RUN chmod +x scripts/prestart.sh scripts/test.sh
+RUN chmod +x scripts/prestart.sh scripts/test.sh && \
+    groupadd --system appuser && useradd --system --gid appuser --home-dir /app appuser && \
+    chown -R appuser:appuser /app /ms-playwright
+USER appuser
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:8000/api/v1/health || exit 1

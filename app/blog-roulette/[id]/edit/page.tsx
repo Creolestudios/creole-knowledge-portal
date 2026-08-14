@@ -156,7 +156,7 @@ export default function BlogEditPage() {
 
   // Computed metrics
   const wordCount = useMemo(() => {
-    const text = bodyHtml.replace(/<[^>]+>/g, ' ');
+    const text = bodyHtml.replace(/<[^>]{1,10000}>/g, ' ');
     return text.trim().split(/\s+/).filter(Boolean).length;
   }, [bodyHtml]);
 
@@ -468,12 +468,13 @@ export default function BlogEditPage() {
             {/* Meta block */}
             <div className="bg-white rounded-[28px] p-7 border border-zinc-100 shadow-card space-y-5">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-2">
+                <label htmlFor="cover-image-url" className="block text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-2">
                   Cover image URL
                 </label>
                 <div className="flex items-center gap-2">
                   <ImageIcon size={16} className="text-zinc-400 shrink-0" />
                   <input
+                    id="cover-image-url"
                     value={coverImageUrl}
                     onChange={(e) => setCoverImageUrl(e.target.value)}
                     placeholder="https://..."

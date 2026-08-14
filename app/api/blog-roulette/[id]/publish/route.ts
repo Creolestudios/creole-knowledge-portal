@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { runPublishPipeline } from '@/lib/blog-roulette/publisher';
+import { requireUserAndBlog } from '@/lib/blog-roulette/route-helpers';
 
 export const runtime = 'nodejs';
 
@@ -10,19 +11,10 @@ export async function POST(
 ) {
   const { id } = await ctx.params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // Get the blog to publish
-  const { data: blog } = await supabase
-    .from('roulette_blogs')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (!blog) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  const auth = await requireUserAndBlog(supabase, id);
+  if ('error' in auth) return auth.error;
+  const { user, blog } = auth;
 
   // Authorization check: must be the author OR the admin Priya
   const isAuthor = blog.author_id === user.id;

@@ -39,8 +39,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No quiz found for this blog.' }, { status: 404 });
     }
 
-    // Randomize order of questions for a varied experience
-    const randomizedQuestions = questions.sort(() => 0.5 - Math.random());
+    // Randomize order of questions for a varied experience (Fisher-Yates shuffle)
+    const randomizedQuestions = [...questions];
+    for (let i = randomizedQuestions.length - 1; i > 0; i--) {
+      const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
+      [randomizedQuestions[i], randomizedQuestions[j]] = [randomizedQuestions[j], randomizedQuestions[i]];
+    }
 
     // Create a new attempt record
     const { data: attempt, error: attemptError } = await supabaseAdmin

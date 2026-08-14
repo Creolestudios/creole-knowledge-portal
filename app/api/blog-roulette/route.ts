@@ -12,7 +12,7 @@ function slugify(s: string) {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .slice(0, 70);
-  const suffix = Math.random().toString(36).slice(2, 8);
+  const suffix = crypto.randomUUID().slice(0, 6);
   return `${base}-${suffix}`;
 }
 
