@@ -23,7 +23,7 @@ RedisDep = Annotated[aioredis.Redis[Any], Depends(get_redis)]
 
 
 # ── X-Internal-Token header guard ─────────────────────────────────────────────
-async def _verify_internal_token(
+def _verify_internal_token(
     x_internal_token: Annotated[str | None, Header()] = None,
 ) -> None:
     cfg = get_auth_settings()

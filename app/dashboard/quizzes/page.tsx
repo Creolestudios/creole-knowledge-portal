@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import {
-  User,
   Settings,
   Bell,
   Home,
@@ -17,6 +16,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import LogoutButton from '@/components/logout-button';
+import DashboardHeaderBar from '@/components/dashboard/DashboardHeaderBar';
 
 export default function PersonalLeaderboardPage() {
   const [user, setUser] = useState<any>(null);
@@ -123,30 +123,11 @@ export default function PersonalLeaderboardPage() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="h-20 bg-white border-b border-zinc-200 px-10 flex items-center justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-4 flex-1">
-            <h1 className="text-xl font-extrabold text-zinc-950 flex items-center gap-2">
-              <Trophy className="text-brand" />
-              <span>Personal Leaderboard</span>
-            </h1>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-zinc-900 leading-tight capitalize">
-                  {user.email?.split('@')[0]}
-                </p>
-                <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
-                  {user.email?.split('@')[1]}
-                </p>
-              </div>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center border bg-zinc-50 border-zinc-200 text-zinc-600">
-                <User size={20} />
-              </div>
-            </div>
-          </div>
-        </header>
+        <DashboardHeaderBar
+          icon={<Trophy className="text-brand" />}
+          title="Personal Leaderboard"
+          user={user}
+        />
 
         {/* Content Area */}
         <div className="p-10 flex-1 overflow-y-auto">

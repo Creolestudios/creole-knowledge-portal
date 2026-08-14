@@ -276,7 +276,15 @@ export default function SubmissionsModeration() {
                   >
                     {/* Header line */}
                     <div
+                      role="button"
+                      tabIndex={0}
                       onClick={() => setExpandedId(isExpanded ? null : sub.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setExpandedId(isExpanded ? null : sub.id);
+                        }
+                      }}
                       className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                     >
                       <div className="min-w-0 flex-1 space-y-1.5">

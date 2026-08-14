@@ -19,7 +19,7 @@ vi.mock('googleapis', () => ({
   },
 }));
 
-import { uploadBlogAsGoogleDoc, shareBlogWithMarketing } from './google-drive';
+import { uploadBlogAsGoogleDoc, uploadBlogToDrive, shareBlogWithMarketing } from './google-drive';
 
 describe('google-drive', () => {
   beforeEach(() => {
@@ -78,6 +78,51 @@ describe('google-drive', () => {
     });
   });
 
+  describe('uploadBlogToDrive', () => {
+    it('uploads a docx buffer and returns file metadata', async () => {
+      filesCreateMock.mockResolvedValue({
+        data: {
+          id: 'file-2',
+          webViewLink: 'https://docs.google.com/document/d/file-2',
+        },
+      });
+
+      const result = await uploadBlogToDrive(
+        { title: 'My Blog', slug: 'my-blog' },
+        'author@creolestudios.com',
+        Buffer.from('docx-bytes'),
+      );
+
+      expect(result).toEqual({
+        fileId: 'file-2',
+        webViewLink: 'https://docs.google.com/document/d/file-2',
+      });
+      expect(filesCreateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestBody: expect.objectContaining({
+            name: 'author-my-blog.docx',
+            parents: ['folder-123'],
+          }),
+        }),
+      );
+    });
+
+    it('throws when credentials are not configured', async () => {
+      delete process.env.DRIVE_SERVICE_ACCOUNT_KEY_JSON;
+      delete process.env.DRIVE_SERVICE_ACCOUNT_KEY;
+      await expect(
+        uploadBlogToDrive({ title: 'X', slug: 'x' }, 'a@b.com', Buffer.from('x')),
+      ).rejects.toThrow('not configured');
+    });
+
+    it('throws when the credentials JSON is malformed', async () => {
+      process.env.DRIVE_SERVICE_ACCOUNT_KEY_JSON = '{ not valid json';
+      await expect(
+        uploadBlogToDrive({ title: 'X', slug: 'x' }, 'a@b.com', Buffer.from('x')),
+      ).rejects.toThrow('Failed to parse DRIVE_SERVICE_ACCOUNT_KEY_JSON');
+    });
+  });
+
   describe('shareBlogWithMarketing', () => {
     it('shares the file with every configured marketing email', async () => {
       permissionsCreateMock.mockResolvedValue({});
@@ -97,6 +142,16 @@ describe('google-drive', () => {
       );
       expect(emails).toEqual([]);
       expect(permissionsCreateMock).not.toHaveBeenCalled();
+    });
+
+    it('continues sharing with remaining emails when a non-auth failure occurs', async () => {
+      permissionsCreateMock
+        .mockRejectedValueOnce({ status: 500, message: 'Server error' })
+        .mockResolvedValueOnce({});
+
+      const emails = await shareBlogWithMarketing('file-1', 'author@creolestudios.com');
+      expect(emails).toEqual(['marketing@creole.com', 'seo@creole.com']);
+      expect(permissionsCreateMock).toHaveBeenCalledTimes(2);
     });
 
     it('throws on an authorization failure for a share', async () => {

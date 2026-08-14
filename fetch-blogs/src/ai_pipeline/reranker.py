@@ -1,5 +1,6 @@
 import logging
 import json
+import math
 import google.generativeai as genai
 from src.config import settings
 from src.models.schemas import Article, UserProfile
@@ -33,7 +34,7 @@ def semantic_rank(
     Embeds each article if not already embedded, then sorts by similarity score.
     """
     for art in articles:
-        if not art.embedding or all(v == 0.0 for v in art.embedding):
+        if not art.embedding or all(math.isclose(v, 0.0, abs_tol=1e-9) for v in art.embedding):
             snippet = f"{art.title}. {art.body_text[:3000]}"
             art.embedding = get_text_embedding(snippet)
 

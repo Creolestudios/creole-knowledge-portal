@@ -51,7 +51,7 @@ export default function CalendarSidebar({
   });
 
   const cells: (number | null)[] = [
-    ...Array(firstDay).fill(null),
+    ...new Array(firstDay).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
 

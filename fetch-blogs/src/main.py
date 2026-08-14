@@ -53,7 +53,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     # ── Shutdown ──────────────────────────────────────────────────────────
     stop_scheduler()
-    await close_db()
+    close_db()
     log.info("shutdown complete")
 
 

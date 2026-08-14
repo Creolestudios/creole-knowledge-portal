@@ -83,12 +83,12 @@ def tfidf_relevance_scores(
 ) -> dict[int, float]:
     """Score article text against the profile query using TF-IDF cosine similarity."""
     if not articles or not profile_terms:
-        return {index: 0.0 for index, _article in enumerate(articles)}
+        return dict.fromkeys(range(len(articles)), 0.0)
 
     query = " ".join(profile_terms)
     documents = [query, *[article_text(article) for article in articles]]
     if not any(document.strip() for document in documents):
-        return {index: 0.0 for index, _article in enumerate(articles)}
+        return dict.fromkeys(range(len(articles)), 0.0)
 
     vectorizer = TfidfVectorizer(stop_words="english", ngram_range=(1, 2))
     matrix = vectorizer.fit_transform(documents)

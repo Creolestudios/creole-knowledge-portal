@@ -190,10 +190,7 @@ export default function BlogRouletteListPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {blogs.map((b) => {
               const status = STATUS_STYLES[b.status];
-              const isLocked = b.status !== 'DRAFT';
-              const href = isLocked
-                ? `/blog-roulette/${b.id}/edit`
-                : `/blog-roulette/${b.id}/edit`;
+              const href = `/blog-roulette/${b.id}/edit`;
               return (
                 <Link
                   key={b.id}
