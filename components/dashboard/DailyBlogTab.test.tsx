@@ -33,7 +33,12 @@ describe('DailyBlogTab', () => {
       ok: true,
       json: async () => ({
         success: true,
-        blog: { title: 'Today’s Brief', content: 'Some **bold** content', tags: ['react', 'ai'] },
+        blog: {
+          title: 'Today’s Brief',
+          content: 'Some **bold** content',
+          tags: ['react', 'ai'],
+          estimated_read_minutes: 20,
+        },
       }),
     });
 
@@ -42,6 +47,7 @@ describe('DailyBlogTab', () => {
     await waitFor(() => {
       expect(screen.getByText('Today’s Brief')).toBeInTheDocument();
     });
+    expect(screen.getByText('20 min read')).toBeInTheDocument();
     expect(screen.getByText('react')).toBeInTheDocument();
     expect(screen.getByText('Start Quiz')).toBeInTheDocument();
   });
@@ -52,7 +58,10 @@ describe('DailyBlogTab', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ success: false }) }) // initial fetch: none
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ success: true, blog: { title: 'Fresh Brief', content: 'x', tags: [] } }),
+        json: async () => ({
+          success: true,
+          blog: { title: 'Fresh Brief', content: 'x', tags: [], estimated_read_minutes: 20 },
+        }),
       }); // generate
 
     render(<DailyBlogTab user={{ id: 'u1' }} profile={{ primary_tech_stack: ['React'] }} />);

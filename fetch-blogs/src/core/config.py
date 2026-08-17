@@ -8,7 +8,7 @@ from __future__ import annotations
 from enum import StrEnum
 from functools import lru_cache
 
-from pydantic import AnyUrl, Field, field_validator
+from pydantic import AliasChoices, AnyHttpUrl, AnyUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,7 @@ class AppSettings(BaseSettings):
     ENVIRONMENT: Environment = Environment.LOCAL
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: AnyUrl | None = None
+    CELERY_EAGER: bool | None = None
 
     @field_validator("SENTRY_DSN", mode="before")
     @classmethod
@@ -44,6 +45,13 @@ class AppSettings(BaseSettings):
     def show_docs(self) -> bool:
         """OpenAPI docs only in local/staging."""
         return self.ENVIRONMENT in {Environment.LOCAL, Environment.STAGING}
+
+    @property
+    def celery_eager(self) -> bool:
+        """Run Celery tasks in-process locally so Generate works without a worker."""
+        if self.CELERY_EAGER is not None:
+            return self.CELERY_EAGER
+        return self.ENVIRONMENT == Environment.LOCAL
 
 
 class MongoSettings(BaseSettings):
@@ -64,6 +72,28 @@ class RedisSettings(BaseSettings):
     RESULT_URL: str = "redis://localhost:6379/1"  # Celery result backend
 
 
+class SupabaseSettings(BaseSettings):
+    """Server-only Supabase settings — prefix: SUPABASE_."""
+
+    model_config = SettingsConfigDict(
+        env_file=("../.env.local", ".env"),
+        env_prefix="SUPABASE_",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    URL: AnyHttpUrl = Field(
+        validation_alias=AliasChoices("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
+    )
+    ANON_KEY: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    )
+    SERVICE_ROLE_KEY: SecretStr = Field(
+        validation_alias=AliasChoices("SUPABASE_SERVICE_ROLE_KEY", "SERVICE_ROLE_KEY"),
+    )
+
+
 class AuthSettings(BaseSettings):
     """Auth / JWT settings — prefix: AUTH_"""
 
@@ -77,10 +107,18 @@ class AuthSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     """LLM / Gemini settings — prefix: LLM_"""
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="LLM_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=("../.env.local", ".env"),
+        env_prefix="LLM_",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
-    GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-2.0-flash"
+    GEMINI_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_GEMINI_API_KEY", "GEMINI_API_KEY"),
+    )
+    GEMINI_MODEL: str = "gemini-3.6-flash"
     GEMINI_EMBED_MODEL: str = "models/text-embedding-004"
 
 
@@ -110,6 +148,11 @@ def get_mongo_settings() -> MongoSettings:
 @lru_cache
 def get_redis_settings() -> RedisSettings:
     return RedisSettings()
+
+
+@lru_cache
+def get_supabase_settings() -> SupabaseSettings:
+    return SupabaseSettings()
 
 
 @lru_cache

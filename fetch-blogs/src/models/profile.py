@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 
 from beanie import Document, Indexed
-from pydantic import Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class ContentDepth(StrEnum):
@@ -15,6 +15,34 @@ class ContentDepth(StrEnum):
     BEGINNER = "beginner"
     INTERMEDIATE = "intermediate"
     ADVANCED = "advanced"
+
+
+class QuizOutcome(StrEnum):
+    """Result of the latest learning-path quiz."""
+
+    PASSED = "passed"
+    FAILED = "failed"
+
+
+class DifficultyDirection(StrEnum):
+    """Direction in which subsequent learning content should move."""
+
+    EASIER = "easier"
+    SAME = "same"
+    HARDER = "harder"
+
+
+class LearningPath(BaseModel):
+    """Adaptive learning state embedded in a user profile."""
+
+    last_topics: list[str] = Field(default_factory=list)
+    weak_topics: list[str] = Field(default_factory=list)
+    next_step_topics: list[str] = Field(default_factory=list)
+    served_urls: list[HttpUrl] = Field(default_factory=list)
+    last_quiz_outcome: QuizOutcome | None = None
+    last_quiz_date: datetime | None = None
+    source_article_url: HttpUrl | None = None
+    difficulty_direction: DifficultyDirection = DifficultyDirection.SAME
 
 
 class UserProfile(Document):
@@ -32,6 +60,7 @@ class UserProfile(Document):
     preferred_sources: list[str] = Field(default_factory=list)
     content_freshness_days: int = Field(default=30, ge=1)
     profile_embedding: list[float] = Field(default_factory=list)
+    learning_path: LearningPath = Field(default_factory=LearningPath)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -53,10 +82,13 @@ class UserProfile(Document):
             *self.primary_tech_stack,
             *self.secondary_tech_stack,
             *self.interests,
+            *self.learning_path.next_step_topics,
+            *self.learning_path.weak_topics,
             self.current_role,
             self.content_depth.value,
         ]
-        return [term.strip().lower() for term in terms if term.strip()]
+        normalized = (term.strip().lower() for term in terms)
+        return list(dict.fromkeys(term for term in normalized if term))
 
     class Settings:
         """Beanie collection settings."""

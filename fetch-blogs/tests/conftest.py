@@ -12,6 +12,8 @@ from beanie import init_beanie
 from mongomock_motor import AsyncMongoMockClient  # type: ignore[import-untyped]
 
 from src.models.article import Article
+from src.models.digest import DailyDigest
+from src.models.job import PipelineJob
 from src.models.profile import UserProfile
 
 # ── mongomock / beanie compatibility shim ─────────────────────────────────────
@@ -44,5 +46,5 @@ async def init_beanie_models(mock_db: AsyncMongoMockClient) -> None:
     """Initialize Beanie against mongomock so Document constructors work in unit tests."""
     await init_beanie(
         database=mock_db.knowledge_portal,
-        document_models=[Article, UserProfile],
+        document_models=[Article, UserProfile, DailyDigest, PipelineJob],
     )

@@ -1,1 +1,100 @@
-"""Route stubs — implement when building the pipeline feature."""
+"""Pipeline trigger and job status routes."""
+
+from __future__ import annotations
+
+import logging
+from typing import Annotated
+
+from celery import chain
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+
+from src.core.config import get_auth_settings
+from src.models.job import PipelineJob
+from src.schemas.pipeline import PipelineStatusOut, PipelineTriggerIn, PipelineTriggerOut
+from src.services.supabase_profiles import upsert_mongo_profile
+from src.workers.extractor_tasks import extract_articles
+from src.workers.generator_tasks import generate_digest
+from src.workers.publisher_tasks import publish_digest
+from src.workers.ranker_tasks import rank_articles
+from src.workers.scraper_tasks import scrape_sources
+
+router = APIRouter(prefix="/pipeline", tags=["pipeline"])
+log = logging.getLogger("fastapi_service.pipeline")
+
+
+def build_pipeline_chain(user_id: str):
+    """scrape → extract → rank → generate → publish."""
+    return chain(
+        scrape_sources.s(user_id),
+        extract_articles.s(),
+        rank_articles.s(user_id, 10),
+        generate_digest.s(user_id),
+        publish_digest.s(),
+    )
+
+
+def run_celery_pipeline_and_wait(user_id: str, timeout: int = 300) -> str:
+    """Run the Celery chain and return the published digest id."""
+    log.info("pipeline: scrape → extract → rank → generate → publish  user=%s", user_id)
+    result = build_pipeline_chain(user_id).apply_async()
+    digest_id = result.get(timeout=timeout)
+    if not digest_id:
+        raise RuntimeError("Pipeline finished without a digest id.")
+    return str(digest_id)
+
+
+def _verify_internal_token(
+    x_internal_token: Annotated[str | None, Header()] = None,
+) -> None:
+    cfg = get_auth_settings()
+    if not x_internal_token or x_internal_token != cfg.SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid X-Internal-Token header.",
+        )
+
+
+@router.post(
+    "/trigger",
+    response_model=PipelineTriggerOut,
+    summary="Enqueue the full scrape-to-publish chain for a user",
+)
+async def trigger_pipeline(
+    payload: PipelineTriggerIn,
+    _: Annotated[None, Depends(_verify_internal_token)],
+) -> PipelineTriggerOut:
+    """Sync the Mongo profile, then run scrape → extract → rank → generate → publish."""
+    try:
+        await upsert_mongo_profile(payload.user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    result = build_pipeline_chain(payload.user_id).apply_async()
+    return PipelineTriggerOut(task_id=str(result.id), user_id=payload.user_id)
+
+
+@router.get(
+    "/status/{user_id}",
+    response_model=PipelineStatusOut,
+    summary="Latest pipeline job for a user",
+)
+async def pipeline_status(user_id: str) -> PipelineStatusOut:
+    """Return the most recent PipelineJob document for the user."""
+    job = (
+        await PipelineJob.find(PipelineJob.user_id == user_id)
+        .sort(-PipelineJob.created_at)
+        .first_or_none()
+    )
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No pipeline job found for this user.",
+        )
+    return PipelineStatusOut(
+        job_id=job.job_id,
+        user_id=job.user_id,
+        status=job.status.value,
+        current_stage=job.current_stage.value if job.current_stage else None,
+        article_ids=job.article_ids,
+        digest_id=job.digest_id,
+        error=job.error,
+    )

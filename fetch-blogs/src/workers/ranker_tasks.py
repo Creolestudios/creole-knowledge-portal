@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime
 
 import structlog
@@ -14,6 +13,7 @@ from src.ranker.llm_reranker import RerankCandidate, rerank_with_gemini
 from src.ranker.scorer import score_articles_for_profile
 from src.ranker.vector_search import rank_by_vector_similarity
 from src.workers.celery_app import celery_app
+from src.workers.runtime import ensure_db, run_async
 
 log = structlog.get_logger(__name__)
 
@@ -37,6 +37,7 @@ async def _load_articles(article_ids: list[str]) -> list[Article]:
 
 async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: int) -> list[str]:
     """Run deterministic, vector, and Gemini ranking for a user."""
+    await ensure_db()
     profile = await UserProfile.find_one(UserProfile.user_id == user_id)
     if profile is None:
         log.warning("ranker: profile not found", user_id=user_id)
@@ -57,7 +58,7 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
             composite_score=item.breakdown.composite_score,
             vector_similarity=vector_by_id.get(_article_id(item.article), 0.0),
         )
-        for item in scored[:50]
+        for item in scored[:15]
         if _article_id(item.article)
     ]
     reranked = rerank_with_gemini(profile, candidates, limit=limit)
@@ -94,9 +95,9 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
     max_retries=3,
     default_retry_delay=60,
 )
-def rank_articles(article_ids: list[str], user_id: str, limit: int = 20) -> list[str]:
+def rank_articles(article_ids: list[str], user_id: str, limit: int = 10) -> list[str]:
     """Celery entry point for rank_queue.
 
     The task accepts and returns document IDs only; article bodies remain in MongoDB.
     """
-    return asyncio.run(_rank_articles_for_user(article_ids, user_id, limit))
+    return run_async(_rank_articles_for_user(article_ids, user_id, limit))

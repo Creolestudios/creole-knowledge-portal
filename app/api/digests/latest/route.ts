@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { resolveUserOrMock } from '@/lib/dev/mock-user';
+import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = await createClient();
     const user = await resolveUserOrMock(supabase);
@@ -14,7 +15,21 @@ export async function GET(request: Request) {
 
     const userId = user.id;
 
-    // 1. Fetch all series blog parts for the user
+    try {
+      const res = await fetch(blogServiceUrl(`/digests/${userId}/latest`), {
+        headers: blogServiceHeaders(),
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload?.blog) {
+          return NextResponse.json(payload);
+        }
+      }
+    } catch (err) {
+      console.warn('Blog service latest digest unavailable, falling back to Supabase:', err);
+    }
+
     const { data: blogs, error } = await supabaseAdmin
       .from('blogs')
       .select('*')
@@ -26,15 +41,14 @@ export async function GET(request: Request) {
     }
 
     if (blogs && blogs.length > 0) {
-      // 2. Parse and group parts by seriesId
       const seriesMap: Record<string, { parts: any[]; maxPublishedAt: string }> = {};
 
       for (const blog of blogs) {
         let meta: any = null;
         try {
           meta = JSON.parse(blog.summary || '{}');
-        } catch (e) {
-          // Not a JSON summary, ignore
+        } catch {
+          // Not a JSON summary
         }
 
         if (meta && meta.seriesId) {
@@ -44,7 +58,7 @@ export async function GET(request: Request) {
           }
           seriesMap[sId].parts.push({
             ...blog,
-            meta
+            meta,
           });
           if (new Date(blog.published_at) > new Date(seriesMap[sId].maxPublishedAt)) {
             seriesMap[sId].maxPublishedAt = blog.published_at;
@@ -52,18 +66,14 @@ export async function GET(request: Request) {
         }
       }
 
-      // 3. Find the most recent series (based on maxPublishedAt)
       const seriesList = Object.values(seriesMap).sort(
         (a, b) => new Date(b.maxPublishedAt).getTime() - new Date(a.maxPublishedAt).getTime()
       );
 
       if (seriesList.length > 0) {
         const activeSeries = seriesList[0];
-        // Sort parts by partNumber ascending
         activeSeries.parts.sort((a, b) => a.meta.partNumber - b.meta.partNumber);
-
-        // Find the first uncompleted part
-        const currentPart = activeSeries.parts.find(p => !p.meta.completed);
+        const currentPart = activeSeries.parts.find((p) => !p.meta.completed);
 
         if (currentPart) {
           const now = new Date();
@@ -81,21 +91,19 @@ export async function GET(request: Request) {
               readingTime: currentPart.meta.readingTime,
               completed: false,
               unlocked: isUnlocked,
-              unlockedAt: currentPart.meta.unlockedAt
-            }
-          });
-        } else {
-          // All parts of the latest series are completed!
-          return NextResponse.json({
-            success: true,
-            blog: null,
-            seriesCompleted: true
+              unlockedAt: currentPart.meta.unlockedAt,
+            },
           });
         }
+
+        return NextResponse.json({
+          success: true,
+          blog: null,
+          seriesCompleted: true,
+        });
       }
     }
 
-    // 4. Fallback to legacy daily briefing
     const { data: legacyBrief, error: legacyError } = await supabaseAdmin
       .from('blogs')
       .select('*')
@@ -111,9 +119,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       blog: legacyBrief && legacyBrief.length > 0 ? legacyBrief[0] : null,
-      meta: null
+      meta: null,
     });
-
   } catch (error: any) {
     console.error('Error in digests/latest route:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });

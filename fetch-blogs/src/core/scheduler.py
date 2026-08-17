@@ -13,8 +13,8 @@ _scheduler: AsyncIOScheduler | None = None
 
 
 def _enqueue_pipeline() -> None:
-    """Trigger the scraper task chain in Celery."""
-    from src.workers.celery_app import celery_app  # lazy import — avoids circular deps
+    """Trigger the full Celery chain for every user."""
+    from src.workers.celery_app import celery_app
 
     celery_app.send_task(
         "src.workers.scraper_tasks.run_scrape_stage",
