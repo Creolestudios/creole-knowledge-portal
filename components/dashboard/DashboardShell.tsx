@@ -94,10 +94,10 @@ export default function DashboardShell({
   }, [active]);
 
   // Restore a past-blog date from the query string after a cross-page jump.
-  useEffect(() => {
-    const date = searchParams.get('date');
-    if (date) setPastDate(date as ISODate);
-  }, [searchParams]);
+  const dateFromQuery = searchParams.get('date') as ISODate;
+  if (dateFromQuery && dateFromQuery !== pastDate) {
+    setPastDate(dateFromQuery);
+  }
 
   const onSearchPick = (date: ISODate) => {
     setPastDate(date);
@@ -159,7 +159,7 @@ export default function DashboardShell({
         </div>
 
         {/* Vertical tab navigation */}
-        <nav role="tablist" aria-label="Dashboard sections" className="space-y-1.5 relative z-10">
+        <nav aria-label="Dashboard sections" className="space-y-1.5 relative z-10">
           {TABS.map((tab) => {
             const isActive = active === tab.key;
             return (
@@ -167,8 +167,7 @@ export default function DashboardShell({
                 href={TAB_HREFS[tab.key]}
                 key={tab.key}
                 id={`dashboard-tab-${tab.key}`}
-                role="tab"
-                aria-selected={isActive}
+                aria-current={isActive ? 'page' : undefined}
                 onClick={(e) => {
                   setMobileOpen(false);
                   if (isPreview && tab.key !== 'roulette') {

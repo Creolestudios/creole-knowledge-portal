@@ -6,6 +6,11 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockImplementation(() => ({ auth: { getUser: mockGetUser } })),
 }));
 
+const mockRequireAdminUser = vi.fn();
+vi.mock('@/lib/supabase/admin', () => ({
+  requireAdminUser: () => mockRequireAdminUser(),
+}));
+
 const mockGetSubmissionById = vi.fn();
 const mockSaveSubmission = vi.fn();
 const mockAddAuditLog = vi.fn();
@@ -32,27 +37,31 @@ describe('POST /api/submissions/[id]/moderate', () => {
   });
 
   it('forbids non-admin callers', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'dev@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue(null);
     const res = await POST(mockRequest({ action: 'APPROVE' }), ctx());
     expect(res.status).toBe(403);
   });
 
   it('returns 404 when the submission does not exist', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'priya.dhanani@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
     mockGetSubmissionById.mockResolvedValue(null);
     const res = await POST(mockRequest({ action: 'APPROVE' }), ctx());
     expect(res.status).toBe(404);
   });
 
   it('validates the action field', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'priya.dhanani@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
     mockGetSubmissionById.mockResolvedValue({ id: 'sub-1', status: 'PENDING_QUIZ' });
     const res = await POST(mockRequest({ action: 'MAYBE' }), ctx());
     expect(res.status).toBe(400);
   });
 
   it('approves a submission and logs the moderator override', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'priya.dhanani@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
     mockGetSubmissionById.mockResolvedValue({ id: 'sub-1', status: 'PENDING_QUIZ' });
 
     const res = await POST(mockRequest({ action: 'APPROVE', reason: 'Looks good' }), ctx());
@@ -61,14 +70,15 @@ describe('POST /api/submissions/[id]/moderate', () => {
     expect(body.submission.status).toBe('APPROVED');
     expect(mockAddAuditLog).toHaveBeenCalledWith(
       'MODERATOR_APPROVED',
-      'priya.dhanani@creolestudios.com',
+      'admin@creolestudios.com',
       'sub-1',
       expect.stringContaining('Looks good'),
     );
   });
 
   it('flags a submission on reject and defaults the reason text', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'priya.dhanani@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
     mockGetSubmissionById.mockResolvedValue({ id: 'sub-1', status: 'PENDING_QUIZ' });
 
     const res = await POST(mockRequest({ action: 'REJECT' }), ctx());

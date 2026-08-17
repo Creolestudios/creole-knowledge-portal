@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireAdminUser } from '@/lib/supabase/admin';
 import { getSubmissions, saveSubmission, addAuditLog, Submission } from '@/lib/data/db';
 import { validateContent, generateQuiz } from '@/lib/ai/validator';
-
-const ADMIN_EMAIL = 'priya.dhanani@creolestudios.com';
 
 export async function GET(req: Request) {
   try {
@@ -17,7 +16,8 @@ export async function GET(req: Request) {
     }
 
     const submissions = await getSubmissions();
-    const isAdmin = user.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+    const admin = await requireAdminUser();
+    const isAdmin = !!admin;
 
     // Regular users can only see their own submissions; admins see all
     const filtered = isAdmin

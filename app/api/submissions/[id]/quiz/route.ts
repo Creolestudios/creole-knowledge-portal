@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireAdminUser } from '@/lib/supabase/admin';
 import { getSubmissionById, saveSubmission, addAuditLog } from '@/lib/data/db';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,8 +20,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: 'Submission not found' }, { status: 404 });
     }
 
-    // Check ownership
-    const isAdmin = user.email?.toLowerCase() === 'priya.dhanani@creolestudios.com';
+    // Check ownership or admin status
+    const admin = await requireAdminUser();
+    const isAdmin = !!admin;
     if (!isAdmin && submission.author.toLowerCase() !== user.email?.toLowerCase()) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }

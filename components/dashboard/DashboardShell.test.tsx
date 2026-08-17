@@ -71,15 +71,15 @@ describe('DashboardShell', () => {
 
   it('shows Blog Roulette as the fourth sidebar option with the correct URL', () => {
     render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
-    const roulette = screen.getByRole('tab', { name: /blog roulette/i });
+    const roulette = screen.getByRole('link', { name: /blog roulette/i });
     expect(roulette).toBeInTheDocument();
     expect(roulette).toHaveAttribute('href', '/blog-roulette');
-    expect(screen.getByRole('tab', { name: /daily blog/i })).toHaveAttribute('href', '/dashboard');
-    expect(screen.getByRole('tab', { name: /past blogs/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /daily blog/i })).toHaveAttribute('href', '/dashboard');
+    expect(screen.getByRole('link', { name: /past blogs/i })).toHaveAttribute(
       'href',
       '/dashboard?tab=past',
     );
-    expect(screen.getByRole('tab', { name: /activity tracker/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /activity tracker/i })).toHaveAttribute(
       'href',
       '/dashboard?tab=activity',
     );
@@ -107,9 +107,9 @@ describe('DashboardShell', () => {
     );
     expect(screen.getByTestId('roulette-page')).toBeInTheDocument();
     expect(screen.queryByTestId('daily-tab')).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /blog roulette/i })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    expect(screen.getByRole('link', { name: /blog roulette/i })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
   });
 

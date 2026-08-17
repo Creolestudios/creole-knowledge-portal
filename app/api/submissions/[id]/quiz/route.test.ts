@@ -6,6 +6,11 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockImplementation(() => ({ auth: { getUser: mockGetUser } })),
 }));
 
+const mockRequireAdminUser = vi.fn();
+vi.mock('@/lib/supabase/admin', () => ({
+  requireAdminUser: () => mockRequireAdminUser(),
+}));
+
 const mockGetSubmissionById = vi.fn();
 const mockSaveSubmission = vi.fn();
 const mockAddAuditLog = vi.fn();
@@ -45,35 +50,39 @@ describe('POST /api/submissions/[id]/quiz', () => {
   });
 
   it('returns 404 when the submission does not exist', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'dev@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
     mockGetSubmissionById.mockResolvedValue(null);
     const res = await POST(mockRequest({ userSelection: {} }), ctx());
     expect(res.status).toBe(404);
   });
 
   it('forbids a non-author, non-admin from taking the quiz', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'someone-else@x.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u2', email: 'someone-else@x.com' } } });
+    mockRequireAdminUser.mockResolvedValue(null);
     mockGetSubmissionById.mockResolvedValue({ ...baseSubmission });
     const res = await POST(mockRequest({ userSelection: {} }), ctx());
     expect(res.status).toBe(403);
   });
 
   it('rejects when the submission is not awaiting a quiz', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'dev@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue(null);
     mockGetSubmissionById.mockResolvedValue({ ...baseSubmission, status: 'APPROVED' });
     const res = await POST(mockRequest({ userSelection: {} }), ctx());
     expect(res.status).toBe(400);
   });
 
   it('validates the userSelection payload', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'dev@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue(null);
     mockGetSubmissionById.mockResolvedValue({ ...baseSubmission });
     const res = await POST(mockRequest({}), ctx());
     expect(res.status).toBe(400);
   });
 
   it('approves the submission when the score meets the passing threshold', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'dev@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue(null);
     mockGetSubmissionById.mockResolvedValue({ ...baseSubmission, quiz: { ...baseSubmission.quiz } });
 
     const res = await POST(
@@ -88,7 +97,8 @@ describe('POST /api/submissions/[id]/quiz', () => {
   });
 
   it('rejects the submission when the score is below the passing threshold', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'dev@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue(null);
     mockGetSubmissionById.mockResolvedValue({ ...baseSubmission, quiz: { ...baseSubmission.quiz } });
 
     const res = await POST(mockRequest({ userSelection: { q1: 9 } }), ctx()); // 0 correct
@@ -97,7 +107,8 @@ describe('POST /api/submissions/[id]/quiz', () => {
   });
 
   it('allows the admin to take the quiz on behalf of another author', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'priya.dhanani@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
     mockGetSubmissionById.mockResolvedValue({ ...baseSubmission, quiz: { ...baseSubmission.quiz } });
 
     const res = await POST(mockRequest({ userSelection: { q1: 0, q2: 1, q3: 2 } }), ctx());

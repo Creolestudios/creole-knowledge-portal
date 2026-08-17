@@ -60,8 +60,9 @@ describe('AdminDashboard', () => {
     });
   });
 
-  it('redirects a logged-in user whose email does not match the admin email', async () => {
+  it('redirects when the user profile is missing', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
+    queue = [{ data: null, error: { message: 'profile missing' } }];
     render(<AdminDashboard />);
 
     await waitFor(() => {
@@ -71,7 +72,7 @@ describe('AdminDashboard', () => {
 
   it('redirects when the profile role is not admin', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [{ data: { role: 'user' }, error: null }];
 
@@ -83,7 +84,7 @@ describe('AdminDashboard', () => {
 
   it('loads existing blog sources for a verified admin', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [
       { data: { role: 'admin' }, error: null }, // profile check
@@ -99,7 +100,7 @@ describe('AdminDashboard', () => {
 
   it('adds and removes URL fields', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
 
@@ -116,7 +117,7 @@ describe('AdminDashboard', () => {
 
   it('shows a validation error when saving with no non-empty URL', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
 
@@ -131,7 +132,7 @@ describe('AdminDashboard', () => {
 
   it('shows a validation error for a malformed URL', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
 
@@ -150,7 +151,7 @@ describe('AdminDashboard', () => {
 
   it('saves valid sources successfully', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [
       { data: { role: 'admin' }, error: null },
@@ -174,7 +175,7 @@ describe('AdminDashboard', () => {
 
   it('switches to the Users and Submissions tabs', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
 
@@ -194,7 +195,7 @@ describe('AdminDashboard', () => {
 
   it('signs out and redirects to the login page', async () => {
     mockGetUser.mockResolvedValue({
-      data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } },
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
     });
     queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
 

@@ -6,6 +6,11 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockImplementation(() => ({ auth: { getUser: mockGetUser } })),
 }));
 
+const mockRequireAdminUser = vi.fn();
+vi.mock('@/lib/supabase/admin', () => ({
+  requireAdminUser: () => mockRequireAdminUser(),
+}));
+
 const mockGetSubmissions = vi.fn();
 const mockSaveSubmission = vi.fn();
 const mockAddAuditLog = vi.fn();
@@ -39,7 +44,8 @@ describe('GET /api/submissions', () => {
   });
 
   it('returns only the caller’s own submissions for a non-admin user', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'dev@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue(null);
     mockGetSubmissions.mockResolvedValue([
       { author: 'dev@creolestudios.com', title: 'Mine' },
       { author: 'other@creolestudios.com', title: 'Not mine' },
@@ -52,7 +58,8 @@ describe('GET /api/submissions', () => {
   });
 
   it('returns all submissions for the admin', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { email: 'priya.dhanani@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
     mockGetSubmissions.mockResolvedValue([
       { author: 'dev@creolestudios.com', title: 'A' },
       { author: 'other@creolestudios.com', title: 'B' },

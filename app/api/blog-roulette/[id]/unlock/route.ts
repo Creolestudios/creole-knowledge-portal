@@ -1,11 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { supabaseAdmin, requireAdminUser } from '@/lib/supabase/admin';
 import { BLOG_RULES } from '@/lib/blog-roulette/types';
 
 export const runtime = 'nodejs';
-
-const ADMIN_EMAIL = 'priya.dhanani@creolestudios.com';
 
 export async function POST(
   req: Request,
@@ -23,7 +21,8 @@ export async function POST(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const isAdmin = user.email?.toLowerCase().trim() === ADMIN_EMAIL;
+  const admin = await requireAdminUser();
+  const isAdmin = !!admin;
   
   // Use supabaseAdmin to fetch/update if the user is an admin (to bypass RLS),
   // otherwise use standard client (so RLS is enforced).

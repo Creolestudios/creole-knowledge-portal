@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -50,12 +51,37 @@ export async function GET(request: Request) {
         const user = data.user;
         let isAdmin = false;
         try {
-          const { data: profile } = await supabase
+          const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
             .select('role')
             .eq('user_id', user.id)
             .single();
-          if (profile) {
+          
+          if (profileError || !profile) {
+            // Profile does not exist, let's create a default one using supabaseAdmin
+            const userEmail = user.email || '';
+            const isPriyaAdmin = userEmail.toLowerCase() === 'priya.dhanani@creolestudios.com';
+            
+            const { error: insertError } = await supabaseAdmin
+              .from('user_profiles')
+              .insert({
+                user_id: user.id,
+                email: userEmail,
+                role: isPriyaAdmin ? 'admin' : 'user',
+                current_role: isPriyaAdmin ? 'expert multilingual developer' : 'Developer',
+                years_of_experience: 0,
+                primary_tech_stack: [],
+                secondary_tech_stack: [],
+                future_interests: ''
+              });
+
+            if (insertError) {
+              console.error('[Auth Callback] Error creating user profile:', insertError);
+            } else {
+              console.log('[Auth Callback] Default profile created for:', userEmail);
+              isAdmin = isPriyaAdmin;
+            }
+          } else {
             isAdmin = profile.role === 'admin';
           }
         } catch (err) {

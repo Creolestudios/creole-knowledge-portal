@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireAdminUser } from '@/lib/supabase/admin';
 import { runPublishPipeline } from '@/lib/blog-roulette/publisher';
 import { requireUserAndBlog } from '@/lib/blog-roulette/route-helpers';
 
@@ -16,9 +17,10 @@ export async function POST(
   if ('error' in auth) return auth.error;
   const { user, blog } = auth;
 
-  // Authorization check: must be the author OR the admin Priya
+  // Authorization check: must be the author OR the admin
   const isAuthor = blog.author_id === user.id;
-  const isAdmin = user.email?.toLowerCase().trim() === 'priya.dhanani@creolestudios.com';
+  const admin = await requireAdminUser();
+  const isAdmin = !!admin;
 
   if (!isAuthor && !isAdmin) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

@@ -22,7 +22,7 @@ import {
 import UserManagement from '@/components/user-management';
 import SubmissionsModeration from '@/components/submissions-moderation';
 
-const ADMIN_EMAIL = 'priya.dhanani@creolestudios.com';
+
 
 type Tab = 'sources' | 'users' | 'submissions';
 
@@ -64,7 +64,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user || user.email?.toLowerCase() !== ADMIN_EMAIL) {
+      if (!user) {
         router.push('/');
         return;
       }

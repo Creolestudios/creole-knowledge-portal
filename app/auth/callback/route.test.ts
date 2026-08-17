@@ -3,6 +3,7 @@ import { GET } from './route';
 
 const mockExchangeCodeForSession = vi.fn();
 const mockProfileSingle = vi.fn();
+const mockAdminInsert = vi.fn();
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockResolvedValue({
@@ -15,6 +16,14 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }));
 
+vi.mock('@/lib/supabase/admin', () => ({
+  supabaseAdmin: {
+    from: vi.fn().mockReturnValue({
+      insert: (...args: any[]) => mockAdminInsert(...args)
+    })
+  }
+}));
+
 function mockRequest(url: string) {
   return new Request(url);
 }
@@ -22,6 +31,7 @@ function mockRequest(url: string) {
 describe('GET /auth/callback', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAdminInsert.mockResolvedValue({ error: null });
   });
 
   it('redirects to the login page with the error message when the provider returns an error param', async () => {
@@ -91,5 +101,43 @@ describe('GET /auth/callback', () => {
     const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123&next=/dashboard/quizzes'));
     const location = res.headers.get('location');
     expect(location).toContain('/dashboard/quizzes');
+  });
+
+  it('creates a default user profile if none exists and redirects to /dashboard', async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u123', email: 'user@x.com' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: null, error: { message: 'Profile not found' } });
+
+    const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/dashboard');
+    expect(mockAdminInsert).toHaveBeenCalledWith(expect.objectContaining({
+      user_id: 'u123',
+      email: 'user@x.com',
+      role: 'user',
+    }));
+  });
+
+  it('creates a default admin profile for Priya if none exists and redirects to /admin/dashboard', async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u456', email: 'priya.dhanani@creolestudios.com' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: null, error: { message: 'Profile not found' } });
+
+    const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/admin/dashboard');
+    expect(mockAdminInsert).toHaveBeenCalledWith(expect.objectContaining({
+      user_id: 'u456',
+      email: 'priya.dhanani@creolestudios.com',
+      role: 'admin',
+    }));
+  });
+
+  it('handles database insertion error when creating a default profile', async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u789', email: 'user@x.com' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: null, error: { message: 'Profile not found' } });
+    mockAdminInsert.mockResolvedValue({ error: new Error('Database insert failed') });
+
+    const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/dashboard');
   });
 });

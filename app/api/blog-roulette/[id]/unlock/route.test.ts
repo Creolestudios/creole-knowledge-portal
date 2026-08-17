@@ -31,7 +31,9 @@ vi.mock('@/lib/supabase/server', () => ({
   })),
 }));
 
+const mockRequireAdminUser = vi.fn();
 vi.mock('@/lib/supabase/admin', () => ({
+  requireAdminUser: () => mockRequireAdminUser(),
   supabaseAdmin: {
     from: vi.fn(() => makeChain(adminResponses)),
   },
@@ -46,6 +48,7 @@ describe('POST /api/blog-roulette/[id]/unlock', () => {
     vi.clearAllMocks();
     clientResponses = [];
     adminResponses = [];
+    mockRequireAdminUser.mockResolvedValue(null);
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -101,7 +104,8 @@ describe('POST /api/blog-roulette/[id]/unlock', () => {
   });
 
   it('bypasses the cooldown entirely for the admin using supabaseAdmin', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'priya.dhanani@creolestudios.com' } } });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } } });
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
     const recentRejection = new Date().toISOString();
     adminResponses = [
       { data: { status: 'REJECTED', updated_at: recentRejection }, error: null }, // blog lookup (no cooldown check for admin)

@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireAdminUser } from '@/lib/supabase/admin';
 import { getSubmissionById, saveSubmission, addAuditLog, Submission } from '@/lib/data/db';
-
-const ADMIN_EMAIL = 'priya.dhanani@creolestudios.com';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -16,7 +15,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    if (user.email?.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    const admin = await requireAdminUser();
+    if (!admin) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
