@@ -60,13 +60,12 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     setReadSeconds(0);
 
     const steps = [
-      'Accessing Administrative registered urls...',
-      'Crawling developer feeds from Hacker News and Dev.to...',
-      'Mapping tech stack: ' + ((profile?.primary_tech_stack || []).join(', ') || 'WordPress') + '...',
-      'Evaluating interest matches...',
-      'Calling Gemini 2.5 Flash for deep synthesis...',
-      'Structuring morning technical brief...',
-      'Saving article briefing to Creole database...'
+      'Syncing your preferences into the pipeline...',
+      'Scraping Dev.to, Hacker News, and RSS for your stack...',
+      'Extracting article bodies...',
+      'Re-ranking matches with Gemini...',
+      'Writing a 20-25 minute briefing from your sources...',
+      'Saving the digest to MongoDB...',
     ];
 
     let currentStep = 0;
@@ -116,6 +115,17 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     const s = secs % 60;
     return `${m}m ${s}s`;
   };
+
+  const estimatedMinutes = Math.max(
+    1,
+    Math.round(
+      Number(brief?.estimated_read_minutes) > 0
+        ? Number(brief.estimated_read_minutes)
+        : String(brief?.content || '')
+            .split(/\s+/)
+            .filter(Boolean).length / 225
+    )
+  );
 
   const saveActivityAndOpenQuiz = async () => {
     setTimerActive(false);
@@ -205,9 +215,12 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             </div>
 
             <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
-              <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-8">
+              <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
                 {brief.title}
               </h2>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8">
+                {estimatedMinutes} min read
+              </p>
               <PremiumMarkdownRenderer content={brief.content} />
               
               <div className="mt-10 pt-10 border-t border-zinc-100 flex justify-center">

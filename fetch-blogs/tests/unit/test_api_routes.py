@@ -146,7 +146,8 @@ class TestFlatMapDigest:
         content = out["content"]
 
         assert out["title"] == "Morning Brief"
-        assert "# Morning Brief" in content
+        assert content.lstrip().startswith("## Daily Overview")
+        assert "# Morning Brief" not in content
         assert "## Daily Overview (TL;DR)" in content
         assert "- first point" in content
         assert "## Section A" in content
@@ -165,7 +166,8 @@ class TestFlatMapDigest:
         out = digests_mod.flat_map_digest_for_dashboard({"article": {"headline": "Bare"}})
         content = out["content"]
 
-        assert "# Bare" in content
+        assert out["title"] == "Bare"
+        assert "# Bare" not in content
         assert "TL;DR" not in content
         assert "Key Actionable Takeaways" not in content
         assert "Sources & Citations" not in content
@@ -173,6 +175,30 @@ class TestFlatMapDigest:
     def test_defaults_the_headline_when_the_article_is_missing(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard({})
         assert out["title"] == "Morning Briefing"
+
+    def test_passes_digest_reading_time_to_the_dashboard(self) -> None:
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {"article": {"headline": "Long Brief"}, "reading_time_minutes": 20, "word_count": 4500}
+        )
+        assert out["estimated_read_minutes"] == 20
+        assert out["word_count"] == 4500
+
+    def test_strips_a_section_heading_that_repeats_the_title(self) -> None:
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {
+                "article": {
+                    "headline": "Queues",
+                    "sections": [
+                        {
+                            "title": "Redis queues",
+                            "content": "## Redis queues\n\nWorkers drain the broker.",
+                        }
+                    ],
+                }
+            }
+        )
+        assert out["content"].count("Redis queues") == 1
+        assert "Workers drain the broker." in out["content"]
 
 
 # ── digest routes ─────────────────────────────────────────────────────────────
@@ -230,10 +256,32 @@ def make_digest() -> DailyDigest:
 
 class TestGenerateDigestRoute:
     def test_returns_the_flat_shape_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        async def _pipeline(_uid: str) -> DailyDigest:
-            return make_digest()
+        async def _upsert(_uid: str) -> None:
+            return None
 
-        monkeypatch.setattr(digests_mod, "run_hybrid_pipeline", _pipeline)
+        class _Digest:
+            id = "d1"
+
+            def model_dump(self, mode: str = "json") -> dict[str, Any]:
+                return {
+                    "id": "d1",
+                    "generated_at": "2026-08-01T00:00:00",
+                    "content": {
+                        "headline": "Generated Brief",
+                        "tldr": ["a"],
+                        "sections": [],
+                        "key_takeaways": [],
+                        "sources": [],
+                    },
+                }
+
+        async def _get(_id: object) -> _Digest:
+            return _Digest()
+
+        monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "run_celery_pipeline_and_wait", lambda _uid: "d1")
+        monkeypatch.setattr(digests_mod.DailyDigest, "get", _get)
+        monkeypatch.setattr(digests_mod, "_latest_digest", _get)
 
         res = build_client(digests_mod.router).post(
             "/digests/generate", json={"userId": "u1"}
@@ -247,10 +295,22 @@ class TestGenerateDigestRoute:
     def test_returns_the_structured_shape_when_flat_is_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def _pipeline(_uid: str) -> DailyDigest:
-            return make_digest()
+        async def _upsert(_uid: str) -> None:
+            return None
 
-        monkeypatch.setattr(digests_mod, "run_hybrid_pipeline", _pipeline)
+        class _Digest:
+            id = "d1"
+
+            def model_dump(self, mode: str = "json") -> dict[str, Any]:
+                return {"id": "d1", "digest_id": "d1", "content": {"headline": "Generated Brief"}}
+
+        async def _get(_id: object) -> _Digest:
+            return _Digest()
+
+        monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "run_celery_pipeline_and_wait", lambda _uid: "d1")
+        monkeypatch.setattr(digests_mod.DailyDigest, "get", _get)
+        monkeypatch.setattr(digests_mod, "_latest_digest", _get)
 
         res = build_client(digests_mod.router).post(
             "/digests/generate?flat=false", json={"userId": "u1"}
@@ -265,10 +325,14 @@ class TestGenerateDigestRoute:
     def test_surfaces_a_pipeline_failure_as_a_500(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def _boom(_uid: str) -> DailyDigest:
+        async def _upsert(_uid: str) -> None:
+            return None
+
+        def _boom(_uid: str) -> str:
             raise RuntimeError("gemini exploded")
 
-        monkeypatch.setattr(digests_mod, "run_hybrid_pipeline", _boom)
+        monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "run_celery_pipeline_and_wait", _boom)
 
         res = build_client(digests_mod.router).post(
             "/digests/generate", json={"userId": "u1"}
@@ -281,12 +345,33 @@ class TestGetLatestDigestRoute:
     def test_returns_the_most_recent_digest_flattened(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        doc = full_digest_doc()
-        doc["_id"] = "mongo-1"
-        doc["generated_at"] = datetime(2026, 8, 1)
-        monkeypatch.setattr(
-            digests_mod, "get_db", lambda: FakeDB(FakeCollection([doc]))
-        )
+        class _Digest:
+            id = "mongo-1"
+
+            def model_dump(self, mode: str = "json") -> dict[str, Any]:
+                return {
+                    "id": "mongo-1",
+                    "generated_at": datetime(2026, 8, 1),
+                    "content": {
+                        "headline": "Morning Brief",
+                        "tldr": ["first point", "second point"],
+                        "sections": [{"title": "Section A", "content": "Section A body"}],
+                        "key_takeaways": ["do this"],
+                        "sources": [
+                            {
+                                "title": "Src One",
+                                "url": "https://a.com/x",
+                                "source_domain": "a.com",
+                                "author": "Ada",
+                            }
+                        ],
+                    },
+                }
+
+        async def _latest(_uid: str) -> _Digest:
+            return _Digest()
+
+        monkeypatch.setattr(digests_mod, "_latest_digest", _latest)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest")
         assert res.status_code == 200
@@ -295,11 +380,16 @@ class TestGetLatestDigestRoute:
     def test_returns_the_raw_document_when_flat_is_false(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        doc = full_digest_doc()
-        doc["_id"] = "mongo-1"
-        monkeypatch.setattr(
-            digests_mod, "get_db", lambda: FakeDB(FakeCollection([doc]))
-        )
+        class _Digest:
+            id = "mongo-1"
+
+            def model_dump(self, mode: str = "json") -> dict[str, Any]:
+                return {"id": "mongo-1", "content": {"headline": "Morning Brief"}}
+
+        async def _latest(_uid: str) -> _Digest:
+            return _Digest()
+
+        monkeypatch.setattr(digests_mod, "_latest_digest", _latest)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest?flat=false")
         assert res.json()["blog"]["id"] == "mongo-1"
@@ -307,16 +397,20 @@ class TestGetLatestDigestRoute:
     def test_returns_a_null_blog_when_the_user_has_no_digest(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(digests_mod, "get_db", lambda: FakeDB(FakeCollection([])))
+        async def _none(_uid: str) -> None:
+            return None
+
+        monkeypatch.setattr(digests_mod, "_latest_digest", _none)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest")
         assert res.status_code == 200
         assert res.json() == {"success": True, "blog": None}
 
     def test_surfaces_a_query_failure_as_a_500(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(
-            digests_mod, "get_db", lambda: FakeDB(FakeCollection(explode=True))
-        )
+        async def _boom(_uid: str) -> None:
+            raise RuntimeError("mongo unavailable")
+
+        monkeypatch.setattr(digests_mod, "_latest_digest", _boom)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest")
         assert res.status_code == 500

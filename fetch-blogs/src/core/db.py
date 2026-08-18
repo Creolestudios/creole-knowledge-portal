@@ -12,32 +12,42 @@ from src.core.config import get_mongo_settings
 log = structlog.get_logger(__name__)
 
 _client: AsyncIOMotorClient | None = None  # type: ignore[type-arg]
+_initialized = False
 
 
 async def init_db() -> None:
     """Initialize the MongoDB client and Beanie ODM."""
-    global _client
+    global _client, _initialized
+    if _initialized and _client is not None:
+        return
+
     cfg = get_mongo_settings()
 
-    log.info("db: connecting", uri=cfg.URI, db=cfg.DB_NAME)
-    _client = AsyncIOMotorClient(cfg.URI)
+    log.info("db: connecting", db=cfg.DB_NAME)
+    _client = AsyncIOMotorClient(cfg.URI, serverSelectionTimeoutMS=20000)
 
     from src.models.article import Article
+    from src.models.digest import DailyDigest
+    from src.models.job import PipelineJob
     from src.models.profile import UserProfile
 
-    document_models: list[type] = [Article, UserProfile]
+    document_models: list[type] = [Article, UserProfile, DailyDigest, PipelineJob]
 
     await init_beanie(
         database=_client[cfg.DB_NAME],
         document_models=document_models,
     )
+    _initialized = True
     log.info("db: ready")
 
 
 def close_db() -> None:
     """Close the MongoDB connection pool."""
+    global _client, _initialized
     if _client is not None:
         _client.close()
+        _client = None
+        _initialized = False
         log.info("db: connection closed")
 
 

@@ -52,4 +52,20 @@ describe('PremiumMarkdownRenderer', () => {
     const { container } = render(<PremiumMarkdownRenderer content={'Para one\n\nPara two'} />);
     expect(container.querySelectorAll('.h-2')).toHaveLength(1);
   });
+
+  it('restores flattened headings and command lines', () => {
+    render(
+      <PremiumMarkdownRenderer
+        content="Intro sentence. Step 1: Installing uv curl -LsSf https://astral.sh/uv/install.sh | sh Next paragraph starts here."
+      />
+    );
+    expect(screen.getByRole('heading', { name: /Step 1:/i })).toBeInTheDocument();
+    expect(screen.getByText(/curl -LsSf/)).toBeInTheDocument();
+  });
+
+  it('renders markdown links', () => {
+    render(<PremiumMarkdownRenderer content={'See [uv](https://docs.astral.sh/uv/).'} />);
+    const link = screen.getByRole('link', { name: /uv/i });
+    expect(link).toHaveAttribute('href', 'https://docs.astral.sh/uv/');
+  });
 });

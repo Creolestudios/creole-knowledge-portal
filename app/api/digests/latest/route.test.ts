@@ -34,6 +34,10 @@ describe('GET /api/digests/latest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDbResponses = [];
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, blog: null }),
+    });
   });
 
   it('returns 401 when there is no resolved user (real or mock)', async () => {
@@ -54,5 +58,21 @@ describe('GET /api/digests/latest', () => {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.blog).toEqual({ id: 'brief-1', title: 'Daily Briefing' });
+  });
+
+  it('returns the Celery/Mongo digest when the blog service has one', async () => {
+    mockResolveUserOrMock.mockResolvedValue({ id: 'user-1' });
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        blog: { id: 'mongo-1', title: 'Morning Brief', content: '# hi' },
+      }),
+    });
+
+    const res = await GET(new Request('http://x'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.blog.title).toBe('Morning Brief');
   });
 });

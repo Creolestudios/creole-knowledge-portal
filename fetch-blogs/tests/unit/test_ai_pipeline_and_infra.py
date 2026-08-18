@@ -429,7 +429,7 @@ class TestSchedulerJobs:
             ran.append(uid)
 
         monkeypatch.setattr(jobs_mod, "fetch_all_user_ids", _none)
-        monkeypatch.setattr(jobs_mod, "run_hybrid_pipeline", _pipeline)
+        monkeypatch.setattr(jobs_mod, "enqueue_user_pipeline", _pipeline)
 
         await jobs_mod.trigger_daily_briefings_job()
         assert ran == []
@@ -443,11 +443,15 @@ class TestSchedulerJobs:
 
         ran: list[str] = []
 
-        async def _pipeline(uid: str) -> None:
+        def _pipeline(uid: str) -> None:
             ran.append(uid)
 
+        async def _upsert(_uid: str) -> None:
+            return None
+
         monkeypatch.setattr(jobs_mod, "fetch_all_user_ids", _users)
-        monkeypatch.setattr(jobs_mod, "run_hybrid_pipeline", _pipeline)
+        monkeypatch.setattr(jobs_mod, "enqueue_user_pipeline", _pipeline)
+        monkeypatch.setattr(jobs_mod, "upsert_mongo_profile", _upsert)
 
         await jobs_mod.trigger_daily_briefings_job()
         assert ran == ["u1", "u2"]
@@ -461,13 +465,17 @@ class TestSchedulerJobs:
 
         ran: list[str] = []
 
-        async def _pipeline(uid: str) -> None:
+        def _pipeline(uid: str) -> None:
             if uid == "bad":
                 raise RuntimeError("pipeline blew up")
             ran.append(uid)
 
+        async def _upsert(_uid: str) -> None:
+            return None
+
         monkeypatch.setattr(jobs_mod, "fetch_all_user_ids", _users)
-        monkeypatch.setattr(jobs_mod, "run_hybrid_pipeline", _pipeline)
+        monkeypatch.setattr(jobs_mod, "enqueue_user_pipeline", _pipeline)
+        monkeypatch.setattr(jobs_mod, "upsert_mongo_profile", _upsert)
 
         await jobs_mod.trigger_daily_briefings_job()
         assert ran == ["good"]

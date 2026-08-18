@@ -13,21 +13,21 @@ from __future__ import annotations
 from celery import Celery
 from kombu import Queue
 
-from src.core.config import get_redis_settings
+from src.core.config import get_app_settings, get_redis_settings
 
 _cfg = get_redis_settings()
+_app_cfg = get_app_settings()
 
 celery_app = Celery(
     "knowledge_portal",
     broker=_cfg.URL,  # Redis db=0 — task messages
     backend=_cfg.RESULT_URL,  # Redis db=1 — task results
     include=[
-        # Uncomment each module as you implement the stage:
-        # "src.workers.scraper_tasks",
-        # "src.workers.extractor_tasks",
+        "src.workers.scraper_tasks",
+        "src.workers.extractor_tasks",
         "src.workers.ranker_tasks",
-        # "src.workers.generator_tasks",
-        # "src.workers.publisher_tasks",
+        "src.workers.generator_tasks",
+        "src.workers.publisher_tasks",
     ],
 )
 
@@ -58,6 +58,8 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     # Global safety limits (override per-task if needed)
-    task_soft_time_limit=480,  # 8 min → raises SoftTimeLimitExceeded
-    task_time_limit=600,  # 10 min → SIGKILL
+    task_soft_time_limit=150,
+    task_time_limit=180,  # 3 min hard cap — daily briefing, not a 70-min rewrite
+    task_always_eager=_app_cfg.celery_eager,
+    task_eager_propagates=True,
 )
