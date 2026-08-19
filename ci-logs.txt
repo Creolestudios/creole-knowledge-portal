@@ -4,7 +4,10 @@
 [1;34m==================================================[0m
 
 [CI Checks] Changed files detected:
+  -> ci-logs.txt
   -> lib/data/db.json
+  -> package-lock.json
+  -> package.json
 
 [CI Checks] Starting compulsory checks...
 [CI Checks] Node project detected in: .
@@ -50,18 +53,19 @@ Not implemented: Window's scrollTo() method
     at dispatchDiscreteEvent [90m(/var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4mreact-dom[24m/cjs/react-dom-client.development.js:23553:11[90m)[39m
 
 Not implemented: Window's scrollTo() method
- [32m✓[39m components/submissions-moderation.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 1229[2mms[22m[39m
-     [33m[2m✓[22m[39m switches to the Audit Logs tab and renders the timeline [33m 346[2mms[22m[39m
+ [32m✓[39m components/submissions-moderation.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 1154[2mms[22m[39m
+     [33m[2m✓[22m[39m switches to the Audit Logs tab and renders the timeline [33m 341[2mms[22m[39m
      [33m[2m✓[22m[39m shows the empty audit-log state when there are none [33m 338[2mms[22m[39m
- [32m✓[39m app/admin/dashboard/page.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 1524[2mms[22m[39m
-     [33m[2m✓[22m[39m switches to the Users and Submissions tabs [33m 520[2mms[22m[39m
- [32m✓[39m app/blog-roulette/[id]/quiz/page.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 1654[2mms[22m[39m
-     [33m[2m✓[22m[39m advances through all 3 questions and submits for grading [33m 443[2mms[22m[39m
-     [33m[2m✓[22m[39m shows a soft-fail result with a retry option [33m 408[2mms[22m[39m
-     [33m[2m✓[22m[39m shows a hard rejection result with no retry option [33m 399[2mms[22m[39m
- [32m✓[39m components/user-management.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 770[2mms[22m[39m
- [32m✓[39m app/blog-roulette/[id]/edit/page.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 671[2mms[22m[39m
- [32m✓[39m components/dashboard/DashboardShell.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 635[2mms[22m[39m
+ [32m✓[39m app/admin/dashboard/page.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 1404[2mms[22m[39m
+     [33m[2m✓[22m[39m switches to the Users and Submissions tabs [33m 490[2mms[22m[39m
+ [32m✓[39m app/blog-roulette/[id]/quiz/page.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 1642[2mms[22m[39m
+     [33m[2m✓[22m[39m advances through all 3 questions and submits for grading [33m 442[2mms[22m[39m
+     [33m[2m✓[22m[39m shows a soft-fail result with a retry option [33m 432[2mms[22m[39m
+     [33m[2m✓[22m[39m shows a hard rejection result with no retry option [33m 422[2mms[22m[39m
+ [32m✓[39m app/blog-roulette/[id]/edit/page.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 633[2mms[22m[39m
+ [32m✓[39m components/dashboard/DashboardShell.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 565[2mms[22m[39m
+ [32m✓[39m components/user-management.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 1310[2mms[22m[39m
+     [33m[2m✓[22m[39m returns to the user list via Back / Cancel [33m 622[2mms[22m[39m
 [90mstderr[2m | components/dashboard/PastBlogsTab.test.tsx[2m > [22m[2mPastBlogsTab[2m > [22m[2mhandles a network error gracefully
 [22m[39mError: network down
     at [90m/var/www/html/CKP/creole-knowledge-portal/[39mcomponents/dashboard/PastBlogsTab.test.tsx:74:46
@@ -75,9 +79,9 @@ Not implemented: Window's scrollTo() method
     at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
 
- [32m✓[39m app/page.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 498[2mms[22m[39m
- [32m✓[39m components/dashboard/PastBlogsTab.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 431[2mms[22m[39m
- [32m✓[39m components/dashboard/dashboard-widgets.test.tsx [2m([22m[2m21 tests[22m[2m)[22m[33m 459[2mms[22m[39m
+ [32m✓[39m app/page.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 473[2mms[22m[39m
+ [32m✓[39m components/dashboard/dashboard-widgets.test.tsx [2m([22m[2m21 tests[22m[2m)[22m[33m 528[2mms[22m[39m
+ [32m✓[39m components/dashboard/PastBlogsTab.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 466[2mms[22m[39m
 [90mstderr[2m | app/blog-roulette/page.test.tsx[2m > [22m[2mBlogRouletteListPage[2m > [22m[2mshows the Knowledge Badge and Google Doc link for a published blog
 [22m[39mIn HTML, <a> cannot be a descendant of <a>.
 This will cause a hydration error.
@@ -119,21 +123,39 @@ See this log for the ancestor stack trace.
 [90m    at listOnTimeout (node:internal/timers:547:9)[39m
 [90m    at processTimers (node:internal/timers:521:7)[39m
 
- [32m✓[39m app/blog-roulette/page.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 355[2mms[22m[39m
- [32m✓[39m components/dashboard/QuizModal.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 328[2mms[22m[39m
- [32m✓[39m components/dashboard/DailyBlogTab.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 347[2mms[22m[39m
- [32m✓[39m app/dashboard/gatekeeper/page.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 6892[2mms[22m[39m
-     [33m[2m✓[22m[39m switches to the submit-new-blog tab and shows the form [33m 479[2mms[22m[39m
-     [33m[2m✓[22m[39m submits a new blog through the AI screening sequence and opens the generated quiz [33m 3813[2mms[22m[39m
-     [33m[2m✓[22m[39m takes the quiz, passes, and returns to submission history [33m 984[2mms[22m[39m
-     [33m[2m✓[22m[39m requires all quiz questions to be answered before submitting [33m 478[2mms[22m[39m
-     [33m[2m✓[22m[39m exits the active quiz via "Back to Dashboard" [33m 887[2mms[22m[39m
- [32m✓[39m components/quiz/quiz-runner.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 302[2mms[22m[39m
- [32m✓[39m app/blog-roulette/new/page.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 296[2mms[22m[39m
- [32m✓[39m components/dashboard/PremiumMarkdownRenderer.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 289[2mms[22m[39m
- [32m✓[39m components/dashboard/BlogReader.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[32m 282[2mms[22m[39m
+ [32m✓[39m app/blog-roulette/page.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 373[2mms[22m[39m
+ [32m✓[39m app/dashboard/gatekeeper/page.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 6911[2mms[22m[39m
+     [33m[2m✓[22m[39m switches to the submit-new-blog tab and shows the form [33m 465[2mms[22m[39m
+     [33m[2m✓[22m[39m submits a new blog through the AI screening sequence and opens the generated quiz [33m 3829[2mms[22m[39m
+     [33m[2m✓[22m[39m takes the quiz, passes, and returns to submission history [33m 971[2mms[22m[39m
+     [33m[2m✓[22m[39m requires all quiz questions to be answered before submitting [33m 495[2mms[22m[39m
+     [33m[2m✓[22m[39m exits the active quiz via "Back to Dashboard" [33m 910[2mms[22m[39m
+ [32m✓[39m components/dashboard/QuizModal.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 418[2mms[22m[39m
+ [32m✓[39m components/dashboard/DailyBlogTab.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 472[2mms[22m[39m
+ [32m✓[39m components/dashboard/PremiumMarkdownRenderer.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[32m 292[2mms[22m[39m
+ [32m✓[39m components/dashboard/BlogReader.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[32m 275[2mms[22m[39m
+ [32m✓[39m app/blog-roulette/new/page.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 321[2mms[22m[39m
+ [32m✓[39m components/quiz/quiz-runner.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 326[2mms[22m[39m
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mgenerates a first attempt with the fallback generator and strips expected_topic
+[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mfalls back to the rule-based generator when Gemini returns non-JSON
+[22m[39m[quiz/generate] Gemini API failed, falling back to rule-based generator: Gemini returned non-JSON
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mfalls back when Gemini returns the wrong number of questions
+[22m[39m[quiz/generate] Gemini API failed, falling back to rule-based generator: Expected 3 questions
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mresumes an active (non-expired) incomplete attempt instead of creating a new one
+[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
+
 [90mstderr[2m | app/api/blog-roulette/upload/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/upload[2m > [22m[2mcreates the bucket on the fly and retries when it does not exist yet
 [22m[39m[blog-roulette/upload] { message: [32m'bucket not found'[39m }
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mexpires a stale attempt as a soft fail and issues a fresh quiz
+[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mlocks the post with a 409 when a stale attempt exhausts the retry limit
+[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
 
 [90mstderr[2m | app/api/blog-roulette/upload/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/upload[2m > [22m[2mreturns a 500 when bucket creation fails
 [22m[39m[blog-roulette/upload] { message: [32m'bucket not found'[39m }
@@ -144,7 +166,50 @@ See this log for the ancestor stack trace.
 [90mstderr[2m | app/api/blog-roulette/upload/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/upload[2m > [22m[2mreturns a 500 on a non-bucket upload error
 [22m[39m[blog-roulette/upload] { message: [32m'disk full'[39m }
 
- [32m✓[39m app/api/blog-roulette/upload/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mgrades a perfect score as PASS and kicks off the publish pipeline
+[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
+
+ [32m✓[39m app/api/blog-roulette/[id]/quiz/generate/route.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 40[2mms[22m[39m
+ [32m✓[39m app/api/blog-roulette/upload/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 58[2mms[22m[39m
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mtreats fewer than 2 correct as an immediate hard rejection
+[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mtreats 2 correct on a first attempt as a retryable soft fail
+[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mtreats 2 correct past the retry limit as a rejection
+[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mpreserves previously-correct answers when re-grading a retry
+[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mfalls back to rule-based grading when Gemini returns an unusable shape
+[22m[39m[quiz/submit] Gemini API failed, falling back to rule-based grader: Grader returned wrong shape
+
+[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mfalls back to rule-based grading when the Gemini call throws
+[22m[39m[quiz/submit] Gemini API failed, falling back to rule-based grader: rate limited
+
+ [32m✓[39m app/api/blog-roulette/[id]/quiz/submit/route.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 74[2mms[22m[39m
+ [32m✓[39m lib/data/db.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 30[2mms[22m[39m
+[90mstderr[2m | app/api/quizzes/submit/route.test.ts[2m > [22m[2mPOST /api/quizzes/submit[2m > [22m[2mfalls back to URL lookup and 404s when the blog cannot be found either way
+[22m[39mBlog not found for quizId: blog-1 { message: [32m'not found'[39m }
+
+[90mstderr[2m | app/api/quizzes/submit/route.test.ts[2m > [22m[2mPOST /api/quizzes/submit[2m > [22m[2mzeroes XP/coins when the submission is flagged as a speed violation
+[22m[39m[Anti-Cheat] Quiz submission flagged for speed: User u1 spent 0.5s on 1 questions.
+
+[90mstderr[2m | app/api/quizzes/submit/route.test.ts[2m > [22m[2mPOST /api/quizzes/submit[2m > [22m[2mreturns a 500 when the request body cannot be parsed
+[22m[39mQuiz submission error: SyntaxError: Unexpected token 'o', "not json" is not valid JSON
+    at JSON.parse (<anonymous>)
+[90m    at parseJSONFromBytes (node:internal/deps/undici/undici:5888:19)[39m
+[90m    at successSteps (node:internal/deps/undici/undici:5869:27)[39m
+[90m    at fullyReadBody (node:internal/deps/undici/undici:4761:9)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
+[90m    at consumeBody (node:internal/deps/undici/undici:5878:7)[39m
+    at Module.POST [90m(/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/quizzes/submit/route.ts:32:18[90m)[39m
+    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/quizzes/submit/route.test.ts:164:17
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:20
+
+ [32m✓[39m app/api/quizzes/submit/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 43[2mms[22m[39m
 [90mstderr[2m | lib/blog-roulette/converter.test.ts[2m > [22m[2mconvertMarkdownToDocx[2m > [22m[2msurfaces a clear error when pandoc is unavailable
 [22m[39m[converter] Pandoc execution failed: Error: pandoc: not found
     at [90m/var/www/html/CKP/creole-knowledge-portal/[39mlib/blog-roulette/converter.test.ts:112:63
@@ -167,51 +232,8 @@ See this log for the ancestor stack trace.
     at Module.convertMarkdownToDocx [90m(/var/www/html/CKP/creole-knowledge-portal/[39mlib/blog-roulette/converter.ts:52:13[90m)[39m
 [90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
 
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mgrades a perfect score as PASS and kicks off the publish pipeline
-[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
-
- [32m✓[39m lib/blog-roulette/converter.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 31[2mms[22m[39m
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mtreats fewer than 2 correct as an immediate hard rejection
-[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mtreats 2 correct on a first attempt as a retryable soft fail
-[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mtreats 2 correct past the retry limit as a rejection
-[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mpreserves previously-correct answers when re-grading a retry
-[22m[39m[quiz/submit] Using rule-based fallback grader (mock or missing API key)
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mfalls back to rule-based grading when Gemini returns an unusable shape
-[22m[39m[quiz/submit] Gemini API failed, falling back to rule-based grader: Grader returned wrong shape
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/submit/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/submit[2m > [22m[2mfalls back to rule-based grading when the Gemini call throws
-[22m[39m[quiz/submit] Gemini API failed, falling back to rule-based grader: rate limited
-
-[90mstderr[2m | app/api/blog-roulette/route.test.ts[2m > [22m[2mPOST /api/blog-roulette[2m > [22m[2mreturns a 500 when the insert fails
-[22m[39m[blog-roulette/create] { message: [32m'unique violation'[39m }
-
- [32m✓[39m app/api/blog-roulette/[id]/quiz/submit/route.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 46[2mms[22m[39m
- [32m✓[39m app/api/blog-roulette/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 23[2mms[22m[39m
-[90mstderr[2m | app/api/quizzes/submit/route.test.ts[2m > [22m[2mPOST /api/quizzes/submit[2m > [22m[2mfalls back to URL lookup and 404s when the blog cannot be found either way
-[22m[39mBlog not found for quizId: blog-1 { message: [32m'not found'[39m }
-
-[90mstderr[2m | app/api/quizzes/submit/route.test.ts[2m > [22m[2mPOST /api/quizzes/submit[2m > [22m[2mzeroes XP/coins when the submission is flagged as a speed violation
-[22m[39m[Anti-Cheat] Quiz submission flagged for speed: User u1 spent 0.5s on 1 questions.
-
-[90mstderr[2m | app/api/quizzes/submit/route.test.ts[2m > [22m[2mPOST /api/quizzes/submit[2m > [22m[2mreturns a 500 when the request body cannot be parsed
-[22m[39mQuiz submission error: SyntaxError: Unexpected token 'o', "not json" is not valid JSON
-    at JSON.parse (<anonymous>)
-[90m    at parseJSONFromBytes (node:internal/deps/undici/undici:5888:19)[39m
-[90m    at successSteps (node:internal/deps/undici/undici:5869:27)[39m
-[90m    at fullyReadBody (node:internal/deps/undici/undici:4761:9)[39m
-[90m    at processTicksAndRejections (node:internal/process/task_queues:103:5)[39m
-[90m    at consumeBody (node:internal/deps/undici/undici:5878:7)[39m
-    at Module.POST [90m(/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/quizzes/submit/route.ts:32:18[90m)[39m
-    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/quizzes/submit/route.test.ts:164:17
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:20
-
+ [32m✓[39m lib/blog-roulette/converter.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 43[2mms[22m[39m
+ [32m✓[39m hooks/useBlogContentEnhancer.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 33[2mms[22m[39m
 [90mstderr[2m | lib/blog-roulette/gemini-client.generate.test.ts[2m > [22m[2mgeminiGenerate[2m > [22m[2mretries on a 429 and succeeds on the next attempt
 [22m[39m[gemini] 429 hit, retrying in 5000ms (attempt 1/2)
 
@@ -221,34 +243,13 @@ See this log for the ancestor stack trace.
 [90mstderr[2m | lib/blog-roulette/gemini-client.generate.test.ts[2m > [22m[2mgeminiGenerate[2m > [22m[2mthrows the last error once retries are exhausted
 [22m[39m[gemini] 429 hit, retrying in 5000ms (attempt 1/1)
 
- [32m✓[39m app/api/quizzes/submit/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 31[2mms[22m[39m
- [32m✓[39m lib/blog-roulette/gemini-client.generate.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 31[2mms[22m[39m
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mgenerates a first attempt with the fallback generator and strips expected_topic
-[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
+ [32m✓[39m lib/blog-roulette/gemini-client.generate.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+[90mstderr[2m | app/api/quizzes/start/route.test.ts[2m > [22m[2mPOST /api/quizzes/start[2m > [22m[2mreturns 500 when persisting the new attempt fails
+[22m[39mFailed to start quiz attempt: { message: [32m'insert failed'[39m }
 
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mfalls back to the rule-based generator when Gemini returns non-JSON
-[22m[39m[quiz/generate] Gemini API failed, falling back to rule-based generator: Gemini returned non-JSON
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mfalls back when Gemini returns the wrong number of questions
-[22m[39m[quiz/generate] Gemini API failed, falling back to rule-based generator: Expected 3 questions
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mresumes an active (non-expired) incomplete attempt instead of creating a new one
-[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mexpires a stale attempt as a soft fail and issues a fresh quiz
-[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
-
-[90mstderr[2m | app/api/blog-roulette/[id]/quiz/generate/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/quiz/generate[2m > [22m[2mlocks the post with a 409 when a stale attempt exhausts the retry limit
-[22m[39m[quiz/generate] Using rule-based fallback generator (mock or missing API key)
-
- [32m✓[39m app/api/blog-roulette/[id]/quiz/generate/route.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 35[2mms[22m[39m
- [32m✓[39m app/api/quizzes/evaluate/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 28[2mms[22m[39m
-[90mstderr[2m | app/api/blog-roulette/[id]/route.test.ts[2m > [22m[2mPATCH /api/blog-roulette/[id][2m > [22m[2mreturns a 500 when the update write fails
-[22m[39m[blog-roulette/update] { message: [32m'write failed'[39m }
-
-[90mstderr[2m | app/api/blog-roulette/[id]/publish/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/publish[2m > [22m[2mreturns a 500 when the publish pipeline throws
-[22m[39m[publish/route] Publish pipeline error: Error: Drive upload failed
-    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/blog-roulette/[id]/publish/route.test.ts:99:46
+[90mstderr[2m | app/api/quizzes/start/route.test.ts[2m > [22m[2mPOST /api/quizzes/start[2m > [22m[2mreturns 500 on an unexpected error
+[22m[39mStart quiz error: Error: boom
+    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/quizzes/start/route.test.ts:110:35
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
@@ -259,10 +260,68 @@ See this log for the ancestor stack trace.
     at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
 
- [32m✓[39m app/api/blog-roulette/[id]/route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 21[2mms[22m[39m
- [32m✓[39m app/api/blog-roulette/[id]/publish/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 19[2mms[22m[39m
- [32m✓[39m hooks/useBlogContentEnhancer.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 35[2mms[22m[39m
- [32m✓[39m lib/data/db.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+ [32m✓[39m app/api/quizzes/start/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 32[2mms[22m[39m
+ [32m✓[39m app/api/quizzes/evaluate/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 37[2mms[22m[39m
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an unauthenticated user away from /dashboard to the login page
+[22m[39m[Middleware] Path: /dashboard, User: none, Admin: false
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an unauthenticated user away from /admin to the login page
+[22m[39m[Middleware] Path: /admin/dashboard, User: none, Admin: false
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mlets an authenticated non-admin user through to /dashboard
+[22m[39m[Middleware] Path: /dashboard, User: dev@x.com, Admin: false
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an authenticated non-admin away from /admin to /dashboard
+[22m[39m[Middleware] Path: /admin/dashboard, User: dev@x.com, Admin: false
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an authenticated non-admin away from the login page to /dashboard
+[22m[39m[Middleware] Path: /, User: dev@x.com, Admin: false
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an authenticated admin away from the login page to /admin/dashboard
+[22m[39m[Middleware] Path: /, User: priya.dhanani@creolestudios.com, Admin: true
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mlets an authenticated admin through to /admin/dashboard
+[22m[39m[Middleware] Path: /admin/dashboard, User: priya.dhanani@creolestudios.com, Admin: true
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2maccepts the dev mock-user bypass via the mockUser query param
+[22m[39m[Middleware] Path: /dashboard, User: priyadhanani125@gmail.com, Admin: true
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mignores the mock-user bypass in production
+[22m[39m[Middleware] Path: /dashboard, User: none, Admin: false
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a getUser failure and treats the request as unauthenticated
+[22m[39m[Middleware] Path: /dashboard, User: none, Admin: false
+
+[90mstderr[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a getUser failure and treats the request as unauthenticated
+[22m[39m[Middleware] getUser error: Error: network error
+    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mmiddleware.test.ts:117:35
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
+
+[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a profile lookup failure and treats the user as non-admin
+[22m[39m[Middleware] Path: /admin/dashboard, User: dev@x.com, Admin: false
+
+[90mstderr[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a profile lookup failure and treats the user as non-admin
+[22m[39m[Middleware] error fetching profile role: Error: db down
+    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mmiddleware.test.ts:124:41
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
+
+ [32m✓[39m middleware.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 26[2mms[22m[39m
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects to the login page with the error message when the provider returns an error param
 [22m[39m[Auth Callback] URL: http://localhost/auth/callback?error=access_denied&error_description=User+cancelled
 [Auth Callback] Auth Cookies: NONE
@@ -271,12 +330,6 @@ See this log for the ancestor stack trace.
 [90mstderr[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects to the login page with the error message when the provider returns an error param
 [22m[39m[Auth Callback] Error param found: access_denied - User cancelled
 
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an unauthenticated user away from /dashboard to the login page
-[22m[39m[Middleware] Path: /dashboard, User: none, Admin: false
-
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an unauthenticated user away from /admin to the login page
-[22m[39m[Middleware] Path: /admin/dashboard, User: none, Admin: false
-
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects with a generic error when neither code nor error is present
 [22m[39m[Auth Callback] URL: http://localhost/auth/callback
 [Auth Callback] Auth Cookies: NONE
@@ -284,12 +337,6 @@ See this log for the ancestor stack trace.
 
 [90mstderr[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects with a generic error when neither code nor error is present
 [22m[39m[Auth Callback] No code or error found in URL
-
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mlets an authenticated non-admin user through to /dashboard
-[22m[39m[Middleware] Path: /dashboard, User: dev@x.com, Admin: false
-
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an authenticated non-admin away from /admin to /dashboard
-[22m[39m[Middleware] Path: /admin/dashboard, User: dev@x.com, Admin: false
 
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects with a friendlier message on an expired flow-state exchange error
 [22m[39m[Auth Callback] URL: http://localhost/auth/callback?code=abc123
@@ -310,9 +357,6 @@ See this log for the ancestor stack trace.
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects to /dashboard for a regular authenticated user
 [22m[39m[Auth Callback] Exchanging code for session...
 
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an authenticated non-admin away from the login page to /dashboard
-[22m[39m[Middleware] Path: /, User: dev@x.com, Admin: false
-
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects to /dashboard for a regular authenticated user
 [22m[39m[Auth Callback] Success! User: a@x.com, Admin: false, Redirecting to: /dashboard
 
@@ -323,9 +367,6 @@ See this log for the ancestor stack trace.
 
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects admin users to /admin/dashboard
 [22m[39m[Auth Callback] Exchanging code for session...
-
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mredirects an authenticated admin away from the login page to /admin/dashboard
-[22m[39m[Middleware] Path: /, User: priya.dhanani@creolestudios.com, Admin: true
 
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects admin users to /admin/dashboard
 [22m[39m[Auth Callback] Success! User: admin@x.com, Admin: true, Redirecting to: /admin/dashboard
@@ -341,9 +382,6 @@ See this log for the ancestor stack trace.
 [90mstderr[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects with an error when the exchange succeeds but no user is returned
 [22m[39m[Auth Callback] No user data after exchange
 
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mlets an authenticated admin through to /admin/dashboard
-[22m[39m[Middleware] Path: /admin/dashboard, User: priya.dhanani@creolestudios.com, Admin: true
-
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects with an internal-error message when the exchange throws
 [22m[39m[Auth Callback] URL: http://localhost/auth/callback?code=abc123
 [Auth Callback] Auth Cookies: NONE
@@ -351,12 +389,6 @@ See this log for the ancestor stack trace.
 
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects with an internal-error message when the exchange throws
 [22m[39m[Auth Callback] Exchanging code for session...
-
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2maccepts the dev mock-user bypass via the mockUser query param
-[22m[39m[Middleware] Path: /dashboard, User: priyadhanani125@gmail.com, Admin: true
-
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mignores the mock-user bypass in production
-[22m[39m[Middleware] Path: /dashboard, User: none, Admin: false
 
 [90mstderr[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mredirects with an internal-error message when the exchange throws
 [22m[39m[Auth Callback] Fatal internal error: Error: boom
@@ -407,38 +439,6 @@ See this log for the ancestor stack trace.
 [22m[39m[Auth Callback] Default profile created for: user@x.com
 [Auth Callback] Success! User: user@x.com, Admin: false, Redirecting to: /dashboard
 
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a getUser failure and treats the request as unauthenticated
-[22m[39m[Middleware] Path: /dashboard, User: none, Admin: false
-
-[90mstderr[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a getUser failure and treats the request as unauthenticated
-[22m[39m[Middleware] getUser error: Error: network error
-    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mmiddleware.test.ts:117:35
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
-    at new Promise (<anonymous>)
-    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
-    at new Promise (<anonymous>)
-    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
-
-[90mstdout[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a profile lookup failure and treats the user as non-admin
-[22m[39m[Middleware] Path: /admin/dashboard, User: dev@x.com, Admin: false
-
-[90mstderr[2m | middleware.test.ts[2m > [22m[2mmiddleware[2m > [22m[2mtolerates a profile lookup failure and treats the user as non-admin
-[22m[39m[Middleware] error fetching profile role: Error: db down
-    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mmiddleware.test.ts:124:41
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
-    at new Promise (<anonymous>)
-    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
-    at new Promise (<anonymous>)
-    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
-
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mcreates a default admin profile for Priya if none exists and redirects to /admin/dashboard
 [22m[39m[Auth Callback] URL: http://localhost/auth/callback?code=abc123
 [Auth Callback] Auth Cookies: NONE
@@ -459,9 +459,6 @@ See this log for the ancestor stack trace.
 [90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mhandles database insertion error when creating a default profile
 [22m[39m[Auth Callback] Exchanging code for session...
 
-[90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mhandles database insertion error when creating a default profile
-[22m[39m[Auth Callback] Success! User: user@x.com, Admin: false, Redirecting to: /dashboard
-
 [90mstderr[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mhandles database insertion error when creating a default profile
 [22m[39m[Auth Callback] Error creating user profile: Error: Database insert failed
     at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/auth/callback/route.test.ts:137:48
@@ -475,43 +472,10 @@ See this log for the ancestor stack trace.
     at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
 
- [32m✓[39m app/auth/callback/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 24[2mms[22m[39m
- [32m✓[39m middleware.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 25[2mms[22m[39m
-[90mstderr[2m | app/api/digests/generate/route.test.ts[2m > [22m[2mPOST /api/digests/generate[2m > [22m[2mreturns 500 when the blog service is unreachable
-[22m[39mDigest synthesis error: Error: ECONNREFUSED
-    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/digests/generate/route.test.ts:67:45
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
-    at new Promise (<anonymous>)
-    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
-    at new Promise (<anonymous>)
-    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
+[90mstdout[2m | app/auth/callback/route.test.ts[2m > [22m[2mGET /auth/callback[2m > [22m[2mhandles database insertion error when creating a default profile
+[22m[39m[Auth Callback] Success! User: user@x.com, Admin: false, Redirecting to: /dashboard
 
- [32m✓[39m app/api/digests/generate/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 20[2mms[22m[39m
-[90mstderr[2m | app/api/quizzes/start/route.test.ts[2m > [22m[2mPOST /api/quizzes/start[2m > [22m[2mreturns 500 when persisting the new attempt fails
-[22m[39mFailed to start quiz attempt: { message: [32m'insert failed'[39m }
-
-[90mstderr[2m | app/api/quizzes/start/route.test.ts[2m > [22m[2mPOST /api/quizzes/start[2m > [22m[2mreturns 500 on an unexpected error
-[22m[39mStart quiz error: Error: boom
-    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/quizzes/start/route.test.ts:110:35
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
-    at new Promise (<anonymous>)
-    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
-    at new Promise (<anonymous>)
-    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
-    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
-
- [32m✓[39m app/api/quizzes/start/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 29[2mms[22m[39m
-[90mstderr[2m | app/api/activity/route.test.ts[2m > [22m[2mPOST /api/activity[2m > [22m[2msimulates success when the table does not exist
-[22m[39muser_activity table does not exist
-
- [32m✓[39m app/api/activity/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+ [32m✓[39m app/auth/callback/route.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 30[2mms[22m[39m
 [90mstderr[2m | app/api/submissions/route.test.ts[2m > [22m[2mPOST /api/submissions[2m > [22m[2mreturns a 500 when validation throws
 [22m[39mError in POST /api/submissions: Error: AI service down
     at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/submissions/route.test.ts:154:43
@@ -526,7 +490,14 @@ See this log for the ancestor stack trace.
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
 
  [32m✓[39m app/api/submissions/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 24[2mms[22m[39m
- [32m✓[39m app/api/submissions/[id]/moderate/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+[90mstderr[2m | app/api/blog-roulette/route.test.ts[2m > [22m[2mPOST /api/blog-roulette[2m > [22m[2mreturns a 500 when the insert fails
+[22m[39m[blog-roulette/create] { message: [32m'unique violation'[39m }
+
+ [32m✓[39m app/api/blog-roulette/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+[90mstderr[2m | app/api/activity/route.test.ts[2m > [22m[2mPOST /api/activity[2m > [22m[2msimulates success when the table does not exist
+[22m[39muser_activity table does not exist
+
+ [32m✓[39m app/api/activity/route.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 26[2mms[22m[39m
 [90mstderr[2m | app/api/digests/complete/route.test.ts[2m > [22m[2mPOST /api/digests/complete[2m > [22m[2mreturns 404 when the blog part cannot be found
 [22m[39m[POST /api/digests/complete] Fetch error: { message: [32m'not found'[39m }
 
@@ -541,7 +512,25 @@ See this log for the ancestor stack trace.
 [90mstderr[2m | app/api/digests/complete/route.test.ts[2m > [22m[2mPOST /api/digests/complete[2m > [22m[2mreturns a 500 when the update fails
 [22m[39m[POST /api/digests/complete] Update error: { message: [32m'update failed'[39m }
 
- [32m✓[39m app/api/digests/complete/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 21[2mms[22m[39m
+ [32m✓[39m app/api/digests/complete/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+[90mstderr[2m | app/api/blog-roulette/[id]/route.test.ts[2m > [22m[2mPATCH /api/blog-roulette/[id][2m > [22m[2mreturns a 500 when the update write fails
+[22m[39m[blog-roulette/update] { message: [32m'write failed'[39m }
+
+ [32m✓[39m app/api/blog-roulette/[id]/route.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+[90mstderr[2m | app/api/digests/generate/route.test.ts[2m > [22m[2mPOST /api/digests/generate[2m > [22m[2mreturns 500 when the blog service is unreachable
+[22m[39mDigest synthesis error: Error: ECONNREFUSED
+    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/digests/generate/route.test.ts:67:45
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
+
+ [32m✓[39m app/api/digests/generate/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 27[2mms[22m[39m
 [90mstderr[2m | app/api/digests/past/route.test.ts[2m > [22m[2mGET /api/digests/past[2m > [22m[2mreturns a 500 with the DB message when the query fails
 [22m[39mError fetching past brief: { message: [32m'relation "blogs" does not exist'[39m }
 
@@ -558,12 +547,66 @@ See this log for the ancestor stack trace.
     at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
 
- [32m✓[39m app/api/digests/past/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 20[2mms[22m[39m
-[90mstderr[2m | app/api/blog-roulette/[id]/unlock/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/unlock[2m > [22m[2mreturns a 500 when resetting the blog status fails
-[22m[39m[blog-roulette/unlock] failed to reset blog: { message: [32m'update failed'[39m }
+ [32m✓[39m app/api/digests/past/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m app/api/submissions/[id]/moderate/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+[90mstderr[2m | app/api/blog-roulette/[id]/publish/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/publish[2m > [22m[2mreturns a 500 when the publish pipeline throws
+[22m[39m[publish/route] Publish pipeline error: Error: Drive upload failed
+    at [90m/var/www/html/CKP/creole-knowledge-portal/[39mapp/api/blog-roulette/[id]/publish/route.test.ts:99:46
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+    at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
 
- [32m✓[39m app/api/blog-roulette/[id]/unlock/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 17[2mms[22m[39m
- [32m✓[39m app/api/quizzes/finish/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m app/api/blog-roulette/[id]/publish/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m app/api/submissions/[id]/quiz/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogAsGoogleDoc[2m > [22m[2muploads HTML content as a native Google Doc and returns file metadata
+[22m[39m[google-drive] Uploading "author-my-blog" as Google Doc to folder "folder-123"...
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogAsGoogleDoc[2m > [22m[2muploads HTML content as a native Google Doc and returns file metadata
+[22m[39m[google-drive] Google Doc created. File ID: file-1
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogAsGoogleDoc[2m > [22m[2mthrows when Drive returns no file metadata
+[22m[39m[google-drive] Uploading "a-x" as Google Doc to folder "folder-123"...
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogToDrive[2m > [22m[2muploads a docx buffer and returns file metadata
+[22m[39m[google-drive] Uploading "author-my-blog.docx" to folder "folder-123"...
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogToDrive[2m > [22m[2muploads a docx buffer and returns file metadata
+[22m[39m[google-drive] Upload successful. File ID: file-2
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mshares the file with every configured marketing email
+[22m[39m[google-drive] Sharing file file-1 with: [ [32m'marketing@creole.com'[39m, [32m'seo@creole.com'[39m ]
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mshares the file with every configured marketing email
+[22m[39m[google-drive] Successfully shared with marketing@creole.com
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mshares the file with every configured marketing email
+[22m[39m[google-drive] Successfully shared with seo@creole.com
+
+[90mstderr[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mreturns an empty list when no marketing emails are configured
+[22m[39m[google-drive] No emails configured in MARKETING_NOTIFY_EMAILS.
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mcontinues sharing with remaining emails when a non-auth failure occurs
+[22m[39m[google-drive] Sharing file file-1 with: [ [32m'marketing@creole.com'[39m, [32m'seo@creole.com'[39m ]
+
+[90mstderr[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mcontinues sharing with remaining emails when a non-auth failure occurs
+[22m[39m[google-drive] Failed to share with marketing@creole.com: Server error
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mcontinues sharing with remaining emails when a non-auth failure occurs
+[22m[39m[google-drive] Successfully shared with seo@creole.com
+
+[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mthrows on an authorization failure for a share
+[22m[39m[google-drive] Sharing file file-1 with: [ [32m'marketing@creole.com'[39m, [32m'seo@creole.com'[39m ]
+
+[90mstderr[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mthrows on an authorization failure for a share
+[22m[39m[google-drive] Failed to share with marketing@creole.com: Forbidden
+
+ [32m✓[39m lib/blog-roulette/google-drive.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 24[2mms[22m[39m
 [90mstdout[2m | lib/synthesis/blog-compiler.ai.test.ts[2m > [22m[2mscrapeUrlContent[2m > [22m[2mreturns Jina Reader content when it succeeds with substantial text
 [22m[39m[BlogCompiler] Attempting to scrape via Jina Reader: https://r.jina.ai/https%3A%2F%2Fexample.com%2Fpost
 
@@ -634,7 +677,16 @@ See this log for the ancestor stack trace.
 [90mstdout[2m | lib/synthesis/blog-compiler.ai.test.ts[2m > [22m[2mchunkBlogSemantically[2m > [22m[2mparses the Gemini JSON array response into blog chunks
 [22m[39m[BlogCompiler] Split blog into 2 parts
 
- [32m✓[39m lib/synthesis/blog-compiler.ai.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+ [32m✓[39m lib/synthesis/blog-compiler.ai.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+ [32m✓[39m app/api/streaks/status/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+[90mstderr[2m | app/api/blog-roulette/[id]/unlock/route.test.ts[2m > [22m[2mPOST /api/blog-roulette/[id]/unlock[2m > [22m[2mreturns a 500 when resetting the blog status fails
+[22m[39m[blog-roulette/unlock] failed to reset blog: { message: [32m'update failed'[39m }
+
+ [32m✓[39m app/api/blog-roulette/[id]/unlock/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+[90mstderr[2m | app/api/quizzes/leaderboard/route.test.ts[2m > [22m[2mGET /api/quizzes/leaderboard[2m > [22m[2mreturns a 500 when the attempts query fails
+[22m[39mLeaderboard fetch error: { message: [32m'relation missing'[39m }
+
+ [32m✓[39m app/api/quizzes/leaderboard/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 18[2mms[22m[39m
 [90mstdout[2m | lib/blog-roulette/publisher.test.ts[2m > [22m[2mrunPublishPipeline[2m > [22m[2muploads to Drive, shares, awards points, and marks the blog PUBLISHED
 [22m[39m[publisher] Uploading blog blog-1 to Google Drive...
 
@@ -660,86 +712,186 @@ See this log for the ancestor stack trace.
     at runWithTimeout [90m(file:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
     at [90mfile:///var/www/html/CKP/creole-knowledge-portal/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
 
- [32m✓[39m lib/blog-roulette/publisher.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 15[2mms[22m[39m
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogAsGoogleDoc[2m > [22m[2muploads HTML content as a native Google Doc and returns file metadata
-[22m[39m[google-drive] Uploading "author-my-blog" as Google Doc to folder "folder-123"...
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogAsGoogleDoc[2m > [22m[2muploads HTML content as a native Google Doc and returns file metadata
-[22m[39m[google-drive] Google Doc created. File ID: file-1
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogAsGoogleDoc[2m > [22m[2mthrows when Drive returns no file metadata
-[22m[39m[google-drive] Uploading "a-x" as Google Doc to folder "folder-123"...
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogToDrive[2m > [22m[2muploads a docx buffer and returns file metadata
-[22m[39m[google-drive] Uploading "author-my-blog.docx" to folder "folder-123"...
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2muploadBlogToDrive[2m > [22m[2muploads a docx buffer and returns file metadata
-[22m[39m[google-drive] Upload successful. File ID: file-2
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mshares the file with every configured marketing email
-[22m[39m[google-drive] Sharing file file-1 with: [ [32m'marketing@creole.com'[39m, [32m'seo@creole.com'[39m ]
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mshares the file with every configured marketing email
-[22m[39m[google-drive] Successfully shared with marketing@creole.com
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mshares the file with every configured marketing email
-[22m[39m[google-drive] Successfully shared with seo@creole.com
-
-[90mstderr[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mreturns an empty list when no marketing emails are configured
-[22m[39m[google-drive] No emails configured in MARKETING_NOTIFY_EMAILS.
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mcontinues sharing with remaining emails when a non-auth failure occurs
-[22m[39m[google-drive] Sharing file file-1 with: [ [32m'marketing@creole.com'[39m, [32m'seo@creole.com'[39m ]
-
-[90mstderr[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mcontinues sharing with remaining emails when a non-auth failure occurs
-[22m[39m[google-drive] Failed to share with marketing@creole.com: Server error
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mcontinues sharing with remaining emails when a non-auth failure occurs
-[22m[39m[google-drive] Successfully shared with seo@creole.com
-
-[90mstdout[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mthrows on an authorization failure for a share
-[22m[39m[google-drive] Sharing file file-1 with: [ [32m'marketing@creole.com'[39m, [32m'seo@creole.com'[39m ]
-
-[90mstderr[2m | lib/blog-roulette/google-drive.test.ts[2m > [22m[2mgoogle-drive[2m > [22m[2mshareBlogWithMarketing[2m > [22m[2mthrows on an authorization failure for a share
-[22m[39m[google-drive] Failed to share with marketing@creole.com: Forbidden
-
- [32m✓[39m lib/blog-roulette/google-drive.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 19[2mms[22m[39m
-[90mstderr[2m | app/api/quizzes/leaderboard/route.test.ts[2m > [22m[2mGET /api/quizzes/leaderboard[2m > [22m[2mreturns a 500 when the attempts query fails
-[22m[39mLeaderboard fetch error: { message: [32m'relation missing'[39m }
-
- [32m✓[39m app/api/quizzes/leaderboard/route.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 17[2mms[22m[39m
- [32m✓[39m app/api/streaks/status/route.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 19[2mms[22m[39m
- [32m✓[39m lib/dev/mock-user.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 14[2mms[22m[39m
- [32m✓[39m app/api/digests/trending/route.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 12[2mms[22m[39m
- [32m✓[39m app/api/submissions/[id]/quiz/route.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 19[2mms[22m[39m
- [32m✓[39m lib/blog-roulette/seo.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
- [32m✓[39m app/api/admin/users/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 14[2mms[22m[39m
- [32m✓[39m app/api/digests/latest/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m lib/blog-roulette/publisher.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 28[2mms[22m[39m
+ [32m✓[39m lib/dev/mock-user.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m app/api/quizzes/finish/route.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+ [32m✓[39m lib/supabase/admin.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+ [32m✓[39m app/api/admin/users/route.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+ [32m✓[39m app/api/digests/latest/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+ [32m✓[39m app/api/quizzes/status/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 16[2mms[22m[39m
  [32m✓[39m app/api/blog-roulette/[id]/ai-score/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 13[2mms[22m[39m
- [32m✓[39m lib/supabase/admin.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 14[2mms[22m[39m
- [32m✓[39m app/api/quizzes/status/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould successfully parse valid JSON and insert to supabase
+[22m[39m[Quiz Factory] Invoking model gemini-3.1-pro (Attempt 1/3)...
+
+[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould successfully parse valid JSON and insert to supabase
+[22m[39m[Quiz Factory] Successfully generated quiz with model: gemini-3.1-pro
+
+[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould strip markdown formatting before parsing JSON
+[22m[39m[Quiz Factory] Invoking model gemini-3.1-pro (Attempt 1/3)...
+
+[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould strip markdown formatting before parsing JSON
+[22m[39m[Quiz Factory] Successfully generated quiz with model: gemini-3.1-pro
+
+[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould throw an error if AI returns invalid non-JSON string
+[22m[39m[Quiz Factory] Invoking model gemini-3.1-pro (Attempt 1/3)...
+
+[90mstderr[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould throw an error if AI returns invalid non-JSON string
+[22m[39mFailed to parse AI response as JSON: Sorry, I cannot generate this.
+
+[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould throw an error if AI returns invalid non-JSON string
+[22m[39m[Quiz Factory] Successfully generated quiz with model: gemini-3.1-pro
+
+ [32m✓[39m lib/ai/quiz-generator.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+ [32m✓[39m lib/data/activity.server.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 10[2mms[22m[39m
  [32m✓[39m app/api/blog-roulette/[id]/submit/route.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 12[2mms[22m[39m
- [32m✓[39m lib/blog-roulette/gemini-client.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 8[2mms[22m[39m
- [32m✓[39m lib/blog-roulette/route-helpers.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 11[2mms[22m[39m
-[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould successfully parse valid JSON and insert to supabase
-[22m[39m[Quiz Factory] Invoking model gemini-3.1-pro (Attempt 1/3)...
+ [32m✓[39m app/api/digests/trending/route.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+ [32m✓[39m lib/blog-roulette/route-helpers.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+ [32m✓[39m lib/blog-roulette/ai-detection.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m lib/quizzes/review.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m lib/ai/validator.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m lib/blog-roulette/seo.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+ [32m✓[39m lib/blog-roulette/gemini-client.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m lib/data/activity.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m lib/data/quiz.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+ [32m✓[39m lib/ai/quiz-evaluator.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+ [32m✓[39m tests/gamification.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+ [32m✓[39m lib/data/streak.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+ [32m✓[39m lib/synthesis/blog-compiler.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+ [32m✓[39m lib/sanity.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 4[2mms[22m[39m
+ [32m✓[39m lib/data/activity.browser.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 6[2mms[22m[39m
 
-[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould successfully parse valid JSON and insert to supabase
-[22m[39m[Quiz Factory] Successfully generated quiz with model: gemini-3.1-pro
+[2m Test Files [22m [1m[32m70 passed[39m[22m[90m (70)[39m
+[2m      Tests [22m [1m[32m508 passed[39m[22m[90m (508)[39m
+[2m   Start at [22m 17:09:51
+[2m   Duration [22m 17.42s[2m (transform 1.32s, setup 13.60s, import 7.04s, tests 18.69s, environment 12.42s)[22m
 
-[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould strip markdown formatting before parsing JSON
-[22m[39m[Quiz Factory] Invoking model gemini-3.1-pro (Attempt 1/3)...
-
-[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould strip markdown formatting before parsing JSON
-[22m[39m[Quiz Factory] Successfully generated quiz with model: gemini-3.1-pro
-
-[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould throw an error if AI returns invalid non-JSON string
-[22m[39m[Quiz Factory] Invoking model gemini-3.1-pro (Attempt 1/3)...
-
-[90mstdout[2m | lib/ai/quiz-generator.test.ts[2m > [22m[2mQuiz Generator AI Service[2m > [22m[2mshould throw an error if AI returns invalid non-JSON string
-[22m[39m[Quiz Factory] Successfully generated quiz with model: gemini-3.1-pro
-
-[90mstderr[2m | lib/ai/quiz-gcat: write error: Resource temporarily unavailable
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   85.95 |    75.97 |   83.33 |   86.78 |                   
+ ...owledge-portal |    85.1 |    94.28 |   28.57 |    85.1 |                   
+  middleware.ts    |    85.1 |    94.28 |   28.57 |    85.1 | 24-34,97          
+ ...dge-portal/app |   97.87 |    86.66 |     100 |     100 |                   
+  page.tsx         |   97.87 |    86.66 |     100 |     100 | 40-54,75          
+ ...dmin/dashboard |   86.81 |    83.01 |      76 |   90.47 |                   
+  page.tsx         |   86.81 |    83.01 |      76 |   90.47 | 54-57,201,251-292 
+ ...p/api/activity |   91.52 |       75 |     100 |   91.37 |                   
+  route.ts         |   91.52 |       75 |     100 |   91.37 | 54,64-65,128-129  
+ ...pi/admin/users |   71.87 |     87.5 |      80 |   78.57 |                   
+  route.ts         |   71.87 |     87.5 |      80 |   78.57 | 43-44,89-90,95-96 
+ .../blog-roulette |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...-roulette/[id] |     100 |    86.36 |     100 |     100 |                   
+  route.ts         |     100 |    86.36 |     100 |     100 | 40-41,77          
+ .../[id]/ai-score |   92.85 |    83.33 |      50 |     100 |                   
+  route.ts         |   92.85 |    83.33 |      50 |     100 | 28                
+ ...e/[id]/publish |     100 |    86.66 |     100 |     100 |                   
+  route.ts         |     100 |    86.66 |     100 |     100 | 42-47             
+ .../quiz/generate |   98.61 |    92.59 |     100 |     100 |                   
+  route.ts         |   98.61 |    92.59 |     100 |     100 | 25,68,82,111      
+ ...d]/quiz/submit |    96.1 |    91.66 |   83.33 |   98.59 |                   
+  route.ts         |    96.1 |    91.66 |   83.33 |   98.59 | 203               
+ ...te/[id]/submit |      85 |     87.5 |      50 |   88.88 |                   
+  route.ts         |      85 |     87.5 |      50 |   88.88 | 58-63             
+ ...te/[id]/unlock |   97.05 |       95 |     100 |   97.05 |                   
+  route.ts         |   97.05 |       95 |     100 |   97.05 | 103               
+ ...oulette/upload |   97.14 |    88.88 |     100 |   97.05 |                   
+  route.ts         |   97.14 |    88.88 |     100 |   97.05 | 80                
+ ...gests/complete |    90.9 |       80 |     100 |    90.9 |                   
+  route.ts         |    90.9 |       80 |     100 |    90.9 | 16,85-86          
+ ...gests/generate |   89.28 |    66.66 |      50 |   92.59 |                   
+  route.ts         |   89.28 |    66.66 |      50 |   92.59 | 28,32             
+ ...digests/latest |   35.29 |    38.23 |      25 |   36.73 |                   
+  route.ts         |   35.29 |    38.23 |      25 |   36.73 | ...15-116,125-126 
+ ...i/digests/past |     100 |     87.5 |     100 |     100 |                   
+  route.ts         |     100 |     87.5 |     100 |     100 | 48-53             
+ ...gests/trending |   39.47 |     37.5 |     100 |   39.47 |                   
+  route.ts         |   39.47 |     37.5 |     100 |   39.47 | ...6,43-57,98-146 
+ ...izzes/evaluate |   95.55 |    82.35 |     100 |      95 |                   
+  route.ts         |   95.55 |    82.35 |     100 |      95 | 118-119           
+ ...quizzes/finish |      90 |       75 |     100 |   89.28 |                   
+  route.ts         |      90 |       75 |     100 |   89.28 | 60,85-86          
+ ...es/leaderboard |     100 |       85 |     100 |     100 |                   
+  route.ts         |     100 |       85 |     100 |     100 | 39,55,61          
+ .../quizzes/start |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...quizzes/status |   60.46 |    44.73 |   33.33 |    61.9 |                   
+  route.ts         |   60.46 |    44.73 |   33.33 |    61.9 | ...11,139,158-159 
+ ...quizzes/submit |   72.12 |    55.78 |     100 |    71.6 |                   
+  route.ts         |   72.12 |    55.78 |     100 |    71.6 | ...49-354,369-370 
+ ...streaks/status |    94.8 |    73.84 |     100 |   94.73 |                   
+  route.ts         |    94.8 |    73.84 |     100 |   94.73 | 131,159,187-188   
+ ...pi/submissions |   85.45 |    76.92 |     100 |   85.45 |                   
+  route.ts         |   85.45 |    76.92 |     100 |   85.45 | ...74,76-77,79-80 
+ .../[id]/moderate |    92.3 |     87.5 |     100 |    92.3 |                   
+  route.ts         |    92.3 |     87.5 |     100 |    92.3 | 62-63             
+ ...ions/[id]/quiz |   91.42 |    85.71 |     100 |   91.42 |                   
+  route.ts         |   91.42 |    85.71 |     100 |   91.42 | 38,81-82          
+ .../auth/callback |     100 |    86.11 |     100 |     100 |                   
+  route.ts         |     100 |    86.11 |     100 |     100 | 16-17,31,44,62    
+ .../blog-roulette |   97.61 |    83.67 |    90.9 |   97.43 |                   
+  page.tsx         |   97.61 |    83.67 |    90.9 |   97.43 | 249               
+ ...ette/[id]/edit |    74.5 |    68.02 |   65.11 |   75.13 |                   
+  page.tsx         |    74.5 |    68.02 |   65.11 |   75.13 | ...04-635,671-682 
+ ...ette/[id]/quiz |   74.04 |    79.67 |   67.74 |      75 |                   
+  page.tsx         |   74.04 |    79.67 |   67.74 |      75 | ...95-198,473-492 
+ ...g-roulette/new |   88.88 |     82.5 |    87.5 |   93.61 |                   
+  page.tsx         |   88.88 |     82.5 |    87.5 |   93.61 | 71-72,198         
+ ...ard/gatekeeper |   86.99 |     67.7 |   78.57 |   88.03 |                   
+  page.tsx         |   86.99 |     67.7 |   78.57 |   88.03 | ...97,285-353,639 
+ ...tal/components |   81.25 |    73.05 |   68.42 |   82.35 |                   
+  ...ut-button.tsx |      50 |    66.66 |      50 |      50 | 17-21,36          
+  ...oderation.tsx |   87.83 |       75 |   78.26 |   88.88 | 96,185,432-491    
+  ...anagement.tsx |      80 |    71.05 |    62.5 |   81.39 | ...47-363,422-493 
+ ...ents/dashboard |   93.11 |    86.94 |   93.61 |    93.3 |                   
+  BlogReader.tsx   |     100 |     92.5 |     100 |     100 | 166-191           
+  ...arSidebar.tsx |     100 |      100 |     100 |     100 |                   
+  DailyBlogTab.tsx |   89.47 |    83.78 |   81.25 |   90.41 | ...3,75-77,97,144 
+  ...HeaderBar.tsx |     100 |      100 |     100 |     100 |                   
+  ...oardShell.tsx |   79.24 |    76.08 |   72.72 |      78 | ...15,124,172-175 
+  PastBlogsTab.tsx |   93.15 |     87.5 |     100 |   94.28 | 31-35,74          
+  ...nRenderer.tsx |   89.79 |    82.53 |     100 |   90.72 | ...24,129-130,221 
+  QuizModal.tsx    |     100 |      100 |     100 |     100 |                   
+  ...ngHeatmap.tsx |     100 |     87.5 |     100 |     100 | 59,65             
+  ReadingTimer.tsx |     100 |      100 |     100 |     100 |                   
+  TopicMix.tsx     |     100 |      100 |     100 |     100 |                   
+ ...omponents/quiz |   72.14 |    54.23 |   69.23 |   73.84 |                   
+  quiz-runner.tsx  |   72.14 |    54.23 |   69.23 |   73.84 | ...11-214,266,380 
+ ...e-portal/hooks |   94.64 |    77.77 |   77.77 |   98.07 |                   
+  ...ntEnhancer.ts |   94.64 |    77.77 |   77.77 |   98.07 | 87                
+ ...dge-portal/lib |     100 |      100 |     100 |     100 |                   
+  blog-service.ts  |     100 |      100 |     100 |     100 |                   
+ ...-portal/lib/ai |   81.37 |    59.01 |    90.9 |   82.65 |                   
+  ...-evaluator.ts |      80 |    78.57 |     100 |      80 | 59,70-72          
+  ...-generator.ts |   75.55 |    44.82 |   66.66 |   76.74 | 79-87,97,129-130  
+  validator.ts     |   88.09 |    66.66 |     100 |      90 | 114-116,170-172   
+ .../blog-roulette |   87.81 |    71.11 |   98.03 |    89.9 |                   
+  ai-detection.ts  |   69.87 |    54.83 |    90.9 |   77.19 | ...03,128,172-173 
+  converter.ts     |     100 |      100 |     100 |     100 |                   
+  gemini-client.ts |   97.72 |    94.23 |     100 |   97.33 | 46-47             
+  google-drive.ts  |   89.85 |       80 |     100 |   89.85 | 29-36             
+  publisher.ts     |   74.19 |       35 |     100 |   74.19 | 19-33,47-48,76    
+  route-helpers.ts |     100 |      100 |     100 |     100 |                   
+  seo.ts           |   95.23 |    77.77 |     100 |   94.59 | 22,49             
+  types.ts         |     100 |      100 |     100 |     100 |                   
+  validators.ts    |     100 |    54.16 |     100 |     100 | 52-53,55-82,100   
+ ...ortal/lib/data |   89.06 |    87.69 |   94.59 |   87.73 |                   
+  activity.ts      |     100 |    93.75 |     100 |     100 | 97,99-100         
+  db.ts            |   68.88 |       50 |   83.33 |   69.04 | ...-76,85,120-127 
+  quiz.ts          |     100 |      100 |     100 |     100 |                   
+  streak.ts        |     100 |      100 |     100 |     100 |                   
+ ...portal/lib/dev |     100 |      100 |     100 |     100 |                   
+  mock-user.ts     |     100 |      100 |     100 |     100 |                   
+ ...ortal/lib/mock |       0 |        0 |       0 |       0 |                   
+  activity.json    |       0 |        0 |       0 |       0 |                   
+ ...al/lib/quizzes |     100 |      100 |     100 |     100 |                   
+  review.ts        |     100 |      100 |     100 |     100 |                   
+ ...l/lib/supabase |    90.9 |     87.5 |     100 |   88.88 |                   
+  admin.ts         |    90.9 |     87.5 |     100 |   88.88 | 5                 
+ .../lib/synthesis |     100 |    90.38 |     100 |     100 |                   
+  blog-compiler.ts |     100 |    90.38 |     100 |     100 | 148,160-161,182   
+-------------------|---------|----------|---------|---------|-------------------
 [1;32m✔ [Smoke Tests] Passed ✔[0m
 
 [1;34m==================================================[0m
@@ -762,4 +914,4 @@ remote: GitHub found 177 vulnerabilities on Creolestudios/creole-knowledge-porta
 remote:      https://github.com/Creolestudios/creole-knowledge-portal/security/dependabot        
 remote: 
 To github.com:Creolestudios/creole-knowledge-portal.git
-   bdbcf72..1d37ceb  test-pac -> test-pac
+   1d37ceb..63790b6  test-pac -> test-pac
