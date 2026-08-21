@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from src.models.article import Article, ComplexityLevel
-from src.models.profile import UserProfile
+from src.models.profile import ContentDepth, UserProfile
 from src.ranker.scorer import (
+    ArticleScoreInput,
     complexity_fit_score,
+    engagement_score,
     is_rankable,
     recency_score,
     score_articles_for_profile,
+    tfidf_relevance_scores,
     weighted_composite_score,
 )
 
@@ -67,6 +70,28 @@ def test_complexity_fit_prefers_matching_depth() -> None:
     assert complexity_fit_score(ComplexityLevel.INTERMEDIATE, profile.content_depth) == 1.0
     assert complexity_fit_score(ComplexityLevel.ADVANCED, profile.content_depth) == 0.6
     assert complexity_fit_score(ComplexityLevel.BEGINNER, profile.content_depth) == 0.6
+    assert complexity_fit_score(ComplexityLevel.BEGINNER, ContentDepth.ADVANCED) == 0.25
+
+
+def test_tfidf_relevance_handles_empty_inputs_and_blank_documents() -> None:
+    blank = ArticleScoreInput(article_id="1", title="", summary="", body_text="")
+
+    assert tfidf_relevance_scores([], ["python"]) == {}
+    assert tfidf_relevance_scores([blank], []) == {0: 0.0}
+    assert tfidf_relevance_scores([blank], ["   "]) == {0: 0.0}
+
+
+def test_recency_and_engagement_edge_cases() -> None:
+    now = datetime(2026, 7, 10, tzinfo=UTC)
+    published = now - timedelta(days=40)
+    naive = datetime(2026, 7, 9, 12, 0, 0)
+
+    assert recency_score(None, freshness_days=30, now=now) == 0.25
+    assert recency_score(published, freshness_days=30, now=now) == 0.0
+    assert recency_score(naive, freshness_days=30, now=now) > 0.0
+
+    article = ArticleScoreInput(article_id="1", title="t", engagement_score=12.0)
+    assert engagement_score(article, max_engagement=0.0) == 0.0
 
 
 def test_is_rankable_excludes_paywall_robots_and_topics() -> None:

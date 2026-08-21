@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated
 
 from celery import chain
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 
-from src.core.config import get_auth_settings
+from src.api.deps import InternalTokenDep
 from src.models.job import PipelineJob
 from src.schemas.pipeline import PipelineStatusOut, PipelineTriggerIn, PipelineTriggerOut
 from src.services.supabase_profiles import upsert_mongo_profile
@@ -43,17 +42,6 @@ def run_celery_pipeline_and_wait(user_id: str, timeout: int = 300) -> str:
     return str(digest_id)
 
 
-def _verify_internal_token(
-    x_internal_token: Annotated[str | None, Header()] = None,
-) -> None:
-    cfg = get_auth_settings()
-    if not x_internal_token or x_internal_token != cfg.SECRET_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid X-Internal-Token header.",
-        )
-
-
 @router.post(
     "/trigger",
     response_model=PipelineTriggerOut,
@@ -61,7 +49,7 @@ def _verify_internal_token(
 )
 async def trigger_pipeline(
     payload: PipelineTriggerIn,
-    _: Annotated[None, Depends(_verify_internal_token)],
+    _: InternalTokenDep,
 ) -> PipelineTriggerOut:
     """Sync the Mongo profile, then run scrape → extract → rank → generate → publish."""
     try:

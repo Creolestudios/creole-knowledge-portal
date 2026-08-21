@@ -1,9 +1,37 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { RefreshCw, Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { RefreshCw, Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
+
+function localDateKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function toDateKey(value?: string | null): string {
+  if (!value) return localDateKey(new Date());
+  const day = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (day) return day[1];
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return localDateKey(new Date());
+  return localDateKey(parsed);
+}
+
+function formatFetchedLabel(value?: string | null): string {
+  const dateKey = toDateKey(value);
+  const today = localDateKey(new Date());
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  if (dateKey === today) return 'Today';
+  if (dateKey === localDateKey(yesterdayDate)) return 'Yesterday';
+  const [year, month, day] = dateKey.split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${Number(day)} ${months[Number(month) - 1]} ${year}`;
+}
 
 export default function DailyBlogTab({ user, profile }: { user?: any; profile?: any }) {
   const [brief, setBrief] = useState<any>(null);
@@ -147,17 +175,8 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
 
   return (
     <>
-      <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand/10 border border-brand/20 rounded-full text-brand text-[10px] font-bold uppercase tracking-widest mb-4">
-            <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-            AI Factory Digest
-          </div>
-          <h1 className="text-4xl font-black text-zinc-900 tracking-tight mb-3">Your Morning Briefing</h1>
-          <p className="text-zinc-500 text-base">Welcome back! Customized tech news and knowledge updates tailored perfectly to your developer interests.</p>
-        </div>
-
-        {hasBrief && !generating && (
+      {hasBrief && !generating && (
+        <div className="mb-8 flex justify-end">
           <button
             onClick={handleGenerateBriefing}
             className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
@@ -165,8 +184,8 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             <RefreshCw size={15} />
             Regenerate Briefing
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <AnimatePresence mode="wait">
         {loadingBrief ? (
@@ -218,7 +237,10 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
               <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
                 {brief.title}
               </h2>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8">
+              <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8 flex items-center gap-2">
+                <CalendarDays size={14} className="text-brand" />
+                Fetched {formatFetchedLabel(brief.digest_date || brief.published_at)}
+                <span className="text-zinc-300">·</span>
                 {estimatedMinutes} min read
               </p>
               <PremiumMarkdownRenderer content={brief.content} />

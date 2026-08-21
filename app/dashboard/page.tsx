@@ -23,28 +23,15 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function getInitialData() {
-      const params = new URLSearchParams(window.location.search);
-      const isMock = params.has('mockUser') || document.cookie.includes('mock-user=true');
-
-      let currentUser: Pick<SupabaseUser, 'id' | 'email'> | null = null;
-      if (isMock) {
-        currentUser = {
-          id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004',
-          email: 'priyadhanani125@gmail.com',
-        };
-        setUser(currentUser);
-        document.cookie = 'mock-user=true; path=/; max-age=3600';
-      } else {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
-        if (!authUser) {
-          router.push('/');
-          return;
-        }
-        currentUser = authUser;
-        setUser(authUser);
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+      if (!authUser) {
+        router.push('/');
+        return;
       }
+      const currentUser = authUser;
+      setUser(authUser);
 
       const { data: userProfile } = await supabase
         .from('user_profiles')

@@ -79,11 +79,12 @@ class UserProfile(Document):
     def ranking_terms(self) -> list[str]:
         """Return normalized profile terms for content relevance scoring."""
         terms = [
+            *self.learning_path.last_topics,
+            *self.learning_path.next_step_topics,
+            *self.learning_path.weak_topics,
             *self.primary_tech_stack,
             *self.secondary_tech_stack,
             *self.interests,
-            *self.learning_path.next_step_topics,
-            *self.learning_path.weak_topics,
             self.current_role,
             self.content_depth.value,
         ]
@@ -99,3 +100,88 @@ class UserProfile(Document):
             "primary_tech_stack",
             "interests",
         ]
+
+
+_KNOWN_TOPICS = (
+    "python",
+    "javascript",
+    "typescript",
+    "react",
+    "next.js",
+    "nextjs",
+    "node",
+    "fastapi",
+    "django",
+    "flask",
+    "docker",
+    "kubernetes",
+    "mongodb",
+    "redis",
+    "graphql",
+    "aws",
+    "llm",
+    "ai",
+)
+
+
+def topic_tokens_from_text(text: str) -> list[str]:
+    """Return known tech topics found in a title or article blob."""
+    haystack = text.lower()
+    return list(dict.fromkeys(topic for topic in _KNOWN_TOPICS if topic in haystack))
+
+
+def scrape_focus_terms(profile: UserProfile) -> list[str]:
+    """Prefer yesterday's topics, then quiz follow-ups, then the user's stack."""
+    last: list[str] = []
+    for item in profile.learning_path.last_topics:
+        last.extend(topic_tokens_from_text(item) or [item.strip().lower()])
+    last = [term for term in last if term]
+
+    if profile.learning_path.last_quiz_outcome is QuizOutcome.FAILED:
+        quiz_terms = list(profile.learning_path.weak_topics)
+    else:
+        quiz_terms = list(profile.learning_path.next_step_topics)
+
+    stack = [
+        *profile.primary_tech_stack,
+        *profile.interests,
+        *profile.secondary_tech_stack,
+    ]
+    ordered = [*last, *quiz_terms, *stack]
+    normalized = (term.strip().lower() for term in ordered)
+    return list(dict.fromkeys(term for term in normalized if term))[:6]
+
+
+def apply_quiz_result(profile: UserProfile, score: int, total: int) -> UserProfile:
+    """Update learning-path difficulty from a quiz score without wiping topics."""
+    total = max(int(total), 1)
+    ratio = max(0.0, min(1.0, int(score) / total))
+    now = datetime.now(UTC)
+    path = profile.learning_path
+    path.last_quiz_date = now
+    themes = list(path.last_topics)
+    if ratio < 0.5:
+        path.last_quiz_outcome = QuizOutcome.FAILED
+        path.difficulty_direction = DifficultyDirection.EASIER
+        path.weak_topics = themes or path.weak_topics
+    elif ratio >= 0.8:
+        path.last_quiz_outcome = QuizOutcome.PASSED
+        path.difficulty_direction = DifficultyDirection.HARDER
+        path.next_step_topics = themes or path.next_step_topics
+    else:
+        path.last_quiz_outcome = QuizOutcome.PASSED
+        path.difficulty_direction = DifficultyDirection.SAME
+    profile.updated_at = now
+    return profile
+
+
+def effective_content_depth(profile: UserProfile) -> ContentDepth:
+    """Shift preferred depth one step based on the last quiz outcome."""
+    order = [ContentDepth.BEGINNER, ContentDepth.INTERMEDIATE, ContentDepth.ADVANCED]
+    current = profile.content_depth
+    index = order.index(current)
+    if profile.learning_path.difficulty_direction is DifficultyDirection.EASIER:
+        return order[max(0, index - 1)]
+    if profile.learning_path.difficulty_direction is DifficultyDirection.HARDER:
+        return order[min(len(order) - 1, index + 1)]
+    return current

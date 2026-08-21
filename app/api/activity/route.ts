@@ -1,6 +1,22 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
+
+async function recordQuizOnBlogService(userId: string, quizScore?: number, quizTotal?: number) {
+  if (quizScore === undefined || quizTotal === undefined) {
+    return;
+  }
+  try {
+    await fetch(blogServiceUrl(`/profiles/${userId}/quiz`), {
+      method: 'POST',
+      headers: blogServiceHeaders(),
+      body: JSON.stringify({ score: quizScore, total: quizTotal }),
+    });
+  } catch (err) {
+    console.warn('Quiz result was not synced to the blog service:', err);
+  }
+}
 
 export async function GET(request: Request) {
   try {
@@ -118,11 +134,13 @@ export async function POST(request: Request) {
       // Ignore if table doesn't exist for now
       if (result.error.code === '42P01') {
         console.warn('user_activity table does not exist');
+        await recordQuizOnBlogService(user.id, quizScore, quizTotal);
         return NextResponse.json({ success: true, message: 'Simulated activity update (table missing)' });
       }
       return NextResponse.json({ error: result.error.message }, { status: 500 });
     }
 
+    await recordQuizOnBlogService(user.id, quizScore, quizTotal);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error('Error in activity POST:', error);

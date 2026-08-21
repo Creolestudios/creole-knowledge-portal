@@ -63,6 +63,33 @@ describe('POST /api/quizzes/finish', () => {
     expect(res.status).toBe(403);
   });
 
+  it('rejects a missing attempt', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockDbResponses = [{ data: null, error: null }];
+
+    const res = await POST(mockRequest({ attemptId: 'missing' }));
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 500 when persisting the completed attempt fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockDbResponses = [
+      {
+        data: {
+          status: 'in_progress',
+          started_at: new Date().toISOString(),
+          total_questions: 5,
+          blog_id: 'blog-1',
+        },
+        error: null,
+      },
+      { error: { message: 'write failed' } },
+    ];
+
+    const res = await POST(mockRequest({ attemptId: 'a1' }));
+    expect(res.status).toBe(500);
+  });
+
   it('scores the attempt, persists it, and returns review data', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
 

@@ -4,9 +4,7 @@ import httpx
 from datetime import datetime, timezone
 from src.config import settings
 from src.models.schemas import UserProfile, Article, DailyDigest
-from src.scrapers.devto_scraper import fetch_devto_articles
-from src.scrapers.hn_scraper import fetch_hn_top_stories
-from src.scrapers.rss_scraper import parse_rss_feed
+from src.scrapers import fetch_devto_articles, fetch_hn_top_stories, parse_rss_feed
 from src.synthesis.generator import generate_daily_digest
 from src.storage.mongodb import get_db
 from src.ai_pipeline.reranker import get_profile_embedding, semantic_rank, llm_rerank

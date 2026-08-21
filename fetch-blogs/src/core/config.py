@@ -83,6 +83,7 @@ class SupabaseSettings(BaseSettings):
     )
 
     URL: AnyHttpUrl = Field(
+        default="https://localhost.supabase.co",  # type: ignore[assignment]
         validation_alias=AliasChoices("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
     )
     ANON_KEY: SecretStr | None = Field(
@@ -90,6 +91,7 @@ class SupabaseSettings(BaseSettings):
         validation_alias=AliasChoices("SUPABASE_ANON_KEY", "NEXT_PUBLIC_SUPABASE_ANON_KEY"),
     )
     SERVICE_ROLE_KEY: SecretStr = Field(
+        default=SecretStr("dummy-service-role-key-for-local-dev"),
         validation_alias=AliasChoices("SUPABASE_SERVICE_ROLE_KEY", "SERVICE_ROLE_KEY"),
     )
 

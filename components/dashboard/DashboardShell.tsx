@@ -61,15 +61,8 @@ export default function DashboardShell({
   profile?: any;
   children?: ReactNode;
 }) {
-  const mockUser = {
-    id: 'b632b1ab-71e5-48ca-ab5d-b431c4e65004',
-    email: 'priyadhanani125@gmail.com',
-  };
-  const mockProfile = {
-    primary_tech_stack: ['Next.js', 'React', 'TypeScript'],
-  };
-  const activeUser = user || mockUser;
-  const activeProfile = profile || mockProfile;
+  const activeUser = user;
+  const activeProfile = profile;
   const [previewTab, setPreviewTab] = useState<TabKey>('daily');
   const [stats, setStats] = useState<WeeklyStats | null>(null);
   const [streak, setStreak] = useState(0);

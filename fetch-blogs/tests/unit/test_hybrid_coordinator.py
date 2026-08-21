@@ -468,9 +468,37 @@ class TestRunHybridPipeline:
 
         monkeypatch.setattr(coordinator, "fetch_hn_top_stories", lambda **_: [make_article()])
         monkeypatch.setattr(coordinator, "enrich_article_via_jina", _boom)
-
         digest = await coordinator.run_hybrid_pipeline("u1")
         assert digest.strategy_used == "C"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_newspaper_extraction_without_author_and_handles_none(
+        self, monkeypatch: pytest.MonkeyPatch, stub_pipeline: dict[str, Any]
+    ) -> None:
+        thin1 = make_article("Thin1", url="https://x.com/thin1")
+        thin1.body_text = "tiny"
+        thin2 = make_article("Thin2", url="https://x.com/thin2")
+        thin2.body_text = "tiny"
+        monkeypatch.setattr(coordinator, "fetch_hn_top_stories", lambda **_: [thin1, thin2])
+        monkeypatch.setattr(coordinator, "enrich_article_via_jina", lambda a: a)
+
+        import src.scrapers.extractor as extractor_mod
+
+        def _mock_extract(url: str) -> dict[str, Any] | None:
+            if "thin1" in url:
+                return {
+                    "body_text": "recovered body without author " * 20,
+                    "word_count": 50,
+                    "reading_time_min": 1.0,
+                }
+            return None
+
+        monkeypatch.setattr(extractor_mod, "extract_article_content", _mock_extract)
+
+        await coordinator.run_hybrid_pipeline("u1")
+        assert thin1.word_count == 50
+        assert thin1.body_markdown == thin1.body_text
+
 
     @pytest.mark.asyncio
     async def test_falls_back_to_semantic_order_when_the_llm_reranker_fails(
@@ -536,5 +564,75 @@ class TestRunHybridPipeline:
         stub_pipeline["db"].daily_digests = ExplodingDigests()
         monkeypatch.setattr(coordinator, "fetch_hn_top_stories", lambda **_: [make_article()])
 
+        digest = await coordinator.run_hybrid_pipeline("u1")
+        assert digest.strategy_used == "C"
+
+    @pytest.mark.asyncio
+    async def test_tolerates_a_failing_profile_cache(
+        self, stub_pipeline: dict[str, Any]
+    ) -> None:
+        class Boom(FakeCollection):
+            async def update_one(self, *_: object, **__: object) -> None:
+                raise RuntimeError("mongo unavailable")
+
+        stub_pipeline["db"].user_profiles = Boom()
+        digest = await coordinator.run_hybrid_pipeline("u1")
+        assert digest.strategy_used == "C"
+
+    @pytest.mark.asyncio
+    async def test_records_devto_failure_status(
+        self, monkeypatch: pytest.MonkeyPatch, stub_pipeline: dict[str, Any]
+    ) -> None:
+        def _boom(**_: object) -> list[Article]:
+            raise RuntimeError("dev.to down")
+
+        monkeypatch.setattr(coordinator, "fetch_devto_articles", _boom)
+        await coordinator.run_hybrid_pipeline("u1")
+        recorded = stub_pipeline["db"].scraped_sources.insert_many_calls[0]
+        devto_entry = next(r for r in recorded if r["type"] == "devto")
+        assert devto_entry["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_records_rss_failure_status(
+        self, monkeypatch: pytest.MonkeyPatch, stub_pipeline: dict[str, Any]
+    ) -> None:
+        async def _feeds() -> list[str]:
+            return ["https://example.com/rss"]
+
+        def _boom(**_: object) -> list[Article]:
+            raise RuntimeError("rss down")
+
+        monkeypatch.setattr(coordinator, "fetch_admin_blog_sources_from_supabase", _feeds)
+        monkeypatch.setattr(coordinator, "parse_rss_feed", _boom)
+        await coordinator.run_hybrid_pipeline("u1")
+        recorded = stub_pipeline["db"].scraped_sources.insert_many_calls[0]
+        rss_entry = next(r for r in recorded if r["type"] == "rss")
+        assert rss_entry["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_tolerates_scraped_source_insert_failure(
+        self, stub_pipeline: dict[str, Any]
+    ) -> None:
+        class Boom(FakeCollection):
+            async def insert_many(self, *_: object) -> None:
+                raise RuntimeError("mongo unavailable")
+
+        stub_pipeline["db"].scraped_sources = Boom()
+        digest = await coordinator.run_hybrid_pipeline("u1")
+        assert digest.strategy_used == "C"
+
+    @pytest.mark.asyncio
+    async def test_tolerates_article_cache_failure(
+        self, monkeypatch: pytest.MonkeyPatch, stub_pipeline: dict[str, Any]
+    ) -> None:
+        class Boom(FakeCollection):
+            async def find_one(self, *_: object) -> None:
+                return None
+
+            async def insert_one(self, *_: object) -> None:
+                raise RuntimeError("mongo unavailable")
+
+        stub_pipeline["db"].articles = Boom()
+        monkeypatch.setattr(coordinator, "fetch_hn_top_stories", lambda **_: [make_article()])
         digest = await coordinator.run_hybrid_pipeline("u1")
         assert digest.strategy_used == "C"

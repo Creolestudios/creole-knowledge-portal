@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig([
-  { ignores: ["playwright-report/**", "test-results/**", "infra/**", "fetch-blogs/**"] },
+  { ignores: ["playwright-report/**", "test-results/**", "infra/**", "fetch-blogs/**", "coverage/**"] },
   {
     extends: [...next],
   }

@@ -10,7 +10,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity as sklearn_cosine_similarity
 
 from src.models.article import Article, ComplexityLevel, RankingBreakdown
-from src.models.profile import ContentDepth, UserProfile
+from src.models.profile import ContentDepth, UserProfile, effective_content_depth
 
 _SCORE_WEIGHTS = {
     "tfidf_relevance": 0.35,
@@ -174,7 +174,9 @@ def score_articles_for_profile(
         authority = authority_score(article, profile.preferred_sources)
         recency = recency_score(article.published_at, profile.content_freshness_days, now)
         engagement = engagement_score(article, max_engagement)
-        complexity = complexity_fit_score(article.complexity_level, profile.content_depth)
+        complexity = complexity_fit_score(
+            article.complexity_level, effective_content_depth(profile)
+        )
         composite = weighted_composite_score(tfidf, authority, recency, engagement, complexity)
         scored.append(
             ScoredArticle(

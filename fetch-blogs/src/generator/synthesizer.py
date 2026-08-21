@@ -19,7 +19,7 @@ from src.models.digest import (
     DigestSection,
     DigestSource,
 )
-from src.models.profile import UserProfile
+from src.models.profile import UserProfile, scrape_focus_terms, topic_tokens_from_text
 
 log = structlog.get_logger(__name__)
 
@@ -77,15 +77,69 @@ def _clip_to_words(text: str, max_words: int) -> str:
     return "".join(parts).rstrip()
 
 
+_DEVTO_CHROME = (
+    "enter fullscreen mode",
+    "exit fullscreen mode",
+    "report abuse",
+    "copy link",
+    "like",
+    "comment",
+    "bookmark",
+)
+_LIQUID = re.compile(r"\{%.{0,500}%\}", re.DOTALL)
+
+
+def _clean_scraped_markdown(text: str) -> str:
+    """Drop Dev.to UI chrome and Liquid tags from scraped bodies."""
+    without_liquid = _LIQUID.sub("", text)
+    kept: list[str] = []
+    for line in without_liquid.splitlines():
+        lowered = line.strip().lower()
+        if lowered and lowered in _DEVTO_CHROME:
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def _ensure_readable_markdown(text: str) -> str:
     """Put inlined markdown structure back onto its own lines."""
-    cleaned = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    cleaned = _clean_scraped_markdown(text.replace("\r\n", "\n").replace("\r", "\n")).strip()
     cleaned = re.sub(r"(?<=[^\n#])(#{1,6} )", r"\n\n\1", cleaned)
     cleaned = re.sub(r"(?<=[^\n`])(```)", r"\n\n\1", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     if cleaned.count("\n\n") < 2 and cleaned.count("\n") >= 2:
         cleaned = re.sub(r"\n+", "\n\n", cleaned)
     return cleaned
+
+
+def pick_daily_theme(profile: UserProfile, articles: list[Article]) -> str:
+    """Keep yesterday's topic when it still appears in today's candidates."""
+    last = scrape_focus_terms(profile)
+    if last:
+        return last[0]
+    blob = " ".join(
+        f"{article.title} {' '.join(article.topics)} {' '.join(article.tech_stack)}"
+        for article in articles
+    )
+    found = topic_tokens_from_text(blob)
+    if found:
+        return found[0]
+    if profile.primary_tech_stack:
+        return profile.primary_tech_stack[0].strip().lower()
+    return "tech"
+
+
+def focus_articles_on_theme(articles: list[Article], theme: str) -> list[Article]:
+    """Prefer articles that mention the selected theme; fall back to the full list."""
+    needle = theme.strip().lower()
+    if not needle:
+        return articles
+    matched = [
+        article
+        for article in articles
+        if needle in f"{article.title} {article.summary} {article.body_text[:1200]} {' '.join(article.topics)}".lower()
+    ]
+    return matched or articles
 
 
 def _fallback_payload() -> dict[str, Any]:
@@ -150,12 +204,27 @@ def _payload_from_articles(
     if not sections:
         return _fallback_payload()
     return {
-        "headline": "Your Morning Technical Briefing",
+        "headline": articles[0].title,
         "tldr": tldr,
         "sections": sections,
         "key_takeaways": takeaways[:8],
         "further_reading": further,
     }
+
+
+def _stored_headline(payload: dict[str, Any], articles: list[Article]) -> str:
+    """Persist the source article title, not a 'Your Morning X Briefing' template."""
+    raw = str(payload.get("headline") or "").strip()
+    first = next((article.title.strip() for article in articles if article.title.strip()), "")
+    lowered = raw.lower()
+    templated = (not raw) or lowered in {
+        "morning briefing",
+        "your morning briefing",
+        "your morning technical briefing",
+    } or ("briefing" in lowered and (lowered.startswith("your ") or lowered.startswith("morning ")))
+    if templated:
+        return first or raw or "Morning Briefing"
+    return raw or first or "Morning Briefing"
 
 
 def _parse_json_object(text: str) -> dict[str, Any]:
@@ -185,8 +254,6 @@ def _trim_sections(sections: list[dict[str, Any]], max_words: int) -> list[dict[
             break
         raw = str(section.get("content") or "")
         available = max_words - used
-        if available <= 0:
-            break
         content = _ensure_readable_markdown(_clip_to_words(raw, available))
         if not content:
             break
@@ -233,7 +300,7 @@ Articles:
 
 Return this shape:
 {{
-  "headline": "string",
+  "headline": "the exact primary source article title — never a template like Your Morning X Briefing",
   "tldr": ["string", "string", "string"],
   "sections": [
     {{
@@ -370,14 +437,22 @@ def _generate_teaching_sections(
     return sections, tokens
 
 
-def synthesize_digest(profile: UserProfile, articles: list[Article]) -> DailyDigest:
+def synthesize_digest(
+    profile: UserProfile,
+    articles: list[Article],
+    *,
+    digest_date: date | None = None,
+    scraped_only: bool = False,
+) -> DailyDigest:
     """Build a DailyDigest document from ranked articles. Does not insert."""
     started = time.monotonic()
+    theme = pick_daily_theme(profile, articles)
+    articles = focus_articles_on_theme(articles, theme)
     scraped = _payload_from_articles(articles)
     payload = scraped
     tokens = 0
     overview_sections: list[dict[str, Any]] = []
-    if articles:
+    if articles and not scraped_only:
         try:
             gemini_payload, tokens = _call_gemini(_build_prompt(profile, articles))
             overview_sections = [
@@ -399,7 +474,7 @@ def synthesize_digest(profile: UserProfile, articles: list[Article]) -> DailyDig
             payload = scraped
 
     teaching: list[dict[str, Any]] = []
-    if _words_in(scraped["sections"]) < _min_words():
+    if not scraped_only and _words_in(scraped["sections"]) < _min_words():
         teaching, teaching_tokens = _generate_teaching_sections(profile, articles)
         tokens += teaching_tokens
 
@@ -437,14 +512,17 @@ def synthesize_digest(profile: UserProfile, articles: list[Article]) -> DailyDig
         if isinstance(item, dict)
     ]
 
+    saved_on = digest_date or date.today()
+    saved_at = datetime.now(UTC)
+
     return DailyDigest(
         user_id=profile.user_id,
-        digest_date=date.today(),
+        digest_date=saved_on,
         article_ids=[str(article.id) for article in articles if article.id is not None],
         reading_time_minutes=reading,
         word_count=word_count,
         content=DigestContent(
-            headline=str(payload.get("headline") or "Morning Briefing"),
+            headline=_stored_headline(payload, articles),
             tldr=[str(item) for item in payload.get("tldr") or []],
             sections=sections,
             key_takeaways=[str(item) for item in payload.get("key_takeaways") or []],
@@ -457,6 +535,6 @@ def synthesize_digest(profile: UserProfile, articles: list[Article]) -> DailyDig
             llm_tokens_used=tokens,
             generation_latency_seconds=round(time.monotonic() - started, 2),
         ),
-        generated_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
+        generated_at=saved_at,
+        updated_at=saved_at,
     )

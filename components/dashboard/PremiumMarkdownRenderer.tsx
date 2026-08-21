@@ -10,19 +10,19 @@ export function restoreArticleMarkdown(content: string): string {
   }
 
   let text = content;
-  text = text.replace(/[ \t]+(#{1,6} )/g, '\n\n$1');
-  text = text.replace(/[ \t]+(```)/g, '\n\n$1');
+  text = text.replace(/[ \t]{1,80}(#{1,6} )/g, '\n\n$1');
+  text = text.replace(/[ \t]{1,80}(```)/g, '\n\n$1');
   text = text.replace(
-    /[ \t]+(Step\s+\d+:\s+[A-Z][^.\n]{3,80}?)(?=\s+(?:curl|uv |npm |npx |pip |git |docker |python)|\s+[A-Z]|$)/gi,
+    /[ \t]{1,80}(Step[ \t]{1,8}\d+:[ \t]{1,8}[A-Z][^\n.]{3,80})(?=[ \t]{1,40}(?:curl|uv |npm |npx |pip |git |docker |python)|[ \t]{1,8}[A-Z]|$)/gi,
     '\n\n### $1\n\n'
   );
-  text = text.replace(/[ \t]+(Step\s+\d+:)/gi, '\n\n### $1');
+  text = text.replace(/[ \t]{1,80}(Step[ \t]{1,8}\d+:)/gi, '\n\n### $1');
   text = text.replace(
-    /\s+((?:curl|uv |npm |npx |pip |git |docker |python3? )\S.{8,200}?)(?=\s+[A-Z]|$)/g,
+    /[ \t]{1,80}((?:curl|uv |npm |npx |pip |git |docker |python3? )[^\n]{8,200})(?=[ \t]{1,8}[A-Z]|$)/g,
     '\n\n```bash\n$1\n```\n\n'
   );
-  text = text.replace(/[ \t]+(\d+\.\s+)/g, '\n$1');
-  text = text.replace(/[ \t]+([-*] )/g, '\n$1');
+  text = text.replace(/[ \t]{1,80}(\d+\.[ \t])/g, '\n$1');
+  text = text.replace(/[ \t]{1,80}([-*] )/g, '\n$1');
   if (!text.includes('\n\n') && text.length > 280) {
     text = text.replace(/([.!?])\s+(?=[A-Z#])/g, '$1\n\n');
   }
@@ -69,7 +69,16 @@ function parseInlineMarkdown(text: string): ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
-const COMMAND_RE = /^(curl |uv |npm |npx |pip |pipx |git |docker |python3? |pnpm |yarn )/;
+const REAL_COMMAND = /^(curl |uv |npm |npx |pipx |pip install |git clone |git commit |docker |python3? -\w)/;
+
+function looksLikeRealHeading(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed || trimmed.length > 90) return false;
+  if (/^(enter|exit) fullscreen|report abuse|^copy link$|^like$|^comment$|^bookmark$/i.test(trimmed)) {
+    return false;
+  }
+  return true;
+}
 
 export function PremiumMarkdownRenderer({ content }: { content: string }) {
   const lines = restoreArticleMarkdown(content).split('\n');
@@ -104,16 +113,16 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
       continue;
     }
 
-    if (trimmed.startsWith('# ')) {
+    if (trimmed.startsWith('# ') && looksLikeRealHeading(trimmed.substring(2))) {
       flushParagraph();
-      blocks.push({ type: 'h1', content: trimmed.substring(2) });
-    } else if (trimmed.startsWith('## ')) {
+      blocks.push({ type: 'h2', content: trimmed.substring(2) });
+    } else if (trimmed.startsWith('## ') && looksLikeRealHeading(trimmed.substring(3))) {
       flushParagraph();
       blocks.push({ type: 'h2', content: trimmed.substring(3) });
-    } else if (trimmed.startsWith('### ')) {
+    } else if (trimmed.startsWith('### ') && looksLikeRealHeading(trimmed.substring(4))) {
       flushParagraph();
       blocks.push({ type: 'h3', content: trimmed.substring(4) });
-    } else if (trimmed.startsWith('#### ')) {
+    } else if (trimmed.startsWith('#### ') && looksLikeRealHeading(trimmed.substring(5))) {
       flushParagraph();
       blocks.push({ type: 'h3', content: trimmed.substring(5) });
     } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
@@ -125,7 +134,7 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
     } else if (trimmed.startsWith('> ')) {
       flushParagraph();
       blocks.push({ type: 'blockquote', content: trimmed.substring(2) });
-    } else if (COMMAND_RE.test(trimmed)) {
+    } else if (REAL_COMMAND.test(trimmed)) {
       flushParagraph();
       blocks.push({ type: 'code', content: trimmed });
     } else if (trimmed === '') {
@@ -170,19 +179,11 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
               </div>
             );
           case 'h1':
-            return (
-              <h1
-                key={idx}
-                className="text-3xl font-black text-zinc-900 mt-10 mb-4 tracking-tight leading-tight"
-              >
-                {block.content}
-              </h1>
-            );
           case 'h2':
             return (
               <h2
                 key={idx}
-                className="text-2xl font-black text-zinc-900 mt-8 mb-4 border-b pb-3 border-zinc-100 tracking-tight leading-tight flex items-center gap-2"
+                className="text-xl font-extrabold text-zinc-900 mt-8 mb-4 border-b pb-3 border-zinc-100 tracking-tight leading-tight flex items-center gap-2"
               >
                 <span className="w-1.5 h-6 bg-brand rounded-full inline-block" />
                 {block.content}
@@ -213,7 +214,7 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
             return <div key={idx} className="h-2" />;
           case 'p':
             return (
-              <p key={idx} className="text-zinc-600 text-[15px] leading-7">
+              <p key={idx} className="text-zinc-600 text-[15px] leading-7 whitespace-pre-wrap">
                 {parseInlineMarkdown(block.content)}
               </p>
             );

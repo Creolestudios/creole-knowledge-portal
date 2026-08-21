@@ -98,17 +98,16 @@ describe('middleware', () => {
     expect(res.status).toBe(200);
   });
 
-  it('accepts the dev mock-user bypass via the mockUser query param', async () => {
-    (process.env as any).NODE_ENV = 'development';
+  it('does not treat a mockUser query param as a logged-in session', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
     const res = await middleware(makeRequest('/dashboard?mockUser=true'));
-    expect(res.status).toBe(200);
-    expect(mockGetUser).not.toHaveBeenCalled();
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/');
+    expect(mockGetUser).toHaveBeenCalled();
   });
 
-  it('ignores the mock-user bypass in production', async () => {
-    (process.env as any).NODE_ENV = 'production';
+  it('does not treat a mock-user cookie as a logged-in session', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
-
     const res = await middleware(makeRequest('/dashboard', 'mock-user=true'));
     expect(res.headers.get('location')).toContain('/');
   });

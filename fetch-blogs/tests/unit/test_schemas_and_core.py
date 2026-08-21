@@ -3,6 +3,7 @@
 These modules are pure/deterministic, so they're exercised directly rather
 than through the API layer.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -210,3 +211,116 @@ class TestSettingsModule:
         assert isinstance(settings.PORT, int)
         assert isinstance(settings.GEMINI_API_KEY, str)
         assert isinstance(settings.SUPABASE_URL, str)
+
+    def test_app_settings_docs_and_celery_eager(self) -> None:
+        from src.core.config import AppSettings, Environment
+
+        local = AppSettings(_env_file=None, ENVIRONMENT=Environment.LOCAL, CELERY_EAGER=None)
+        staging = AppSettings(_env_file=None, ENVIRONMENT=Environment.STAGING, CELERY_EAGER=None)
+        prod = AppSettings(_env_file=None, ENVIRONMENT=Environment.PRODUCTION, CELERY_EAGER=None)
+        assert local.show_docs is True
+        assert staging.show_docs is True
+        assert prod.show_docs is False
+        assert local.celery_eager is True
+        assert prod.celery_eager is False
+        assert (
+            AppSettings(
+                _env_file=None, ENVIRONMENT=Environment.PRODUCTION, CELERY_EAGER=True
+            ).celery_eager
+            is True
+        )
+        assert (
+            AppSettings(
+                _env_file=None, ENVIRONMENT=Environment.LOCAL, CELERY_EAGER=False
+            ).celery_eager
+            is False
+        )
+
+    def test_blank_sentry_dsn_is_treated_as_none(self) -> None:
+        from src.core.config import AppSettings
+
+        assert AppSettings(_env_file=None, SENTRY_DSN=None).SENTRY_DSN is None
+        assert AppSettings(_env_file=None, SENTRY_DSN="   ").SENTRY_DSN is None
+        dsn = AppSettings(_env_file=None, SENTRY_DSN="https://sentry.example/1")
+        assert dsn.SENTRY_DSN is not None
+
+    def test_cached_settings_getters(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.core import config as config_mod
+
+        monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+        monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "service-role-key")
+        for getter in (
+            config_mod.get_app_settings,
+            config_mod.get_mongo_settings,
+            config_mod.get_redis_settings,
+            config_mod.get_supabase_settings,
+            config_mod.get_auth_settings,
+            config_mod.get_llm_settings,
+            config_mod.get_scraping_settings,
+        ):
+            getter.cache_clear()
+
+        app = config_mod.get_app_settings()
+        mongo = config_mod.get_mongo_settings()
+        redis = config_mod.get_redis_settings()
+        supabase = config_mod.get_supabase_settings()
+        auth = config_mod.get_auth_settings()
+        llm = config_mod.get_llm_settings()
+        scraping = config_mod.get_scraping_settings()
+
+        assert app.PROJECT_NAME
+        assert mongo.DB_NAME == "knowledge_portal"
+        assert redis.URL.startswith("redis://")
+        assert str(supabase.URL).startswith("https://")
+        assert auth.JWT_ALG == "HS256"
+        assert llm.GEMINI_MODEL
+        assert scraping.CONCURRENCY >= 1
+        assert config_mod.get_app_settings() is app
+
+    def test_settings_legacy_file_path_branches(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import importlib
+        from pathlib import Path
+
+        from src.config import settings as settings_mod
+
+        original_exists = Path.exists
+
+        def fake_exists(self: Path, *, parent: bool, local: bool) -> bool:
+            if self.name == ".env.local":
+                return parent
+            if self.name == ".env":
+                return local
+            return original_exists(self)
+
+        monkeypatch.setattr(
+            Path, "exists", lambda self: fake_exists(self, parent=False, local=True)
+        )
+        importlib.reload(settings_mod)
+        assert settings_mod.PORT >= 1
+
+        monkeypatch.setattr(
+            Path, "exists", lambda self: fake_exists(self, parent=False, local=False)
+        )
+        importlib.reload(settings_mod)
+        assert settings_mod.PORT >= 1
+
+
+class TestRedisModule:
+    @pytest.mark.asyncio
+    async def test_redis_helpers_and_generator(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from src.core import redis as redis_mod
+
+        client = redis_mod.get_redis_client()
+        assert client is not None
+
+        # Exercise get_redis async generator
+        async for r in redis_mod.get_redis():
+            assert r is not None
+
+        # Exercise ping_redis exception path
+        class ExplodingClient:
+            async def ping(self) -> bool:
+                raise RuntimeError("redis dead")
+
+        monkeypatch.setattr(redis_mod, "get_redis_client", lambda: ExplodingClient())
+        assert await redis_mod.ping_redis() is False

@@ -41,21 +41,19 @@ describe('GET /api/streaks/status', () => {
     tableResponses = {};
   });
 
-  it('returns 401 with no session and no mock bypass', async () => {
+  it('returns 401 with no session', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
     const res = await GET(mockRequest());
     expect(res.status).toBe(401);
   });
 
-  it('authenticates via the ?mockUser=true query param', async () => {
+  it('does not authenticate via a mockUser query param', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
-    tableResponses = { quiz_attempts: [{ data: [], error: null }] };
-
     const res = await GET(mockRequest('http://localhost/api/streaks/status?mockUser=true'));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
-  it('returns simulated default stats when the DB has no gamification rows', async () => {
+  it('returns zero stats when the DB has no gamification rows', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     tableResponses = {
       user_profiles: [{ data: null, error: { message: 'no row' } }],
@@ -67,7 +65,10 @@ describe('GET /api/streaks/status', () => {
     const res = await GET(mockRequest());
     const body = await res.json();
     expect(body.data.simulated).toBe(true);
-    expect(body.data.profile.xp).toBe(320); // default starter values
+    expect(body.data.profile.xp).toBe(0);
+    expect(body.data.profile.level).toBe(1);
+    expect(body.data.streak.currentStreak).toBe(0);
+    expect(body.data.badges).toEqual([]);
   });
 
   it('reads real profile, streak and badge rows from the DB when present', async () => {
@@ -112,15 +113,10 @@ describe('GET /api/streaks/status', () => {
     expect(body.data.dailyQuizResult.isPerfect).toBe(true);
   });
 
-  it('reads saved stats from the mock_gamification_stats cookie when present', async () => {
+  it('does not authenticate via a mock-user cookie', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
-    tableResponses = { quiz_attempts: [{ data: [], error: null }] };
-
-    const saved = { xp: 999, level: 9, coins: 1, currentStreak: 1, longestStreak: 1, lastActiveDate: '2026-08-01', badges: [] };
-    const cookie = `mock_gamification_stats=${encodeURIComponent(JSON.stringify(saved))}; mock-user=true`;
-
+    const cookie = `mock_gamification_stats=${encodeURIComponent(JSON.stringify({ xp: 999 }))}; mock-user=true`;
     const res = await GET(mockRequest('http://localhost/api/streaks/status', cookie));
-    const body = await res.json();
-    expect(body.data.profile.xp).toBe(999);
+    expect(res.status).toBe(401);
   });
 });

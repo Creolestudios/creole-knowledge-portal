@@ -1,41 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { cookies } from 'next/headers';
-import { mockUserFromCookie } from '@/lib/dev/mock-user';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 
 export const maxDuration = 300;
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
-    let userId: string | null = null;
-    try {
-      const body = await request.json();
-      userId = body.userId || null;
-    } catch {
-      // empty body
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    if (!userId) {
-      const supabase = await createClient();
-      let {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        const cookieStore = await cookies();
-        const mockUser = mockUserFromCookie(cookieStore.get('mock-user')?.value);
-        if (mockUser) {
-          user = mockUser as any;
-        }
-      }
-      if (user) {
-        userId = user.id;
-      }
-    }
-
-    if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
-    }
+    const userId = user.id;
 
     const res = await fetch(blogServiceUrl('/digests/generate'), {
       method: 'POST',

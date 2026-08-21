@@ -16,12 +16,6 @@ export async function POST(request: Request) {
     
     if (user) {
       userId = user.id;
-    } else {
-      // Mock bypass support for local testing/CI
-      const isMock = request.headers.get('cookie')?.includes('mock-user=true');
-      if (isMock) {
-        userId = 'b632b1ab-71e5-48ca-ab5d-b431c4e65004';
-      }
     }
 
     if (!userId) {

@@ -30,6 +30,11 @@ vi.mock('@/lib/supabase/admin', () => {
   return { supabaseAdmin: { from: vi.fn(() => builder) } };
 });
 
+vi.mock('@/lib/blog-service', () => ({
+  blogServiceUrl: (path: string) => `http://blog.test${path}`,
+  blogServiceHeaders: () => ({ 'X-Internal-Token': 't' }),
+}));
+
 import { GET } from './route';
 
 function req(url = 'http://localhost/api/digests/past') {
@@ -43,6 +48,7 @@ describe('GET /api/digests/past', () => {
     queryState.ilikeCalls = [];
     queryState.limitCalls = [];
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('blog service down')));
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -51,13 +57,13 @@ describe('GET /api/digests/past', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns the last 10 briefings when no date is supplied', async () => {
+  it('returns every stored briefing when no date is supplied', async () => {
     queryState.result = { data: [{ id: 'b1' }, { id: 'b2' }], error: null };
 
     const body = await (await GET(req())).json();
     expect(body.success).toBe(true);
     expect(body.blogs).toHaveLength(2);
-    expect(queryState.limitCalls).toContain(10);
+    expect(queryState.limitCalls).toEqual([]);
   });
 
   it('returns an empty array when the user has no briefings', async () => {
@@ -94,5 +100,39 @@ describe('GET /api/digests/past', () => {
     const res = await GET(req());
     expect(res.status).toBe(500);
     expect((await res.json()).error).toContain('auth service unreachable');
+  });
+
+  it('returns Mongo past blogs from the blog service when it is available', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, blogs: [{ title: 'From Mongo', digest_date: '2026-08-18' }] }),
+      }),
+    );
+
+    const body = await (await GET(req())).json();
+    expect(body.blogs[0].title).toBe('From Mongo');
+  });
+
+  it('keeps yesterday blogs from Supabase when Mongo returns an empty list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, blogs: [] }),
+      }),
+    );
+    queryState.result = {
+      data: [
+        { id: 's1', title: 'Yesterday brief', published_at: '2026-08-18T10:00:00.000Z', url: 'briefing:u1:2026-08-18' },
+      ],
+      error: null,
+    };
+
+    const body = await (await GET(req())).json();
+    expect(body.blogs).toHaveLength(1);
+    expect(body.blogs[0].title).toBe('Yesterday brief');
+    expect(body.blogs[0].digest_date).toBe('2026-08-18');
   });
 });

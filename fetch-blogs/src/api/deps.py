@@ -10,7 +10,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 import redis.asyncio as aioredis
 from fastapi import Depends, Header, HTTPException, status
@@ -19,7 +19,7 @@ from src.core.config import get_auth_settings
 from src.core.redis import get_redis
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
-RedisDep = Annotated[aioredis.Redis[Any], Depends(get_redis)]
+RedisDep = Annotated[aioredis.Redis, Depends(get_redis)]
 
 
 # ── X-Internal-Token header guard ─────────────────────────────────────────────

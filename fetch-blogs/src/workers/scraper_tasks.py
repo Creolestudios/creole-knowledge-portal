@@ -13,10 +13,8 @@ from src.config.robots_cache import is_url_allowed
 from src.config.source_registry import sources_by_kind
 from src.models.article import Article
 from src.models.job import JobStatus, PipelineJob, PipelineStage
-from src.models.profile import UserProfile
-from src.scrapers.devto_scraper import fetch_devto_articles
-from src.scrapers.hn_scraper import fetch_hn_top_stories
-from src.scrapers.rss_scraper import parse_rss_feed
+from src.models.profile import UserProfile, scrape_focus_terms
+from src.scrapers import fetch_devto_articles, fetch_hn_top_stories, parse_rss_feed
 from src.workers.celery_app import celery_app
 from src.workers.runtime import ensure_db, mark_stage, run_async
 
@@ -114,15 +112,16 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         )
         return []
 
-    terms = profile.ranking_terms
+    terms = scrape_focus_terms(profile) or profile.ranking_terms
+    already_served = {str(url).rstrip("/") for url in profile.learning_path.served_urls}
     discovered = _collect_payloads(terms)
     article_ids: list[str] = []
     seen: set[str] = set()
     for payload in discovered:
         if len(article_ids) >= _MAX_ARTICLES:
             break
-        url = str(payload.get("url") or "")
-        if not url or url in seen:
+        url = str(payload.get("url") or "").rstrip("/")
+        if not url or url in seen or url in already_served:
             continue
         seen.add(url)
         article_id = await _upsert_thin_article(payload)

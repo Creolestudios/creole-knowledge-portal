@@ -63,10 +63,10 @@ jobs:
       - name: Format check
         run: uv run ruff format --check src
 
-      # mypy --strict and full pytest+coverage gate: enable once fetch-blogs CI debt is cleared.
-      # See wiki/logs/2026-08-11.md — known failures on feat/infra as of 2026-08-11.
-      - name: Unit tests (no coverage gate yet)
-        run: uv run pytest -q
+      - name: Unit tests (coverage >= 80%)
+        run: |
+          uv run coverage run -m pytest -q
+          uv run coverage report --fail-under=80
 
   infra-typecheck:
     name: infra — TypeScript typecheck

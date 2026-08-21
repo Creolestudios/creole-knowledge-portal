@@ -71,3 +71,53 @@ describe('PUT /api/admin/users', () => {
     expect(body).toEqual({ success: true, data: { user_id: 'u1', role: 'admin' } });
   });
 });
+
+const mockGetAuditLogs = vi.fn();
+
+vi.mock('@/lib/data/db', () => ({
+  getAuditLogs: (...args: any[]) => mockGetAuditLogs(...args),
+}));
+
+import { GET as GET_AUDIT_LOGS } from '../audit-logs/route';
+
+describe('GET /api/admin/audit-logs', () => {
+  it('returns 401 when the caller is not an admin', async () => {
+    mockRequireAdminUser.mockResolvedValue(null);
+    const res = await GET_AUDIT_LOGS(new Request('http://x/api/admin/audit-logs'));
+    expect(res.status).toBe(401);
+  });
+
+  it('returns audit logs sorted by most recent timestamp first', async () => {
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
+    mockGetAuditLogs.mockResolvedValue([
+      {
+        id: 'log-old',
+        action: 'SUBMITTED',
+        performedBy: 'dev@creolestudios.com',
+        timestamp: '2026-01-01T00:00:00Z',
+      },
+      {
+        id: 'log-new',
+        action: 'MODERATOR_APPROVED',
+        performedBy: 'admin@creolestudios.com',
+        timestamp: '2026-08-01T12:00:00Z',
+      },
+    ]);
+
+    const res = await GET_AUDIT_LOGS(new Request('http://x/api/admin/audit-logs'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.auditLogs[0].id).toBe('log-new');
+    expect(body.auditLogs[1].id).toBe('log-old');
+  });
+
+  it('returns 500 when loading audit logs fails', async () => {
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
+    mockGetAuditLogs.mockRejectedValue(new Error('db unavailable'));
+
+    const res = await GET_AUDIT_LOGS(new Request('http://x/api/admin/audit-logs'));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('db unavailable');
+  });
+});

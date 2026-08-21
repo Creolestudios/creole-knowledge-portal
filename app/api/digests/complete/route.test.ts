@@ -6,14 +6,6 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockImplementation(() => ({ auth: { getUser: mockGetUser } })),
 }));
 
-vi.mock('next/headers', () => ({
-  cookies: vi.fn().mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) }),
-}));
-
-vi.mock('@/lib/dev/mock-user', () => ({
-  mockUserFromCookie: vi.fn().mockReturnValue(null),
-}));
-
 let tableResponses: Record<string, any[]>;
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {

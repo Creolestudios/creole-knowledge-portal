@@ -2,27 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from fastapi import APIRouter, HTTPException, status
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-
-from src.core.config import get_auth_settings
-from src.models.profile import UserProfile
-from src.schemas.profile import ProfileOut, ProfileSyncOut
+from src.api.deps import InternalTokenDep
+from src.models.profile import UserProfile, apply_quiz_result
+from src.schemas.profile import ProfileOut, ProfileSyncOut, QuizResultIn
 from src.services.supabase_profiles import upsert_mongo_profile
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
-
-
-def _verify_internal_token(
-    x_internal_token: Annotated[str | None, Header()] = None,
-) -> None:
-    cfg = get_auth_settings()
-    if not x_internal_token or x_internal_token != cfg.SECRET_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid X-Internal-Token header.",
-        )
 
 
 def _profile_out(profile: UserProfile) -> ProfileOut:
@@ -45,7 +32,7 @@ def _profile_out(profile: UserProfile) -> ProfileOut:
 @router.post("/{user_id}/sync", response_model=ProfileSyncOut)
 async def sync_profile(
     user_id: str,
-    _: Annotated[None, Depends(_verify_internal_token)],
+    _: InternalTokenDep,
 ) -> ProfileSyncOut:
     """Copy Supabase preferences into Mongo without wiping learning_path."""
     existing = await UserProfile.find_one(UserProfile.user_id == user_id)
@@ -63,4 +50,19 @@ async def get_profile(user_id: str) -> ProfileOut:
     profile = await UserProfile.find_one(UserProfile.user_id == user_id)
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not mirrored.")
+    return _profile_out(profile)
+
+
+@router.post("/{user_id}/quiz", response_model=ProfileOut)
+async def record_quiz_result(
+    user_id: str,
+    payload: QuizResultIn,
+    _: InternalTokenDep,
+) -> ProfileOut:
+    """Apply a quiz score to the learning path for the next digest."""
+    profile = await UserProfile.find_one(UserProfile.user_id == user_id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not mirrored.")
+    apply_quiz_result(profile, payload.score, payload.total)
+    await profile.save()
     return _profile_out(profile)

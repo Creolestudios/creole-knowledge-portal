@@ -103,6 +103,32 @@ class TestArticleIdHelper:
         assert ranker_tasks._article_id(FakeArticle(None)) == ""  # type: ignore[arg-type]
 
 
+class TestLoadArticles:
+    @pytest.mark.asyncio
+    async def test_preserves_order_and_skips_missing_documents(self) -> None:
+        from src.models.article import Article
+
+        first = Article(
+            url="https://dev.to/first",
+            title="First",
+            source_domain="dev.to",
+            body_text="body " * 20,
+        )
+        second = Article(
+            url="https://dev.to/second",
+            title="Second",
+            source_domain="dev.to",
+            body_text="body " * 20,
+        )
+        await first.insert()
+        await second.insert()
+
+        loaded = await ranker_tasks._load_articles(
+            [str(first.id), "507f1f77bcf86cd799439011", str(second.id)]
+        )
+        assert [article.id for article in loaded] == [first.id, second.id]
+
+
 class TestRankArticlesForUser:
     @pytest.mark.asyncio
     async def test_returns_the_input_unchanged_when_the_profile_is_missing(

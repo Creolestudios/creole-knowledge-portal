@@ -1,13 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './route';
 
+const mockGetUser = vi.fn();
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn().mockResolvedValue({}),
-}));
-
-const mockResolveUserOrMock = vi.fn();
-vi.mock('@/lib/dev/mock-user', () => ({
-  resolveUserOrMock: (...args: any[]) => mockResolveUserOrMock(...args),
+  createClient: vi.fn().mockImplementation(() => ({ auth: { getUser: mockGetUser } })),
 }));
 
 vi.mock('@google/genai', () => ({
@@ -42,14 +38,14 @@ describe('GET /api/digests/trending', () => {
     mockDbResponses = [];
   });
 
-  it('returns 401 when there is no resolved user (real or mock)', async () => {
-    mockResolveUserOrMock.mockResolvedValue(null);
+  it('returns 401 when there is no session', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null } });
     const res = await GET(new Request('http://x'));
     expect(res.status).toBe(401);
   });
 
   it('returns cached trending blogs when fresh ones already exist', async () => {
-    mockResolveUserOrMock.mockResolvedValue({ id: 'user-1' });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
     const fresh = [
       { id: 't1', title: 'Trend 1', created_at: new Date().toISOString() },
       { id: 't2', title: 'Trend 2', created_at: new Date().toISOString() },

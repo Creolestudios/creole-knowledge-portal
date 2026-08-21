@@ -2,17 +2,24 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DashboardShell from './DashboardShell';
+import { computeStreak } from '@/lib/data/streak';
 
 const nav = vi.hoisted(() => ({
   push: vi.fn(),
   pathname: '/dashboard',
   tab: null as string | null,
+  date: null as string | null,
 }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: nav.push }),
   usePathname: () => nav.pathname,
-  useSearchParams: () => new URLSearchParams(nav.tab ? { tab: nav.tab } : {}),
+  useSearchParams: () => {
+    const params: Record<string, string> = {};
+    if (nav.tab) params.tab = nav.tab;
+    if (nav.date) params.date = nav.date;
+    return new URLSearchParams(params);
+  },
 }));
 
 vi.mock('next/link', () => ({
@@ -58,6 +65,8 @@ describe('DashboardShell', () => {
     vi.clearAllMocks();
     nav.pathname = '/dashboard';
     nav.tab = null;
+    nav.date = null;
+    vi.mocked(computeStreak).mockReturnValue(5);
   });
 
   it('renders the Daily Blog tab by default and shows the user name/domain', () => {
@@ -135,5 +144,49 @@ describe('DashboardShell', () => {
   it('falls back to the mock user/profile when none are provided', () => {
     render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
     expect(screen.getByTestId('daily-tab')).toBeInTheDocument();
+  });
+
+  it('uses singular day copy for a one-day streak', async () => {
+    vi.mocked(computeStreak).mockReturnValue(1);
+    render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
+    await waitFor(() => {
+      expect(screen.getByText('1 day')).toBeInTheDocument();
+    });
+  });
+
+  it('restores a past-blog date from the query string', () => {
+    nav.tab = 'past';
+    nav.date = '2026-08-01';
+    render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
+    expect(screen.getByTestId('past-tab')).toBeInTheDocument();
+  });
+
+  it('switches preview tabs locally without navigating', () => {
+    nav.pathname = '/preview';
+    render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
+    fireEvent.click(screen.getByRole('link', { name: /past blogs/i }));
+    expect(screen.getByTestId('past-tab')).toBeInTheDocument();
+    expect(nav.push).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('global-search'));
+    expect(nav.push).not.toHaveBeenCalled();
+    expect(screen.getByTestId('past-tab')).toBeInTheDocument();
+  });
+
+  it('closes the mobile drawer from the backdrop and tracks content scroll', () => {
+    const { container } = render(
+      <DashboardShell displayName="dev" displayDomain="x.com" footer={null} />,
+    );
+    fireEvent.click(screen.getByLabelText('Open menu'));
+    const backdrop = container.querySelector('.fixed.inset-0');
+    expect(backdrop).toBeTruthy();
+    fireEvent.click(backdrop!);
+
+    const scroller = container.querySelector('.overflow-y-auto') as HTMLDivElement;
+    Object.defineProperty(scroller, 'scrollHeight', { value: 1000, configurable: true });
+    Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true });
+    scroller.scrollTop = 400;
+    fireEvent.scroll(scroller);
+    Object.defineProperty(scroller, 'scrollHeight', { value: 200, configurable: true });
+    fireEvent.scroll(scroller);
   });
 });

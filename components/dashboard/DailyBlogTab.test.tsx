@@ -47,9 +47,36 @@ describe('DailyBlogTab', () => {
     await waitFor(() => {
       expect(screen.getByText('Today’s Brief')).toBeInTheDocument();
     });
-    expect(screen.getByText('20 min read')).toBeInTheDocument();
+    expect(screen.getByText(/Fetched Today/i)).toBeInTheDocument();
+    expect(screen.getByText(/20 min read/i)).toBeInTheDocument();
     expect(screen.getByText('react')).toBeInTheDocument();
     expect(screen.getByText('Start Quiz')).toBeInTheDocument();
+  });
+
+  it('labels a briefing scraped yesterday as Fetched Yesterday', async () => {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const key = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        blog: {
+          title: 'Older Brief',
+          content: 'x',
+          tags: [],
+          digest_date: key,
+          estimated_read_minutes: 18,
+        },
+      }),
+    });
+
+    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Fetched Yesterday/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText(/18 min read/i)).toBeInTheDocument();
   });
 
   it('generates a new briefing when "Synthesize Morning Briefing" is clicked', async () => {

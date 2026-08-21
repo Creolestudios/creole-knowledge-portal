@@ -8,15 +8,74 @@ describe('PastBlogsTab', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ blogs: [] }),
+    });
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
   });
 
-  it('shows the empty-state prompt with no date selected', () => {
+  it('lists every dated briefing and keeps the stored calendar day', async () => {
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('date=')) {
+        return {
+          ok: true,
+          json: async () => ({
+            blog: {
+              title: 'Redis queues',
+              content: 'body',
+              digest_date: '2026-07-18',
+            },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          blogs: [
+            { title: 'Redis queues', digest_date: '2026-07-18T18:30:00.000Z' },
+            { title: 'FastAPI auth', digest_date: '2026-07-17' },
+          ],
+        }),
+      };
+    }) as any;
+
     render(<PastBlogsTab />);
-    expect(screen.getByText(/Pick a highlighted date/)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Redis queues').length).toBeGreaterThan(0);
+      expect(screen.getByText('FastAPI auth')).toBeInTheDocument();
+    });
+    expect(screen.getAllByText('Fetched 2026-07-18').length).toBeGreaterThan(0);
+    expect(screen.getByText('Fetched 2026-07-17')).toBeInTheDocument();
+  });
+
+  it('shows the blog title above the fetched date in the reader', async () => {
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('date=')) {
+        return {
+          ok: true,
+          json: async () => ({
+            blog: {
+              title: 'Redis queues',
+              content: 'body',
+              digest_date: '2026-08-01',
+            },
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ blogs: [] }) };
+    }) as any;
+
+    render(<PastBlogsTab />);
+    fireEvent.click(screen.getAllByText('1')[0]);
+
+    const heading = await screen.findByText('Redis queues');
+    const dateLine = screen.getByText(/Fetched /);
+    expect(heading.compareDocumentPosition(dateLine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('renders the calendar grid with weekday headers', () => {
@@ -38,10 +97,15 @@ describe('PastBlogsTab', () => {
   });
 
   it('fetches and displays a blog when a past date is clicked', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ blog: { title: 'Old Post', content: 'Some content' } }),
-    });
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('date=')) {
+        return {
+          ok: true,
+          json: async () => ({ blog: { title: 'Old Post', content: 'Some content', digest_date: '2026-08-01' } }),
+        };
+      }
+      return { ok: true, json: async () => ({ blogs: [] }) };
+    }) as any;
 
     render(<PastBlogsTab />);
 
@@ -83,10 +147,15 @@ describe('PastBlogsTab', () => {
   });
 
   it('selects a day via keyboard (Enter key)', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ blog: { title: 'Keyboard Post', content: 'x' } }),
-    });
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('date=')) {
+        return {
+          ok: true,
+          json: async () => ({ blog: { title: 'Keyboard Post', content: 'x' } }),
+        };
+      }
+      return { ok: true, json: async () => ({ blogs: [] }) };
+    }) as any;
 
     render(<PastBlogsTab />);
 
@@ -99,31 +168,40 @@ describe('PastBlogsTab', () => {
   });
 
   it('ignores keyboard events on non-clickable (future) days', () => {
-    global.fetch = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ blogs: [] }) });
+    global.fetch = fetchMock;
     render(<PastBlogsTab />);
+    fetchMock.mockClear();
 
     fireEvent.click(screen.getByText('>'));
     const futureDay = screen.getAllByText('1')[0];
     fireEvent.keyDown(futureDay, { key: 'Enter' });
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('ignores non-activation keys on a clickable day', () => {
-    global.fetch = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ blogs: [] }) });
+    global.fetch = fetchMock;
     render(<PastBlogsTab />);
+    fetchMock.mockClear();
 
     const dayCells = screen.getAllByText('1');
     fireEvent.keyDown(dayCells[0], { key: 'Tab' });
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('auto-fetches and calls onSelect when a `selected` date prop is provided', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ blog: { title: 'Selected Post', content: 'x' } }),
-    });
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('date=')) {
+        return {
+          ok: true,
+          json: async () => ({ blog: { title: 'Selected Post', content: 'x' } }),
+        };
+      }
+      return { ok: true, json: async () => ({ blogs: [] }) };
+    }) as any;
     const onSelect = vi.fn();
 
     render(<PastBlogsTab selected="2026-07-01" onSelect={onSelect} />);

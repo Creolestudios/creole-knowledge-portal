@@ -61,4 +61,47 @@ describe('detectAiScore', () => {
 
     expect(humanResult.score).toBeLessThan(genericResult.score);
   });
+
+  it('strips style, script, tags and entities before scoring', async () => {
+    delete process.env.GEMINI_API_KEY;
+    const html = `
+      <style>.x{color:red}</style>
+      <script>alert(1)</script>
+      <h1>Title&nbsp;&amp; notes</h1>
+      <p>${HUMAN_LIKE_TEXT}</p>
+    `;
+    const result = await detectAiScore(html);
+    expect(result.score).toBeGreaterThanOrEqual(0);
+    expect(result.score).toBeLessThanOrEqual(100);
+    expect(geminiGenerate).not.toHaveBeenCalled();
+  });
+
+  it('uses Gemini when a key is present and parses the JSON score', async () => {
+    vi.resetModules();
+    process.env.GEMINI_API_KEY = 'test-key';
+    vi.doMock('./gemini-client', () => ({
+      geminiGenerate: vi.fn().mockResolvedValue('{"score": 22, "signals": ["personal voice"]}'),
+    }));
+    const { detectAiScore: detectWithKey } = await import('./ai-detection');
+    const { geminiGenerate: generate } = await import('./gemini-client');
+
+    const result = await detectWithKey(`<p>${HUMAN_LIKE_TEXT}</p>`);
+    expect(generate).toHaveBeenCalled();
+    expect(result.score).toBe(22);
+    expect(result.signals).toEqual(['personal voice']);
+  });
+
+  it('falls back to heuristic when Gemini throws', async () => {
+    vi.resetModules();
+    process.env.GEMINI_API_KEY = 'test-key';
+    vi.doMock('./gemini-client', () => ({
+      geminiGenerate: vi.fn().mockRejectedValue(new Error('quota')),
+    }));
+    const { detectAiScore: detectWithKey } = await import('./ai-detection');
+
+    const result = await detectWithKey(`<p>${HUMAN_LIKE_TEXT}</p>`);
+    expect(result.score).toBeGreaterThanOrEqual(0);
+    expect(result.score).toBeLessThanOrEqual(100);
+    expect(Array.isArray(result.signals)).toBe(true);
+  });
 });

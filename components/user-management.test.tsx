@@ -32,6 +32,18 @@ const sampleUsers = [
     future_interests: '',
     updated_at: '2026-08-02T00:00:00Z',
   },
+  {
+    user_id: 'u3',
+    email: 'partial@creolestudios.com',
+    role: 'user',
+    current_role: 'Intern',
+    years_of_experience: null as unknown as number,
+    current_tech_stack: [],
+    primary_tech_stack: ['Go'],
+    secondary_tech_stack: [],
+    future_interests: '',
+    updated_at: '2026-08-03T00:00:00Z',
+  },
 ];
 
 describe('UserManagement', () => {
@@ -171,5 +183,101 @@ describe('UserManagement', () => {
     await waitFor(() => {
       expect(screen.getByText('All Users')).toBeInTheDocument();
     });
+  });
+
+  it('returns to the user list via Cancel button', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    fireEvent.click(screen.getByText('Cancel'));
+    await waitFor(() => {
+      expect(screen.getByText('All Users')).toBeInTheDocument();
+    });
+  });
+
+  it('adds and removes secondary tech stack tags via comma key', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    const input = screen.getByPlaceholderText(/Type an additional skill/);
+    fireEvent.change(input, { target: { value: 'GraphQL,' } });
+    fireEvent.keyDown(input, { key: ',' });
+    expect(screen.getByText('GraphQL')).toBeInTheDocument();
+
+    const tag = screen.getByText('GraphQL').closest('span')!;
+    fireEvent.click(tag.querySelector('button')!);
+    await waitFor(() => {
+      expect(screen.queryByText('GraphQL')).not.toBeInTheDocument();
+    });
+  });
+
+  it('edits years of experience and future interests fields', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    const yearsInput = screen.getByDisplayValue('3');
+    fireEvent.change(yearsInput, { target: { value: '5' } });
+    expect(screen.getByDisplayValue('5')).toBeInTheDocument();
+
+    fireEvent.change(yearsInput, { target: { value: '' } });
+    expect(screen.getByDisplayValue('0')).toBeInTheDocument();
+
+    const textarea = screen.getByPlaceholderText(/Wants to learn AI/);
+    fireEvent.change(textarea, { target: { value: 'Cloud architecture' } });
+    expect(screen.getByDisplayValue('Cloud architecture')).toBeInTheDocument();
+  });
+
+  it('adds primary tech tag with comma key and ignores duplicates', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    const input = screen.getByPlaceholderText(/Type a core skill/);
+
+    // Add via comma key
+    fireEvent.change(input, { target: { value: 'Vue,' } });
+    fireEvent.keyDown(input, { key: ',' });
+    expect(screen.getByText('Vue')).toBeInTheDocument();
+
+    // Duplicate should not add again
+    fireEvent.change(input, { target: { value: 'Vue,' } });
+    fireEvent.keyDown(input, { key: ',' });
+    expect(screen.getAllByText('Vue')).toHaveLength(1);
+  });
+
+  it('filters users by future_interests', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    fireEvent.change(screen.getByPlaceholderText(/Search by email/), {
+      target: { value: 'AI' },
+    });
+
+    expect(screen.getByText('complete@creolestudios.com')).toBeInTheDocument();
+    expect(screen.queryByText('incomplete@creolestudios.com')).not.toBeInTheDocument();
+  });
+
+  it('changes current_role field', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    const roleInput = screen.getByDisplayValue('Frontend Dev');
+    fireEvent.change(roleInput, { target: { value: 'Backend Dev' } });
+    expect(screen.getByDisplayValue('Backend Dev')).toBeInTheDocument();
   });
 });

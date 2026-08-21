@@ -120,11 +120,14 @@ addopts = "--tb=short -q"
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["tests/*", "src/config/source_registry.py"]
+relative_files = true
+omit = ["tests/**"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 80
+# fail_under is enforced in local/CI quality gates, not during Sonar XML export
+# (a non-zero exit there used to abort coverage.xml before path rewrite).
+fail_under = 0
 
 # ── pyright ───────────────────────────────────────────────────────────────────
 [tool.pyright]

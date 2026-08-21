@@ -12,6 +12,7 @@ import pytest
 
 from src.ai_pipeline import embeddings as embeddings_mod
 from src.ai_pipeline import reranker as reranker_mod
+from src.extractors import embedding as extractor_embed
 from src.models.schemas import Article, UserProfile
 from src.scheduler import jobs as jobs_mod
 from src.storage import mongodb as mongodb_mod
@@ -126,6 +127,85 @@ class TestEmbeddings:
         self, a: list[float], b: list[float], expected: float
     ) -> None:
         assert embeddings_mod.calculate_cosine_similarity(a, b) == pytest.approx(expected)
+
+    def test_cosine_similarity_returns_normalized_dot_product(self) -> None:
+        assert embeddings_mod.calculate_cosine_similarity([3.0, 4.0], [3.0, 4.0]) == pytest.approx(
+            1.0
+        )
+        assert embeddings_mod.calculate_cosine_similarity([3.0, 4.0], [4.0, 3.0]) == pytest.approx(
+            24 / 25
+        )
+
+    def test_warns_when_module_loads_without_gemini_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import importlib
+
+        monkeypatch.setattr(embeddings_mod.settings, "GEMINI_API_KEY", "")
+        reloaded = importlib.reload(embeddings_mod)
+        assert reloaded.get_text_embedding("text") == [0.0] * 768
+
+
+class TestExtractorEmbedText:
+    def test_returns_empty_for_blank_text(self) -> None:
+        assert extractor_embed.embed_text("   ") == []
+
+    def test_returns_empty_when_gemini_key_is_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            extractor_embed,
+            "get_llm_settings",
+            lambda: type("S", (), {"GEMINI_API_KEY": "", "GEMINI_EMBED_MODEL": "models/x"})(),
+        )
+        assert extractor_embed.embed_text("hello world") == []
+
+    def test_parses_embedding_list_from_dict_response(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            extractor_embed,
+            "get_llm_settings",
+            lambda: type(
+                "S",
+                (),
+                {"GEMINI_API_KEY": "key", "GEMINI_EMBED_MODEL": "models/text-embedding-004"},
+            )(),
+        )
+        import google.generativeai as genai
+
+        monkeypatch.setattr(genai, "configure", lambda **_: None)
+        monkeypatch.setattr(genai, "embed_content", lambda **_: {"embedding": [1, 2, 3]})
+        assert extractor_embed.embed_text("  hello  ") == [1.0, 2.0, 3.0]
+
+    def test_returns_empty_when_response_is_not_a_dict(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            extractor_embed,
+            "get_llm_settings",
+            lambda: type("S", (), {"GEMINI_API_KEY": "key", "GEMINI_EMBED_MODEL": "models/x"})(),
+        )
+        import google.generativeai as genai
+
+        monkeypatch.setattr(genai, "configure", lambda **_: None)
+        monkeypatch.setattr(genai, "embed_content", lambda **_: object())
+        assert extractor_embed.embed_text("hello") == []
+
+    def test_returns_empty_when_gemini_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            extractor_embed,
+            "get_llm_settings",
+            lambda: type("S", (), {"GEMINI_API_KEY": "key", "GEMINI_EMBED_MODEL": "models/x"})(),
+        )
+        import google.generativeai as genai
+
+        def _boom(**_: object) -> None:
+            raise RuntimeError("quota")
+
+        monkeypatch.setattr(genai, "configure", lambda **_: None)
+        monkeypatch.setattr(genai, "embed_content", _boom)
+        assert extractor_embed.embed_text("hello") == []
 
 
 # ── reranker ──────────────────────────────────────────────────────────────────
@@ -480,6 +560,23 @@ class TestSchedulerJobs:
         await jobs_mod.trigger_daily_briefings_job()
         assert ran == ["good"]
 
+    def test_enqueue_user_pipeline_applies_the_celery_chain(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        calls: dict[str, object] = {}
+
+        class FakeChain:
+            def apply_async(self) -> None:
+                calls["async"] = True
+
+        def _build(user_id: str) -> FakeChain:
+            calls["user_id"] = user_id
+            return FakeChain()
+
+        monkeypatch.setattr("src.api.routes.pipeline.build_pipeline_chain", _build)
+        jobs_mod.enqueue_user_pipeline("u42")
+        assert calls == {"user_id": "u42", "async": True}
+
 
 # ── storage / mongo manager ───────────────────────────────────────────────────
 
@@ -687,6 +784,53 @@ class TestCoreDb:
         db_mod.close_db()
         assert closed == [True]
 
+    @pytest.mark.asyncio
+    async def test_init_db_is_a_noop_when_already_ready(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.core import db as db_mod
+
+        monkeypatch.setattr(db_mod, "_initialized", True)
+        monkeypatch.setattr(db_mod, "_client", object())
+        called: list[int] = []
+        monkeypatch.setattr(db_mod, "get_mongo_settings", lambda: called.append(1))
+        await db_mod.init_db()
+        assert called == []
+
+    @pytest.mark.asyncio
+    async def test_init_db_connects_and_initialises_beanie(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.core import db as db_mod
+
+        class FakeSettings:
+            URI = "mongodb://localhost:27017"
+            DB_NAME = "knowledge_portal"
+
+        class FakeClient:
+            def __init__(self, uri: str, **_: object) -> None:
+                self.uri = uri
+
+            def __getitem__(self, name: str) -> str:
+                return name
+
+        beanie_calls: list[dict[str, object]] = []
+
+        async def fake_init_beanie(**kwargs: object) -> None:
+            beanie_calls.append(kwargs)
+
+        monkeypatch.setattr(db_mod, "_initialized", False)
+        monkeypatch.setattr(db_mod, "_client", None)
+        monkeypatch.setattr(db_mod, "get_mongo_settings", lambda: FakeSettings())
+        monkeypatch.setattr(db_mod, "AsyncIOMotorClient", FakeClient)
+        monkeypatch.setattr(db_mod, "init_beanie", fake_init_beanie)
+
+        await db_mod.init_db()
+        assert db_mod._initialized is True
+        assert beanie_calls
+        db_mod._initialized = False
+        db_mod._client = None
+
 
 class TestCoreScheduler:
     def test_enqueue_sends_the_scrape_task_to_celery(
@@ -740,3 +884,138 @@ class TestCoreScheduler:
 
         monkeypatch.setattr(sched_mod, "_scheduler", None)
         sched_mod.stop_scheduler()  # must not raise
+
+
+class TestCeleryApp:
+    def test_pipeline_queues_and_json_serialization(self) -> None:
+        import src.workers.celery_app as celery_mod
+        from src.workers.celery_app import QUEUES, _QUEUES, celery_app
+
+        assert celery_app.main == "knowledge_portal"
+        assert celery_app.conf.task_default_queue == "scrape_queue"
+        assert celery_app.conf.task_serializer == "json"
+        assert celery_app.conf.result_serializer == "json"
+        assert celery_app.conf.accept_content == ["json"]
+        assert celery_app.conf.enable_utc is True
+        assert celery_app.conf.task_time_limit == 180
+        assert QUEUES == _QUEUES
+        assert celery_mod.__all__ == ["celery_app", "QUEUES"]
+        assert tuple(_QUEUES) == (
+            "scrape_queue",
+            "extract_queue",
+            "rank_queue",
+            "generate_queue",
+            "publish_queue",
+        )
+        includes = set(celery_app.conf.include or [])
+        assert "src.workers.scraper_tasks" in includes
+        assert "src.workers.publisher_tasks" in includes
+
+
+class TestConftestShim:
+    def test_list_collection_names_compat_strips_kwargs(self) -> None:
+        import mongomock
+        from tests.conftest import _list_collection_names_compat
+
+        client = mongomock.MongoClient()
+        db = client["test_db"]
+        db.create_collection("col1")
+
+        names = _list_collection_names_compat(db, authorizedCollections=True, nameOnly=False)
+        assert "col1" in names
+
+
+# ── FastAPI application factory (src/main.py) ───────────────────────────────────
+
+
+class TestFastAPIApplicationFactory:
+
+    def test_unique_op_id_uses_route_tag_and_name(self) -> None:
+        from types import SimpleNamespace
+
+        from src.main import _unique_op_id
+
+        tagged = SimpleNamespace(tags=["health"], name="live")
+        untagged = SimpleNamespace(tags=[], name="anonymous")
+
+        assert _unique_op_id(tagged) == "health-live"  # type: ignore[arg-type]
+        assert _unique_op_id(untagged) == "default-anonymous"  # type: ignore[arg-type]
+
+    def test_create_app_mounts_the_api_router_under_the_configured_prefix(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        from src.core.config import AppSettings, Environment
+        import src.main as main_mod
+
+        cfg = AppSettings(ENVIRONMENT=Environment.LOCAL, API_V1_STR="/api/v1")
+        monkeypatch.setattr(main_mod, "get_app_settings", lambda: cfg)
+
+        client = TestClient(main_mod.create_app(), raise_server_exceptions=False)
+        assert client.get("/api/v1/health/live").status_code == 200
+
+    def test_create_app_initializes_sentry_outside_local_dev(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import sys
+        from types import SimpleNamespace
+
+        from pydantic import AnyUrl
+
+        from src.core.config import AppSettings, Environment
+        import src.main as main_mod
+
+        inits: list[dict[str, object]] = []
+        fake_sentry = SimpleNamespace(init=lambda **kwargs: inits.append(kwargs))
+        monkeypatch.setitem(sys.modules, "sentry_sdk", fake_sentry)
+
+        cfg = AppSettings(
+            ENVIRONMENT=Environment.PRODUCTION,
+            SENTRY_DSN=AnyUrl("https://sentry.example/1"),
+        )
+        monkeypatch.setattr(main_mod, "get_app_settings", lambda: cfg)
+
+        main_mod.create_app()
+        assert inits
+        assert str(inits[0]["dsn"]) == "https://sentry.example/1"
+
+    @pytest.mark.asyncio
+    async def test_lifespan_runs_startup_and_shutdown_hooks(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi import FastAPI
+
+        from src.core import scheduler as sched_mod
+        from src.main import lifespan
+
+        events: list[str] = []
+
+        async def _init_db() -> None:
+            events.append("init_db")
+
+        def _close_db() -> None:
+            events.append("close_db")
+
+        def _start_scheduler() -> None:
+            events.append("start_scheduler")
+
+        def _stop_scheduler() -> None:
+            events.append("stop_scheduler")
+
+        monkeypatch.setattr("src.main.init_db", _init_db)
+        monkeypatch.setattr("src.main.close_db", _close_db)
+        monkeypatch.setattr(sched_mod, "start_scheduler", _start_scheduler)
+        monkeypatch.setattr(sched_mod, "stop_scheduler", _stop_scheduler)
+
+        async with lifespan(FastAPI()):
+            events.append("running")
+
+        assert events == ["init_db", "start_scheduler", "running", "stop_scheduler", "close_db"]
+
+    def test_module_level_app_is_a_fastapi_instance(self) -> None:
+        from fastapi import FastAPI
+
+        from src.main import app
+
+        assert isinstance(app, FastAPI)

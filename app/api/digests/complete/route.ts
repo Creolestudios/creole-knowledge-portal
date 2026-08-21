@@ -1,21 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
-import { cookies } from 'next/headers';
-import { mockUserFromCookie } from '@/lib/dev/mock-user';
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    let { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      const cookieStore = await cookies();
-      const mockUser = mockUserFromCookie(cookieStore.get('mock-user')?.value);
-      if (mockUser) {
-        user = mockUser as any;
-      }
-    }
+    const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

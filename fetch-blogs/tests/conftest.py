@@ -26,10 +26,14 @@ from src.models.profile import UserProfile
 _original_list_collection_names = mongomock.database.Database.list_collection_names
 
 
-def _list_collection_names_compat(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+from typing import Any
+
+
+def _list_collection_names_compat(self: mongomock.database.Database, *args: Any, **kwargs: Any) -> list[str]:
     kwargs.pop("authorizedCollections", None)
     kwargs.pop("nameOnly", None)
-    return _original_list_collection_names(self, *args, **kwargs)
+    return _original_list_collection_names(self, *args, **kwargs)  # type: ignore[no-any-return]
+
 
 
 mongomock.database.Database.list_collection_names = _list_collection_names_compat  # type: ignore[assignment]

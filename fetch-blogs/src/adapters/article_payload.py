@@ -43,6 +43,15 @@ def _domain_from_url(url: str, explicit: object) -> str:
     return parsed.netloc.replace("www.", "")
 
 
+def _parse_float(value: object, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return default
+
+
 def to_article_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Convert a scraper dict into Article constructor kwargs."""
     url = str(payload.get("url") or "").strip()
@@ -68,8 +77,8 @@ def to_article_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
         "summary": summary,
         "body_text": "",
         "topics": topics,
-        "engagement_score": float(engagement) if engagement is not None else 0.0,
-        "authority_score": float(authority) if authority is not None else 0.5,
+        "engagement_score": _parse_float(engagement, 0.0),
+        "authority_score": _parse_float(authority, 0.5),
         "robots_allowed": bool(payload.get("robots_allowed", True)),
     }
 
@@ -77,12 +86,13 @@ def to_article_fields(payload: Mapping[str, Any]) -> dict[str, Any]:
 def legacy_schema_to_payload(article: Any) -> dict[str, Any]:
     """Convert legacy ``models.schemas.Article`` instances into adapter input."""
     return {
-        "url": article.url,
-        "title": article.title,
-        "author": article.author,
-        "source_domain": article.source_domain,
-        "published_at": article.published_at,
+        "url": getattr(article, "url", ""),
+        "title": getattr(article, "title", ""),
+        "author": getattr(article, "author", ""),
+        "source_domain": getattr(article, "source_domain", ""),
+        "published_at": getattr(article, "published_at", None),
         "body_text": "",
-        "description": getattr(article, "body_text", "") or "",
-        "tags": getattr(article, "tags", []) or [],
+        "description": getattr(article, "body_text", "") or getattr(article, "summary", "") or "",
+        "tags": getattr(article, "tags", []) or getattr(article, "topics", []) or [],
     }
+

@@ -112,6 +112,50 @@ describe('POST /api/quizzes/evaluate', () => {
     expect(body.pointsAwarded).toBe(2);
   });
 
+  it('treats a missing correct answer as an incorrect single-choice response', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    tableResponses = {
+      quiz_attempts: [{ data: { status: 'in_progress' }, error: null }],
+      quiz_questions: [{ data: { question_type: 'single', correct_answers: [] }, error: null }],
+      quiz_answers: [{ data: null, error: null }, { error: null }],
+    };
+
+    const res = await POST(mockRequest({ attemptId: 'a1', questionId: 'q1', userAnswer: 'b' }));
+    const body = await res.json();
+    expect(body.isCorrect).toBe(false);
+    expect(body.pointsAwarded).toBe(0);
+  });
+
+  it('normalizes a non-array multiple-choice answer before comparing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    tableResponses = {
+      quiz_attempts: [{ data: { status: 'in_progress' }, error: null }],
+      quiz_questions: [
+        { data: { question_type: 'multiple', correct_answers: ['A'] }, error: null },
+      ],
+      quiz_answers: [{ data: { id: 'existing-answer' }, error: null }, { error: null }],
+    };
+
+    const res = await POST(mockRequest({ attemptId: 'a1', questionId: 'q1', userAnswer: 'a' }));
+    const body = await res.json();
+    expect(body.isCorrect).toBe(true);
+    expect(body.pointsAwarded).toBe(2);
+  });
+
+  it('returns 500 when evaluation throws', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    tableResponses = {
+      quiz_attempts: [{ data: { status: 'in_progress' }, error: null }],
+      quiz_questions: [
+        { data: { question_type: 'conceptual', question: 'Explain X', correct_answers: ['topic'] }, error: null },
+      ],
+    };
+    mockEvaluateDescriptiveAnswer.mockRejectedValue(new Error('evaluator down'));
+
+    const res = await POST(mockRequest({ attemptId: 'a1', questionId: 'q1', userAnswer: 'my answer' }));
+    expect(res.status).toBe(500);
+  });
+
   it('delegates conceptual/descriptive grading to the AI evaluator', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     tableResponses = {

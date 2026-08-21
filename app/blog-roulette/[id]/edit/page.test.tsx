@@ -49,12 +49,26 @@ vi.mock('@tinymce/tinymce-react', () => ({
 vi.mock('@/components/blog-roulette/checklist-sidebar', () => ({
   default: ({ result }: any) => <div data-testid="checklist">{result.passed ? 'PASS' : 'INCOMPLETE'}</div>,
 }));
-vi.mock('@/components/blog-roulette/preview-pane', () => ({
-  default: () => <div data-testid="preview-pane" />,
+vi.mock('mermaid', () => ({
+  default: {
+    initialize: vi.fn(),
+    render: vi.fn().mockResolvedValue({ svg: '<svg>fake-diagram</svg>' }),
+  },
 }));
-vi.mock('@/components/blog-roulette/published-blog-view', () => ({
-  default: ({ blog }: any) => <div data-testid="published-view">{blog.title}</div>,
-}));
+vi.mock('motion/react', () => {
+  const MotionStub = ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) => {
+    const { initial, animate, transition, ...domProps } = props;
+    return <div {...domProps}>{children}</div>;
+  };
+  return {
+    motion: new Proxy(
+      {},
+      {
+        get: () => MotionStub,
+      },
+    ),
+  };
+});
 
 function apiBlog(overrides: Partial<any> = {}) {
   return {
@@ -133,7 +147,8 @@ describe('BlogEditPage', () => {
     render(<BlogEditPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('published-view')).toBeInTheDocument();
+      expect(screen.getByText('My Draft Blog')).toBeInTheDocument();
+      expect(screen.getByText('Published')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('tinymce-editor')).not.toBeInTheDocument();
   });
@@ -197,7 +212,7 @@ describe('BlogEditPage', () => {
     await waitFor(() => screen.getByTestId('tinymce-editor'));
 
     fireEvent.click(screen.getByText('Preview'));
-    expect(screen.getByTestId('preview-pane')).toBeInTheDocument();
+    expect(screen.getByText('Blog Preview')).toBeInTheDocument();
     expect(screen.queryByTestId('tinymce-editor')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Editor'));
@@ -270,5 +285,143 @@ describe('BlogEditPage', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('https://cdn.x/img.png')).toBeInTheDocument();
     });
+  });
+});
+
+import PreviewPane from '@/components/blog-roulette/preview-pane';
+
+describe('PreviewPane', () => {
+  const baseProps = {
+    html: '<p>Hello <strong>world</strong></p>',
+    title: 'Blog Title',
+    seoTitle: '',
+    tldr: '',
+    aiSignals: [] as string[],
+    readingTime: 4,
+  };
+
+  it('shows the preview chrome, word count, and idle AI detection copy', () => {
+    render(<PreviewPane {...baseProps} aiScore={null} />);
+
+    expect(screen.getByText('Blog Preview')).toBeInTheDocument();
+    expect(screen.getByText(/4 min read/)).toBeInTheDocument();
+    expect(screen.getByText('2 words')).toBeInTheDocument();
+    expect(screen.getByText(/AI detection not yet run/)).toBeInTheDocument();
+    expect(screen.getByText(/Hello/)).toBeInTheDocument();
+    expect(screen.getByText('world')).toBeInTheDocument();
+  });
+
+  it('renders safe, warn, and danger AI score bands', () => {
+    const { rerender } = render(<PreviewPane {...baseProps} aiScore={25} />);
+    expect(screen.getByText(/looks human-written/)).toBeInTheDocument();
+
+    rerender(<PreviewPane {...baseProps} aiScore={65} />);
+    expect(screen.getByText(/borderline, review suggested/)).toBeInTheDocument();
+
+    rerender(<PreviewPane {...baseProps} aiScore={90} />);
+    expect(screen.getByText(/likely AI-generated/)).toBeInTheDocument();
+  });
+
+  it('lists AI signals and SEO fallbacks', () => {
+    render(
+      <PreviewPane
+        {...baseProps}
+        aiScore={40}
+        aiSignals={['Repetitive phrasing']}
+        seoTitle="SEO Headline"
+        tldr=""
+      />,
+    );
+
+    expect(screen.getByText('Repetitive phrasing')).toBeInTheDocument();
+    expect(screen.getByText('SEO Headline')).toBeInTheDocument();
+    expect(screen.getByText('No TL;DR provided.')).toBeInTheDocument();
+  });
+
+  it('uses the blog title and TL;DR when SEO fields are provided', () => {
+    render(
+      <PreviewPane
+        {...baseProps}
+        aiScore={10}
+        seoTitle=""
+        tldr="A concise summary."
+      />,
+    );
+
+    expect(screen.getByText('Blog Title')).toBeInTheDocument();
+    expect(screen.getByText('A concise summary.')).toBeInTheDocument();
+  });
+
+  it('shows a placeholder when sanitized html is empty', () => {
+    render(<PreviewPane {...baseProps} html="" aiScore={null} />);
+    expect(screen.getByText('No content yet.')).toBeInTheDocument();
+  });
+});
+
+import PublishedBlogView from '@/components/blog-roulette/published-blog-view';
+import type { RouletteBlog } from '@/lib/blog-roulette/types';
+
+function publishedBlog(overrides: Partial<RouletteBlog> = {}): RouletteBlog {
+  return {
+    id: 'blog-1',
+    author_id: 'u1',
+    title: 'Published Post',
+    slug: 'published-post',
+    body_html: '<p>Article body</p>',
+    body_md: null,
+    seo_title: 'SEO title',
+    meta_description: 'Meta',
+    cover_image_url: null,
+    tldr: null,
+    word_count: 120,
+    reading_time: 6,
+    ai_score: 20,
+    status: 'PUBLISHED',
+    submitted_at: null,
+    published_at: '2026-08-01T00:00:00Z',
+    drive_url: null,
+    drive_file_id: null,
+    created_at: '2026-08-01T00:00:00Z',
+    updated_at: '2026-08-01T00:00:00Z',
+    ...overrides,
+  };
+}
+
+describe('PublishedBlogView', () => {
+  it('renders published metadata, tags, cover image, and TL;DR', () => {
+    render(
+      <PublishedBlogView
+        blog={publishedBlog({
+          cover_image_url: 'https://cdn.example/cover.jpg',
+          tldr: 'Quick summary',
+        })}
+        tags={['react', 'ai']}
+      />,
+    );
+
+    expect(screen.getByText('Published Post')).toBeInTheDocument();
+    expect(screen.getByText('Published')).toBeInTheDocument();
+    expect(screen.getByText('Back to Roulette')).toBeInTheDocument();
+    expect(screen.getByText('react')).toBeInTheDocument();
+    expect(screen.getByText('Quick summary')).toBeInTheDocument();
+    expect(screen.getByAltText('Published Post')).toHaveAttribute('src', 'https://cdn.example/cover.jpg');
+    expect(screen.getByText('Article body')).toBeInTheDocument();
+    expect(screen.getByText('6 min read')).toBeInTheDocument();
+    expect(screen.getByText('120 words')).toBeInTheDocument();
+  });
+
+  it('shows publishing and passed-quiz status labels', () => {
+    const { rerender } = render(
+      <PublishedBlogView blog={publishedBlog({ status: 'PUBLISHING' })} tags={[]} />,
+    );
+    expect(screen.getByText('Publishing')).toBeInTheDocument();
+
+    rerender(<PublishedBlogView blog={publishedBlog({ status: 'PASSED' })} tags={[]} />);
+    expect(screen.getByText('Passed Quiz')).toBeInTheDocument();
+  });
+
+  it('renders a placeholder when the body html is empty', () => {
+    render(<PublishedBlogView blog={publishedBlog({ body_html: '' })} tags={[]} />);
+    expect(screen.getByText('No content.')).toBeInTheDocument();
   });
 });

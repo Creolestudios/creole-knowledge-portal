@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import structlog
 
 from src.models.digest import DailyDigest
-from src.models.profile import UserProfile
+from src.models.profile import UserProfile, topic_tokens_from_text
 
 log = structlog.get_logger(__name__)
 
@@ -48,6 +48,11 @@ async def record_served_urls(digest: DailyDigest, profile: UserProfile) -> None:
         if url not in served:
             served.append(url)
     profile.learning_path.served_urls = served[-_SERVED_URL_CAP:]
-    profile.learning_path.last_topics = [source.title for source in digest.content.sources[:5]]
+    themes: list[str] = []
+    for source in digest.content.sources:
+        themes.extend(topic_tokens_from_text(source.title))
+    profile.learning_path.last_topics = list(dict.fromkeys(themes))[:5] or [
+        source.title for source in digest.content.sources[:5]
+    ]
     profile.updated_at = datetime.now(UTC)
     await profile.save()

@@ -59,27 +59,21 @@ describe('POST /api/quizzes/submit', () => {
     tableResponses = {};
   });
 
-  it('returns 401 with no session and no mock-user cookie', async () => {
+  it('returns 401 with no session', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
     const res = await POST(mockRequest({ quizId: 'blog-1', answers: [], timeTakenSec: 30 }));
     expect(res.status).toBe(401);
   });
 
-  it('authenticates via the mock-user cookie bypass when there is no session', async () => {
+  it('does not authenticate via a mock-user cookie when there is no session', async () => {
     mockGetUser.mockResolvedValue({ data: { user: null } });
-    tableResponses = {
-      blogs: [{ data: quizBlog(), error: null }],
-      user_profiles: [{ data: null, error: { message: 'no row' } }],
-      streaks: [{ data: null, error: { message: 'no row' } }],
-    };
-
     const res = await POST(
       mockRequest(
         { quizId: 'blog-1', answers: [{ questionId: 'q1', userAnswer: 'b' }], timeTakenSec: 30 },
         'mock-user=true',
       ),
     );
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
   });
 
   it('validates required fields', async () => {

@@ -33,6 +33,15 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'clover', 'json', 'lcov'],
       reportOnFailure: true,
+      exclude: [
+        '**/*.{test,spec}.{ts,tsx}',
+        '**/vitest.setup.ts',
+        'node_modules/**',
+        '.next/**',
+        'tests/e2e/**',
+        'infra/**',
+        'fetch-blogs/**',
+      ],
     },
   },
 });

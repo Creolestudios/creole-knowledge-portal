@@ -6,7 +6,7 @@ import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 describe('PremiumMarkdownRenderer', () => {
   it('renders headings h1-h3', () => {
     render(<PremiumMarkdownRenderer content={'# H1\n## H2\n### H3'} />);
-    expect(screen.getByRole('heading', { level: 1, name: 'H1' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'H1' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'H2' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'H3' })).toBeInTheDocument();
   });
@@ -67,5 +67,24 @@ describe('PremiumMarkdownRenderer', () => {
     render(<PremiumMarkdownRenderer content={'See [uv](https://docs.astral.sh/uv/).'} />);
     const link = screen.getByRole('link', { name: /uv/i });
     expect(link).toHaveAttribute('href', 'https://docs.astral.sh/uv/');
+  });
+
+  it('returns nothing for empty content and skips chrome headings', () => {
+    const { container } = render(<PremiumMarkdownRenderer content="" />);
+    expect(container.querySelector('p')).toBeNull();
+
+    render(<PremiumMarkdownRenderer content={'# Copy link\n#### Real heading\n1. First\ncurl -LsSf https://example.com/install.sh'} />);
+    expect(screen.getByRole('heading', { name: 'Real heading' })).toBeInTheDocument();
+    expect(screen.getByText('First')).toBeInTheDocument();
+    expect(screen.getByText('curl -LsSf https://example.com/install.sh')).toBeInTheDocument();
+  });
+
+  it('keeps already-structured markdown and splits long flattened prose', () => {
+    render(<PremiumMarkdownRenderer content={'Line one\n\n\nLine two\n\nLine three'} />);
+    expect(screen.getByText('Line one')).toBeInTheDocument();
+
+    const long = 'A'.repeat(40) + '. Next sentence starts here and keeps going so the flattened body is over two hundred eighty characters in total for the splitter. More words follow after that period.';
+    render(<PremiumMarkdownRenderer content={long} />);
+    expect(screen.getByText(/Next sentence starts here/)).toBeInTheDocument();
   });
 });

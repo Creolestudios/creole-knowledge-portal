@@ -11,72 +11,23 @@ export async function GET(request: Request) {
     
     if (user) {
       userId = user.id;
-    } else {
-      // Mock bypass support for local testing/CI
-      const isMock = request.headers.get('cookie')?.includes('mock-user=true') || 
-                     request.url.includes('mockUser=true');
-      if (isMock) {
-        userId = 'b632b1ab-71e5-48ca-ab5d-b431c4e65004';
-      }
     }
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 2. Default/Mock stats structure
     let xp = 0;
     let level = 1;
     let coins = 0;
     let currentStreak = 0;
     let longestStreak = 0;
     let lastActiveDate = '';
-    let streakFreezes = 1;
+    let streakFreezes = 0;
     let badges: any[] = [];
     
     let dailyQuizCompleted = false;
     let dailyQuizResult: any = null;
-
-    // Load from cookie if exists (for mock/local persistence across reloads!)
-    const cookieVal = request.headers.get('cookie');
-    let savedStats: any = null;
-    if (cookieVal) {
-      const match = cookieVal.match(/mock_gamification_stats=([^;]+)/);
-      if (match) {
-        try {
-          savedStats = JSON.parse(decodeURIComponent(match[1]));
-        } catch (e) {}
-      }
-    }
-
-    if (savedStats) {
-      xp = savedStats.xp ?? 0;
-      level = savedStats.level ?? 1;
-      coins = savedStats.coins ?? 0;
-      currentStreak = savedStats.currentStreak ?? 0;
-      longestStreak = savedStats.longestStreak ?? 0;
-      lastActiveDate = savedStats.lastActiveDate ?? '';
-      badges = savedStats.badges ?? [];
-      dailyQuizCompleted = savedStats.dailyQuizCompleted ?? false;
-      dailyQuizResult = savedStats.dailyQuizResult ?? null;
-    } else {
-      // Default fallback starter values
-      xp = 320;
-      level = 2;
-      coins = 85;
-      currentStreak = 3;
-      longestStreak = 7;
-      lastActiveDate = new Date().toISOString().split('T')[0];
-      badges = [
-        {
-          id: "knowledge-contributor",
-          name: "Knowledge Contributor",
-          description: "Synthesized or logged 5 technical activities.",
-          rarity: "common",
-          unlocked_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString()
-        }
-      ];
-    }
 
     let hasRealDbRecords = false;
 
@@ -128,7 +79,7 @@ export async function GET(request: Request) {
         }));
       }
     } catch (dbErr) {
-      console.warn('[DB Error] Failed to read gamification tables, falling back to fully simulated mock dataset.', dbErr);
+      console.warn('[DB Error] Failed to read gamification tables.', dbErr);
     }
 
     // 4. Check if daily quiz has already been completed today

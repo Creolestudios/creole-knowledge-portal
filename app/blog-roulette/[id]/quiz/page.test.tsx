@@ -22,9 +22,42 @@ vi.mock('@/components/dashboard/DashboardShell', () => ({
   default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));
 
+// Framer Motion's AnimatePresence(mode="wait") can hang exit animations in jsdom,
+// leaving the UI stuck on "Preparing quiz..." forever. Use plain elements in tests.
+vi.mock('motion/react', () => {
+  const passthrough = ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) => {
+    const {
+      initial: _i,
+      animate: _a,
+      exit: _e,
+      transition: _t,
+      layoutId: _l,
+      ...rest
+    } = props;
+    return <div {...rest}>{children}</div>;
+  };
+  return {
+    motion: new Proxy(
+      {},
+      {
+        get: () => passthrough,
+      },
+    ),
+    AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  };
+});
+
+function urlOf(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  if (typeof Request !== 'undefined' && input instanceof Request) return input.url;
+  return String(input);
+}
+
 function fetchImpl(map: Record<string, any>) {
-  return vi.fn().mockImplementation((url: string, opts?: any) => {
-    if (url === '/api/blog-roulette/blog-1') {
+  return vi.fn().mockImplementation((input: RequestInfo | URL) => {
+    const url = urlOf(input);
+    if (url.includes('/api/blog-roulette/blog-1') && !url.includes('/quiz/')) {
       return Promise.resolve(map.blog ?? { ok: true, json: async () => ({ blog: { status: 'SUBMITTED' } }) });
     }
     if (url.includes('/quiz/generate')) {
@@ -56,6 +89,20 @@ function fetchImpl(map: Record<string, any>) {
     }
     return Promise.resolve({ ok: true, json: async () => ({}) });
   });
+}
+
+async function startQuizFlow() {
+  await waitFor(() => screen.getByText('Start Quiz'));
+  fireEvent.click(screen.getByText('Start Quiz'));
+  await waitFor(() => screen.getByText('Q1?'));
+}
+
+async function answerCurrentAndGoNext(answer: string, nextLabel: string) {
+  fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
+    target: { value: answer },
+  });
+  fireEvent.click(screen.getByText(/Next Question/i));
+  await waitFor(() => screen.getByText(nextLabel));
 }
 
 describe('QuizPage', () => {
@@ -96,23 +143,16 @@ describe('QuizPage', () => {
   it('starts the quiz and shows the first question', async () => {
     global.fetch = fetchImpl({});
     render(<QuizPage />);
-    await waitFor(() => screen.getByText('Start Quiz'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-
-    await waitFor(() => {
-      expect(screen.getByText('Q1?')).toBeInTheDocument();
-    });
+    await startQuizFlow();
     expect(screen.getByText('Question 1 of 3')).toBeInTheDocument();
   });
 
   it('requires a substantive answer before advancing to the next question', async () => {
     global.fetch = fetchImpl({});
     render(<QuizPage />);
-    await waitFor(() => screen.getByText('Start Quiz'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-    await waitFor(() => screen.getByText('Q1?'));
+    await startQuizFlow();
 
-    fireEvent.click(screen.getByText('Next Question'));
+    fireEvent.click(screen.getByText(/Next Question/i));
     await waitFor(() => {
       expect(screen.getByText(/Please write a real answer/)).toBeInTheDocument();
     });
@@ -121,26 +161,15 @@ describe('QuizPage', () => {
   it('advances through all 3 questions and submits for grading', async () => {
     global.fetch = fetchImpl({});
     render(<QuizPage />);
-    await waitFor(() => screen.getByText('Start Quiz'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-    await waitFor(() => screen.getByText('Q1?'));
+    await startQuizFlow();
 
-    fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
-      target: { value: 'A real answer for question one.' },
-    });
-    fireEvent.click(screen.getByText('Next Question'));
-    await waitFor(() => screen.getByText('Q2?'));
-
-    fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
-      target: { value: 'A real answer for question two.' },
-    });
-    fireEvent.click(screen.getByText('Next Question'));
-    await waitFor(() => screen.getByText('Q3?'));
+    await answerCurrentAndGoNext('A real answer for question one.', 'Q2?');
+    await answerCurrentAndGoNext('A real answer for question two.', 'Q3?');
 
     fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
       target: { value: 'A real answer for question three.' },
     });
-    fireEvent.click(screen.getByText('Submit for Grading'));
+    fireEvent.click(screen.getByText(/Submit for Grading/i));
 
     await waitFor(() => {
       expect(screen.getByText('Passed — Publishing')).toBeInTheDocument();
@@ -151,15 +180,9 @@ describe('QuizPage', () => {
   it('navigates back to the previous question', async () => {
     global.fetch = fetchImpl({});
     render(<QuizPage />);
-    await waitFor(() => screen.getByText('Start Quiz'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-    await waitFor(() => screen.getByText('Q1?'));
+    await startQuizFlow();
 
-    fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
-      target: { value: 'A real answer for question one.' },
-    });
-    fireEvent.click(screen.getByText('Next Question'));
-    await waitFor(() => screen.getByText('Q2?'));
+    await answerCurrentAndGoNext('A real answer for question one.', 'Q2?');
 
     fireEvent.click(screen.getByText('Previous'));
     await waitFor(() => {
@@ -182,21 +205,14 @@ describe('QuizPage', () => {
       },
     });
     render(<QuizPage />);
-    await waitFor(() => screen.getByText('Start Quiz'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-    await waitFor(() => screen.getByText('Q1?'));
+    await startQuizFlow();
 
-    for (const q of ['Q1?', 'Q2?']) {
-      fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
-        target: { value: 'A real substantive answer here.' },
-      });
-      fireEvent.click(screen.getByText('Next Question'));
-      await waitFor(() => screen.getByText(q === 'Q1?' ? 'Q2?' : 'Q3?'));
-    }
+    await answerCurrentAndGoNext('A real substantive answer here.', 'Q2?');
+    await answerCurrentAndGoNext('A real substantive answer here.', 'Q3?');
     fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
       target: { value: 'A real substantive answer here.' },
     });
-    fireEvent.click(screen.getByText('Submit for Grading'));
+    fireEvent.click(screen.getByText(/Submit for Grading/i));
 
     await waitFor(() => {
       expect(screen.getByText('Soft Fail')).toBeInTheDocument();
@@ -219,21 +235,14 @@ describe('QuizPage', () => {
       },
     });
     render(<QuizPage />);
-    await waitFor(() => screen.getByText('Start Quiz'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-    await waitFor(() => screen.getByText('Q1?'));
+    await startQuizFlow();
 
-    for (const nextLabel of ['Q2?', 'Q3?']) {
-      fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
-        target: { value: 'A real substantive answer here.' },
-      });
-      fireEvent.click(screen.getByText('Next Question'));
-      await waitFor(() => screen.getByText(nextLabel));
-    }
+    await answerCurrentAndGoNext('A real substantive answer here.', 'Q2?');
+    await answerCurrentAndGoNext('A real substantive answer here.', 'Q3?');
     fireEvent.change(screen.getByPlaceholderText('Answer in your own words...'), {
       target: { value: 'A real substantive answer here.' },
     });
-    fireEvent.click(screen.getByText('Submit for Grading'));
+    fireEvent.click(screen.getByText(/Submit for Grading/i));
 
     await waitFor(() => {
       expect(screen.getByText('Rejected')).toBeInTheDocument();

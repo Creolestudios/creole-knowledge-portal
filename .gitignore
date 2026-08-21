@@ -21,8 +21,10 @@ htmlcov/
 dist/
 build/
 *.egg-info/
-
-
+# Local JSON DB (dev-only)
+lib/data/db.json
+# Claude Code Harness (local-only)
+.claude/
 # Dependencies
 **/node_modules/
 # Environment files
@@ -43,6 +45,8 @@ build/
 **/newman-report.html
 **/newman-reports/
 **/coverage/
+**/coverage.xml
+**/htmlcov/
 # Build outputs
 **/dist/
 **/build/
@@ -57,3 +61,15 @@ build/
 # IDE
 **/.vscode/
 **/.idea/
+
+# Claude Code Harness (local-only)
+.claude/
+
+# Local JSON DB (dev-only; initialized automatically)
+lib/data/db.json
+
+# Claude Code Harness (local-only)
+.claude/
+
+# Local JSON DB (dev-only; initialized automatically)
+lib/data/db.json

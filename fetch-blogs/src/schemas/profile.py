@@ -30,3 +30,10 @@ class ProfileSyncOut(ProfileOut):
     """Profile response plus whether Mongo inserted a new document."""
 
     created: bool
+
+
+class QuizResultIn(BaseModel):
+    """Quiz score payload used to steer the next day's scrape."""
+
+    score: int = Field(ge=0)
+    total: int = Field(ge=1)

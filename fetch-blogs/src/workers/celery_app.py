@@ -56,10 +56,16 @@ celery_app.conf.update(
     result_expires=86_400,  # 24 hours
     # Time zones
     timezone="UTC",
-    enable_utc=True,
     # Global safety limits (override per-task if needed)
     task_soft_time_limit=150,
     task_time_limit=180,  # 3 min hard cap — daily briefing, not a 70-min rewrite
     task_always_eager=_app_cfg.celery_eager,
     task_eager_propagates=True,
 )
+
+
+QUEUES = _QUEUES
+
+__all__ = ["celery_app", "QUEUES"]
+
+
