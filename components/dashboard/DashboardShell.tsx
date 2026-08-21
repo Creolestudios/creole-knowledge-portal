@@ -122,9 +122,8 @@ export default function DashboardShell({
       {/* Sidebar — static on desktop, slide-in drawer on mobile. Fixed full
           height so its footer (sign out / preview badge) is always visible. */}
       <aside
-        className={`w-72 h-screen bg-[#0a0a0a] text-white flex flex-col p-7 border-r border-zinc-800 overflow-hidden shrink-0 z-40 transition-transform fixed inset-y-0 left-0 md:relative md:inset-auto md:translate-x-0 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`w-72 h-screen bg-[#0a0a0a] text-white flex flex-col p-7 border-r border-zinc-800 overflow-hidden shrink-0 z-40 transition-transform fixed inset-y-0 left-0 md:relative md:inset-auto md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
       >
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
 
@@ -178,9 +177,8 @@ export default function DashboardShell({
                   />
                 )}
                 <span
-                  className={`relative z-10 flex items-center gap-3 ${
-                    isActive ? 'text-brand' : 'text-zinc-500'
-                  }`}
+                  className={`relative z-10 flex items-center gap-3 ${isActive ? 'text-brand' : 'text-zinc-500'
+                    }`}
                 >
                   {tab.icon}
                   <span className="font-semibold text-sm">{tab.label}</span>
@@ -256,24 +254,6 @@ export default function DashboardShell({
 
         <div className="p-5 md:p-10 flex-1 overflow-y-auto min-h-0" onScroll={onContentScroll}>
           <div className="max-w-6xl mx-auto">
-            {active !== 'roulette' && (
-              <div className="mb-10">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-brand/10 border border-brand/20 rounded-full text-brand text-[10px] font-bold uppercase tracking-widest mb-4">
-                  <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse" />
-                  AI Factory Digest
-                </div>
-                <h1
-                  id="dashboard-welcome"
-                  className="text-2xl sm:text-3xl md:text-4xl font-black text-zinc-900 tracking-tight mb-3"
-                >
-                  Your Learning Hub
-                </h1>
-                <p className="text-zinc-500 text-sm sm:text-base">
-                  Welcome back! Your personalized morning blog, past reading history, and progress —
-                  all in one place.
-                </p>
-              </div>
-            )}
 
             {active === 'daily' && <DailyBlogTab user={activeUser} profile={activeProfile} />}
             {active === 'past' && <PastBlogsTab selected={pastDate} onSelect={setPastDate} />}

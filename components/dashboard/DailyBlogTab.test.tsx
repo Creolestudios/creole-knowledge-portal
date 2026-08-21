@@ -3,6 +3,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DailyBlogTab from './DailyBlogTab';
 
+const mockPush = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: mockPush,
+  }),
+}));
+
 describe('DailyBlogTab', () => {
   const originalFetch = global.fetch;
   const originalAlert = window.alert;
@@ -50,7 +57,7 @@ describe('DailyBlogTab', () => {
     expect(screen.getByText(/Fetched Today/i)).toBeInTheDocument();
     expect(screen.getByText(/20 min read/i)).toBeInTheDocument();
     expect(screen.getByText('react')).toBeInTheDocument();
-    expect(screen.getByText('Start Quiz')).toBeInTheDocument();
+    expect(screen.getByText(/Start Quiz/)).toBeInTheDocument();
   });
 
   it('labels a briefing scraped yesterday as Fetched Yesterday', async () => {
@@ -135,12 +142,12 @@ describe('DailyBlogTab', () => {
     });
   });
 
-  it('opens the quiz modal and posts reading activity when "Start Quiz" is clicked', async () => {
+  it('redirects to the quiz page and posts reading activity when "Start Quiz" is clicked', async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/digests/latest') {
+      if (url.startsWith('/api/digests')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ success: true, blog: { title: 'B', content: 'c', tags: [] } }),
+          json: async () => ({ success: true, blog: { id: 'blog-1', title: 'B', content: 'c', tags: [] } }),
         });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
@@ -149,8 +156,7 @@ describe('DailyBlogTab', () => {
     render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
     await waitFor(() => screen.getByText('B'));
 
-    fireEvent.click(screen.getByText('Start Quiz'));
-    expect(screen.getByText('Daily Quiz')).toBeInTheDocument();
+    fireEvent.click(screen.getByText(/Start Quiz/));
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
@@ -158,14 +164,22 @@ describe('DailyBlogTab', () => {
         expect.objectContaining({ method: 'POST' }),
       );
     });
+
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/quiz/blog-1');
   });
 
-  it('submits the inline quiz and closes the modal', async () => {
+  it('renders passed quiz status and allows reviewing results', async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url === '/api/digests/latest') {
+      if (url.includes('/api/quizzes/status')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ success: true, blog: { title: 'B', content: 'c', tags: [] } }),
+          json: async () => ({ completed: true, passed: true, result: { score: 4, total: 5 } }),
+        });
+      }
+      if (url.startsWith('/api/digests')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, blog: { id: 'blog-1', title: 'B', content: 'c', tags: [] } }),
         });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
@@ -173,27 +187,14 @@ describe('DailyBlogTab', () => {
 
     render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
     await waitFor(() => screen.getByText('B'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-
-    fireEvent.click(screen.getByText('Submit'));
 
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith('Quiz submitted successfully!');
-    });
-  });
-
-  it('closes the quiz modal via Cancel without submitting', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ success: true, blog: { title: 'B', content: 'c', tags: [] } }),
+      expect(screen.getByText(/Quiz Passed!/)).toBeInTheDocument();
+      expect(screen.getByText('Review Quiz Results')).toBeInTheDocument();
     });
 
-    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
-    await waitFor(() => screen.getByText('B'));
-    fireEvent.click(screen.getByText('Start Quiz'));
-    fireEvent.click(screen.getByText('Cancel'));
-
-    expect(screen.queryByText('Daily Quiz')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Review Quiz Results'));
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/quiz/blog-1');
   });
 
   it('does not attempt to regenerate when there is no user', async () => {

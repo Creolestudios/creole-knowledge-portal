@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
 import {
@@ -33,7 +33,7 @@ function trendLabel(d: TrendDirection) {
   return 'Stable';
 }
 
-export default function NewBlogPage() {
+function NewBlogPageContent() {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [suggestions, setSuggestions] = useState<KeywordSuggestion[]>([]);
@@ -234,5 +234,17 @@ export default function NewBlogPage() {
         </div>
       </div>
     </DashboardShell>
+  );
+}
+
+export default function NewBlogPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+      </div>
+    }>
+      <NewBlogPageContent />
+    </Suspense>
   );
 }

@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET(request: Request) {
   try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const blogId = searchParams.get('blogId');
 
@@ -51,17 +59,27 @@ export async function GET(request: Request) {
       }
     }
 
-    // Format the response
+    // Format the response securely
     const leaderboard = (attempts || []).map((attempt: any, index: number) => {
-      const profile = profilesMap[attempt.user_id] || { email: 'anonymous@user.com', current_role: 'Developer' };
+      const profile = profilesMap[attempt.user_id] || { email: 'developer@creolestudios.com', current_role: 'Developer' };
+      const rawHandle = profile.email ? profile.email.split('@')[0] : 'Developer';
+      const isCurrentUser = attempt.user_id === user.id;
+      
+      const maskedHandle = isCurrentUser
+        ? `You (${rawHandle})`
+        : rawHandle.length > 3
+          ? `${rawHandle.slice(0, 2)}***${rawHandle.slice(-1)}`
+          : `${rawHandle}***`;
+
       return {
         rank: index + 1,
         userId: attempt.user_id,
-        userName: profile.email.split('@')[0], // Use email handle as name
+        userName: maskedHandle,
         role: profile.current_role || 'Developer',
         score: attempt.score,
         percentage: attempt.percentage,
-        timeTaken: attempt.time_taken_seconds
+        timeTaken: attempt.time_taken_seconds,
+        isSelf: isCurrentUser
       };
     });
 
@@ -75,3 +93,4 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
+

@@ -67,12 +67,21 @@ You MUST respond ONLY with a valid JSON object strictly matching this format:
       reason: result.reason,
     };
   } catch (error) {
-    console.error('[Quiz Evaluator] Error evaluating answer:', error);
-    // Fallback if AI fails: mark incorrect with a note
+    console.error('[Quiz Evaluator] Error evaluating answer with AI, falling back to heuristic evaluation:', error);
+    
+    // Heuristic fallback: check if user answer contains key concept words
+    const userTextLower = userAnswer.toLowerCase();
+    const hasConceptMatch = (expectedConcepts || []).some(c => {
+      const trimmed = c.toLowerCase().trim();
+      return trimmed.length > 2 && userTextLower.includes(trimmed);
+    });
+
     return {
-      isCorrect: false,
-      points: 0,
-      reason: 'Evaluation failed due to high demand. Please try again or contact support.',
+      isCorrect: hasConceptMatch,
+      points: hasConceptMatch ? maxPoints : 0,
+      reason: hasConceptMatch
+        ? 'Answer contains key expected concepts.'
+        : 'Answer did not closely align with expected concepts.',
     };
   }
 }

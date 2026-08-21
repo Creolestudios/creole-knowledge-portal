@@ -1,7 +1,23 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QuizRunner } from './quiz-runner';
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    refresh: vi.fn(),
+  }),
+}));
+
+vi.mock('motion/react', () => ({
+  motion: {
+    div: ({ children, className, onClick, ...props }: any) => (
+      <div className={className} onClick={onClick}>{children}</div>
+    ),
+  },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
+}));
 
 vi.mock('./quiz-leaderboard', () => ({
   QuizLeaderboard: ({ onClose }: { onClose: () => void }) => (
@@ -17,6 +33,23 @@ const mcQuestion = {
   difficulty: 'medium',
   question: 'What hook manages side effects?',
   options: ['useState', 'useEffect', 'useRef'],
+};
+
+const codeQuestion = {
+  id: 'q-code',
+  question_type: 'code',
+  difficulty: 'hard',
+  question: 'What is the output of this code snippet?',
+  options: null,
+  code_snippet: 'const sum = (a, b) => a + b;\nconsole.log(sum(2, 3));',
+};
+
+const conceptualQuestion = {
+  id: 'q-concept',
+  question_type: 'conceptual',
+  difficulty: 'hard',
+  question: 'Explain React Server Components philosophy.',
+  options: null,
 };
 
 describe('QuizRunner', () => {
@@ -46,7 +79,7 @@ describe('QuizRunner', () => {
     expect(screen.getByText(/Initializing Quiz Environment/)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Start 10-Min Quiz')).toBeInTheDocument();
+      expect(screen.getByText('Start Knowledge Quiz')).toBeInTheDocument();
     });
   });
 
@@ -71,6 +104,51 @@ describe('QuizRunner', () => {
     expect(screen.getByText('Question 1 of 1')).toBeInTheDocument();
   });
 
+  it('renders code snippet and handles user text input for code question type', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
+      }
+      if (url.includes('/api/quizzes/start')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, attemptId: 'a1', questions: [codeQuestion] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('What is the output of this code snippet?')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/console.log\(sum\(2, 3\)\)/)).toBeInTheDocument();
+    const textarea = screen.getByPlaceholderText(/Type your detailed answer/);
+    fireEvent.change(textarea, { target: { value: '5' } });
+    expect((textarea as HTMLTextAreaElement).value).toBe('5');
+  });
+
+  it('renders conceptual question type with textarea input', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
+      }
+      if (url.includes('/api/quizzes/start')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, attemptId: 'a1', questions: [conceptualQuestion] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('Explain React Server Components philosophy.')).toBeInTheDocument();
+    });
+  });
+
   it('resumes an in-progress attempt with its saved answers', async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/quizzes/status')) {
@@ -92,7 +170,7 @@ describe('QuizRunner', () => {
     await waitFor(() => {
       expect(screen.getByText('What hook manages side effects?')).toBeInTheDocument();
     });
-    // Previously-selected option should be visually selected (checked icon present).
+
     const useEffectOption = screen.getByText('useEffect').closest('button')!;
     expect(useEffectOption.className).toContain('border-brand');
   });
@@ -118,7 +196,7 @@ describe('QuizRunner', () => {
       expect(screen.getByText('Quiz Completed!')).toBeInTheDocument();
     });
     expect(screen.getByText('4 / 5')).toBeInTheDocument();
-    expect(screen.getByText('80%')).toBeInTheDocument();
+    expect(screen.getByText('2:05')).toBeInTheDocument();
   });
 
   it('shows a network-error message when the status check fails', async () => {
@@ -222,28 +300,94 @@ describe('QuizRunner', () => {
     expect(screen.queryByTestId('leaderboard')).not.toBeInTheDocument();
   });
 
-  it('renders a textarea for descriptive question types', async () => {
-    const descriptiveQ = {
-      id: 'q1',
-      question_type: 'descriptive',
-      difficulty: 'hard',
-      question: 'Explain closures in your own words.',
-    };
+  it('handles idle warning popup and extends session when clicked', async () => {
+    vi.useFakeTimers();
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/quizzes/status')) {
-        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
-      }
-      if (url.includes('/api/quizzes/start')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ success: true, attemptId: 'a1', questions: [descriptiveQ] }),
+          json: async () => ({
+            inProgress: true,
+            attemptId: 'a-idle',
+            timeLeft: 120,
+            questions: [mcQuestion],
+            answers: {},
+          }),
         });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
     });
 
     render(<QuizRunner blogId="blog-1" />);
-    await waitFor(() => screen.getByText('Explain closures in your own words.'));
-    expect(screen.getByPlaceholderText(/Type your detailed answer/)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Advance 125 seconds so elapsed seconds reaches 1200s (1080 + 120 = 1200s)
+    await act(async () => {
+      vi.advanceTimersByTime(125 * 1000);
+    });
+
+    expect(screen.getByText(/Still working on your quiz\?/i)).toBeInTheDocument();
+
+    const extendBtn = screen.getByRole('button', { name: /Yes, Continue Quiz/i });
+    act(() => {
+      fireEvent.click(extendBtn);
+    });
+    expect(screen.queryByText(/Still working on your quiz\?/i)).not.toBeInTheDocument();
+  });
+
+  it('renders no questions fallback screen when question pool is empty and navigates to dashboard', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ inProgress: true, attemptId: 'empty-1', questions: [] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('No questions available for this attempt.')).toBeInTheDocument();
+    });
+
+    const backBtn = screen.getByRole('button', { name: /Back to Dashboard/i });
+    fireEvent.click(backBtn);
+  });
+
+  it('renders detailed review items on completion screen when reviewData is present', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        completed: true,
+        result: {
+          score: 1,
+          total: 1,
+          percentage: 100,
+          correctAnswers: 1,
+          timeTaken: 20,
+          reviewData: [
+            {
+              questionId: 'q1',
+              question: 'What is Next.js?',
+              isCorrect: true,
+              pointsAwarded: 1,
+              userAnswer: ['Framework'],
+              correctAnswers: ['Framework'],
+              explanation: 'Next.js is a React framework.',
+            },
+          ],
+        },
+      }),
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await waitFor(() => expect(screen.getByText('Quiz Completed!')).toBeInTheDocument());
+
+    expect(screen.getByText('Detailed Review')).toBeInTheDocument();
+    expect(screen.getByText('What is Next.js?')).toBeInTheDocument();
+    expect(screen.getByText('Next.js is a React framework.')).toBeInTheDocument();
   });
 });

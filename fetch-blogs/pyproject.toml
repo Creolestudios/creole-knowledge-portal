@@ -32,6 +32,7 @@ dependencies = [
     "textstat>=0.7.3",
     "newspaper3k>=0.2.8",
     "lxml-html-clean>=0.4.4",
+    "nest-asyncio>=1.6.0",
 ]
 
 [dependency-groups]

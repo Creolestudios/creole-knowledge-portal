@@ -52,7 +52,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Record audit log
     await addAuditLog(
       auditAction,
-      user.email,
+      user.email || '',
       id,
       `Moderator override: ${action}. Reason: ${reason || 'No reason provided.'}`
     );

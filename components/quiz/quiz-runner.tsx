@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
-import { Timer, Send, ArrowRight, ArrowLeft, CheckCircle2, Target } from 'lucide-react';
+import { Timer, Send, ArrowRight, ArrowLeft, CheckCircle2, Target, AlertCircle, Clock } from 'lucide-react';
 import { QuizLeaderboard } from './quiz-leaderboard';
 
 interface QuizRunnerProps {
@@ -10,6 +11,7 @@ interface QuizRunnerProps {
 }
 
 export function QuizRunner({ blogId }: QuizRunnerProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState('');
@@ -20,9 +22,13 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   
-  // Timer State (600 seconds = 10 mins)
-  const [timeLeft, setTimeLeft] = useState(600);
+  // Elapsed Time & 20-Min Idle Check State
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [showIdleModal, setShowIdleModal] = useState(false);
+  const [idleCountdown, setIdleCountdown] = useState(60);
+  
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Result State
   const [result, setResult] = useState<any>(null);
@@ -43,7 +49,8 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       if (res.ok && data.success !== false && data.attemptId) {
         setAttemptId(data.attemptId);
         setQuestions(data.questions);
-        setTimeLeft(600);
+        setElapsedSeconds(0);
+        setShowIdleModal(false);
         startTimer();
       } else {
         setError(data.error || 'Failed to start quiz. You may have already taken it.');
@@ -58,18 +65,93 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   const startTimer = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current!);
-          handleSubmitQuiz();
-          return 0;
+      setElapsedSeconds(prev => {
+        const next = prev + 1;
+        // At 20 minutes (1200s) of continuous elapsed time, trigger the Idle Check Modal
+        if (next >= 1200) {
+          setIdleCountdown(60);
+          setShowIdleModal(true);
         }
-        return prev - 1;
+        return next;
       });
     }, 1000);
   };
 
+  // Autosave when moving to next question
+  const saveCurrentAnswer = async () => {
+    const qId = questions[currentIndex]?.id;
+    const ans = answers[qId];
+    if (ans && attemptId) {
+      try {
+        await fetch('/api/quizzes/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attemptId,
+            questionId: qId,
+            userAnswer: ans
+          })
+        });
+      } catch (err) {
+        console.error('Autosave evaluation error:', err);
+      }
+    }
+  };
 
+  const handleSubmitQuiz = async () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    setShowIdleModal(false);
+    setLoading(true);
+    await saveCurrentAnswer();
+
+    try {
+      const res = await fetch('/api/quizzes/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attemptId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResult(data.result);
+      } else {
+        setError(data.error || 'Failed to submit quiz.');
+      }
+    } catch (err) {
+      setError('An error occurred while submitting.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle 60s Idle Popup Countdown
+  useEffect(() => {
+    if (showIdleModal) {
+      idleTimerRef.current = setInterval(() => {
+        setIdleCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(idleTimerRef.current!);
+            setShowIdleModal(false);
+            handleSubmitQuiz();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    }
+
+    return () => {
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
+    };
+  }, [showIdleModal]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleContinueQuiz = () => {
+    setShowIdleModal(false);
+    setElapsedSeconds(0); // Reset idle timer for another 20 minutes
+    setIdleCountdown(60);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -88,18 +170,17 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           setAttemptId(statusData.attemptId);
           
           if (statusData.timeLeft <= 0) {
-            // Time expired while they were away, force submit
-            setError('Time expired while you were away. Submitting your saved answers...');
-            // We set initializing to false to render the component, and the timer will instantly hit 0 and submit
+            // Idle timeout reached while user was away
+            setError('Your previous active attempt timed out. Submitting saved progress...');
             setQuestions(statusData.questions || []);
             setAnswers(statusData.answers || {});
-            setTimeLeft(0);
+            setElapsedSeconds(1200);
             startTimer();
           } else {
             // Resume normally
             setQuestions(statusData.questions || []);
             setAnswers(statusData.answers || {});
-            setTimeLeft(statusData.timeLeft);
+            setElapsedSeconds(Math.max(0, 1200 - (statusData.timeLeft || 1200)));
             startTimer();
           }
           setInitializing(false);
@@ -117,7 +198,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           if (res.ok && data.success !== false && data.attemptId) {
             setAttemptId(data.attemptId);
             setQuestions(data.questions);
-            setTimeLeft(600);
+            setElapsedSeconds(0);
             startTimer();
           } else {
             setError(data.error || 'Failed to start quiz.');
@@ -137,10 +218,11 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     return () => {
       mounted = false;
       if (timerRef.current) clearInterval(timerRef.current);
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
     };
-  }, [blogId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [blogId]);  
 
-  // Handle Answer Changes
+  // Handle Answer Selection
   const handleOptionSelect = (qId: string, option: string, isMultiple: boolean) => {
     setAnswers(prev => {
       const current = prev[qId];
@@ -162,24 +244,6 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     setAnswers(prev => ({ ...prev, [qId]: text }));
   };
 
-  // Autosave when moving to next question
-  const saveCurrentAnswer = () => {
-    const qId = questions[currentIndex]?.id;
-    const ans = answers[qId];
-    if (ans && attemptId) {
-      // Fire and forget evaluation
-      fetch('/api/quizzes/evaluate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          attemptId,
-          questionId: qId,
-          userAnswer: ans
-        })
-      }).catch(console.error);
-    }
-  };
-
   const handleNext = () => {
     saveCurrentAnswer();
     if (currentIndex < questions.length - 1) {
@@ -193,33 +257,38 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     }
   };
 
-  const handleSubmitQuiz = async () => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    saveCurrentAnswer();
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/quizzes/finish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setResult(data.result);
+  const hasAnsweredAll = () => {
+    if (questions.length === 0) return false;
+    return questions.every(q => {
+      const ans = answers[q.id];
+      const isDescriptive = ['conceptual', 'code', 'descriptive'].includes(q.question_type);
+      if (isDescriptive) {
+        return typeof ans === 'string' && ans.trim().length > 0;
       } else {
-        setError(data.error || 'Failed to submit quiz.');
+        return Array.isArray(ans) && ans.length > 0;
       }
-    } catch (err) {
-      setError('An error occurred while submitting.');
-    } finally {
-      setLoading(false);
-    }
+    });
   };
 
   // Render Functions
   if (showLeaderboard) {
-    return <QuizLeaderboard blogId={blogId} onClose={() => setShowLeaderboard(false)} />;
+    const attemptsLeft = result ? (result.attemptsRemaining ?? Math.max(0, 3 - (result.attemptsCount || 1))) : 3;
+    const canRetake = !result?.passed && attemptsLeft > 0;
+    return (
+      <QuizLeaderboard 
+        blogId={blogId} 
+        onClose={() => setShowLeaderboard(false)}
+        onRetake={canRetake ? () => {
+          setShowLeaderboard(false);
+          setResult(null);
+          setAttemptId(null);
+          setQuestions([]);
+          setCurrentIndex(0);
+          setAnswers({});
+          handleStart();
+        } : undefined}
+      />
+    );
   }
 
   if (result) {
@@ -230,33 +299,56 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             <CheckCircle2 size={40} />
           </div>
           <h2 className="text-3xl font-black text-white mb-2">Quiz Completed!</h2>
-          <p className="text-zinc-400 mb-8">Your AI evaluation is complete.</p>
-          
+          <p className="text-zinc-400 mb-4">Your AI evaluation is complete.</p>
+
+          {(() => {
+            const count = result.attemptsCount || 1;
+            const remaining = result.attemptsRemaining ?? Math.max(0, 3 - count);
+            const isPassed = Boolean(result.passed);
+            return (
+              <div className="mb-6 space-y-2">
+                <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${isPassed ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                  {isPassed ? 'Quiz Passed! 🎉' : `Attempt ${count} of 3 Completed • ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining`}
+                </span>
+              </div>
+            );
+          })()}
+
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800">
-              <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Total Score</div>
-              <div className="text-2xl font-black text-brand">{result.score} / {result.total}</div>
-            </div>
-            <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800">
-              <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Accuracy</div>
-              <div className="text-2xl font-black text-white">{result.percentage}%</div>
-            </div>
-            <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800">
               <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Correct Answers</div>
-              <div className="text-2xl font-black text-green-400">{result.correctAnswers}</div>
+              <div className="text-2xl font-black text-green-400">{result.correctAnswers} / {result.totalQuestions || 5}</div>
             </div>
             <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800">
               <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Time Taken</div>
-              <div className="text-2xl font-black text-white">{Math.floor(result.timeTaken / 60)}:{(result.timeTaken % 60).toString().padStart(2, '0')}</div>
+              <div className="text-2xl font-black text-white">{Math.floor((result.timeTaken || elapsedSeconds) / 60)}:{((result.timeTaken || elapsedSeconds) % 60).toString().padStart(2, '0')}</div>
             </div>
           </div>
 
-          <button 
-            onClick={() => setShowLeaderboard(true)}
-            className="w-full py-4 bg-brand hover:bg-brand/90 text-black font-black uppercase tracking-widest text-sm rounded-xl transition-colors shadow-brand"
-          >
-            View Leaderboard
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button 
+              onClick={() => setShowLeaderboard(true)}
+              className="w-full sm:w-1/2 py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest text-xs rounded-xl transition-all cursor-pointer"
+            >
+              View Leaderboard
+            </button>
+            {(!result.passed && ((result.attemptsRemaining ?? (3 - (result.attemptsCount || 1))) > 0)) && (
+              <button 
+                onClick={() => {
+                  setResult(null);
+                  setAttemptId(null);
+                  setQuestions([]);
+                  setCurrentIndex(0);
+                  setAnswers({});
+                  handleStart();
+                }}
+                disabled={loading}
+                className="w-full sm:w-1/2 py-4 bg-brand hover:bg-brand/90 text-black font-black uppercase tracking-widest text-xs rounded-xl transition-all shadow-brand cursor-pointer disabled:opacity-50"
+              >
+                {loading ? 'Starting Attempt...' : `Retake Quiz — Attempt ${(result.attemptsCount || 1) + 1} of 3`}
+              </button>
+            )}
+          </div>
         </div>
 
         {result.reviewData && result.reviewData.length > 0 && (
@@ -315,7 +407,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           <h3 className="text-lg font-bold text-white flex items-center gap-2">
             <Target className="text-brand" /> Test Your Knowledge
           </h3>
-          <p className="text-zinc-400 text-sm mt-1">An AI-generated, 5-question hard technical quiz based on this briefing.</p>
+          <p className="text-zinc-400 text-sm mt-1">An AI-generated 5-question hard technical quiz based on this briefing.</p>
           {error && <p className="text-red-400 text-sm mt-2 font-medium">{error}</p>}
         </div>
         <button 
@@ -323,26 +415,103 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           disabled={loading}
           className="px-6 py-3 bg-white text-black hover:bg-zinc-200 transition-colors font-bold text-sm rounded-xl disabled:opacity-50"
         >
-          {loading ? 'Starting...' : 'Start 10-Min Quiz'}
+          {loading ? 'Starting...' : 'Start Knowledge Quiz'}
         </button>
       </div>
     );
   }
 
   const q = questions[currentIndex];
+
+  if (!q) {
+    return (
+      <div className="bg-[#0f0f11] border border-zinc-800 rounded-2xl p-12 max-w-2xl mx-auto mt-8 text-center shadow-2xl flex flex-col items-center justify-center space-y-4">
+        <p className="text-zinc-400 font-bold uppercase tracking-widest text-sm">No questions available for this attempt.</p>
+        <div className="flex gap-4">
+          <button 
+            onClick={() => router.push('/dashboard')}
+            className="px-6 py-3 bg-zinc-800 text-white hover:bg-zinc-700 transition-colors font-bold text-sm rounded-xl"
+          >
+            Back to Dashboard
+          </button>
+          <button 
+            onClick={handleStart}
+            disabled={loading}
+            className="px-6 py-3 bg-brand text-black hover:bg-brand/90 transition-colors font-bold text-sm rounded-xl"
+          >
+            {loading ? 'Starting...' : 'Restart Quiz'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const isMultiple = q.question_type === 'multiple';
   const isDescriptive = ['conceptual', 'code', 'descriptive'].includes(q.question_type);
 
   return (
-    <div className="bg-[#0f0f11] border border-zinc-800 rounded-2xl overflow-hidden mt-8 max-w-4xl mx-auto shadow-2xl">
+    <div className="bg-[#0f0f11] border border-zinc-800 rounded-2xl overflow-hidden mt-8 max-w-4xl mx-auto shadow-2xl relative">
+      {/* 20-Minute Idle Check Popup Modal */}
+      <AnimatePresence>
+        {showIdleModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#16161a] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-6"
+            >
+              <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-2xl mx-auto flex items-center justify-center text-amber-400">
+                <Clock size={32} />
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-2xl font-black text-white tracking-tight">
+                  Still working on your quiz?
+                </h3>
+                <p className="text-zinc-400 text-sm leading-relaxed">
+                  You have been on this attempt for 20 minutes. Please confirm if you would like to keep working.
+                </p>
+              </div>
+
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-400 text-xs font-mono font-bold flex items-center justify-center gap-2">
+                <AlertCircle size={16} /> Auto-submitting in {idleCountdown}s...
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleContinueQuiz}
+                  className="w-full py-4 bg-brand hover:bg-brand/90 text-black font-black uppercase tracking-widest text-xs rounded-xl transition-all shadow-brand cursor-pointer"
+                >
+                  Yes, Continue Quiz
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSubmitQuiz()}
+                  className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                >
+                  Submit Quiz Now
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-[#16161a]">
         <div className="text-sm font-bold text-zinc-400 uppercase tracking-widest">
           Question {currentIndex + 1} of {questions.length}
         </div>
-        <div className={`flex items-center gap-2 font-mono text-lg font-bold ${timeLeft < 60 ? 'text-red-500 animate-pulse' : 'text-brand'}`}>
-          <Timer size={20} />
-          {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+        <div className="flex items-center gap-2 font-mono text-sm font-bold text-brand bg-brand/10 border border-brand/20 px-3 py-1.5 rounded-lg">
+          <Clock size={16} />
+          Time Elapsed: {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
         </div>
       </div>
 
@@ -379,15 +548,18 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             value={answers[q.id] || ''}
             onChange={(e) => handleTextChange(q.id, e.target.value)}
             placeholder="Type your detailed answer here... (AI evaluated)"
+            aria-label="Your detailed answer"
             className="w-full h-40 bg-zinc-900/50 border border-zinc-700 rounded-xl p-4 text-white placeholder-zinc-500 focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none"
           />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3" role={isMultiple ? "group" : "radiogroup"}>
             {q.options?.map((opt: string, i: number) => {
               const isSelected = (answers[q.id] || []).includes(opt);
               return (
                 <button
                   key={i}
+                  role={isMultiple ? "checkbox" : "radio"}
+                  aria-checked={isSelected}
                   onClick={() => handleOptionSelect(q.id, opt, isMultiple)}
                   className={`w-full text-left p-4 rounded-xl border transition-all ${
                     isSelected 
@@ -419,13 +591,20 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
         </button>
 
         {currentIndex === questions.length - 1 ? (
-          <button 
-            onClick={() => handleSubmitQuiz()}
-            disabled={loading}
-            className="flex items-center gap-2 bg-brand text-black hover:bg-brand/90 transition-colors px-6 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider"
-          >
-            {loading ? 'Submitting...' : 'Submit Quiz'} <Send size={16} />
-          </button>
+          <div className="flex flex-col items-end gap-1.5">
+            {!hasAnsweredAll() && (
+              <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                Answer all questions to submit
+              </span>
+            )}
+            <button 
+              onClick={() => handleSubmitQuiz()}
+              disabled={loading || !hasAnsweredAll()}
+              className="flex items-center gap-2 bg-brand text-black hover:bg-brand/90 transition-colors px-6 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider disabled:opacity-30 disabled:hover:bg-brand disabled:cursor-not-allowed"
+            >
+              {loading ? 'Submitting...' : 'Submit Quiz'} <Send size={16} />
+            </button>
+          </div>
         ) : (
           <button 
             onClick={handleNext}

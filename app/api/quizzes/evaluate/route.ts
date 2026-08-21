@@ -49,16 +49,26 @@ export async function POST(request: Request) {
     let pointsAwarded = 0;
     let evaluationReason = '';
 
+    const normalizeText = (val: any): string => {
+      if (!val) return '';
+      return String(val)
+        .replace(/^([a-d0-9][\.\)\:]\s*)/i, '')
+        .replace(/[*_`'"]/g, '')
+        .trim()
+        .toLowerCase();
+    };
+
     // Scoring Rules: SC=1, MS=2, Conceptual=1, Code/Descriptive=2
     if (question.question_type === 'single') {
-      const correctStr = question.correct_answers[0]?.toLowerCase().trim() || '';
-      const userStr = String(userAnswer).toLowerCase().trim();
-      isCorrect = (correctStr === userStr);
+      const rawUserStr = Array.isArray(userAnswer) ? userAnswer[0] : userAnswer;
+      const correctStr = normalizeText(question.correct_answers?.[0]);
+      const userStr = normalizeText(rawUserStr);
+      isCorrect = correctStr === userStr && userStr.length > 0;
       pointsAwarded = isCorrect ? 1 : 0;
     } else if (question.question_type === 'multiple') {
-      // Expecting array of strings for MS
-      const correctArray = (question.correct_answers || []).map((s: string) => s.toLowerCase().trim()).sort((a: string, b: string) => a.localeCompare(b));
-      const userArray = (Array.isArray(userAnswer) ? userAnswer : [userAnswer]).map((s: string) => String(s).toLowerCase().trim()).sort((a: string, b: string) => a.localeCompare(b));
+      const rawUserArray = Array.isArray(userAnswer) ? userAnswer : [userAnswer];
+      const correctArray = (question.correct_answers || []).map(normalizeText).sort((a: string, b: string) => a.localeCompare(b));
+      const userArray = rawUserArray.map(normalizeText).sort((a: string, b: string) => a.localeCompare(b));
       
       isCorrect = correctArray.length === userArray.length && correctArray.every((v: string, i: number) => v === userArray[i]);
       pointsAwarded = isCorrect ? 2 : 0;
@@ -75,13 +85,16 @@ export async function POST(request: Request) {
       evaluationReason = result.reason;
     }
 
-    // Upsert into quiz_answers (allows updating answer before final submit)
-    const { data: existingAnswer } = await supabaseAdmin
+    // Upsert into quiz_answers (update latest answer for current attempt)
+    const { data: existingAnswers } = await supabaseAdmin
       .from('quiz_answers')
       .select('id')
       .eq('attempt_id', attemptId)
       .eq('question_id', questionId)
-      .single();
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const existingAnswer = existingAnswers?.[0];
 
     if (existingAnswer) {
       await supabaseAdmin

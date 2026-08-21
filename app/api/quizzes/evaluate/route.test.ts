@@ -18,6 +18,8 @@ vi.mock('@/lib/supabase/admin', () => ({
       const chain: any = {
         select: vi.fn().mockReturnThis(),
         eq: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
         single: vi.fn().mockReturnThis(),
         update: vi.fn().mockReturnThis(),
         insert: vi.fn().mockReturnThis(),

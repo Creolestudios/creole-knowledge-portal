@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
+import { useRouter } from 'next/navigation';
 
 function localDateKey(d: Date): string {
   const year = d.getFullYear();
@@ -34,17 +35,20 @@ function formatFetchedLabel(value?: string | null): string {
 }
 
 export default function DailyBlogTab({ user, profile }: { user?: any; profile?: any }) {
+  const router = useRouter();
   const [brief, setBrief] = useState<any>(null);
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
-  
+  const [quizStatus, setQuizStatus] = useState<any>(null);
+
   // Timer State
   const [readSeconds, setReadSeconds] = useState(0);
   const [timerActive, setTimerActive] = useState(false);
 
   // Quiz State
   const [quizOpen, setQuizOpen] = useState(false);
+  const [quizLoading, setQuizLoading] = useState(false);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -59,12 +63,33 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const fetchLatestBrief = async () => {
     setLoadingBrief(true);
     try {
-      const res = await fetch('/api/digests/latest');
+      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+      const storedBlogId = urlParams?.get('blogId') || (typeof window !== 'undefined' ? sessionStorage.getItem('active_blog_id') : null);
+
+      let res: Response | null = null;
+      if (storedBlogId) {
+        res = await fetch(`/api/digests/by-id?id=${storedBlogId}`);
+      }
+
+      if (!res || !res.ok) {
+        res = await fetch('/api/digests/latest');
+      }
+
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
           setTimerActive(true); // Start timer when blog loads
+
+          try {
+            const qRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
+            if (qRes.ok) {
+              const qData = await qRes.json();
+              if (qData) setQuizStatus(qData);
+            }
+          } catch (e) {
+            console.error('Error loading quiz status:', e);
+          }
         }
       }
     } catch (e) {
@@ -110,7 +135,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
       const res = await fetch('/api/digests/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id })
+        body: JSON.stringify({ userId: user.id, force: true })
       });
 
       clearInterval(stepInterval);
@@ -120,7 +145,27 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
+          if (typeof window !== 'undefined') {
+            if (data.blog.id) {
+              sessionStorage.setItem('active_blog_id', data.blog.id);
+            } else {
+              sessionStorage.removeItem('active_blog_id');
+            }
+          }
           setTimerActive(true);
+
+          try {
+            const qRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
+            if (qRes?.ok) {
+              const qData = await qRes.json();
+              setQuizStatus(qData);
+            } else {
+              setQuizStatus({ completed: false, inProgress: false, attemptsCount: 0, attemptsRemaining: 3 });
+            }
+          } catch (e) {
+            console.error('Error loading quiz status after generation:', e);
+            setQuizStatus({ completed: false, inProgress: false, attemptsCount: 0, attemptsRemaining: 3 });
+          }
         } else {
           alert('Generation completed but briefing was not retrieved.');
         }
@@ -144,33 +189,56 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     return `${m}m ${s}s`;
   };
 
+  const rawDate = brief?.generated_at || brief?.published_at || brief?.created_at;
+  const formattedDate = rawDate
+    ? new Date(rawDate).toLocaleDateString('en-US', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    })
+    : new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
   const estimatedMinutes = Math.max(
     1,
     Math.round(
       Number(brief?.estimated_read_minutes) > 0
         ? Number(brief.estimated_read_minutes)
         : String(brief?.content || '')
-            .split(/\s+/)
-            .filter(Boolean).length / 225
+          .split(/\s+/)
+          .filter(Boolean).length / 225
     )
   );
 
   const saveActivityAndOpenQuiz = async () => {
+    if (quizLoading || !brief?.id) return;
+    setQuizLoading(true);
     setTimerActive(false);
-    setQuizOpen(true);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('active_blog_id', brief.id);
+    }
     try {
       await fetch('/api/activity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          userId: user.id, 
+        body: JSON.stringify({
+          userId: user.id,
           date: new Date().toISOString().split('T')[0],
-          readSeconds 
+          readSeconds
         })
       });
     } catch (e) {
       console.error('Failed to save reading time', e);
     }
+    router.push(`/dashboard/quiz/${brief.id}`);
+  };
+
+  const handleReviewQuiz = () => {
+    if (quizLoading || !brief?.id) return;
+    setQuizLoading(true);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('active_blog_id', brief.id);
+    }
+    router.push(`/dashboard/quiz/${brief.id}`);
   };
 
   return (
@@ -244,46 +312,161 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 {estimatedMinutes} min read
               </p>
               <PremiumMarkdownRenderer content={brief.content} />
-              
-              <div className="mt-10 pt-10 border-t border-zinc-100 flex justify-center">
-                <button 
-                  onClick={saveActivityAndOpenQuiz}
-                  className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2"
-                >
-                  <CheckCircle size={18} />
-                  Start Quiz
-                </button>
-              </div>
-            </div>
 
-            <div className="space-y-8">
-              <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
-                  <BookOpen size={18} className="text-brand" />
-                  Curation Focus
-                </h3>
-                <div className="flex flex-wrap gap-2">
-                  {brief.tags?.map((tag: string, idx: number) => (
-                    <span key={idx} className="px-3.5 py-1.5 bg-zinc-50 border text-zinc-600 rounded-xl text-xs font-bold capitalize">
-                      {tag}
-                    </span>
-                  ))}
+              <div className="mt-10 pt-10 border-t border-zinc-100 flex flex-col items-center gap-4">
+                  {(() => {
+                    const attemptsCount = quizStatus?.attemptsCount || 0;
+                    const attemptsRemaining = quizStatus?.attemptsRemaining ?? Math.max(0, 3 - attemptsCount);
+                    const isPassed = Boolean(quizStatus?.passed);
+                    const isFailedAll = Boolean(quizStatus?.failed || (!quizStatus?.passed && attemptsRemaining <= 0));
+                    const isInProgress = Boolean(quizStatus?.inProgress);
+
+                    if (isPassed) {
+                      return (
+                        <div className="text-center space-y-3">
+                          <p className="text-sm font-bold text-green-600">
+                            Quiz Passed! ({quizStatus.result?.score}/${quizStatus.result?.total} pts • {quizStatus.result?.percentage}%) 🎉
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-3">
+                            <button
+                              onClick={handleReviewQuiz}
+                              disabled={quizLoading}
+                              className="px-8 py-4 bg-zinc-950 hover:bg-zinc-900 text-white font-black rounded-2xl shadow-lg hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {quizLoading ? (
+                                <>
+                                  <Loader2 size={18} className="animate-spin" />
+                                  Opening...
+                                </>
+                              ) : (
+                                <>
+                                  <BookOpen size={18} />
+                                  Review Quiz Results
+                                </>
+                              )}
+                            </button>
+                            {attemptsRemaining > 0 && (
+                              <button
+                                onClick={saveActivityAndOpenQuiz}
+                                disabled={quizLoading}
+                                className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                              >
+                                {quizLoading ? (
+                                  <>
+                                    <Loader2 size={18} className="animate-spin" />
+                                    Opening Quiz...
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle size={18} />
+                                    Retake Quiz — Attempt {attemptsCount + 1} of 3 ({attemptsRemaining} {attemptsRemaining === 1 ? 'attempt' : 'attempts'} left)
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (isFailedAll) {
+                      return (
+                        <div className="text-center space-y-3">
+                          <p className="text-sm font-bold text-red-500">
+                            Quiz Failed (Max Attempts Reached) ❌
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-3">
+                            <button
+                              disabled
+                              className="px-8 py-4 bg-zinc-200 text-zinc-500 font-black rounded-2xl text-sm uppercase tracking-widest flex items-center gap-2 cursor-not-allowed opacity-75"
+                            >
+                              <CheckCircle size={18} />
+                              Max Attempts Reached (0/3 left)
+                            </button>
+                            <button
+                              onClick={handleReviewQuiz}
+                              disabled={quizLoading}
+                              className="px-8 py-4 bg-zinc-950 hover:bg-zinc-900 text-white font-black rounded-2xl shadow-lg hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                            >
+                              {quizLoading ? (
+                                <>
+                                  <Loader2 size={18} className="animate-spin" />
+                                  Opening...
+                                </>
+                              ) : (
+                                <>
+                                  <BookOpen size={18} />
+                                  Review Quiz Results
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="text-center space-y-3">
+                        {attemptsCount > 0 && (
+                          <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+                            Attempt {attemptsCount} of 3 completed • {attemptsRemaining} {attemptsRemaining === 1 ? 'attempt' : 'attempts'} left
+                          </p>
+                        )}
+                        <button
+                          onClick={saveActivityAndOpenQuiz}
+                          disabled={quizLoading}
+                          className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        >
+                          {quizLoading ? (
+                            <>
+                              <Loader2 size={18} className="animate-spin" />
+                              Opening Quiz...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={18} />
+                              {isInProgress
+                                ? 'Resume Quiz'
+                                : attemptsCount === 0
+                                  ? 'Start Quiz — Attempt 1 of 3 (3 attempts left)'
+                                  : `Retake Quiz — Attempt ${attemptsCount + 1} of 3 (${attemptsRemaining} ${attemptsRemaining === 1 ? 'attempt' : 'attempts'} left)`}
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
-              <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Sources evaluated</span>
-                <h4 className="text-lg font-black text-zinc-900 mb-4">Network Context</h4>
-                <div className="space-y-3">
-                  <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
-                    <div>
-                      <p className="text-xs font-bold text-zinc-900 leading-tight">Dev.to API</p>
+              <div className="space-y-8">
+                <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
+                  <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
+                    <BookOpen size={18} className="text-brand" />
+                    Curation Focus
+                  </h3>
+                  <div className="flex flex-wrap gap-2">
+                    {brief.tags?.map((tag: string, idx: number) => (
+                      <span key={idx} className="px-3.5 py-1.5 bg-zinc-50 border text-zinc-600 rounded-xl text-xs font-bold capitalize">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
+                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Sources evaluated</span>
+                  <h4 className="text-lg font-black text-zinc-900 mb-4">Network Context</h4>
+                  <div className="space-y-3">
+                    <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
+                      <div>
+                        <p className="text-xs font-bold text-zinc-900 leading-tight">Dev.to API</p>
+                      </div>
+                      <ExternalLink size={14} className="text-zinc-400 group-hover:text-brand transition-colors" />
                     </div>
-                    <ExternalLink size={14} className="text-zinc-400 group-hover:text-brand transition-colors" />
                   </div>
                 </div>
               </div>
-            </div>
           </motion.div>
         ) : (
           <motion.div
@@ -308,38 +491,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
           </motion.div>
         )}
       </AnimatePresence>
-      
-      {/* Quiz Modal */}
-      {quizOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
-            <h2 className="text-2xl font-black mb-4">Daily Quiz</h2>
-            <p className="text-zinc-600 mb-6">Test your comprehension of today&apos;s blog.</p>
-            <div className="space-y-3 mb-6">
-              <button className="w-full text-left p-4 border rounded-xl hover:border-brand font-medium">A) Server-Side Rendering (SSR)</button>
-              <button className="w-full text-left p-4 border rounded-xl hover:border-brand font-medium">B) Client-Side Rendering (CSR)</button>
-            </div>
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setQuizOpen(false)} className="px-4 py-2 font-bold text-zinc-500 hover:text-zinc-900">Cancel</button>
-              <button onClick={() => {
-                fetch('/api/activity', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ 
-                    userId: user.id, 
-                    date: new Date().toISOString().split('T')[0],
-                    quizScore: 1,
-                    quizTotal: 1
-                  })
-                }).then(() => {
-                  setQuizOpen(false);
-                  alert("Quiz submitted successfully!");
-                });
-              }} className="px-6 py-2 bg-black text-white rounded-xl font-bold">Submit</button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

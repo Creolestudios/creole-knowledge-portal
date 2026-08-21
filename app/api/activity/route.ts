@@ -36,8 +36,13 @@ export async function GET(request: Request) {
       .order('date', { ascending: false });
 
     if (error) {
-      if (error.code === '42P01') {
-        // Table doesn't exist, return empty for now
+      if (
+        error.code === '42P01' ||
+        error.code === 'PGRST205' ||
+        error.message?.includes('schema cache') ||
+        error.message?.includes('user_activity')
+      ) {
+        // Table doesn't exist in Supabase schema, return empty records gracefully
         return NextResponse.json({ success: true, records: [], streak: 0 });
       }
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -46,17 +51,17 @@ export async function GET(request: Request) {
     // Calculate basic streak (mock logic based on consecutive days)
     let streak = 0;
     const today = new Date();
-    today.setHours(0,0,0,0);
-    
+    today.setHours(0, 0, 0, 0);
+
     // Sort records descending by date
     const sorted = [...(records || [])].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
+
     let currentDate = new Date(today);
-    
+
     for (const r of sorted) {
       const rDate = new Date(r.date);
-      rDate.setHours(0,0,0,0);
-      
+      rDate.setHours(0, 0, 0, 0);
+
       // If it's today or yesterday and read_seconds > 0, we can start counting
       if (rDate.getTime() === currentDate.getTime() || rDate.getTime() === currentDate.getTime() - 86400000) {
         if (r.read_seconds > 0) {
@@ -131,9 +136,13 @@ export async function POST(request: Request) {
     }
 
     if (result.error) {
-      // Ignore if table doesn't exist for now
-      if (result.error.code === '42P01') {
-        console.warn('user_activity table does not exist');
+      if (
+        result.error.code === '42P01' ||
+        result.error.code === 'PGRST205' ||
+        result.error.message?.includes('schema cache') ||
+        result.error.message?.includes('user_activity')
+      ) {
+        console.warn('user_activity table does not exist in schema cache');
         await recordQuizOnBlogService(user.id, quizScore, quizTotal);
         return NextResponse.json({ success: true, message: 'Simulated activity update (table missing)' });
       }

@@ -4,25 +4,43 @@ import { type ReactNode } from 'react';
 /** Rebuild headings/lists when a scraped body was flattened into one line. */
 export function restoreArticleMarkdown(content: string): string {
   if (!content) return '';
-  const newlineCount = (content.match(/\n/g) || []).length;
-  if (newlineCount >= 3) {
-    return content.replace(/\n{3,}/g, '\n\n');
+  let text = content;
+
+  // Convert common HTML tags to markdown if HTML tags are detected
+  if (/<[a-z][^>]*>/i.test(text)) {
+    text = text.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n\n## $1\n\n');
+    text = text.replace(/<p[^>]*>(.*?)<\/p>/gi, '\n\n$1\n\n');
+    text = text.replace(/<li[^>]*>(.*?)<\/li>/gi, '\n- $1');
+    text = text.replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`');
+    text = text.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**');
+    text = text.replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**');
+    text = text.replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*');
+    text = text.replace(/<br\s*\/?>/gi, '\n');
+    let clean = '';
+    let inTag = false;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === '<') {
+        inTag = true;
+      } else if (text[i] === '>') {
+        inTag = false;
+      } else if (!inTag) {
+        clean += text[i];
+      }
+    }
+    text = clean;
   }
 
-  let text = content;
-  text = text.replace(/[ \t]{1,80}(#{1,6} )/g, '\n\n$1');
-  text = text.replace(/[ \t]{1,80}(```)/g, '\n\n$1');
-  text = text.replace(
-    /[ \t]{1,80}(Step[ \t]{1,8}\d+:[ \t]{1,8}[A-Z][^\n.]{3,80})(?=[ \t]{1,40}(?:curl|uv |npm |npx |pip |git |docker |python)|[ \t]{1,8}[A-Z]|$)/gi,
-    '\n\n### $1\n\n'
-  );
-  text = text.replace(/[ \t]{1,80}(Step[ \t]{1,8}\d+:)/gi, '\n\n### $1');
-  text = text.replace(
-    /[ \t]{1,80}((?:curl|uv |npm |npx |pip |git |docker |python3? )[^\n]{8,200})(?=[ \t]{1,8}[A-Z]|$)/g,
-    '\n\n```bash\n$1\n```\n\n'
-  );
-  text = text.replace(/[ \t]{1,80}(\d+\.[ \t])/g, '\n$1');
-  text = text.replace(/[ \t]{1,80}([-*] )/g, '\n$1');
+  const newlineCount = (text.match(/\n/g) || []).length;
+  if (newlineCount >= 3) {
+    return text.replace(/\n{3,}/g, '\n\n');
+  }
+
+  text = text.replaceAll(' #', '\n\n#');
+  text = text.replaceAll(' ```', '\n\n```');
+  text = text.replace(/ Step (\d+:)/gi, '\n\n### Step $1');
+  text = text.replace(/ (curl |uv |npm |npx |pip |git |docker |python3? )/gi, '\n\n```bash\n$1');
+  text = text.replace(/ (\d+\. )/g, '\n$1');
+  text = text.replace(/ ([-*] )/g, '\n$1');
   if (!text.includes('\n\n') && text.length > 280) {
     text = text.replace(/([.!?])\s+(?=[A-Z#])/g, '$1\n\n');
   }
@@ -30,7 +48,7 @@ export function restoreArticleMarkdown(content: string): string {
 }
 
 function parseInlineMarkdown(text: string): ReactNode {
-  const regex = /(\*\*([^*]{1,500})\*\*|\[([^\]]{1,300})\]\(([^)]{1,1000})\))/g;
+  const regex = /(\*\*([^*]{1,500})\*\*|`([^`]{1,500})`|\[([^\]]{1,300})\]\(([^)]{1,1000})\))/g;
   const parts: ReactNode[] = [];
   let lastIdx = 0;
   let match: RegExpExecArray | null = regex.exec(text);
@@ -45,16 +63,22 @@ function parseInlineMarkdown(text: string): ReactNode {
           {match[2]}
         </strong>
       );
-    } else if (match[3] && match[4]) {
+    } else if (match[3]) {
+      parts.push(
+        <code key={match.index} className="bg-zinc-100 text-brand px-1.5 py-0.5 rounded text-xs font-mono border border-zinc-200">
+          {match[3]}
+        </code>
+      );
+    } else if (match[4] && match[5]) {
       parts.push(
         <a
           key={match.index}
-          href={match[4]}
+          href={match[5]}
           target="_blank"
           rel="noopener noreferrer"
           className="text-brand hover:underline font-bold inline-flex items-center gap-0.5"
         >
-          {match[3]}
+          {match[4]}
           <ExternalLink size={10} className="inline opacity-60" />
         </a>
       );

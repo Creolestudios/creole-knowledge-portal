@@ -239,19 +239,30 @@ export async function POST(request: Request) {
 
     // Record Quiz Attempt
     try {
-      await supabaseAdmin
+      const attemptPayload: any = {
+        user_id: userId,
+        blog_id: targetBlog.id,
+        status: 'completed',
+        score,
+        percentage: Math.round((score / totalQuestions) * 100),
+        total_questions: totalQuestions,
+        time_taken_seconds: timeTakenSec,
+        passed: score >= 3,
+        completed_at: new Date().toISOString()
+      };
+      
+      const { error: insertErr } = await supabaseAdmin
         .from('quiz_attempts')
-        .insert({
-          user_id: userId,
-          quiz_id: targetBlog.id,
-          score,
-          total_questions: totalQuestions,
-          answers: gradedAnswers,
-          time_taken_sec: timeTakenSec,
-          xp_earned: xpEarned
-        });
+        .insert(attemptPayload);
+
+      if (insertErr && (insertErr.code === '42703' || insertErr.message.includes('passed'))) {
+        delete attemptPayload.passed;
+        await supabaseAdmin
+          .from('quiz_attempts')
+          .insert(attemptPayload);
+      }
     } catch (e: any) {
-      console.warn('[DB Warning] quiz_attempts table not found. Bypassing attempt write.', e.message);
+      console.warn('[DB Warning] Failed to write quiz attempt record.', e.message);
     }
 
     // Update Streaks

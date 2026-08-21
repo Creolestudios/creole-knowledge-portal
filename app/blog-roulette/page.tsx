@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -53,7 +53,7 @@ const STATUS_STYLES: Record<BlogStatus, { label: string; cls: string }> = {
   },
 };
 
-export default function BlogRouletteListPage() {
+function BlogRouletteListPageContent() {
   const supabase = createClient();
   const router = useRouter();
   const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
@@ -283,5 +283,17 @@ export default function BlogRouletteListPage() {
         )}
       </div>
     </DashboardShell>
+  );
+}
+
+export default function BlogRouletteListPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-zinc-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+      </div>
+    }>
+      <BlogRouletteListPageContent />
+    </Suspense>
   );
 }

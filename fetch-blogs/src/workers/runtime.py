@@ -24,6 +24,15 @@ def run_async(coro: Coroutine[object, object, T]) -> T:
     the next stage with "Event loop is closed".
     """
     global _loop
+    try:
+        running_loop = asyncio.get_running_loop()
+        if running_loop is not None and running_loop.is_running():
+            import nest_asyncio
+            nest_asyncio.apply(running_loop)
+            return running_loop.run_until_complete(coro)
+    except RuntimeError:
+        pass
+
     if _loop is None or _loop.is_closed():
         close_db()
         _loop = asyncio.new_event_loop()

@@ -7,9 +7,10 @@ import { Trophy, Clock, Target, ArrowLeft } from 'lucide-react';
 interface LeaderboardProps {
   blogId?: number | string;
   onClose: () => void;
+  onRetake?: () => void;
 }
 
-export function QuizLeaderboard({ blogId, onClose }: LeaderboardProps) {
+export function QuizLeaderboard({ blogId, onClose, onRetake }: LeaderboardProps) {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -41,7 +42,7 @@ export function QuizLeaderboard({ blogId, onClose }: LeaderboardProps) {
       animate={{ opacity: 1, y: 0 }}
       className="bg-[#0f0f11] border border-zinc-800 rounded-2xl p-6 md:p-8 max-w-4xl mx-auto mt-8"
     >
-      <div className="flex items-center justify-between mb-8 pb-6 border-b border-zinc-800">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-zinc-800">
         <div>
           <h2 className="text-2xl font-black text-white flex items-center gap-3">
             <Trophy className="text-yellow-500" />
@@ -49,12 +50,22 @@ export function QuizLeaderboard({ blogId, onClose }: LeaderboardProps) {
           </h2>
           <p className="text-zinc-500 text-sm mt-1">Ranking based on highest score and fastest time.</p>
         </div>
-        <button 
-          onClick={onClose}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm font-semibold bg-zinc-900 px-4 py-2 rounded-lg"
-        >
-          <ArrowLeft size={16} /> Back to Briefing
-        </button>
+        <div className="flex items-center gap-2">
+          {onRetake && (
+            <button
+              onClick={onRetake}
+              className="flex items-center gap-2 text-black bg-brand hover:bg-brand/90 transition-colors text-sm font-black uppercase tracking-wider px-4 py-2 rounded-lg cursor-pointer shadow-brand"
+            >
+              Resume / Retake Quiz
+            </button>
+          )}
+          <button 
+            onClick={onClose}
+            className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm font-semibold bg-zinc-900 px-4 py-2 rounded-lg cursor-pointer"
+          >
+            <ArrowLeft size={16} /> Back to Briefing
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -79,6 +90,7 @@ export function QuizLeaderboard({ blogId, onClose }: LeaderboardProps) {
               transition={{ delay: idx * 0.05 }}
               key={idx}
               className={`flex items-center justify-between p-4 rounded-xl border ${
+                entry.isSelf ? 'bg-brand/10 border-brand/40 shadow-sm' :
                 idx === 0 ? 'bg-yellow-500/5 border-yellow-500/20' :
                 idx === 1 ? 'bg-zinc-300/5 border-zinc-300/20' :
                 idx === 2 ? 'bg-amber-700/5 border-amber-700/20' :
@@ -112,7 +124,7 @@ export function QuizLeaderboard({ blogId, onClose }: LeaderboardProps) {
                     <Clock size={12} /> Time
                   </div>
                   <div className="font-mono text-sm font-semibold text-zinc-300">
-                    {Math.floor(entry.timeTaken / 60)}:{(entry.timeTaken % 60).toString().padStart(2, '0')}
+                    {Math.floor((entry.timeTaken || 0) / 60)}:{((entry.timeTaken || 0) % 60).toString().padStart(2, '0')}
                   </div>
                 </div>
                 <div className="text-right w-16">

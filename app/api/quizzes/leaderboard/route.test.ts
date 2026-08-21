@@ -5,6 +5,12 @@ const { mockListUsers, queryState } = vi.hoisted(() => ({
   queryState: { result: { data: null as any, error: null as any }, eqCalls: [] as any[] },
 }));
 
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: vi.fn().mockImplementation(() => ({
+    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } } }) }
+  })),
+}));
+
 vi.mock('@/lib/supabase/admin', () => {
   const builder: any = {
     select: vi.fn(() => builder),
@@ -77,7 +83,7 @@ describe('GET /api/quizzes/leaderboard', () => {
     expect(body.leaderboard[0]).toMatchObject({
       rank: 1,
       userId: 'u1',
-      userName: 'ada',
+      userName: 'You (ada)',
       role: 'SRE',
       score: 8,
       timeTaken: 120,
@@ -86,22 +92,22 @@ describe('GET /api/quizzes/leaderboard', () => {
     expect(body.leaderboard[1].role).toBe('Developer');
   });
 
-  it('falls back to an anonymous entry when the user is not in the auth list', async () => {
+  it('falls back to an anonymized entry when the user is not in the auth list', async () => {
     queryState.result = { data: [attempt({ user_id: 'ghost' })], error: null };
     mockListUsers.mockResolvedValue({ data: { users: [] }, error: null });
 
     const body = await (await GET(req())).json();
-    expect(body.leaderboard[0].userName).toBe('anonymous');
+    expect(body.leaderboard[0].userName).toBe('de***r');
     expect(body.leaderboard[0].role).toBe('Developer');
   });
 
   it('still ranks attempts when the auth lookup errors', async () => {
-    queryState.result = { data: [attempt()], error: null };
+    queryState.result = { data: [attempt({ user_id: 'other' })], error: null };
     mockListUsers.mockResolvedValue({ data: { users: null }, error: { message: 'auth down' } });
 
     const body = await (await GET(req())).json();
     expect(body.success).toBe(true);
-    expect(body.leaderboard[0].userName).toBe('anonymous');
+    expect(body.leaderboard[0].userName).toBe('de***r');
   });
 
   it('filters by blogId when the query param is present', async () => {

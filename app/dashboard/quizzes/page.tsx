@@ -183,7 +183,12 @@ export default function PersonalLeaderboardPage() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                          {new Date(quiz.completed_at || quiz.started_at).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {(() => {
+                            const rawDate = quiz.completed_at || quiz.started_at;
+                            if (!rawDate) return 'Recently';
+                            const d = new Date(rawDate);
+                            return Number.isNaN(d.getTime()) ? 'Recently' : d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                          })()}
                         </span>
                         {quiz.status === 'completed' ? (
                           <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-200 text-[10px] font-bold uppercase tracking-wider rounded-md flex items-center gap-1">
@@ -210,7 +215,9 @@ export default function PersonalLeaderboardPage() {
                         </div>
                         <div>
                           <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Time</p>
-                          <p className="text-xl font-black text-zinc-900">{Math.floor(quiz.time_taken_seconds / 60)}:{(quiz.time_taken_seconds % 60).toString().padStart(2, '0')}</p>
+                          <p className="text-xl font-black text-zinc-900">
+                            {Math.floor((quiz.time_taken_seconds || 0) / 60)}:{((quiz.time_taken_seconds || 0) % 60).toString().padStart(2, '0')}
+                          </p>
                         </div>
                         <button 
                           onClick={() => router.push(`/dashboard/quiz/${quiz.blog_id}`)}

@@ -3,6 +3,7 @@ import {
   getSubmissions,
   saveSubmission,
   getSubmissionById,
+  deleteSubmission,
   addAuditLog,
   getAuditLogs,
   Submission,
@@ -10,8 +11,6 @@ import {
 
 describe('Database & State Transition Integration Tests', () => {
   beforeEach(async () => {
-    // db.ts uses global array mock, but let's reset or prepare it
-    // In our db.ts implementation, we use fs-based mocking in JSON files
   });
 
   it('should successfully save and retrieve a blog submission', async () => {
@@ -50,6 +49,29 @@ describe('Database & State Transition Integration Tests', () => {
     expect(fetched).toBeDefined();
     expect(fetched?.title).toBe('Test Integration Post');
     expect(fetched?.status).toBe('PENDING_QUIZ');
+  });
+
+  it('should delete a submission successfully', async () => {
+    const submissionId = `test-del-${Date.now()}`;
+    const newSubmission: Submission = {
+      id: submissionId,
+      title: 'To Be Deleted',
+      content: 'Content',
+      author: 'integrator@creolestudios.com',
+      status: 'PENDING_QUIZ',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await saveSubmission(newSubmission);
+    const deleted = await deleteSubmission(submissionId);
+    expect(deleted).toBe(true);
+
+    const fetched = await getSubmissionById(submissionId);
+    expect(fetched).toBeNull();
+
+    const deleteAgain = await deleteSubmission('non-existent-id');
+    expect(deleteAgain).toBe(false);
   });
 
   it('should grade quiz answers and handle successful state transition to APPROVED', async () => {

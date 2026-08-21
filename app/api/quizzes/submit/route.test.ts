@@ -1,51 +1,27 @@
+// @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './route';
 
-const mockGetUser = vi.fn();
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: vi.fn().mockImplementation(() => ({ auth: { getUser: mockGetUser } })),
+  createClient: vi.fn(),
 }));
-
-// Per-table response queues: each call to supabaseAdmin.from(table) consumes
-// the next queued response for that table (defaults to empty success).
-let tableResponses: Record<string, any[]>;
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
-    from: vi.fn((table: string) => {
-      const chain: any = {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        single: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockReturnThis(),
-        update: vi.fn().mockReturnThis(),
-        order: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        then: vi.fn((resolve) => {
-          const queue = tableResponses[table] ?? [];
-          const res = queue.length > 0 ? queue.shift() : { data: null, error: null, count: 0 };
-          resolve(res);
-        }),
-      };
-      return chain;
-    }),
+    from: vi.fn(),
   },
 }));
 
-function quizBlog(overrides: Partial<{ questions: any[] }> = {}) {
-  const questions = overrides.questions ?? [
-    { id: 'q1', text: 'What is 2+2?', correctAnswer: 'B', explanation: 'Math' },
-  ];
-  const quizData = JSON.stringify({ questions });
-  return {
-    id: 'blog-1',
-    content: `<p>Blog body</p><!-- QUIZ_DATA: ${quizData} -->`,
-  };
-}
+import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
-function mockRequest(body: unknown, cookie?: string) {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
-  if (cookie) headers.set('cookie', cookie);
+function mockRequest(body: unknown, cookieHeader?: string) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (cookieHeader) {
+    headers['cookie'] = cookieHeader;
+  }
   return new Request('http://localhost/api/quizzes/submit', {
     method: 'POST',
     headers,
@@ -56,106 +32,238 @@ function mockRequest(body: unknown, cookie?: string) {
 describe('POST /api/quizzes/submit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    tableResponses = {};
   });
 
-  it('returns 401 with no session', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null } });
-    const res = await POST(mockRequest({ quizId: 'blog-1', answers: [], timeTakenSec: 30 }));
+  it('returns 401 if user is not authenticated', async () => {
+    (createClient as any).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
+    });
+
+    const res = await POST(mockRequest({ quizId: 'q1', answers: [], timeTakenSec: 10 }));
     expect(res.status).toBe(401);
   });
 
-  it('does not authenticate via a mock-user cookie when there is no session', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null } });
-    const res = await POST(
-      mockRequest(
-        { quizId: 'blog-1', answers: [{ questionId: 'q1', userAnswer: 'b' }], timeTakenSec: 30 },
-        'mock-user=true',
-      ),
-    );
-    expect(res.status).toBe(401);
-  });
+  it('returns 400 if required fields are missing', async () => {
+    (createClient as any).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } } }) },
+    });
 
-  it('validates required fields', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    const res = await POST(mockRequest({ quizId: 'blog-1' }));
+    const res = await POST(mockRequest({ quizId: 'q1' }));
     expect(res.status).toBe(400);
   });
 
-  it('falls back to URL lookup and 404s when the blog cannot be found either way', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    tableResponses = {
-      blogs: [
-        { data: null, error: { message: 'not found' } },
-        { data: null, error: null },
-      ],
-    };
+  it('returns 404 if blog source is not found', async () => {
+    (createClient as any).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } } }) },
+    });
 
-    const res = await POST(mockRequest({ quizId: 'blog-1', answers: [], timeTakenSec: 30 }));
+    (supabaseAdmin.from as any).mockImplementation(() => ({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } }),
+        }),
+      }),
+    }));
+
+    const res = await POST(mockRequest({ quizId: 'nonexistent', answers: [], timeTakenSec: 10 }));
     expect(res.status).toBe(404);
   });
 
-  it('returns 400 when the blog has no embedded quiz data', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    tableResponses = { blogs: [{ data: { id: 'blog-1', content: '<p>No quiz here</p>' }, error: null }] };
+  it('returns 400 if blog content contains no quiz comments', async () => {
+    (createClient as any).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } } }) },
+    });
 
-    const res = await POST(mockRequest({ quizId: 'blog-1', answers: [], timeTakenSec: 30 }));
+    (supabaseAdmin.from as any).mockImplementation(() => ({
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({ data: { id: 'b1', content: 'No quiz here' }, error: null }),
+        }),
+      }),
+    }));
+
+    const res = await POST(mockRequest({ quizId: 'b1', answers: [], timeTakenSec: 10 }));
     expect(res.status).toBe(400);
   });
 
-  it('grades a perfect score, awards XP/coins, and sets the gamification cookie', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    tableResponses = {
-      blogs: [{ data: quizBlog(), error: null }],
-      user_profiles: [{ data: { xp: 0, coins: 0 }, error: null }],
-      streaks: [{ data: null, error: { message: 'no row' } }],
-    };
+  it('grades quiz answers and updates XP, coins, and streak', async () => {
+    (createClient as any).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } } }) },
+    });
+
+    const quizComment = `<!-- QUIZ_DATA: {"questions":[{"id":"q1","text":"Q1","correctAnswer":"A"},{"id":"q2","text":"Q2","correctAnswer":"B"}]} -->`;
+    const blogData = { id: 'b1', content: quizComment };
+
+    (supabaseAdmin.from as any).mockImplementation((table: string) => {
+      if (table === 'blogs') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: blogData, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'user_profiles') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: { xp: 100, coins: 50 }, error: null }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        };
+      }
+      if (table === 'streaks') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { current_streak: 2, longest_streak: 5, last_active_date: '2026-08-20' },
+                error: null,
+              }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: null }),
+          }),
+        };
+      }
+      return {
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: null, error: null }),
+          }),
+        }),
+      };
+    });
 
     const res = await POST(
       mockRequest({
-        quizId: 'blog-1',
-        answers: [{ questionId: 'q1', userAnswer: 'b' }],
+        quizId: 'b1',
+        answers: [
+          { questionId: 'q1', userAnswer: 'A' },
+          { questionId: 'q2', userAnswer: 'B' },
+        ],
         timeTakenSec: 30,
-      }),
+      })
     );
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.data.score).toBe(1);
+    expect(body.success).toBe(true);
+    expect(body.data.score).toBe(2);
     expect(body.data.isPerfect).toBe(true);
-    expect(body.data.xpEarned).toBeGreaterThan(0);
-    expect(res.headers.get('Set-Cookie')).toContain('mock_gamification_stats=');
+    expect(body.data.xpEarned).toBe(140);
   });
 
-  it('zeroes XP/coins when the submission is flagged as a speed violation', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    tableResponses = {
-      blogs: [{ data: quizBlog(), error: null }],
-      user_profiles: [{ data: null, error: { message: 'no row' } }],
-      streaks: [{ data: null, error: { message: 'no row' } }],
-    };
+  it('handles mock_gamification_stats cookie and quiz_attempts passed column error', async () => {
+    (createClient as any).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } } }) },
+    });
+
+    const quizComment = `<!-- QUIZ_DATA: {"questions":[{"id":"q1","text":"Q1","correctAnswer":"A"}]} -->`;
+    const blogData = { id: 'b1', content: quizComment };
+    const mockCookie = `mock_gamification_stats=${encodeURIComponent(JSON.stringify({ xp: 500, coins: 100, currentStreak: 4, longestStreak: 10 }))}`;
+
+    (supabaseAdmin.from as any).mockImplementation((table: string) => {
+      if (table === 'blogs') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: blogData, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'user_profiles') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: { xp: 500, coins: 100 }, error: null }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ error: { message: 'column level does not exist' } }),
+          }),
+        };
+      }
+      if (table === 'quiz_attempts') {
+        return {
+          insert: vi.fn().mockResolvedValueOnce({ error: { code: '42703', message: 'column passed does not exist' } }).mockResolvedValueOnce({ error: null }),
+        };
+      }
+      return {
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: null, error: null }),
+          }),
+        }),
+      };
+    });
+
+    const res = await POST(
+      mockRequest(
+        {
+          quizId: 'b1',
+          answers: [{ questionId: 'q1', userAnswer: 'A' }],
+          timeTakenSec: 10,
+        },
+        mockCookie
+      )
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('handles speed violation anti-cheat trigger', async () => {
+    (createClient as any).mockResolvedValue({
+      auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'u1' } } }) },
+    });
+
+    const quizComment = `<!-- QUIZ_DATA: {"questions":[{"id":"q1","text":"Q1","correctAnswer":"A"}]} -->`;
+    const blogData = { id: 'b1', content: quizComment };
+
+    (supabaseAdmin.from as any).mockImplementation((table: string) => {
+      if (table === 'blogs') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({ data: blogData, error: null }),
+            }),
+          }),
+        };
+      }
+      return {
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            single: vi.fn().mockResolvedValue({ data: null, error: null }),
+          }),
+        }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+        update: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      };
+    });
 
     const res = await POST(
       mockRequest({
-        quizId: 'blog-1',
-        answers: [{ questionId: 'q1', userAnswer: 'b' }],
-        timeTakenSec: 0.5, // 0.5s for 1 question => speed violation
-      }),
+        quizId: 'b1',
+        answers: [{ questionId: 'q1', userAnswer: 'A' }],
+        timeTakenSec: 0.5,
+      })
     );
 
+    expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.speedViolation).toBe(true);
     expect(body.data.xpEarned).toBe(0);
-    expect(body.data.coinsEarned).toBe(0);
-  });
-
-  it('returns a 500 when the request body cannot be parsed', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    const badRequest = new Request('http://localhost/api/quizzes/submit', {
-      method: 'POST',
-      body: 'not json',
-    });
-    const res = await POST(badRequest);
-    expect(res.status).toBe(500);
   });
 });

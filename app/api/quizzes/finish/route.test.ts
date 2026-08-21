@@ -20,6 +20,7 @@ vi.mock('@/lib/supabase/admin', () => ({
         update: vi.fn().mockReturnThis(),
         limit: vi.fn().mockReturnThis(),
         single: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
         then: vi.fn((resolve) => {
           const res = mockDbResponses.length > 0 ? mockDbResponses.shift() : { data: null, error: null };
           resolve(res);
@@ -71,6 +72,34 @@ describe('POST /api/quizzes/finish', () => {
     expect(res.status).toBe(403);
   });
 
+  it('retries update without passed column if passed column error occurs', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const startedAt = new Date(Date.now() - 60_000).toISOString();
+
+    mockDbResponses = [
+      {
+        data: {
+          status: 'in_progress',
+          started_at: startedAt,
+          total_questions: 5,
+          blog_id: 'blog-1',
+          quiz_answers: [{ question_id: 'q1', points_awarded: 1, is_correct: true }],
+        },
+        error: null,
+      }, // attempt lookup
+      { error: { code: '42703', message: 'column passed does not exist' } }, // first update fails
+      { error: null }, // retry update succeeds
+      { data: [{ id: 'q1', question_type: 'single' }], error: null }, // questions lookup
+      { data: [{ id: 'a1', status: 'completed' }, { id: 'a2', status: 'completed' }], error: null }, // all user attempts
+    ];
+
+    const res = await POST(mockRequest({ attemptId: 'a1' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.attemptsRemaining).toBe(1);
+  });
+
   it('returns 500 when persisting the completed attempt fails', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     mockDbResponses = [
@@ -114,6 +143,7 @@ describe('POST /api/quizzes/finish', () => {
         ],
         error: null,
       }, // questions
+      { data: [{ id: 'a1', status: 'completed', total_questions: 5 }], error: null }, // all user attempts
     ];
 
     const res = await POST(mockRequest({ attemptId: 'a1' }));

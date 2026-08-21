@@ -28,6 +28,7 @@ vi.mock('@/lib/supabase/admin', () => {
           limit: vi.fn().mockReturnThis(),
           single: vi.fn().mockReturnThis(),
           update: vi.fn().mockReturnThis(),
+          in: vi.fn().mockReturnThis(),
           then: vi.fn((resolve) => {
             const res = mockDbResponses.length > 0 ? mockDbResponses.shift() : { data: null, error: null };
             resolve(res);
@@ -51,15 +52,16 @@ describe('GET /api/quizzes/status', () => {
 
   it('should return completed true if attempt is finished', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-123' } } });
-    
-    // Return a completed attempt
+
     mockDbResponses = [
-      { data: [{ status: 'completed', score: 6, percentage: 75, time_taken_seconds: 120, total_questions: 5 }], error: null }
+      { data: [{ id: 'a1', status: 'completed', score: 6, percentage: 75, time_taken_seconds: 120, total_questions: 5 }], error: null },
+      { data: { quiz_answers: Array(5).fill({ question_id: 'q1' }) }, error: null }, // fullAttempt
+      { data: [{ id: 'q1', question_type: 'single' }], error: null } // questions
     ];
 
     const response = await GET(mockRequest('http://localhost:3000/api/quizzes/status?blogId=1'));
     const data = await response.json();
-    
+
     expect(data.completed).toBe(true);
     expect(data.result.score).toBe(6);
     expect(data.result.timeTaken).toBe(120);
@@ -67,34 +69,34 @@ describe('GET /api/quizzes/status', () => {
 
   it('should accurately calculate timeLeft based on wall-clock', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-123' } } });
-    
+
     // Simulate started 400 seconds ago
     const startedAt = new Date(Date.now() - 400000).toISOString();
 
     mockDbResponses = [
       { data: [{ id: 'attempt-123', status: 'in_progress', started_at: startedAt }], error: null }, // attempts
-      { data: [], error: null }, // questions
-      { data: [], error: null }  // answers
+      { data: [{ question_id: 'q1', user_answer: 'ans' }], error: null }, // activeAnswers
+      { data: [{ id: 'q1', question_type: 'single', difficulty: 'easy', question: 'Q?', options: null, code_snippet: null }], error: null } // questions
     ];
 
     const response = await GET(mockRequest('http://localhost:3000/api/quizzes/status?blogId=1'));
     const data = await response.json();
-    
+
     expect(data.inProgress).toBe(true);
-    expect(data.timeLeft).toBeGreaterThanOrEqual(198); 
-    expect(data.timeLeft).toBeLessThanOrEqual(202);
+    expect(data.timeLeft).toBeGreaterThanOrEqual(798);
+    expect(data.timeLeft).toBeLessThanOrEqual(802);
   });
 
   it('should return inProgress false if no attempt exists', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-123' } } });
-    
+
     mockDbResponses = [
       { data: [], error: null }
     ];
 
     const response = await GET(mockRequest('http://localhost:3000/api/quizzes/status?blogId=1'));
     const data = await response.json();
-    
+
     expect(data.completed).toBe(false);
     expect(data.inProgress).toBe(false);
   });
@@ -113,7 +115,7 @@ describe('GET /api/quizzes/status', () => {
 
   it('auto-completes an in-progress attempt once the timer expires', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-123' } } });
-    const startedAt = new Date(Date.now() - 700_000).toISOString();
+    const startedAt = new Date(Date.now() - 1_300_000).toISOString();
 
     mockDbResponses = [
       {
@@ -127,7 +129,7 @@ describe('GET /api/quizzes/status', () => {
         error: null,
       },
       { data: { quiz_answers: [{ points_awarded: 2, question_id: 'q1', is_correct: true }] }, error: null },
-      { error: null },
+      { data: [{ id: 'q1', question_type: 'single' }], error: null },
       { data: [], error: null },
       {
         data: {

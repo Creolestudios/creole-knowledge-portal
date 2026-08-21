@@ -19,6 +19,7 @@ export async function GET(request: Request) {
         percentage,
         time_taken_seconds,
         completed_at,
+        started_at,
         status,
         blog_id
       `)

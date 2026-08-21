@@ -120,7 +120,10 @@ class LLMSettings(BaseSettings):
         default="",
         validation_alias=AliasChoices("LLM_GEMINI_API_KEY", "GEMINI_API_KEY"),
     )
-    GEMINI_MODEL: str = "gemini-3.6-flash"
+    GEMINI_MODEL: str = Field(
+        default="gemini-2.5-flash",
+        validation_alias=AliasChoices("LLM_GEMINI_MODEL", "GEMINI_MODEL"),
+    )
     GEMINI_EMBED_MODEL: str = "models/text-embedding-004"
 
 
