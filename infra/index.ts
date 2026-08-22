@@ -182,6 +182,8 @@ new aws.lb.ListenerRule(`${appName}-web-rule`, {
 }, { provider: awsProvider });
 
 const apiPublicUrl = pulumi.interpolate`https://${domainName}/${appName}`;
+const blogServiceUrl = pulumi.interpolate`${apiPublicUrl}/api/v1`;
+const webOrigin = pulumi.interpolate`https://${domainName}`;
 
 const executionRole = new aws.iam.Role(`${appName}-ecs-exec-role`, {
   assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
@@ -277,13 +279,15 @@ const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
       appSecrets.mongoUri?.arn ?? pulumi.output(""),
       appSecrets.redisUrl?.arn ?? pulumi.output(""),
       appSecrets.llmGeminiApiKey?.arn ?? pulumi.output(""),
+      pulumi.interpolate`${webOrigin},http://localhost:3000`,
     ])
-    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn]) => {
+    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn, corsOrigins]) => {
       const environment: EcsEnvVar[] = [
         { name: "NODE_ENV", value: "production" },
         { name: "HOSTNAME", value: "0.0.0.0" },
         { name: "PORT", value: String(apiPort) },
         { name: "APP_ENVIRONMENT", value: "production" },
+        { name: "APP_CORS_ORIGINS", value: corsOrigins },
       ];
       const secrets: EcsSecretRef[] = [];
       buildCeleryEnvSecrets(mongoArn || undefined, redisArn || undefined, llmArn || undefined, mongoFallback, redisFallback, environment, secrets);
@@ -320,18 +324,20 @@ const webTask = new aws.ecs.TaskDefinition(`${appName}-web-task`, {
       resolvedWebImage,
       logGroup.name,
       apiPublicUrl,
+      blogServiceUrl,
       appSecrets.supabaseUrl?.arn ?? pulumi.output(""),
       appSecrets.supabaseAnonKey?.arn ?? pulumi.output(""),
       appSecrets.supabaseServiceRoleKey?.arn ?? pulumi.output(""),
       appSecrets.geminiApiKey?.arn ?? pulumi.output(""),
     ])
-    .apply(([image, log, apiUrl, supaUrlArn, supaAnonArn, supaServiceArn, geminiArn]) => {
+    .apply(([image, log, apiUrl, blogUrl, supaUrlArn, supaAnonArn, supaServiceArn, geminiArn]) => {
       const environment: EcsEnvVar[] = [
         { name: "NODE_ENV", value: "production" },
         { name: "HOSTNAME", value: "0.0.0.0" },
         { name: "PORT", value: String(webPort) },
         { name: "NEXT_PUBLIC_API_URL", value: apiUrl },
         { name: "NEXT_PUBLIC_BASE_PATH", value: basePath },
+        { name: "BLOG_SERVICE_URL", value: blogUrl },
       ];
       const secrets: EcsSecretRef[] = [];
       if (supaUrlArn) secrets.push({ name: "NEXT_PUBLIC_SUPABASE_URL", valueFrom: supaUrlArn });

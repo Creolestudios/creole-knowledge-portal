@@ -97,6 +97,8 @@ If `ckp:llmGeminiApiKey` is unset, the stack reuses `ckp:geminiApiKey` for the L
 | Source | ECS env var | Service |
 |--------|-------------|---------|
 | Pulumi / ALB DNS | `NEXT_PUBLIC_API_URL` | web |
+| Pulumi / ALB DNS | `BLOG_SERVICE_URL` (`…/api/v1`) | web — server-side fetch to FastAPI |
+| Pulumi / domain | `APP_CORS_ORIGINS` | api — browser CORS (includes `https://ckp.nikcreations.com`) |
 | `ckp:appName` | `NEXT_PUBLIC_BASE_PATH` | web |
 | Static | `NODE_ENV`, `PORT`, `HOSTNAME` | web, api |
 
