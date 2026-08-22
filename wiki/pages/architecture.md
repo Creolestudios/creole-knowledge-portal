@@ -2,7 +2,7 @@
 title: System Architecture
 tags: [architecture, design, diagrams]
 created: 2026-05-27
-updated: 2026-06-13
+updated: 2026-08-22
 ---
 
 # System Architecture
@@ -28,6 +28,28 @@ graph TD
     FetchBlogs[fetch-blogs Microservice Python/FastAPI] -.-> SupabaseDB
     FetchBlogs -.-> Gemini
 ```
+
+---
+
+## ☁️ Deployment & Infrastructure
+
+Production runs on **AWS ECS Fargate**, managed by a Pulumi stack (`dev`). **Data stores are external SaaS only** — no RDS, DocumentDB, or ElastiCache in AWS (Supabase, MongoDB Atlas, and Redis are outside the VPC).
+
+| Item | Value |
+|------|-------|
+| AWS account | `715736407442` (`cloud_user` profile) |
+| Region | `us-east-1` |
+| Pulumi backend | `s3://pulumi-state-715736407442` |
+| ECS cluster | `ckp-shared` — web (:3000), api (:8000), Celery workers |
+| Task size | 1024 CPU / 2048 MiB |
+| Live URL | https://ckp.nikcreations.com/creole-knowledge-portal/ |
+| Base path | `/creole-knowledge-portal` (via `NEXT_PUBLIC_BASE_PATH`) |
+
+The root `Dockerfile` builds a Next.js standalone image. The `npm run build` step sets `NODE_OPTIONS=--max-old-space-size=4096` to avoid OOM during compilation. Server secrets (`SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, etc.) are **not** baked into the image — placeholders are used at build time; real values are injected at ECS runtime via AWS Secrets Manager (Pulumi config → Secrets Manager → task `secrets`).
+
+As of the 2026-08-22 redeploy, only the **web** service is scaled up (`webDesiredCount=1`); api and workers remain at `0` until images and external-store secrets are configured.
+
+See [[logs/2026-08-22|2026-08-22 changelog]] for redeploy details and [[logs/2026-08-11|2026-08-11 changelog]] for earlier infra wiring.
 
 ---
 
@@ -127,5 +149,6 @@ erDiagram
 - `app/`: Contains Next.js Page components, API endpoints, and global styling layouts.
 - `components/`: Holds reusable visual UI assets, including `LogoutButton` and `UserManagement`.
 - `lib/`: Houses database connection initialization factories (`lib/supabase/`).
+- `infra/`: Pulumi stack — ECS Fargate platform, Secrets Manager, Route53/ACM (see Deployment section above).
 - `scripts/`: Quality assurance verification pipelines and CI check simulations.
 - `fetch-blogs/`: Directory placeholder designated for the planned FastAPI python crawler service.

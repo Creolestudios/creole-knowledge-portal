@@ -25,7 +25,8 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 # layer or visible via `docker history`/`docker inspect`. `next build` only
 # needs these vars to be present, not real; actual values are injected at
 # ECS runtime via task env/Secrets Manager.
-RUN SUPABASE_SERVICE_ROLE_KEY=build-time-placeholder-not-a-secret \
+RUN NODE_OPTIONS="--max-old-space-size=4096" \
+    SUPABASE_SERVICE_ROLE_KEY=build-time-placeholder-not-a-secret \
     GEMINI_API_KEY=build-time-placeholder-not-a-secret \
     npm run build
 

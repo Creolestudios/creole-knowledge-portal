@@ -16,9 +16,9 @@ Pulumi stack for deploying CKP to **AWS ECS Fargate**. **AWS CLI-created infrast
 | Item | Value |
 |------|-------|
 | AWS profile | `cloud_user` |
-| AWS account | `761341389675` |
+| AWS account | `715736407442` |
 | Region | `us-east-1` |
-| Pulumi backend | `s3://pulumi-state-761341389675?region=us-east-1&awssdk=v2` |
+| Pulumi backend | `s3://pulumi-state-715736407442?region=us-east-1&awssdk=v2` |
 | Stack | `dev` (project `creole-knowledge-portal`) |
 
 See also: [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md), [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md), [`prototype.config.yaml`](../prototype.config.yaml).
@@ -37,7 +37,7 @@ Do **not** use the AWS CLI (or console) to create CKP resources. Extend [`compon
 | `ckp-shared-alb` | ALB | `arn:…:loadbalancer/app/ckp-shared-alb/9d5d020a6e55f819` |
 | `ckp-shared-http-listener` | HTTP :80 listener | `arn:…/listener/…/18c48acf310a9913` |
 | `ckp-shared-cluster` | ECS cluster `ckp-shared` | cluster name / ARN |
-| `ckp-github-oidc` | GitHub OIDC provider | `arn:aws:iam::761341389675:oidc-provider/token.actions.githubusercontent.com` |
+| `ckp-github-oidc` | GitHub OIDC provider | `arn:aws:iam::715736407442:oidc-provider/token.actions.githubusercontent.com` |
 | `ckp-github-deploy-role` | IAM role | `ckp-github-deploy-dev` |
 | `ckp-github-deploy-policy` | Inline policy | `ckp-github-deploy-dev:ckp-pulumi-deploy` |
 
@@ -48,7 +48,7 @@ These resources are **protected** in Pulumi (`protect: true`) and tagged `Manage
 | Resource | Why |
 |----------|-----|
 | AWS default VPC + subnets | AWS-owned; looked up (`aws.ec2.getVpc`) |
-| S3 `pulumi-state-761341389675` | Pulumi backend — chicken-and-egg. **Only allowed CLI leftover.** Do not recreate unless the bucket is gone. See [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md). |
+| S3 `pulumi-state-715736407442` | Pulumi backend — chicken-and-egg. **Only allowed CLI leftover.** Do not recreate unless the bucket is gone. See [`PULUMI-BACKEND.md`](./PULUMI-BACKEND.md). |
 | KMS alias `ckp-pulumi-secrets` | Secrets provider for stack config (same bootstrap class as the state bucket) |
 | Supabase / Atlas / Redis | External SaaS |
 
@@ -60,7 +60,7 @@ App secrets **do not** go in GitHub. The only GitHub setting for deploy is a rep
 
 | Name | Type | Value | Purpose |
 |------|------|-------|---------|
-| `AWS_GHA_DEPLOY_ROLE_ARN` | Repository **variable** (not a secret) | `arn:aws:iam::761341389675:role/ckp-github-deploy-dev` | OIDC role assumed by [deploy-infra.yml](../.github/workflows/deploy-infra.yml) |
+| `AWS_GHA_DEPLOY_ROLE_ARN` | Repository **variable** (not a secret) | `arn:aws:iam::715736407442:role/ckp-github-deploy-dev` | OIDC role assumed by [deploy-infra.yml](../.github/workflows/deploy-infra.yml) |
 
 No `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Full OIDC steps: [`.github/OIDC-SETUP.md`](../.github/OIDC-SETUP.md).
 
@@ -218,7 +218,7 @@ Owns: shared ALB + SG + listeners, ECS cluster, GitHub OIDC + deploy role, ECR, 
 ```bash
 # Authenticate
 aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin 761341389675.dkr.ecr.us-east-1.amazonaws.com
+  docker login --username AWS --password-stdin 715736407442.dkr.ecr.us-east-1.amazonaws.com
 
 WEB_REPO=$(pulumi stack output webRepositoryUrl)
 API_REPO=$(pulumi stack output apiRepositoryUrl)

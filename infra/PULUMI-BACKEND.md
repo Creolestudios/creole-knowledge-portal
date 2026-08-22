@@ -1,4 +1,4 @@
-# Pulumi state backend (cloud_user account `761341389675`)
+# Pulumi state backend (cloud_user account `715736407442`)
 
 Use this account’s **S3** backend — not Pulumi Cloud.
 
@@ -6,12 +6,12 @@ Use this account’s **S3** backend — not Pulumi Cloud.
 export AWS_PROFILE=cloud_user
 export AWS_REGION=us-east-1
 
-pulumi login 's3://pulumi-state-761341389675?region=us-east-1&awssdk=v2'
+pulumi login 's3://pulumi-state-715736407442?region=us-east-1&awssdk=v2'
 ```
 
 | Resource | Name |
 |----------|------|
-| State bucket | `pulumi-state-761341389675` (versioning enabled) |
+| State bucket | `pulumi-state-715736407442` (versioning enabled) |
 | Region | `us-east-1` |
 | Lock table | Not created yet (optional `pulumi-state-locks` DynamoDB table) |
 
@@ -35,16 +35,16 @@ Stack FQN on S3 backend: `creole-knowledge-portal/dev` (organization defaults to
 
 ## Disaster recovery only (bucket missing)
 
-If — and only if — `pulumi-state-761341389675` does not exist, recreate the backend bucket. This is not a bootstrap path for new CKP resources.
+If — and only if — `pulumi-state-715736407442` does not exist, recreate the backend bucket. This is not a bootstrap path for new CKP resources.
 
 ```bash
 export AWS_PROFILE=cloud_user
-aws s3api create-bucket --bucket pulumi-state-761341389675 --region us-east-1
+aws s3api create-bucket --bucket pulumi-state-715736407442 --region us-east-1
 aws s3api put-bucket-versioning \
-  --bucket pulumi-state-761341389675 \
+  --bucket pulumi-state-715736407442 \
   --versioning-configuration Status=Enabled
 aws s3api put-public-access-block \
-  --bucket pulumi-state-761341389675 \
+  --bucket pulumi-state-715736407442 \
   --public-access-block-configuration \
     BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 ```

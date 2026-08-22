@@ -5,16 +5,16 @@ Use **OIDC** (no long-lived AWS access keys) for `.github/workflows/deploy-infra
 | Item | Value |
 |------|-------|
 | GitHub repo | `Creolestudios/creole-knowledge-portal` |
-| AWS account | `761341389675` (`cloud_user` profile, `us-east-1`) |
-| Pulumi state bucket | `s3://pulumi-state-761341389675?region=us-east-1&awssdk=v2` |
+| AWS account | `715736407442` (`cloud_user` profile, `us-east-1`) |
+| Pulumi state bucket | `s3://pulumi-state-715736407442?region=us-east-1&awssdk=v2` |
 | Repository variable | `AWS_GHA_DEPLOY_ROLE_ARN` — IAM role ARN for GHA to assume |
 
 **Do not create the OIDC provider or deploy role with the AWS CLI.** Both are Pulumi-owned (`infra/components/platform.ts`) and were imported into stack `dev`.
 
 | Name | Value |
 |------|-------|
-| `AWS_GHA_DEPLOY_ROLE_ARN` | `arn:aws:iam::761341389675:role/ckp-github-deploy-dev` |
-| OIDC provider | `arn:aws:iam::761341389675:oidc-provider/token.actions.githubusercontent.com` |
+| `AWS_GHA_DEPLOY_ROLE_ARN` | `arn:aws:iam::715736407442:role/ckp-github-deploy-dev` |
+| OIDC provider | `arn:aws:iam::715736407442:oidc-provider/token.actions.githubusercontent.com` |
 | Thumbprint | `6938fd4d98bab03fa0217a5d6397dd4a4f5e5e5e` |
 
 Change trust policy, thumbprint, or permissions in Pulumi and `pulumi up` — never `aws iam create-*`.
@@ -35,7 +35,7 @@ In **Settings → Secrets and variables → Actions → Variables**:
 
 | Name | Example |
 |------|---------|
-| `AWS_GHA_DEPLOY_ROLE_ARN` | `arn:aws:iam::761341389675:role/ckp-github-deploy-dev` |
+| `AWS_GHA_DEPLOY_ROLE_ARN` | `arn:aws:iam::715736407442:role/ckp-github-deploy-dev` |
 
 Optional: use GitHub **Environments** (`dev`, `prod`) with protection rules before allowing `pulumi up`.
 

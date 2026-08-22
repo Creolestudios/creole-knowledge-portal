@@ -1,6 +1,6 @@
 name: Deploy Infrastructure
 
-# Pulumi preview/up against the S3 backend in AWS account 761341389675 (cloud_user).
+# Pulumi preview/up against the S3 backend in AWS account 715736407442 (cloud_user).
 # Requires GitHub OIDC role — see .github/OIDC-SETUP.md.
 #
 # Triggers:
@@ -36,8 +36,8 @@ permissions:
 env:
   AWS_REGION: us-east-1
   AWS_DEFAULT_REGION: us-east-1
-  AWS_ACCOUNT_ID: "761341389675"
-  PULUMI_BACKEND_URL: s3://pulumi-state-761341389675?region=us-east-1&awssdk=v2
+  AWS_ACCOUNT_ID: "715736407442"
+  PULUMI_BACKEND_URL: s3://pulumi-state-715736407442?region=us-east-1&awssdk=v2
 
 jobs:
   oidc-not-configured:

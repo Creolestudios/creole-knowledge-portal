@@ -1,19 +1,32 @@
 secretsprovider: awskms://alias/ckp-pulumi-secrets?region=us-east-1
-encryptedkey: AQICAHjUpAYTZVY8JP1VZnlKMsHaWjtUuTHDSy+pM5wjIG2S0AEe7Cw8Z3RvLexULEEgIxWJAAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMSyGBAFgDZ2VkDB9WAgEQgDur5Gjmd0wSllWCuTeAx1WujAhTiRxUXnVl4iiWC5FxjBOZUpfKXsypFG3wA0OFUDb/CbxPbyj0Zq+cRQ==
+encryptedkey: AQICAHgP0m5aDMx2fTVj5wAZcYeytRIBqWDSQGaNrcoAhf/PeQF69Hx5koAecWC8hgm/SSyDAAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMMocn1GgDi39fGrloAgEQgDsaTr1WjwaiCsBeHDQ5nWKgdJHjYWfbIwMjN7A827qji4t7oOp7Hy0q5cmWQiGdJwzcL8Sq0b1Ol8XRhQ==
 config:
+  aws:region: us-east-1
   ckp:environment: dev
   ckp:appName: creole-knowledge-portal
   ckp:domainName: ckp.nikcreations.com
-  ckp:albSubnetIds:
-    - subnet-02b389cd8b541b61b
-    - subnet-0d6aa100da345f0b3
   ckp:listenerPriorityBase: "1100"
   ckp:ecsDesiredCount: "1"
-  ckp:workersDesiredCount: "0"
-  ckp:redisUrl: redis://placeholder:6379/0
-  aws:region: us-east-1
-  ckp:apiDesiredCount: "0"
-  ckp:webImage: 761341389675.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-web:latest
   ckp:webDesiredCount: "1"
+  ckp:apiDesiredCount: "0"
+  ckp:workersDesiredCount: "0"
   ckp:ecsCpu: "1024"
   ckp:ecsMemory: "2048"
+  ckp:redisUrl:
+    secure: v1:DAul80mOqiZ54uMO:FpOMFJ65mYLHwPRCOJ4mow4m1Fb4YCmoQ7lTnd0QGQAXyIey08gflY+H8m6jChDlVSCpVagxNxGsofd30wBIlBwQLzBsEcYe5L3O2O7zOvY3nylMCgkPfw7CMn194hqqotHOonGEkm2ENG63Q8vNHNo=
+  ckp:githubRepo: Creolestudios/creole-knowledge-portal
+  ckp:albSubnetIds:
+    - subnet-027b743555cb942a2
+    - subnet-0472667f1ee9f9289
+  ckp:supabaseUrl:
+    secure: v1:qLGYztq+l8vGD0cI:AoOH3j8/b/SKkOUN8F3EL7yDYExMlUG59NF7wg6K4F4Nh+Rd5pqf1oSyfPo3GspqREmC3cir1fs=
+  ckp:supabaseAnonKey:
+    secure: v1:WuSPdiPQKfJuw6t8:TcVA1/nLC2euyesAES2E11AhfYHwiwO/jOLfrmqOq02PXqCB5SXerLKaWGTgs7Eg3oqnj2u+/eRDKpLf1WJ7zsH8TdP7sl2b7YjR7fApdTeCVnxV0/ZpJFBqMU6kfUA+sWh/DZa9blkLgOHZPKJpigHh7Vkugc18p0kov7mbv/1tFMS7YpWjYTgUNKKn9Oi5QTUK85cZAZW5qee8WYaM6dUP9OEFMBW6Sk4CM2N06kW0s6bFO0+s605S0cnq1G4QbtSo/dx/ITt8X369VxRc0n8qRZ/qxK+3J8qYfYT/cgU=
+  ckp:supabaseServiceRoleKey:
+    secure: v1:nkUGU2h/oNI6rh88:wBXJfgRvTeEO8N/9ksvguDrfe/OMbrS6uNrPKOqNdWnXFgBnYUVAd1LxxW+Tj9enBHAMK25yhhg/6XznFi4kZYbz8PAUBQekwM9NT3GKiTUhhoPtoKUFPQkomACkEwWHu2nLiU1PRwHwoNGGJ6Z00rtRMhLSwj0LruV06CDN3kRHncnk/g5P/NZqaJDH61NLroqbJ1lDYr8LTGQYhR+DUfxFOk9j6Lya1zS3CXxW63OOmmKkzNKvWHTZfGi298wFuOmluZFMsnFF5G0JXFl+afUPlCOGiyXnskkjkQ+/zL7ty1XKz9m9cIfqnA==
+  ckp:geminiApiKey:
+    secure: v1:lV8fvTnJBn8oBbgT:9p+E+qqMrmg+5nQsRpm/66Di+z3B2orXgWqRuJKYjPvzSljXBYFN0+GzO/2wa09rp7BE+aiiCg==
+  ckp:llmGeminiApiKey:
+    secure: v1:HOuoHuPfUGrlhIVH:7W68t08GuDtbB46VadZAuFljoobzZ9FeFK/tByQyettoH0Wk+2Ws9O0kPAHtHL8NEplSXXnggX0BAt14u0FcwBJ3fG/Y
+  ckp:mongoUri:
+    secure: v1:sE++7ASJ/IH9Ba7h:r6SdeuR9XsodU2+dp4SAZVPAKuMsAL2ygLpJs6WadQnLVVhFIGKgfjHn4lonhTV2ZRL1Rw8hIEhKZ3g31J6uUfSVc66hSnnYWUN+sAplJOG0d+7XaXwrilLZcPPp2mr1ZFw4dBvUH27Qn+IyIjfJqanqyTzb85Lmso+5ANP/YFDIKG4=

@@ -14,6 +14,7 @@ This section tracks historical logs and development entries for the **Creole Kno
 
 ## 📅 Release Entries
 
+- [[logs/2026-08-22|2026-08-22 — Greenfield redeploy (account 715736407442)]]
 - [[logs/2026-08-11|2026-08-11 — Option 3 Infra + GitHub CI (feat/infra)]]
 - [[logs/2026-07-10|2026-07-10 — Ingestion and Orchestration Backend Release]]
   - _Summary:_ Initialization and setup of Python-based scraper backend service utilizing FastAPI, Celery task workers, MongoDB/Supabase database publishing, and robots.txt compliance registries.
