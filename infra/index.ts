@@ -32,6 +32,7 @@ const webDesiredCount = config.getNumber("webDesiredCount") ?? desiredCount;
 const apiDesiredCount = config.getNumber("apiDesiredCount") ?? desiredCount;
 const cpu = config.get("ecsCpu") ?? "1024";
 const memory = config.get("ecsMemory") ?? "2048";
+const ephemeralStorageGiB = config.getNumber("ecsEphemeralStorageGiB") ?? 50;
 
 const webImage = config.get("webImage");
 const apiImage = config.get("apiImage");
@@ -267,6 +268,7 @@ const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
   family: `${appName}-api`,
   cpu,
   memory,
+  ephemeralStorage: { sizeInGiB: ephemeralStorageGiB },
   networkMode: "awsvpc",
   requiresCompatibilities: ["FARGATE"],
   executionRoleArn: executionRole.arn,
@@ -288,6 +290,8 @@ const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
         { name: "PORT", value: String(apiPort) },
         { name: "APP_ENVIRONMENT", value: "production" },
         { name: "APP_CORS_ORIGINS", value: corsOrigins },
+        { name: "APP_CACHE_DIR", value: "/app/.cache" },
+        { name: "TMPDIR", value: "/app/.cache/tmp" },
       ];
       const secrets: EcsSecretRef[] = [];
       buildCeleryEnvSecrets(mongoArn || undefined, redisArn || undefined, llmArn || undefined, mongoFallback, redisFallback, environment, secrets);
@@ -370,6 +374,7 @@ const workersTask = new aws.ecs.TaskDefinition(`${appName}-workers-task`, {
   family: `${appName}-workers`,
   cpu,
   memory,
+  ephemeralStorage: { sizeInGiB: ephemeralStorageGiB },
   networkMode: "awsvpc",
   requiresCompatibilities: ["FARGATE"],
   executionRoleArn: executionRole.arn,
@@ -386,6 +391,8 @@ const workersTask = new aws.ecs.TaskDefinition(`${appName}-workers-task`, {
     .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn]) => {
       const environment: EcsEnvVar[] = [
         { name: "NODE_ENV", value: "production" },
+        { name: "APP_CACHE_DIR", value: "/app/.cache" },
+        { name: "TMPDIR", value: "/app/.cache/tmp" },
       ];
       const secrets: EcsSecretRef[] = [];
       buildCeleryEnvSecrets(mongoArn || undefined, redisArn || undefined, llmArn || undefined, mongoFallback, redisFallback, environment, secrets);

@@ -41,13 +41,16 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV APP_CACHE_DIR=/app/.cache
+ENV TMPDIR=/app/.cache/tmp
 
 WORKDIR /app
 
 COPY src ./src
 COPY scripts ./scripts
 
-RUN chmod +x scripts/prestart.sh scripts/test.sh && \
+RUN mkdir -p /app/.cache/tmp && \
+    chmod +x scripts/prestart.sh scripts/test.sh && \
     groupadd --system appuser && useradd --system --gid appuser --home-dir /app appuser && \
     chown -R appuser:appuser /app /ms-playwright
 USER appuser

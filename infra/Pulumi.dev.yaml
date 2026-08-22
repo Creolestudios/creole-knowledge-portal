@@ -8,10 +8,11 @@ config:
   ckp:listenerPriorityBase: "1100"
   ckp:ecsDesiredCount: "1"
   ckp:webDesiredCount: "1"
-  ckp:apiDesiredCount: "0"
-  ckp:workersDesiredCount: "0"
+  ckp:apiDesiredCount: "1"
+  ckp:workersDesiredCount: "1"
   ckp:ecsCpu: "1024"
   ckp:ecsMemory: "2048"
+  ckp:ecsEphemeralStorageGiB: "50"
   ckp:redisUrl:
     secure: v1:DAul80mOqiZ54uMO:FpOMFJ65mYLHwPRCOJ4mow4m1Fb4YCmoQ7lTnd0QGQAXyIey08gflY+H8m6jChDlVSCpVagxNxGsofd30wBIlBwQLzBsEcYe5L3O2O7zOvY3nylMCgkPfw7CMn194hqqotHOonGEkm2ENG63Q8vNHNo=
   ckp:githubRepo: Creolestudios/creole-knowledge-portal

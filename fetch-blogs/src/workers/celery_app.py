@@ -10,6 +10,8 @@ Workers reference this module:
 
 from __future__ import annotations
 
+import src.core.runtime_paths  # noqa: F401 — set TMPDIR before newspaper3k import
+
 from celery import Celery
 from kombu import Queue
 

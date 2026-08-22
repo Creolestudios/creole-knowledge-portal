@@ -7,6 +7,8 @@ Entry point: `fastapi run --workers 4 src/main.py`
 
 from __future__ import annotations
 
+import src.core.runtime_paths  # noqa: F401 — set TMPDIR before newspaper3k import
+
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
