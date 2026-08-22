@@ -68,8 +68,16 @@ lib/data/db.json
 # Local JSON DB (dev-only; initialized automatically)
 lib/data/db.json
 
+# Pulumi stack backups (may contain old-account secrets)
+*.old-account.bak
+
+# Pulumi stack backups (may contain old-account secrets)
+*.old-account.bak
+
 # Claude Code Harness (local-only)
 .claude/
 
 # Local JSON DB (dev-only; initialized automatically)
 lib/data/db.json
+# Pulumi stack backups (may contain old-account secrets)
+*.old-account.bak
