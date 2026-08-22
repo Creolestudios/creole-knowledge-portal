@@ -140,4 +140,16 @@ describe('GET /auth/callback', () => {
     expect(res.status).toBe(307);
     expect(res.headers.get('location')).toContain('/dashboard');
   });
+
+  it('prefixes post-login redirects with NEXT_PUBLIC_BASE_PATH in production', async () => {
+    process.env.NEXT_PUBLIC_BASE_PATH = '/creole-knowledge-portal';
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@x.com' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: { role: 'user' } });
+
+    const res = await GET(
+      mockRequest('https://ckp.nikcreations.com/creole-knowledge-portal/auth/callback?code=abc123'),
+    );
+    expect(res.headers.get('location')).toBe('https://ckp.nikcreations.com/creole-knowledge-portal/dashboard');
+    delete process.env.NEXT_PUBLIC_BASE_PATH;
+  });
 });

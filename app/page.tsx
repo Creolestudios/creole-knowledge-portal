@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getAuthCallbackUrl, getPublicOrigin } from '@/lib/auth-urls';
 import { createClient } from '@/lib/supabase/client';
 import { BookOpen, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -35,10 +36,8 @@ export default function LoginPage() {
 
   const supabase = createClient();
 
-  const getAuthRedirectOrigin = () => {
-    const isLocalhost = window.location.hostname === 'localhost';
-    return isLocalhost ? window.location.origin : `https://${window.location.hostname}`;
-  };
+  const getAuthRedirectOrigin = () =>
+    getPublicOrigin(window.location.hostname, window.location.protocol, window.location.port);
 
   const handleOAuthLogin = async (provider: 'google' | 'apple') => {
     setError(null);
@@ -46,7 +45,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
+          redirectTo: getAuthCallbackUrl(getAuthRedirectOrigin()),
         },
       });
       if (error) throw error;
@@ -65,7 +64,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
+          emailRedirectTo: getAuthCallbackUrl(getAuthRedirectOrigin()),
         },
       });
 

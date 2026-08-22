@@ -1,3 +1,4 @@
+import { getPublicOriginFromUrl, withBasePath } from '@/lib/auth-urls';
 import { createClient } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
@@ -9,15 +10,11 @@ export async function GET(request: Request) {
   const errorCode = requestUrl.searchParams.get('error_code');
   const errorDescription = requestUrl.searchParams.get('error_description');
 
-  // Clean origin - remove internal ports like :3000 or :8080 for public access
-  // Standard robust detection: use protocol and hostname from request
-  // Robust origin detection: use protocol and hostname from request
-  const isLocalhost = requestUrl.hostname === 'localhost';
-  const origin = isLocalhost
-    ? `${requestUrl.protocol}//${requestUrl.hostname}${requestUrl.port ? `:${requestUrl.port}` : ''}`
-    : `https://${requestUrl.hostname}`;
-
+  const origin = getPublicOriginFromUrl(requestUrl);
   const next = requestUrl.searchParams.get('next') ?? '/dashboard';
+
+  const redirectTo = (path: string) =>
+    NextResponse.redirect(`${origin}${withBasePath(path)}`);
 
   console.log(`[Auth Callback] URL: ${request.url}`);
   const allCookies = request.headers.get('cookie') || '';
@@ -28,7 +25,7 @@ export async function GET(request: Request) {
 
   if (error) {
     console.error(`[Auth Callback] Error param found: ${error} - ${errorDescription}`);
-    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(errorDescription || error)}`);
+    return redirectTo(`/?error=${encodeURIComponent(errorDescription || error)}`);
   }
 
   if (code) {
@@ -44,7 +41,7 @@ export async function GET(request: Request) {
         const message = exchangeError.message === 'invalid flow state, no valid flow state found'
           ? 'Login session expired or context lost. Please try again from the direct URL.'
           : exchangeError.message;
-        return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(message)}`);
+        return redirectTo(`/?error=${encodeURIComponent(message)}`);
       }
 
       if (data.user) {
@@ -92,18 +89,17 @@ export async function GET(request: Request) {
 
         console.log(`[Auth Callback] Success! User: ${user.email}, Admin: ${isAdmin}, Redirecting to: ${finalRedirect}`);
 
-        const redirectUrl = new URL(finalRedirect, origin);
-        return NextResponse.redirect(redirectUrl.toString());
+        return redirectTo(finalRedirect);
       }
 
       console.error('[Auth Callback] No user data after exchange');
-      return NextResponse.redirect(`${origin}/?error=No%20user%20found%20after%20login`);
+      return redirectTo('/?error=No%20user%20found%20after%20login');
     } catch (err: any) {
       console.error('[Auth Callback] Fatal internal error:', err);
-      return NextResponse.redirect(`${origin}/?error=Internal%20auth%20error`);
+      return redirectTo('/?error=Internal%20auth%20error');
     }
   }
 
   console.warn('[Auth Callback] No code or error found in URL');
-  return NextResponse.redirect(`${origin}/?error=Authentication%20failed`);
+  return redirectTo('/?error=Authentication%20failed');
 }
