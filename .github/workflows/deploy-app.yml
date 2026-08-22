@@ -1,0 +1,145 @@
+name: Deploy App (API + Workers)
+
+# Build fetch-blogs Docker image on native linux/amd64, push to ECR, optionally scale ECS.
+# Requires GitHub OIDC — same repository variable as deploy-infra.yml.
+#
+# Triggers:
+#   - workflow_dispatch: build (+ optional scale-up via Pulumi)
+#   - push to main (fetch-blogs/** or this file): build and push :latest
+
+on:
+  workflow_dispatch:
+    inputs:
+      scale_up:
+        description: Set api/workers desired count to 1 and run pulumi up
+        required: true
+        default: false
+        type: boolean
+      stack:
+        description: Pulumi stack name
+        required: true
+        default: dev
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "fetch-blogs/**"
+      - ".github/workflows/deploy-app.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_ACCOUNT_ID: "715736407442"
+  ECR_REGISTRY: "715736407442.dkr.ecr.us-east-1.amazonaws.com"
+  API_REPO: creole-knowledge-portal-api
+  WORKERS_REPO: creole-knowledge-portal-workers
+  PULUMI_BACKEND_URL: s3://pulumi-state-715736407442?region=us-east-1&awssdk=v2
+
+jobs:
+  oidc-not-configured:
+    if: vars.AWS_GHA_DEPLOY_ROLE_ARN == ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: OIDC role not configured
+        run: |
+          echo "::warning::Repository variable AWS_GHA_DEPLOY_ROLE_ARN is not set."
+          echo "App deploy is skipped until GitHub OIDC is configured."
+          echo "See .github/OIDC-SETUP.md"
+
+  build-and-push:
+    if: vars.AWS_GHA_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_GHA_DEPLOY_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: gha-ckp-app-${{ github.run_id }}
+
+      - name: Confirm target account
+        run: |
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          echo "Running as account: $ACCT"
+          test "$ACCT" = "$AWS_ACCOUNT_ID" || { echo "Wrong AWS account ($ACCT)!"; exit 1; }
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: fetch-blogs
+          file: fetch-blogs/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.API_REPO }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.API_REPO }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Tag and push workers image (same Dockerfile)
+        run: |
+          API_IMAGE="${ECR_REGISTRY}/${API_REPO}:${{ github.sha }}"
+          WORKERS_LATEST="${ECR_REGISTRY}/${WORKERS_REPO}:latest"
+          WORKERS_SHA="${ECR_REGISTRY}/${WORKERS_REPO}:${{ github.sha }}"
+          docker pull "$API_IMAGE"
+          docker tag "$API_IMAGE" "$WORKERS_LATEST"
+          docker tag "$API_IMAGE" "$WORKERS_SHA"
+          docker push "$WORKERS_LATEST"
+          docker push "$WORKERS_SHA"
+
+  scale-up:
+    if: >-
+      vars.AWS_GHA_DEPLOY_ROLE_ARN != '' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.scale_up == 'true'
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      AWS_ROLE_ARN: ${{ vars.AWS_GHA_DEPLOY_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install infra dependencies
+        run: npm ci
+
+      - uses: pulumi/setup-pulumi@v2
+        with:
+          pulumi-version: ^3.0.0
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          role-session-name: gha-ckp-app-scale-${{ github.run_id }}
+
+      - name: Pulumi up (scale api + workers)
+        run: |
+          pulumi stack select "${{ github.event.inputs.stack }}"
+          pulumi config set ckp:apiDesiredCount 1
+          pulumi config set ckp:workersDesiredCount 1
+          pulumi up --yes --non-interactive

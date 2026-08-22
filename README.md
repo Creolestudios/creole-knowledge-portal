@@ -179,6 +179,7 @@ Use this checklist to finish production deploy automation and unblock auth + API
 |----------|---------|------------------------|
 | [quality-gate.yml](.github/workflows/quality-gate.yml) | PR + push to `main` | No — uses placeholder env vars for lint/test/build |
 | [deploy-infra.yml](.github/workflows/deploy-infra.yml) | Push to `main` (`infra/**`), or manual **Run workflow** | No secrets — requires repository **variable** below |
+| [deploy-app.yml](.github/workflows/deploy-app.yml) | Push to `main` (`fetch-blogs/**`), or manual **Run workflow** | No secrets — builds API/workers on `ubuntu-latest`, pushes ECR via OIDC |
 
 Until the variable is set, **Deploy Infrastructure** prints a warning and skips Pulumi (see `oidc-not-configured` job in the workflow).
 

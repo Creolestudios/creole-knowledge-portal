@@ -1,6 +1,6 @@
 # GitHub Actions OIDC → AWS (Creole Knowledge Portal)
 
-Use **OIDC** (no long-lived AWS access keys) for `.github/workflows/deploy-infra.yml`.
+Use **OIDC** (no long-lived AWS access keys) for `.github/workflows/deploy-infra.yml` and `.github/workflows/deploy-app.yml`.
 
 | Item | Value |
 |------|-------|
