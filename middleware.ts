@@ -1,3 +1,4 @@
+import { withBasePath } from '@/lib/auth-urls';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -75,8 +76,8 @@ export async function middleware(request: NextRequest) {
   console.log(`[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdmin}`);
 
   // Function to create a redirect response that preserves cookies
-  const redirect = (url: string) => {
-    const redirectResponse = NextResponse.redirect(new URL(url, request.url));
+  const redirect = (path: string) => {
+    const redirectResponse = NextResponse.redirect(new URL(withBasePath(path), request.url));
     // Copy cookies from the modified 'response' to the redirect response
     response.cookies.getAll().forEach((cookie) => {
       redirectResponse.cookies.set(cookie.name, cookie.value, {

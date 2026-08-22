@@ -125,4 +125,16 @@ describe('middleware', () => {
     const res = await middleware(makeRequest('/admin/dashboard'));
     expect(res.headers.get('location')).toContain('/dashboard');
   });
+
+  it('prefixes middleware redirects with NEXT_PUBLIC_BASE_PATH in production', async () => {
+    process.env.NEXT_PUBLIC_BASE_PATH = '/creole-knowledge-portal';
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
+    mockProfileSingle.mockResolvedValue({ data: { role: 'user' } });
+
+    const res = await middleware(
+      new NextRequest(new Request('https://ckp.nikcreations.com/creole-knowledge-portal/')),
+    );
+    expect(res.headers.get('location')).toBe('https://ckp.nikcreations.com/creole-knowledge-portal/dashboard');
+    delete process.env.NEXT_PUBLIC_BASE_PATH;
+  });
 });
