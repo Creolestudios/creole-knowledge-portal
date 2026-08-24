@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { Timer, Send, ArrowRight, ArrowLeft, CheckCircle2, Target, AlertCircle, Clock } from 'lucide-react';
-import { QuizLeaderboard } from './quiz-leaderboard';
 
 interface QuizRunnerProps {
   blogId: number | string;
@@ -33,7 +32,6 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
   // Result State
   const [result, setResult] = useState<any>(null);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Start Quiz
   const handleStart = async () => {
@@ -275,27 +273,6 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   };
 
   // Render Functions
-  if (showLeaderboard) {
-    const attemptsLeft = result ? (result.attemptsRemaining ?? Math.max(0, 3 - (result.attemptsCount || 1))) : 3;
-    const canRetake = !result?.passed && attemptsLeft > 0;
-    return (
-      <QuizLeaderboard 
-        blogId={blogId} 
-        onClose={() => setShowLeaderboard(false)}
-        onRetake={canRetake ? () => {
-          setShowLeaderboard(false);
-          setResult(null);
-          setAttemptId(null);
-          setQuestions([]);
-          setCurrentIndex(0);
-          setAnswers({});
-          setWarning('');
-          handleStart();
-        } : undefined}
-      />
-    );
-  }
-
   if (result) {
     return (
       <div className="space-y-6 mt-8">
@@ -332,10 +309,10 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button 
-              onClick={() => setShowLeaderboard(true)}
+              onClick={() => router.push('/dashboard')}
               className="w-full sm:w-1/2 py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest text-xs rounded-xl transition-all cursor-pointer"
             >
-              View Leaderboard
+              Back to Dashboard
             </button>
             {(!result.passed && ((result.attemptsRemaining ?? (3 - (result.attemptsCount || 1))) > 0)) && (
               <button 

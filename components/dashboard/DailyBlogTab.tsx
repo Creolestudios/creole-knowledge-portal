@@ -85,7 +85,12 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             const qRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
             if (qRes.ok) {
               const qData = await qRes.json();
-              if (qData) setQuizStatus(qData);
+              if (qData) {
+                setQuizStatus(qData);
+                if (qData.passed || (!qData.passed && qData.attemptsRemaining <= 0)) {
+                  setTimerActive(false);
+                }
+              }
             }
           } catch (e) {
             console.error('Error loading quiz status:', e);
@@ -159,6 +164,9 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             if (qRes?.ok) {
               const qData = await qRes.json();
               setQuizStatus(qData);
+              if (qData.passed || (!qData.passed && qData.attemptsRemaining <= 0)) {
+                setTimerActive(false);
+              }
             } else {
               setQuizStatus({ completed: false, inProgress: false, attemptsCount: 0, attemptsRemaining: 3 });
             }
@@ -295,11 +303,13 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             animate={{ opacity: 1, y: 0 }}
             className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative"
           >
-            {/* Live Reading Timer Floating Badge */}
-            <div className="absolute -top-6 right-0 z-10 bg-black text-white px-4 py-2 rounded-full font-mono text-sm font-bold shadow-lg flex items-center gap-2 border border-zinc-800">
-              <Clock size={14} className="text-brand" />
-              {formatTime(readSeconds)}
-            </div>
+            {/* Live Reading Timer Floating Badge - Only show if quiz can be taken */}
+            {(!quizStatus?.passed && (quizStatus?.attemptsRemaining ?? 3) > 0) && (
+              <div className="absolute -top-6 right-0 z-10 bg-black text-white px-4 py-2 rounded-full font-mono text-sm font-bold shadow-lg flex items-center gap-2 border border-zinc-800">
+                <Clock size={14} className="text-brand" />
+                {formatTime(readSeconds)}
+              </div>
+            )}
 
             <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
               <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">

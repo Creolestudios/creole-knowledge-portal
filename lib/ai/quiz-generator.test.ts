@@ -150,12 +150,13 @@ describe('Quiz Generator AI Service', () => {
     await expect(generateQuizForBlog('test-blog-id', 'some content')).rejects.toThrow('Failed to create parent blog row: FK violation');
   });
 
-  it('should throw an error if AI returns invalid non-JSON string', async () => {
+  it('should fallback to deterministic questions if AI returns invalid non-JSON string', async () => {
     mockGenerateContent.mockResolvedValue({
       text: 'Sorry, I cannot generate this.'
     });
 
-    await expect(generateQuizForBlog('test-blog-id', 'test content')).rejects.toThrow('AI returned invalid JSON format for quiz questions.');
+    const resultCount = await generateQuizForBlog('test-blog-id', 'test content');
+    expect(resultCount).toBe(5);
   });
 
   it('should throw error if database insert fails', async () => {

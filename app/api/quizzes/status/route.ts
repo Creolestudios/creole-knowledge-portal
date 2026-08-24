@@ -116,7 +116,9 @@ export async function GET(request: Request) {
           total: maxPossibleScore,
           correctAnswers: correctAnswersCount,
           totalQuestions,
-          reviewData
+          reviewData,
+          attemptsCount: finishedAttemptsCount,
+          attemptsRemaining
         }
       });
     }
@@ -202,7 +204,9 @@ export async function GET(request: Request) {
               total: maxPossibleScore,
               correctAnswers: correctAnswersCount,
               totalQuestions,
-              reviewData
+              reviewData,
+              attemptsCount: updatedAttemptsCount,
+              attemptsRemaining: Math.max(0, 3 - updatedAttemptsCount)
             }
           });
         }
@@ -242,7 +246,9 @@ export async function GET(request: Request) {
           total: maxPossibleScore,
           correctAnswers: correctAnswersCount,
           totalQuestions,
-          reviewData
+          reviewData,
+          attemptsCount: finishedAttemptsCount,
+          attemptsRemaining: 0
         }
       });
     }

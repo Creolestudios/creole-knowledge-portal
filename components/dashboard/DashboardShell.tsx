@@ -6,13 +6,12 @@ import Link from 'next/link';
 import { motion } from 'motion/react';
 import { User, Newspaper, History, BarChart3, Menu, X, Flame, Sparkles } from 'lucide-react';
 import type { WeeklyStats, ISODate } from '@/types/contracts';
-import { getActivity, computeWeeklyStats } from '@/lib/data/activity';
+import { computeWeeklyStats } from '@/lib/data/activity';
 import { computeStreak } from '@/lib/data/streak';
 import DailyBlogTab from './DailyBlogTab';
 import PastBlogsTab from './PastBlogsTab';
 import ActivityTab from './ActivityTab';
 import SidebarActivityWidget from './SidebarActivityWidget';
-import GlobalSearch from './GlobalSearch';
 
 type TabKey = 'daily' | 'past' | 'activity' | 'roulette';
 
@@ -80,10 +79,26 @@ export default function DashboardShell({
   // Refresh stats + streak on tab change so the sidebar reflects reading time /
   // quiz results logged while on the Daily tab.
   useEffect(() => {
-    void getActivity().then((data) => {
-      setStats(computeWeeklyStats(data));
-      setStreak(computeStreak(data));
-    });
+    async function fetchActivityData() {
+      try {
+        const res = await fetch('/api/activity');
+        if (res.ok) {
+          const data = await res.json();
+          const records = (data.records || []).map((r: any) => ({
+            date: r.date,
+            readSeconds: r.read_seconds || 0,
+            quizTaken: !!r.quiz_taken,
+            quizScore: r.quiz_score || 0,
+            quizTotal: r.quiz_total || 0,
+          }));
+          setStats(computeWeeklyStats(records));
+          setStreak(data.streak || 0);
+        }
+      } catch (e) {
+        console.error('Failed to fetch activity data', e);
+      }
+    }
+    void fetchActivityData();
   }, [active]);
 
   // Restore a past-blog date from the query string after a cross-page jump.
@@ -92,15 +107,6 @@ export default function DashboardShell({
     setPastDate(dateFromQuery);
   }
 
-  const onSearchPick = (date: ISODate) => {
-    setPastDate(date);
-    setMobileOpen(false);
-    if (isPreview) {
-      setPreviewTab('past');
-      return;
-    }
-    router.push(`/dashboard?tab=past&date=${encodeURIComponent(date)}`);
-  };
 
   const onContentScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -224,17 +230,16 @@ export default function DashboardShell({
           </button>
 
           <div className="flex items-center gap-4 flex-1">
-            <GlobalSearch onPick={onSearchPick} />
           </div>
 
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-zinc-900 leading-tight capitalize">
-                  {displayName}
+                <p className="text-sm font-bold text-zinc-900 leading-tight lowercase">
+                  {user?.email || displayName}
                 </p>
                 <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
-                  {displayDomain}
+                  {profile?.current_role || 'Author'}
                 </p>
               </div>
               <div className="w-11 h-11 rounded-xl flex items-center justify-center border bg-zinc-50 border-zinc-200 text-zinc-600">

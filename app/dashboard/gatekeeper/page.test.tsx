@@ -192,4 +192,81 @@ describe('GatekeeperPage', () => {
       expect(screen.getByText('My Article')).toBeInTheDocument();
     });
   });
+
+  it('handles navigation clicks in the sidebar', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
+    global.fetch = fetchImpl({ list: [] });
+    render(<GatekeeperPage />);
+    await waitFor(() => screen.getByText('Morning Brief'));
+
+    fireEvent.click(screen.getByText('Morning Brief'));
+    expect(mockPush).toHaveBeenCalledWith('/dashboard');
+
+    fireEvent.click(screen.getByText('Blog Submissions'));
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/gatekeeper');
+
+    fireEvent.click(screen.getByText('My Quizzes'));
+    expect(mockPush).toHaveBeenCalledWith('/dashboard/quizzes');
+  });
+
+  it('switches to submit tab when "Create First Submission" is clicked', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
+    global.fetch = fetchImpl({ list: [] });
+    render(<GatekeeperPage />);
+    await waitFor(() => screen.getByText('Create First Submission'));
+
+    fireEvent.click(screen.getByText('Create First Submission'));
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Building micro-frontends/)).toBeInTheDocument();
+    });
+  });
+
+  it('displays an error if blog submission fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
+    global.fetch = fetchImpl({
+      list: [],
+      submitPost: { ok: false, json: async () => ({ error: 'Blog rejected' }) },
+    });
+
+    render(<GatekeeperPage />);
+    await waitFor(() => screen.getByText('Create First Submission'));
+    fireEvent.click(screen.getByText('Create First Submission'));
+
+    await waitFor(() => screen.getByPlaceholderText(/Building micro-frontends/));
+    fireEvent.change(screen.getByPlaceholderText(/Building micro-frontends/), { target: { value: 'A New Post' } });
+    fireEvent.change(screen.getByPlaceholderText(/Write or paste your markdown/), {
+      target: { value: 'Some markdown body content.' },
+    });
+    fireEvent.click(screen.getByText('Submit to Gatekeeper'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Blog rejected')).toBeInTheDocument();
+    });
+  });
+
+  it('displays an error if quiz grading fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
+    global.fetch = fetchImpl({
+      list: [submission()],
+      quizPost: { ok: false, json: async () => ({ error: 'Grading failed' }) },
+    });
+
+    render(<GatekeeperPage />);
+    await waitFor(() => screen.getByText('My Article'));
+    fireEvent.click(screen.getByText('Take Verification Quiz'));
+    await waitFor(() => screen.getByText('Quiz: My Article'));
+
+    // Answer all questions
+    const optionGroups = document.querySelectorAll('.grid.grid-cols-1.md\\:grid-cols-2');
+    optionGroups.forEach((group) => {
+      const firstOption = group.querySelector('button');
+      if (firstOption) fireEvent.click(firstOption);
+    });
+
+    fireEvent.click(screen.getByText('Submit Answers'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Grading failed')).toBeInTheDocument();
+    });
+  });
 });
