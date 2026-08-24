@@ -261,7 +261,14 @@ export default function DashboardShell({
           <div className="max-w-6xl mx-auto">
 
             {active === 'daily' && <DailyBlogTab user={activeUser} profile={activeProfile} />}
-            {active === 'past' && <PastBlogsTab selected={pastDate} onSelect={setPastDate} />}
+            {active === 'past' && (
+              <PastBlogsTab
+                selected={pastDate}
+                onSelect={setPastDate}
+                user={activeUser}
+                profile={activeProfile}
+              />
+            )}
             {active === 'activity' && <ActivityTab user={activeUser} />}
             {active === 'roulette' && children}
           </div>

@@ -82,7 +82,7 @@ Return a JSON array of the {top_n} most relevant article indices in order of rel
 Example: [3, 0, 5, 1, 4, 2]
 Only output the JSON array, nothing else."""
 
-    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
+    models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
 
     for model_name in models_to_try:
         try:

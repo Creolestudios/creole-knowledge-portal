@@ -20,6 +20,7 @@ from src.models.digest import (
     DigestSource,
 )
 from src.models.profile import UserProfile, scrape_focus_terms, topic_tokens_from_text
+from src.extractors.topic_filter import is_career_fluff
 
 log = structlog.get_logger(__name__)
 
@@ -27,7 +28,11 @@ _WPM = 225
 _MIN_READ_MINUTES = 20
 _MAX_READ_MINUTES = 25
 _ARTICLE_LIMIT = 10
-_TEACHING_ARTICLE_LIMIT = 8
+_TEACHING_ARTICLE_LIMIT = 5
+# Never paste entire source blogs into the digest — short technical excerpts only.
+_SCRAPE_EXCERPT_WORDS = 140
+_SCRAPE_EXCERPT_TOTAL = 700
+_SCRAPE_EXCERPT_ARTICLES = 4
 
 
 def _min_words() -> int:
@@ -169,12 +174,13 @@ def _payload_from_articles(
     max_words_each: int | None = None,
     article_limit: int = _ARTICLE_LIMIT,
 ) -> dict[str, Any]:
-    """Build a readable briefing from scraped article bodies (no LLM)."""
+    """Build short technical excerpts from scraped bodies (no full-article dump)."""
     sections: list[dict[str, Any]] = []
     tldr: list[str] = []
     takeaways: list[str] = []
     further: list[dict[str, str]] = []
-    words_left = max_total_words if max_total_words is not None else _min_words()
+    words_left = max_total_words if max_total_words is not None else _SCRAPE_EXCERPT_TOTAL
+    per_article = max_words_each if max_words_each is not None else _SCRAPE_EXCERPT_WORDS
 
     for index, article in enumerate(articles[:article_limit], start=1):
         body = (article.body_text or article.summary or "").strip()
@@ -184,19 +190,18 @@ def _payload_from_articles(
                 f"Read the original: {article.url}"
             )
         tldr.append(article.title)
-        takeaways.append(article.title)
+        takeaways.append(f"Skim the source on {article.title} and apply one idea to your stack today.")
         further.append({"title": article.title, "url": str(article.url)})
         word_count = len(body.split())
-        cap = max_words_each if max_words_each is not None else word_count
-        take_n = min(word_count, cap, words_left) if words_left > 0 else 0
+        take_n = min(word_count, per_article, words_left) if words_left > 0 else 0
         if take_n <= 0:
             break
         text = _ensure_readable_markdown(_clip_to_words(body, take_n))
         words_left -= take_n
         sections.append(
             _section(
-                article.title,
-                f"{text}\n\n**Source:** [{article.title}]({article.url})",
+                "Overview / Summary",
+                f"**From [{article.title}]({article.url}):**\n\n{text}",
                 [index],
             )
         )
@@ -205,7 +210,7 @@ def _payload_from_articles(
         return _fallback_payload()
     return {
         "headline": articles[0].title,
-        "tldr": tldr,
+        "tldr": tldr[:6],
         "sections": sections,
         "key_takeaways": takeaways[:8],
         "further_reading": further,
@@ -289,8 +294,10 @@ def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
             f"Body:\n{body}"
         )
     return f"""
-You are writing a short personalized intro for a morning tech briefing.
+You are writing a short personalized intro for a morning TECH briefing.
 Return strict JSON only. Do not invent URLs. Keep total under 400 words.
+Focus only on the reader's stack and the cited articles' technical ideas.
+Do NOT write career advice, portfolios, interview tips, or soft skills.
 
 Profile:
 {stack}
@@ -301,32 +308,52 @@ Articles:
 Return this shape:
 {{
   "headline": "the exact primary source article title — never a template like Your Morning X Briefing",
-  "tldr": ["string", "string", "string"],
+  "tldr": ["technical bullet", "technical bullet", "technical bullet"],
   "sections": [
     {{
-      "title": "Why this matters today",
-      "content": "markdown",
+      "title": "Brief",
+      "content": "2-4 short paragraphs on the technical theme for today's reader",
       "sources_cited": [1],
-      "estimated_read_minutes": 3.0
+      "estimated_read_minutes": 2.0
+    }},
+    {{
+      "title": "Code Snippet",
+      "content": "One small fenced code block (8-20 lines max) grounded in the sources, with a one-line caption",
+      "sources_cited": [1],
+      "estimated_read_minutes": 1.0
+    }},
+    {{
+      "title": "Overview / Summary",
+      "content": "Short technical overview of what matters in the sources — no career fluff",
+      "sources_cited": [1],
+      "estimated_read_minutes": 2.0
     }}
   ],
-  "key_takeaways": ["string"],
+  "key_takeaways": ["actionable technical takeaway"],
   "further_reading": []
 }}
-Write 1 or 2 short overview sections only. Longer teaching chapters are attached separately.
+Use exactly those three section titles when possible. Longer teaching chapters are attached separately.
 """.strip()
 
 
 def _teaching_prompt(profile: UserProfile, article: Article, word_target: int) -> str:
     body = (article.body_text or article.summary or "")[:8000]
     stack = ", ".join(profile.primary_tech_stack) or "software engineering"
+    interests = ", ".join(profile.interests) or stack
     return f"""
-You are writing one chapter of a { _MIN_READ_MINUTES }-{ _MAX_READ_MINUTES } minute morning technical briefing.
+You are writing one TECHNICAL chapter of a { _MIN_READ_MINUTES }-{ _MAX_READ_MINUTES } minute morning briefing.
 Write about {word_target} words of markdown. No JSON. Do not wrap the whole answer in a code fence.
+Stay strictly on the source article's technical content as it relates to: {stack} / {interests}.
+
+HARD RULES — do NOT write about:
+- career advice, interviews, portfolios, "what companies expect", soft skills
+- generic "learn JavaScript / HTML / CSS" motivational fluff
+- unrelated beginner roadmaps
+
+ONLY write: concrete APIs, code patterns, architecture, debugging, configs, and tradeoffs from the source.
 Do not invent APIs, URLs, or library names that are not in the source.
 
 Reader: {profile.current_role or "developer"}, {profile.years_of_experience} years, stack: {stack}.
-Teach from first principles so a motivated developer can follow without the original tab open.
 
 Title: {article.title}
 URL: {article.url}
@@ -335,10 +362,10 @@ Source:
 
 Use this structure:
 ## {article.title}
-### What this is
-### Why it matters for this reader
-### Step-by-step
-### Pitfalls and what to try today
+### Technical takeaway
+### How it works (with a small code example if the source has one)
+### Apply it on {stack} today
+### Pitfalls
 End with one markdown link to the source URL.
 """.strip()
 
@@ -347,9 +374,11 @@ def _top_up_prompt(profile: UserProfile, articles: list[Article], needed: int, t
     titles = "\n".join(f"- {article.title}" for article in articles[:_TEACHING_ARTICLE_LIMIT])
     stack = ", ".join(profile.primary_tech_stack) or "software engineering"
     return f"""
-Continue the same morning technical briefing. Write {needed} more words of markdown.
-No JSON. Do not repeat the previous chapters. Add a worked example, a debugging checklist,
-and what to learn next for a {profile.current_role or "developer"} working with {stack}.
+Continue the same TECHNICAL morning briefing. Write {needed} more words of markdown.
+No JSON. Do not repeat prior chapters.
+No career advice, portfolios, interviews, or soft skills — only code, APIs, debugging, and architecture for {stack}.
+
+Add: one worked example, one debugging checklist, one concrete next experiment.
 
 Sources still in play:
 {titles}
@@ -437,6 +466,85 @@ def _generate_teaching_sections(
     return sections, tokens
 
 
+def _technical_articles(articles: list[Article]) -> list[Article]:
+    """Drop career / soft-skill posts before synthesis."""
+    kept = [
+        article
+        for article in articles
+        if not is_career_fluff(
+            article.title,
+            f"{article.summary or ''} {article.body_text or ''}",
+            [*article.topics, *article.tech_stack],
+        )
+    ]
+    return kept or articles
+
+
+def _enforce_min_length(
+    profile: UserProfile,
+    articles: list[Article],
+    sections: list[dict[str, Any]],
+    tokens: int,
+    *,
+    scraped_only: bool,
+) -> tuple[list[dict[str, Any]], int]:
+    """Keep expanding until the digest is at least 20 minutes of reading."""
+    floor = _min_words()
+    ceiling = _max_words()
+    working = list(sections)
+
+    if scraped_only:
+        if _words_in(working) < floor:
+            # Last resort for offline mode: use longer technical source excerpts.
+            long_scrape = _payload_from_articles(
+                articles,
+                max_total_words=ceiling,
+                max_words_each=1200,
+                article_limit=_ARTICLE_LIMIT,
+            )
+            working = _trim_sections([*working, *long_scrape["sections"]], ceiling)
+        return working, tokens
+
+    rounds = 0
+    while _words_in(working) < floor and rounds < 4:
+        rounds += 1
+        needed = min(ceiling - _words_in(working), floor - _words_in(working))
+        if needed < 300:
+            break
+        try:
+            extra, used = _call_gemini(
+                _top_up_prompt(profile, articles, needed, working[-1]["content"] if working else ""),
+                as_json=False,
+                max_output_tokens=min(8192, max(2048, needed * 3)),
+            )
+            tokens += used
+            extra_text = str(extra or "").strip()
+            if len(extra_text.split()) >= 80:
+                working.append(_section("Overview / Summary", extra_text, [1]))
+                working = _trim_sections(working, ceiling)
+                continue
+        except Exception as exc:
+            log.warning("generator: min-length top-up failed", error=str(exc), round=rounds)
+
+        # Gemini unavailable — expand technical source bodies (never career fluff).
+        long_scrape = _payload_from_articles(
+            articles,
+            max_total_words=ceiling,
+            max_words_each=1000,
+            article_limit=_ARTICLE_LIMIT,
+        )
+        working = _trim_sections([*working, *long_scrape["sections"]], ceiling)
+        break
+
+    if _words_in(working) < floor:
+        raise RuntimeError(
+            f"Digest too short ({_words_in(working)} words); "
+            f"need at least {floor} words (~{_MIN_READ_MINUTES} min). "
+            "Fill the user tech stack and retry when Gemini quota is available."
+        )
+    return working, tokens
+
+
 def synthesize_digest(
     profile: UserProfile,
     articles: list[Article],
@@ -446,9 +554,15 @@ def synthesize_digest(
 ) -> DailyDigest:
     """Build a DailyDigest document from ranked articles. Does not insert."""
     started = time.monotonic()
+    articles = _technical_articles(articles)
     theme = pick_daily_theme(profile, articles)
     articles = focus_articles_on_theme(articles, theme)
-    scraped = _payload_from_articles(articles)
+    scraped = _payload_from_articles(
+        articles,
+        max_total_words=_SCRAPE_EXCERPT_TOTAL,
+        max_words_each=_SCRAPE_EXCERPT_WORDS,
+        article_limit=_SCRAPE_EXCERPT_ARTICLES,
+    )
     payload = scraped
     tokens = 0
     overview_sections: list[dict[str, Any]] = []
@@ -474,14 +588,18 @@ def synthesize_digest(
             payload = scraped
 
     teaching: list[dict[str, Any]] = []
-    if not scraped_only and _words_in(scraped["sections"]) < _min_words():
+    if not scraped_only and _words_in([*overview_sections, *scraped["sections"]]) < _min_words():
         teaching, teaching_tokens = _generate_teaching_sections(profile, articles)
         tokens += teaching_tokens
 
-    payload["sections"] = _trim_sections(
+    merged = _trim_sections(
         [*overview_sections, *teaching, *scraped["sections"]],
         _max_words(),
     )
+    merged, tokens = _enforce_min_length(
+        profile, articles, merged, tokens, scraped_only=scraped_only
+    )
+    payload["sections"] = merged
 
     sources = [
         DigestSource(

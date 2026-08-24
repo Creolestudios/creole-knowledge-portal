@@ -101,6 +101,16 @@ def test_is_rankable_excludes_paywall_robots_and_topics() -> None:
     assert not is_rankable(_article("Paywall", paywalled=True), profile.excluded_topics)
     assert not is_rankable(_article("Robots", robots_allowed=False), profile.excluded_topics)
     assert not is_rankable(_article("Crypto", topics=["crypto"]), profile.excluded_topics)
+    assert not is_rankable(
+        _article(
+            "Don't wait until you feel completely ready",
+            topics=["career"],
+            summary="job hunting linkedin portfolio advice",
+            body_text="soft skills resume applying for jobs",
+            tech_stack=[],
+        ),
+        profile.excluded_topics,
+    )
 
 
 def test_score_articles_for_profile_sorts_and_filters() -> None:

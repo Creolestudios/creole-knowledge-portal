@@ -35,6 +35,38 @@ _TECH_KEYWORDS = (
     "devops",
     "css",
     "html",
+    "celery",
+    "api",
+    "hooks",
+    "sql",
+)
+
+# Soft-skill / job-hunt posts that should never enter the morning briefing.
+_CAREER_FLUFF_MARKERS = (
+    "linkedin",
+    "job interview",
+    "job hunting",
+    "first job",
+    "your portfolio",
+    "build a portfolio",
+    "career advice",
+    "resume",
+    "feel ready",
+    "applying for jobs",
+    "apply for jobs",
+    "online presence",
+    "soft skill",
+    "what companies expect",
+    "day of learning",
+    "learning javascript",
+    "hire me",
+    "job description",
+    "github and linkedin",
+    "pin your best",
+    "real-world experience before",
+    "progress updates",
+    "don't wait until you feel",
+    "do things in the right order",
 )
 
 
@@ -44,6 +76,22 @@ def infer_topics(text: str, extra: list[str] | None = None) -> list[str]:
     found = [keyword for keyword in _TECH_KEYWORDS if keyword in haystack]
     extras = [item.strip().lower() for item in extra or [] if item.strip()]
     return list(dict.fromkeys([*extras, *found]))[:15]
+
+
+def is_career_fluff(
+    title: str,
+    body: str = "",
+    topics: list[str] | None = None,
+) -> bool:
+    """True for job-hunt / soft-skill posts that must not enter digests."""
+    hay = f"{title} {' '.join(topics or [])} {body[:2500]}".lower()
+    hits = sum(1 for marker in _CAREER_FLUFF_MARKERS if marker in hay)
+    tech = infer_topics(hay)
+    if hits >= 2:
+        return True
+    if hits >= 1 and len(tech) < 3:
+        return True
+    return False
 
 
 def infer_tech_stack(text: str, topics: list[str]) -> list[str]:

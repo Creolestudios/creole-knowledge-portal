@@ -85,6 +85,8 @@ def build_rerank_prompt(profile: UserProfile, candidates: list[RerankCandidate])
     candidate_payload = [candidate.model_dump() for candidate in candidates]
     return f"""
 You are ranking technical blog articles for a personalized engineering digest.
+Prefer deep technical posts (APIs, frameworks, databases, architecture, debugging).
+Never prefer career advice, job hunting, LinkedIn/GitHub branding, portfolios, or soft skills.
 Return strict JSON only. Do not include markdown.
 
 Profile:

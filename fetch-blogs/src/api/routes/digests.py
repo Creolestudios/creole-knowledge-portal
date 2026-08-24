@@ -81,15 +81,67 @@ def _display_title(headline: str, article: dict) -> str:
             if isinstance(sec, dict)
             else str(getattr(sec, "title", "") or "").strip()
         )
-        if first_section.lower() in {"why this matters today", "today's curated reading", "untitled"}:
+        if first_section.lower() in {
+            "why this matters today",
+            "today's curated reading",
+            "untitled",
+            "brief",
+            "code snippet",
+            "overview / summary",
+            "overview/summary",
+        }:
             first_section = ""
     if _is_templated_briefing_headline(headline):
         return first_title or first_section or headline or "Morning Briefing"
     return headline or first_title or "Morning Briefing"
 
 
+def _section_bucket(title: str) -> str:
+    """Map a section title into the dashboard display order buckets."""
+    text = title.strip().lower()
+    if "code" in text:
+        return "code"
+    if text in {"brief", "why this matters today"} or text.startswith("brief"):
+        return "brief"
+    if "overview" in text or "summary" in text or text == "going deeper":
+        return "overview"
+    return "overview"
+
+
+def _ordered_section_markdown(sections: list) -> list[str]:
+    """Emit Brief → Code Snippet → Overview/Summary in that order."""
+    buckets: dict[str, list[str]] = {"brief": [], "code": [], "overview": []}
+    for sec in sections:
+        if not isinstance(sec, dict):
+            sec = getattr(sec, "model_dump", lambda: {})()
+        title = str(sec.get("title") or "Untitled")
+        body = _strip_matching_heading(title, str(sec.get("content") or "")).strip()
+        if not body:
+            continue
+        buckets[_section_bucket(title)].append(body)
+
+    parts: list[str] = []
+    if buckets["brief"]:
+        parts.append("## Brief\n")
+        parts.append("\n\n".join(buckets["brief"]))
+        parts.append("")
+    if buckets["code"]:
+        parts.append("## Code Snippet\n")
+        parts.append("\n\n".join(buckets["code"]))
+        parts.append("")
+    if buckets["overview"]:
+        parts.append("## Overview / Summary\n")
+        parts.append("\n\n".join(buckets["overview"]))
+        parts.append("")
+    return parts
+
+
 def flat_map_digest_for_dashboard(doc: dict) -> dict:
     """Flatten a digest document into the dashboard blog shape.
+
+    Display order (title is separate in the UI):
+    Daily Overview → Brief → Code Snippet → Overview/Summary →
+    Key Actionables → Sources & Citations.
 
     Accepts both the legacy hybrid shape (``article``) and Beanie DailyDigest
     (``content``).
@@ -107,11 +159,7 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
             markdown_parts.append(f"- {item}")
         markdown_parts.append("")
 
-    for sec in article.get("sections", []):
-        title = str(sec.get("title") or "Untitled")
-        markdown_parts.append(f"## {title}\n")
-        markdown_parts.append(_strip_matching_heading(title, str(sec.get("content") or "")))
-        markdown_parts.append("")
+    markdown_parts.extend(_ordered_section_markdown(article.get("sections") or []))
 
     takeaways = article.get("key_takeaways", [])
     if takeaways:
@@ -174,6 +222,20 @@ def _serialize_digest(digest: DailyDigest) -> dict:
 
 
 async def _latest_digest(user_id: str) -> DailyDigest | None:
+    """Prefer today's digest (IST calendar day), else the newest by generated_at."""
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    todays = (
+        await DailyDigest.find(
+            DailyDigest.user_id == user_id,
+            DailyDigest.digest_date == today,
+        )
+        .sort(-DailyDigest.generated_at)
+        .first_or_none()
+    )
+    if todays is not None:
+        return todays
     return (
         await DailyDigest.find(DailyDigest.user_id == user_id)
         .sort(-DailyDigest.generated_at)

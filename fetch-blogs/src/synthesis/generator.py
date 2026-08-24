@@ -102,10 +102,9 @@ def generate_daily_digest(user: UserProfile, articles: list[Article]) -> DailyDi
     
     # Define models to try
     models_to_try = [
+        "gemini-3.6-flash",
         "gemini-2.5-flash",
-        "gemini-1.5-flash",
         "gemini-2.0-flash",
-        "gemini-1.5-pro"
     ]
     
     json_response = None

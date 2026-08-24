@@ -9,6 +9,7 @@ type PastBlog = {
   content?: string;
   digest_date?: string;
   published_at?: string;
+  estimated_read_minutes?: number;
 };
 
 function localDateKey(d: Date): string {
@@ -40,9 +41,13 @@ function formatFetchedLabel(dateKey: string): string {
 export default function PastBlogsTab({
   selected,
   onSelect,
+  user,
+  profile,
 }: {
   selected?: string | null;
   onSelect?: (date: string | null) => void;
+  user?: { email?: string; user_metadata?: { full_name?: string } } | null;
+  profile?: { full_name?: string } | null;
 } = {}) {
   const [selectedDate, setSelectedDate] = useState<string | null>(selected || null);
   const [blog, setBlog] = useState<PastBlog | null>(null);
@@ -247,15 +252,37 @@ export default function PastBlogsTab({
             <span className="font-semibold">Loading blog...</span>
           </div>
         ) : blog ? (
-          <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
+          <div className="space-y-6">
+            <div className="mb-2 space-y-1">
+              <p className="text-sm font-bold text-zinc-500 tracking-wide">
+                Welcome,{' '}
+                {(
+                  profile?.full_name ||
+                  user?.user_metadata?.full_name ||
+                  user?.email?.split('@')[0] ||
+                  'there'
+                ).trim() || 'there'}
+              </p>
+              <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+                Morning Briefing
+              </h1>
+            </div>
+            <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
             <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
               {blog.title}
             </h2>
             <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8 flex items-center gap-2">
               <CalendarDays size={14} />
               Fetched {formatFetchedLabel(toDateKey(blog.digest_date || blog.published_at || selectedDate))}
+              {blog.estimated_read_minutes != null && (
+                <>
+                  <span className="text-zinc-300">·</span>
+                  {Math.max(1, Math.round(Number(blog.estimated_read_minutes)))} min read
+                </>
+              )}
             </p>
             <PremiumMarkdownRenderer content={blog.content || ''} />
+            </div>
           </div>
         ) : (
           <div className="bg-white rounded-[32px] p-8 sm:p-16 border border-zinc-100 shadow-card text-center space-y-3">
