@@ -8650,12 +8650,15 @@
     },
     {
       "id": "test-sub-1787552565476",
+      "id": "test-sub-1787305954950",
       "title": "Test Integration Post",
       "content": "This is test content for validating database operations.",
       "author": "integrator@creolestudios.com",
       "status": "PENDING_QUIZ",
       "createdAt": "2026-08-24T06:22:45.487Z",
       "updatedAt": "2026-08-24T06:22:45.487Z",
+      "createdAt": "2026-08-21T09:52:34.952Z",
+      "updatedAt": "2026-08-21T09:52:34.952Z",
       "validationReport": {
         "qualityScore": 90,
         "gibberishDetected": false,
@@ -8680,12 +8683,15 @@
     },
     {
       "id": "test-quiz-pass-1787552565602",
+      "id": "test-quiz-pass-1787305954972",
       "title": "Grading Pass Post",
       "content": "Test content.",
       "author": "integrator@creolestudios.com",
       "status": "APPROVED",
       "createdAt": "2026-08-24T06:22:45.602Z",
       "updatedAt": "2026-08-24T06:22:45.639Z",
+      "createdAt": "2026-08-21T09:52:34.972Z",
+      "updatedAt": "2026-08-21T09:52:34.978Z",
       "quiz": {
         "questions": [
           {
@@ -8726,12 +8732,15 @@
     },
     {
       "id": "test-sub-1787554147189",
+      "id": "test-sub-1787306066393",
       "title": "Test Integration Post",
       "content": "This is test content for validating database operations.",
       "author": "integrator@creolestudios.com",
       "status": "PENDING_QUIZ",
       "createdAt": "2026-08-24T06:49:07.196Z",
       "updatedAt": "2026-08-24T06:49:07.196Z",
+      "createdAt": "2026-08-21T09:54:26.397Z",
+      "updatedAt": "2026-08-21T09:54:26.397Z",
       "validationReport": {
         "qualityScore": 90,
         "gibberishDetected": false,
@@ -8756,12 +8765,15 @@
     },
     {
       "id": "test-quiz-pass-1787554147271",
+      "id": "test-quiz-pass-1787306066420",
       "title": "Grading Pass Post",
       "content": "Test content.",
       "author": "integrator@creolestudios.com",
       "status": "APPROVED",
       "createdAt": "2026-08-24T06:49:07.271Z",
       "updatedAt": "2026-08-24T06:49:07.299Z",
+      "createdAt": "2026-08-21T09:54:26.420Z",
+      "updatedAt": "2026-08-21T09:54:26.426Z",
       "quiz": {
         "questions": [
           {
@@ -8802,12 +8814,15 @@
     },
     {
       "id": "test-sub-1787561197143",
+      "id": "test-sub-1787549720805",
       "title": "Test Integration Post",
       "content": "This is test content for validating database operations.",
       "author": "integrator@creolestudios.com",
       "status": "PENDING_QUIZ",
       "createdAt": "2026-08-24T08:46:37.219Z",
       "updatedAt": "2026-08-24T08:46:37.219Z",
+      "createdAt": "2026-08-24T05:35:20.811Z",
+      "updatedAt": "2026-08-24T05:35:20.811Z",
       "validationReport": {
         "qualityScore": 90,
         "gibberishDetected": false,
@@ -8832,12 +8847,91 @@
     },
     {
       "id": "test-quiz-pass-1787561197409",
+      "id": "test-quiz-pass-1787549720838",
       "title": "Grading Pass Post",
       "content": "Test content.",
       "author": "integrator@creolestudios.com",
       "status": "APPROVED",
       "createdAt": "2026-08-24T08:46:37.409Z",
       "updatedAt": "2026-08-24T08:46:37.502Z",
+      "createdAt": "2026-08-24T05:35:20.838Z",
+      "updatedAt": "2026-08-24T05:35:20.846Z",
+      "quiz": {
+        "questions": [
+          {
+            "id": "q-1",
+            "question": "Q1",
+            "options": [
+              "A",
+              "B"
+            ],
+            "correctOptionIndex": 0
+          },
+          {
+            "id": "q-2",
+            "question": "Q2",
+            "options": [
+              "A",
+              "B"
+            ],
+            "correctOptionIndex": 1
+          },
+          {
+            "id": "q-3",
+            "question": "Q3",
+            "options": [
+              "A",
+              "B"
+            ],
+            "correctOptionIndex": 0
+          }
+        ],
+        "userSelection": {
+          "q-1": 0,
+          "q-2": 1,
+          "q-3": 1
+        },
+        "score": 2
+      }
+    },
+    {
+      "id": "test-sub-1787549920470",
+      "title": "Test Integration Post",
+      "content": "This is test content for validating database operations.",
+      "author": "integrator@creolestudios.com",
+      "status": "PENDING_QUIZ",
+      "createdAt": "2026-08-24T05:38:40.473Z",
+      "updatedAt": "2026-08-24T05:38:40.473Z",
+      "validationReport": {
+        "qualityScore": 90,
+        "gibberishDetected": false,
+        "lowQualityDetected": false,
+        "aiSpamDetected": false,
+        "plagiarismOverlap": 0,
+        "reason": "Valid integration test content."
+      },
+      "quiz": {
+        "questions": [
+          {
+            "id": "q-1",
+            "question": "Is this a test?",
+            "options": [
+              "No",
+              "Yes"
+            ],
+            "correctOptionIndex": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "test-quiz-pass-1787549920495",
+      "title": "Grading Pass Post",
+      "content": "Test content.",
+      "author": "integrator@creolestudios.com",
+      "status": "APPROVED",
+      "createdAt": "2026-08-24T05:38:40.495Z",
+      "updatedAt": "2026-08-24T05:38:40.503Z",
       "quiz": {
         "questions": [
           {
@@ -9828,6 +9922,35 @@
       "action": "SUBMITTED",
       "performedBy": "auditor@creolestudios.com",
       "timestamp": "2026-08-24T08:46:37.594Z",
+      "id": "b4cc2d43-1405-4d3e-b39c-11b1dcb9f8cb",
+      "submissionId": "test-audit-1787305954983",
+      "action": "SUBMITTED",
+      "performedBy": "auditor@creolestudios.com",
+      "timestamp": "2026-08-21T09:52:34.988Z",
+      "details": "Integration test submission event."
+    },
+    {
+      "id": "1e0058b7-2cc4-4a1b-890d-e1ce24168097",
+      "submissionId": "test-audit-1787306066430",
+      "action": "SUBMITTED",
+      "performedBy": "auditor@creolestudios.com",
+      "timestamp": "2026-08-21T09:54:26.434Z",
+      "details": "Integration test submission event."
+    },
+    {
+      "id": "93f204f8-1543-4e6a-ac58-3d27f4e903a1",
+      "submissionId": "test-audit-1787549720852",
+      "action": "SUBMITTED",
+      "performedBy": "auditor@creolestudios.com",
+      "timestamp": "2026-08-24T05:35:20.857Z",
+      "details": "Integration test submission event."
+    },
+    {
+      "id": "af376588-43e2-47cd-b22b-d4e0fe148a3b",
+      "submissionId": "test-audit-1787549920509",
+      "action": "SUBMITTED",
+      "performedBy": "auditor@creolestudios.com",
+      "timestamp": "2026-08-24T05:38:40.515Z",
       "details": "Integration test submission event."
     }
   ]

@@ -13,9 +13,10 @@ export async function GET(request: Request) {
   // Standard robust detection: use protocol and hostname from request
   // Robust origin detection: use protocol and hostname from request
   const isLocalhost = requestUrl.hostname === 'localhost';
+  const basePath = requestUrl.pathname.includes('/creole-knowledge-portal') ? '/creole-knowledge-portal' : '';
   const origin = isLocalhost
     ? `${requestUrl.protocol}//${requestUrl.hostname}${requestUrl.port ? `:${requestUrl.port}` : ''}`
-    : `https://${requestUrl.hostname}`;
+    : `https://${requestUrl.hostname}${basePath}`;
 
   const next = requestUrl.searchParams.get('next') ?? '/dashboard';
 

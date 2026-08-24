@@ -23,6 +23,7 @@ vi.mock('@/lib/supabase/admin', () => ({
         eq: vi.fn().mockReturnThis(),
         insert: vi.fn().mockReturnThis(),
         update: vi.fn().mockReturnThis(),
+        upsert: vi.fn().mockReturnThis(),
         delete: vi.fn().mockReturnThis(),
         limit: vi.fn().mockReturnThis(),
         single: vi.fn().mockReturnThis(),
@@ -165,6 +166,8 @@ describe('POST /api/quizzes/start', () => {
     mockDbResponses = [
       { data: [], error: null }, // completedAttempts
       { data: questions, error: null }, // allQuestions
+      { data: { content: 'blog content' }, error: null }, // blog fetch
+      { data: questions, error: null }, // reloaded questions
       { data: null, error: { code: '42703', message: 'column attempt_number does not exist' } }, // first insert attempt fails
       { data: { id: 'retry-attempt', started_at: '2026-08-14T00:00:00Z' }, error: null }, // second insert succeeds
       { data: [], error: null }, // placeholder answers insert
@@ -184,9 +187,10 @@ describe('POST /api/quizzes/start', () => {
     mockDbResponses = [
       { data: [], error: null }, // completedAttempts
       { data: questions, error: null }, // allQuestions
+      { data: { content: 'blog content' }, error: null }, // blog fetch
+      { data: questions, error: null }, // reloaded questions
       { data: null, error: { code: '23505', message: 'duplicate key' } }, // insert attempt fails with 23505
       { data: { id: 'updated-1', started_at: '2026-08-14T00:00:00Z' }, error: null }, // update single row
-      { data: [], error: null }, // delete old answers
       { data: [], error: null }, // placeholder answers insert
     ];
 
@@ -201,6 +205,8 @@ describe('POST /api/quizzes/start', () => {
     mockDbResponses = [
       { data: [], error: null }, // completedAttempts
       { data: [{ id: 'q1', question_type: 'single', difficulty: 'easy', question: 'Q?', options: null, code_snippet: null }], error: null }, // allQuestions
+      { data: { content: 'blog content' }, error: null }, // blog fetch
+      { data: [{ id: 'q1', question_type: 'single', difficulty: 'easy', question: 'Q?', options: null, code_snippet: null }], error: null }, // reloaded questions
       { data: null, error: { message: 'insert failed' } }, // insert attempt
     ];
 

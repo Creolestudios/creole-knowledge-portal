@@ -36,8 +36,13 @@ export default function LoginPage() {
   const supabase = createClient();
 
   const getAuthRedirectOrigin = () => {
+    if (typeof window === 'undefined') return '';
     const isLocalhost = window.location.hostname === 'localhost';
-    return isLocalhost ? window.location.origin : `https://${window.location.hostname}`;
+    if (isLocalhost) return window.location.origin;
+
+    const pathname = window.location.pathname;
+    const basePath = pathname.includes('/creole-knowledge-portal') ? '/creole-knowledge-portal' : '';
+    return `${window.location.origin}${basePath}`;
   };
 
   const handleOAuthLogin = async (provider: 'google' | 'apple') => {

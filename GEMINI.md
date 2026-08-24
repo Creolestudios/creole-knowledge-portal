@@ -111,3 +111,22 @@ Every push must be preceded by a report in this format:
 - `fetch-blogs/`: Python FastAPI blog fetch & synthesis.
 - `.gemini/agents/`: Multi-agent system orchestration (Planner, Architecture, Code Gen, Reviewer, Test Agent).
 - `wiki/`: Documentation wikis.
+
+---
+
+## 🛡️ SonarQube Quality Gate Prevention Protocols
+
+To ensure all code written by autonomous coding agents automatically passes SonarQube Quality Gate standards:
+
+1. **Reliability & Modern JS/TS Standards**:
+   - **Never** use global `isNaN(val)` or `isFinite(val)`. Always use `Number.isNaN(val)` and `Number.isFinite(val)` (`typescript:S7773`).
+2. **Regex Performance & Backtracking Prevention**:
+   - **Never** use greedy quantifiers like `[ \t]+` or `[^>\n]+` inside regex patterns that match unstructured text (`typescript:S8786`, `typescript:S5843`).
+   - Use string methods (`replaceAll`, `split`, character loops) or fixed-prefix regexes to eliminate super-linear backtracking.
+3. **React State & HTML Hydration**:
+   - **Never** call synchronous `setState` inside top-level `useEffect` body. Use initializer functions or callbacks.
+   - **Never** nest `<a>` elements inside `<a>` or `<Link>` components.
+4. **SonarQube Properties & Report Integration**:
+   - Store exclusions in `sonar-project.properties` for non-production scripts, `scratch/`, `tests/`, and build outputs.
+   - Always ensure `sonar.javascript.lcov.reportPaths=coverage/lcov.info` is configured and updated via `vitest run --coverage`.
+

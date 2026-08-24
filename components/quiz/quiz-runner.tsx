@@ -15,6 +15,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   
   // Quiz State
   const [attemptId, setAttemptId] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   const handleStart = async () => {
     setLoading(true);
     setError('');
+    setWarning('');
     try {
       const res = await fetch('/api/quizzes/start', {
         method: 'POST',
@@ -49,6 +51,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       if (res.ok && data.success !== false && data.attemptId) {
         setAttemptId(data.attemptId);
         setQuestions(data.questions);
+        if (data.warning) setWarning(data.warning);
         setElapsedSeconds(0);
         setShowIdleModal(false);
         startTimer();
@@ -68,7 +71,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       setElapsedSeconds(prev => {
         const next = prev + 1;
         // At 20 minutes (1200s) of continuous elapsed time, trigger the Idle Check Modal
-        if (next >= 1200) {
+        if (next === 1200) {
           setIdleCountdown(60);
           setShowIdleModal(true);
         }
@@ -198,6 +201,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           if (res.ok && data.success !== false && data.attemptId) {
             setAttemptId(data.attemptId);
             setQuestions(data.questions);
+            if (data.warning) setWarning(data.warning);
             setElapsedSeconds(0);
             startTimer();
           } else {
@@ -285,6 +289,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           setQuestions([]);
           setCurrentIndex(0);
           setAnswers({});
+          setWarning('');
           handleStart();
         } : undefined}
       />
@@ -340,6 +345,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
                   setQuestions([]);
                   setCurrentIndex(0);
                   setAnswers({});
+                  setWarning('');
                   handleStart();
                 }}
                 disabled={loading}
@@ -514,6 +520,15 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           Time Elapsed: {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
         </div>
       </div>
+
+      {warning && (
+        <div className="px-6 py-3 bg-amber-500/10 border-b border-amber-500/20 flex items-start gap-3 text-amber-400">
+          <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
+          <div className="text-xs leading-relaxed font-medium">
+            {warning}
+          </div>
+        </div>
+      )}
 
       {/* Progress */}
       <div className="h-1 w-full bg-zinc-900">

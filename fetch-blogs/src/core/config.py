@@ -28,8 +28,6 @@ class AppSettings(BaseSettings):
     PROJECT_NAME: str = "Creole Knowledge Portal API"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: Environment = Environment.LOCAL
-    # Comma-separated browser origins allowed to call the API (CORS).
-    CORS_ORIGINS: str = "http://localhost:3000"
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: AnyUrl | None = None
     CELERY_EAGER: bool | None = None
@@ -42,10 +40,6 @@ class AppSettings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
-
-    @property
-    def cors_origin_list(self) -> list[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
     def show_docs(self) -> bool:

@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     const firstQueryResult = await supabaseAdmin
       .from('quiz_attempts')
-      .select('id, score, status, passed, started_at')
+      .select('id, score, status, passed, started_at, total_questions')
       .eq('user_id', user.id)
       .eq('blog_id', formattedBlogId);
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         columnsSupported.passed = false;
         const fallbackQuery = await supabaseAdmin
           .from('quiz_attempts')
-          .select('id, score, status, started_at')
+          .select('id, score, status, started_at, total_questions')
           .eq('user_id', user.id)
           .eq('blog_id', formattedBlogId);
         
@@ -130,8 +130,10 @@ export async function POST(request: Request) {
     const answeredSet = new Set(answeredQuestionIds);
     let availableQuestions = (allQuestions || []).filter(q => !answeredSet.has(q.id));
 
-    // If 0 unattempted questions are available in DB, generate a new batch of 5 questions on demand
-    if (availableQuestions.length < 5 && availableQuestions.length === 0) {
+    let fallbackWarning: string | null = null;
+
+    // If fewer than 5 unattempted questions are available in DB, generate a new batch of 5 questions on demand
+    if (availableQuestions.length < 5) {
       let blogContent: string | null = null;
       const { data: blog } = await supabaseAdmin
         .from('blogs')
@@ -177,6 +179,7 @@ export async function POST(request: Request) {
               return NextResponse.json({ error: `Quiz generation error: ${genErr.message}` }, { status: 500 });
             }
             availableQuestions = allQuestions;
+            fallbackWarning = 'AI generation is currently busy or rate-limited. Falling back to previously generated questions for this attempt.';
           }
         }
       } else if (availableQuestions.length === 0) {
@@ -193,6 +196,9 @@ export async function POST(request: Request) {
       const remainingCount = 5 - selectedQuestions.length;
       const fallbackQuestions = allQuestions.filter(q => !selectedQuestions.some(sq => sq.id === q.id));
       selectedQuestions = [...selectedQuestions, ...fallbackQuestions.slice(0, remainingCount)];
+      if (!fallbackWarning) {
+        fallbackWarning = 'AI could not generate enough unique questions. Falling back to previous questions to complete this attempt.';
+      }
     } else {
       selectedQuestions = selectedQuestions.slice(0, 5);
     }
@@ -269,11 +275,8 @@ export async function POST(request: Request) {
       attemptError = updateErr;
 
       if (attempt?.id) {
-        // Clean up previous answers for this single-row attempt before inserting fresh set
-        await supabaseAdmin
-          .from('quiz_answers')
-          .delete()
-          .eq('attempt_id', attempt.id);
+        // We no longer delete previous answers here!
+        // This ensures all 3 attempts (up to 15 answers) are stored in the database.
       }
     }
 
@@ -290,16 +293,18 @@ export async function POST(request: Request) {
         user_answer: null,
         is_correct: false,
         points_awarded: 0,
-        evaluation_reason: 'No answer provided.'
+        evaluation_reason: 'No answer provided.',
+        created_at: new Date().toISOString()
       }));
 
-      await supabaseAdmin.from('quiz_answers').insert(placeholderAnswers);
+      await supabaseAdmin.from('quiz_answers').upsert(placeholderAnswers, { onConflict: 'attempt_id, question_id' });
     }
 
     return NextResponse.json({
       attemptId: attempt?.id,
       questions: randomizedQuestions,
       startedAt: attempt?.started_at,
+      warning: fallbackWarning,
     });
 
   } catch (error: any) {

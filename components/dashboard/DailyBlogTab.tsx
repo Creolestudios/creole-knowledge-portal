@@ -345,25 +345,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                                 </>
                               )}
                             </button>
-                            {attemptsRemaining > 0 && (
-                              <button
-                                onClick={saveActivityAndOpenQuiz}
-                                disabled={quizLoading}
-                                className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                              >
-                                {quizLoading ? (
-                                  <>
-                                    <Loader2 size={18} className="animate-spin" />
-                                    Opening Quiz...
-                                  </>
-                                ) : (
-                                  <>
-                                    <CheckCircle size={18} />
-                                    Retake Quiz — Attempt {attemptsCount + 1} of 3 ({attemptsRemaining} {attemptsRemaining === 1 ? 'attempt' : 'attempts'} left)
-                                  </>
-                                )}
-                              </button>
-                            )}
                           </div>
                         </div>
                       );
