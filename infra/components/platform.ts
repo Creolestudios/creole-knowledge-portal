@@ -135,6 +135,7 @@ export function createSharedPlatform(args: PlatformArgs) {
               "ecs:*",
               "ecr:*",
               "elasticloadbalancing:*",
+              "cloudfront:*",
               "route53:*",
               "acm:*",
               "secretsmanager:*",
