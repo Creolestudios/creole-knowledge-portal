@@ -181,9 +181,9 @@ new aws.lb.ListenerRule(`${appName}-web-rule`, {
   tags: { Name: `${appName}-web-rule-${environment}`, Component: "routing", ...defaultTags },
 }, { provider: awsProvider });
 
-const apiPublicUrl = pulumi.interpolate`https://${domainName}/${appName}`;
+const apiPublicUrl = pulumi.interpolate`http://${platform.alb.dnsName}/${appName}`;
 const blogServiceUrl = pulumi.interpolate`${apiPublicUrl}/api/v1`;
-const webOrigin = pulumi.interpolate`https://${domainName}`;
+const webOrigin = pulumi.interpolate`http://${platform.alb.dnsName}`;
 
 const executionRole = new aws.iam.Role(`${appName}-ecs-exec-role`, {
   assumeRolePolicy: aws.iam.assumeRolePolicyForPrincipal({
@@ -457,136 +457,49 @@ new aws.ecs.Service(`${appName}-workers-service`, {
 
 
 // Route53 delegated subdomain — user adds NS at nikcreations.com registrar.
-const hostedZone = new aws.route53.Zone(
-  `${appName}-zone`,
+// CloudFront Distribution in front of the Application Load Balancer
+// Provides direct HTTPS URL (https://xxxx.cloudfront.net) with AWS default SSL certificate (no custom domain or Route53 needed).
+const cloudfrontDistribution = new aws.cloudfront.Distribution(
+  `${appName}-cdn`,
   {
-    name: domainName,
-    comment: `CKP ${environment} — delegate NS at parent domain`,
-    tags: { Name: `${appName}-zone-${environment}`, Component: "dns", ...defaultTags },
-  },
-  { provider: awsProvider }
-);
-
-new aws.route53.Record(
-  `${appName}-alb-a`,
-  {
-    zoneId: hostedZone.zoneId,
-    name: domainName,
-    type: "A",
-    aliases: [
+    enabled: true,
+    isIpv6Enabled: true,
+    comment: `CKP ${environment} CloudFront distribution`,
+    origins: [
       {
-        name: platform.alb.dnsName,
-        zoneId: platform.alb.zoneId,
-        evaluateTargetHealth: true,
-      },
-    ],
-  },
-  { provider: awsProvider }
-);
-
-// HTTPS on the shared ALB (no CloudFront). ACM cert is DNS-validated in this zone.
-const certificate = new aws.acm.Certificate(
-  `${appName}-cert`,
-  {
-    domainName,
-    validationMethod: "DNS",
-    tags: { Name: `${appName}-cert-${environment}`, Component: "tls", ...defaultTags },
-  },
-  { provider: awsProvider }
-);
-
-const certValidationOption = certificate.domainValidationOptions[0];
-
-const certValidationRecord = new aws.route53.Record(
-  `${appName}-cert-validation`,
-  {
-    zoneId: hostedZone.zoneId,
-    name: certValidationOption.resourceRecordName,
-    type: certValidationOption.resourceRecordType,
-    records: [certValidationOption.resourceRecordValue],
-    ttl: 60,
-    allowOverwrite: true,
-  },
-  { provider: awsProvider }
-);
-
-const certificateValidation = new aws.acm.CertificateValidation(
-  `${appName}-cert-validated`,
-  {
-    certificateArn: certificate.arn,
-    validationRecordFqdns: [certValidationRecord.fqdn],
-  },
-  { provider: awsProvider }
-);
-
-const httpsListener = new aws.lb.Listener(
-  `${appName}-https-listener`,
-  {
-    loadBalancerArn: platform.alb.arn,
-    port: 443,
-    protocol: "HTTPS",
-    sslPolicy: "ELBSecurityPolicy-TLS13-1-2-2021-06",
-    certificateArn: certificateValidation.certificateArn,
-    defaultActions: [
-      {
-        type: "fixed-response",
-        fixedResponse: {
-          contentType: "text/plain",
-          messageBody: "Not Found",
-          statusCode: "404",
+        domainName: platform.alb.dnsName,
+        originId: "alb-origin",
+        customOriginConfig: {
+          httpPort: 80,
+          httpsPort: 443,
+          originProtocolPolicy: "http-only",
+          originSslProtocols: ["TLSv1.2"],
         },
       },
     ],
-    tags: { Name: `${appName}-https-${environment}`, Component: "tls", ...defaultTags },
-  },
-  { provider: awsProvider }
-);
-
-new aws.lb.ListenerRule(
-  `${appName}-https-api-rule`,
-  {
-    listenerArn: httpsListener.arn,
-    priority: listenerPriorityBase,
-    actions: [{ type: "forward", targetGroupArn: apiTg.arn }],
-    conditions: [{ pathPattern: { values: [`/${appName}/api/*`] } }],
-    tags: { Name: `${appName}-https-api-rule-${environment}`, Component: "routing", ...defaultTags },
-  },
-  { provider: awsProvider }
-);
-
-new aws.lb.ListenerRule(
-  `${appName}-https-web-rule`,
-  {
-    listenerArn: httpsListener.arn,
-    priority: listenerPriorityBase + 1,
-    actions: [{ type: "forward", targetGroupArn: webTg.arn }],
-    conditions: [{ pathPattern: { values: [`/${appName}/*`, `/${appName}`] } }],
-    tags: { Name: `${appName}-https-web-rule-${environment}`, Component: "routing", ...defaultTags },
-  },
-  { provider: awsProvider }
-);
-
-// Redirect custom-domain HTTP → HTTPS. ALB DNS on :80 stays available for debugging.
-new aws.lb.ListenerRule(
-  `${appName}-http-to-https`,
-  {
-    listenerArn: sharedAlbListenerArn,
-    priority: 10,
-    actions: [
-      {
-        type: "redirect",
-        redirect: {
-          protocol: "HTTPS",
-          port: "443",
-          statusCode: "HTTP_301",
-          host: "#{host}",
-          path: "/#{path}",
-          query: "#{query}",
-        },
+    defaultCacheBehavior: {
+      targetOriginId: "alb-origin",
+      viewerProtocolPolicy: "redirect-to-https",
+      allowedMethods: ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"],
+      cachedMethods: ["GET", "HEAD", "OPTIONS"],
+      forwardedValues: {
+        queryString: true,
+        headers: ["*"],
+        cookies: { forward: "all" },
       },
-    ],
-    conditions: [{ hostHeader: { values: [domainName] } }],
-    tags: { Name: `${appName}-http-to-https-${environment}`, Component: "tls", ...defaultTags },
+      minTtl: 0,
+      defaultTtl: 0,
+      maxTtl: 0,
+    },
+    restrictions: {
+      geoRestriction: {
+        restrictionType: "none",
+      },
+    },
+    viewerCertificate: {
+      cloudfrontDefaultCertificate: true,
+    },
+    tags: { Name: `${appName}-cdn-${environment}`, Component: "cdn", ...defaultTags },
   },
   { provider: awsProvider }
 );
@@ -596,21 +509,18 @@ export const environmentName = environment;
 export const webRepositoryUrl = webRepo.repositoryUrl;
 export const apiRepositoryUrl = apiRepo.repositoryUrl;
 export const workersRepositoryUrl = workersRepo.repositoryUrl;
-export const applicationUrl = pulumi.interpolate`https://${domainName}/${appName}`;
-export const apiUrl = apiPublicUrl;
-export const httpsListenerArn = httpsListener.arn;
-export const certificateArn = certificate.arn;
+export const cloudfrontDomain = cloudfrontDistribution.domainName;
+export const applicationUrl = pulumi.interpolate`https://${cloudfrontDistribution.domainName}/${appName}`;
+export const apiUrl = pulumi.interpolate`https://${cloudfrontDistribution.domainName}/${appName}/api/v1`;
+export const directAlbHttpUrl = pulumi.interpolate`http://${platform.alb.dnsName}/${appName}`;
 export const ecsClusterArn = sharedEcsClusterArn;
 export const ecsClusterName = sharedEcsClusterName;
 export const appSecurityGroupId = fargateSg.id;
 export const redisSecurityGroupId = dataStores.redisSecurityGroupId;
 export const mongoSecurityGroupId = dataStores.mongoSecurityGroupId;
-
-export const route53ZoneId = hostedZone.zoneId;
-export const route53NameServers = hostedZone.nameServers;
-export const domainNameOutput = domainName;
 export const sharedAlbArn = platform.alb.arn;
 export const sharedAlbDnsNameOutput = platform.alb.dnsName;
 export const githubDeployRoleArn = platform.deployRole.arn;
 export const githubOidcProviderArn = platform.oidcProvider.arn;
+
 
