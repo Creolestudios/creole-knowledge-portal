@@ -9,7 +9,6 @@ __pycache__
 .pytest_cache
 .coverage
 coverage.xml
-uv.lock
 docker-compose*.yml
 .venv/
 .git/
