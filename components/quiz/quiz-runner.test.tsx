@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { QuizRunner } from './quiz-runner';
 
+const mockPush = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    push: vi.fn(),
+    push: mockPush,
     refresh: vi.fn(),
   }),
 }));
@@ -19,13 +20,7 @@ vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
-vi.mock('./quiz-leaderboard', () => ({
-  QuizLeaderboard: ({ onClose }: { onClose: () => void }) => (
-    <div data-testid="leaderboard">
-      <button onClick={onClose}>Close leaderboard</button>
-    </div>
-  ),
-}));
+
 
 const mcQuestion = {
   id: 'q1',
@@ -57,6 +52,7 @@ describe('QuizRunner', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPush.mockClear();
   });
 
   afterEach(() => {
@@ -281,7 +277,7 @@ describe('QuizRunner', () => {
     });
   });
 
-  it('shows the leaderboard after completion and can close it', async () => {
+  it('shows the Back to Dashboard button after completion', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -293,11 +289,12 @@ describe('QuizRunner', () => {
     render(<QuizRunner blogId="blog-1" />);
     await waitFor(() => screen.getByText('Quiz Completed!'));
 
-    fireEvent.click(screen.getByText('View Leaderboard'));
-    expect(screen.getByTestId('leaderboard')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Close leaderboard'));
-    expect(screen.queryByTestId('leaderboard')).not.toBeInTheDocument();
+    const backBtn = screen.getByText('Back to Dashboard');
+    expect(backBtn).toBeInTheDocument();
+    
+    // Test navigation
+    fireEvent.click(backBtn);
+    expect(mockPush).toHaveBeenCalledWith('/dashboard');
   });
 
   it('handles idle warning popup and extends session when clicked', async () => {

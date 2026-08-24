@@ -161,6 +161,6 @@ def rerank_with_gemini(
         missing = [candidate for candidate in bounded_candidates if candidate.article_id not in {r.article_id for r in parsed}]
         merged = [*parsed, *fallback_rerank(missing, limit)]
         return merged[:limit]
-    except (json.JSONDecodeError, ValidationError, ValueError, RuntimeError) as exc:
+    except (json.JSONDecodeError, ValidationError, ValueError, RuntimeError, Exception) as exc:
         log.warning("ranker: gemini rerank fallback", error=str(exc))
         return fallback_rerank(bounded_candidates, limit)

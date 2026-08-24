@@ -108,4 +108,23 @@ describe('AI Validator Pipeline Tests', () => {
     expect(quiz[1].question).toBe('What version of React does Next.js 15 use?');
     expect(quiz[2].correctOptionIndex).toBe(1);
   });
+
+  it('returns fallback validation report when AI generation fails', async () => {
+    generateContentMock.mockRejectedValueOnce(new Error('AI API Down'));
+    const report = await validateContent('Title', 'Content', []);
+    
+    expect(report.qualityScore).toBe(50);
+    expect(report.gibberishDetected).toBe(false);
+    expect(report.reason).toBe('Fallback validation due to AI check failure.');
+  });
+
+  it('returns fallback quiz when AI generation fails', async () => {
+    generateContentMock.mockRejectedValueOnce(new Error('AI API Down'));
+    const quiz = await generateQuiz('Some content');
+    
+    expect(quiz).toHaveLength(3);
+    expect(quiz[0].id).toBe('q-1');
+    expect(quiz[0].question).toBe('What is the primary topic of the submitted blog?');
+    expect(quiz[1].question).toBe('Which of the following describes the tone of this content?');
+  });
 });

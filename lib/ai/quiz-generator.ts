@@ -69,11 +69,12 @@ ${blogContent}
   
   let response = null;
   let lastError: any = null;
+  let generatedQuestions: QuizQuestionData[] = [];
+  let success = false;
 
   for (const modelName of modelsToTry) {
     let attempts = 0;
     const maxAttempts = 3;
-    let success = false;
     
     while (attempts < maxAttempts) {
       try {
@@ -87,7 +88,18 @@ ${blogContent}
         });
         
         if (response && response.text) {
-          console.log(`[Quiz Factory] Successfully generated ${count} quiz questions with model: ${modelName}`);
+          let rawText = response.text.trim();
+          const jsonMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          if (jsonMatch) {
+            rawText = jsonMatch[0];
+          } else if (rawText.startsWith('```')) {
+            rawText = rawText.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '');
+          }
+          
+          // Attempt to parse immediately. If it fails, it throws into the catch block.
+          generatedQuestions = JSON.parse(rawText);
+
+          console.log(`[Quiz Factory] Successfully generated and parsed ${count} quiz questions with model: ${modelName}`);
           success = true;
           break;
         }
@@ -95,23 +107,22 @@ ${blogContent}
         attempts++;
         lastError = err;
         const errMsg = String(err.message || err);
-        const isTransient = errMsg.includes('503') || errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('demand');
+        const isTransient = errMsg.includes('503') || errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('demand') || errMsg.includes('Unexpected token') || errMsg.includes('JSON');
         
         if (isTransient && attempts < maxAttempts) {
+          console.warn(`[Quiz Factory] Transient/Parse error on attempt ${attempts} for ${modelName}: ${errMsg}. Retrying...`);
           await new Promise(resolve => setTimeout(resolve, attempts * 2000));
         } else {
           break;
         }
       }
     }
-    if (success && response && response.text) {
+    if (success) {
       break;
     }
   }
 
-  let generatedQuestions: QuizQuestionData[] = [];
-
-  if (!response || !response.text) {
+  if (!success) {
     console.warn('[Quiz Factory] Gemini AI rate limit (429) reached across all models. Using deterministic fallback questions for blog content.');
     generatedQuestions = [
       {
@@ -174,20 +185,6 @@ ${blogContent}
         code_snippet: null
       }
     ];
-  } else {
-    try {
-      let rawText = response.text.trim();
-      const jsonMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (jsonMatch) {
-        rawText = jsonMatch[0];
-      } else if (rawText.startsWith('```')) {
-        rawText = rawText.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '');
-      }
-      generatedQuestions = JSON.parse(rawText);
-    } catch (err) {
-      console.error('Failed to parse AI response as JSON:', response.text);
-      throw new Error('AI returned invalid JSON format for quiz questions.');
-    }
   }
 
   // Ensure parent blog record exists in Supabase to satisfy foreign key constraints

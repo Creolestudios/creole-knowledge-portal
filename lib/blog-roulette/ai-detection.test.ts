@@ -104,4 +104,44 @@ describe('detectAiScore', () => {
     expect(result.score).toBeLessThanOrEqual(100);
     expect(Array.isArray(result.signals)).toBe(true);
   });
+
+  it('handles heuristic branches for extreme lexical diversity', async () => {
+    delete process.env.GEMINI_API_KEY;
+    // Low TTR (<0.35)
+    const repetitive = "The ".repeat(200) + " a ".repeat(50);
+    const lowTtr = await detectAiScore(`<p>${repetitive}</p>`);
+    expect(lowTtr.signals).toContain('Very low lexical diversity');
+
+    // High TTR (>0.75)
+    const diverseWords = Array.from({ length: 200 }, (_, i) => `word${i}`).join(' ');
+    const highTtr = await detectAiScore(`<p>${diverseWords}</p>`);
+    expect(highTtr.score).toBeLessThanOrEqual(20);
+  });
+
+  it('handles heuristic branches for sentence length variance', async () => {
+    delete process.env.GEMINI_API_KEY;
+    // Highly uniform (stdDev < 3, sentences > 5)
+    const uniform = Array(10).fill("This is a uniform sentence exactly ten words long.").join(' ');
+    const uniformRes = await detectAiScore(`<p>${uniform} ${uniform} ${uniform}</p>`);
+    expect(uniformRes.signals).toContain('Extremely uniform sentence structure');
+
+    // Highly varied (stdDev > 12)
+    const varied = "Short sentence. " + "This is a very very extremely incredibly remarkably long sentence with many words. ".repeat(3);
+    const variedRes = await detectAiScore(`<p>${varied}</p>`);
+    expect(variedRes.score).toBeLessThanOrEqual(50); 
+  });
+
+  it('handles heuristic branches for filler and pronoun density', async () => {
+    delete process.env.GEMINI_API_KEY;
+    
+    // Low filler density (<0.01) and low pronouns (<0.005)
+    const lowFillerNoPronouns = "Technical writing describes systems. Databases store records securely. Applications read memory buffers.".repeat(20);
+    const res = await detectAiScore(`<p>${lowFillerNoPronouns}</p>`);
+    expect(res.signals).toContain('No personal references');
+
+    // High pronoun density (>0.05) and high filler (>0.06)
+    const highBoth = "I we my our me us you furthermore moreover additionally consequently. ".repeat(20);
+    const bothRes = await detectAiScore(`<p>${highBoth}</p>`);
+    expect(bothRes.signals).toContain('Heavy transition-word use');
+  });
 });

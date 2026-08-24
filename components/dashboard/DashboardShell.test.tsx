@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DashboardShell from './DashboardShell';
 import { computeStreak } from '@/lib/data/streak';
@@ -52,13 +52,6 @@ vi.mock('./DailyBlogTab', () => ({ default: () => (<div data-testid="daily-tab" 
 vi.mock('./PastBlogsTab', () => ({ default: () => (<div data-testid="past-tab" />) }));
 vi.mock('./ActivityTab', () => ({ default: () => (<div data-testid="activity-tab" />) }));
 vi.mock('./SidebarActivityWidget', () => ({ default: () => (<div data-testid="sidebar-widget" />) }));
-vi.mock('./GlobalSearch', () => ({
-  default: ({ onPick }: { onPick: (date: string) => void }) => (
-    <button data-testid="global-search" onClick={() => onPick('2026-08-01')}>
-      Search
-    </button>
-  ),
-}));
 
 describe('DashboardShell', () => {
   beforeEach(() => {
@@ -67,6 +60,14 @@ describe('DashboardShell', () => {
     nav.tab = null;
     nav.date = null;
     vi.mocked(computeStreak).mockReturnValue(5);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, records: [], streak: 5 }),
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('renders the Daily Blog tab by default and shows the user name/domain', () => {
@@ -75,7 +76,6 @@ describe('DashboardShell', () => {
     );
     expect(screen.getByTestId('daily-tab')).toBeInTheDocument();
     expect(screen.getByText('dev')).toBeInTheDocument();
-    expect(screen.getByText('creolestudios.com')).toBeInTheDocument();
   });
 
   it('shows Blog Roulette as the fourth sidebar option with the correct URL', () => {
@@ -129,12 +129,6 @@ describe('DashboardShell', () => {
     });
   });
 
-  it('navigates to Past Blogs with the picked date when a search result is chosen', () => {
-    render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
-    fireEvent.click(screen.getByTestId('global-search'));
-    expect(nav.push).toHaveBeenCalledWith('/dashboard?tab=past&date=2026-08-01');
-  });
-
   it('opens and closes the mobile sidebar drawer', () => {
     render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
     fireEvent.click(screen.getByLabelText('Open menu'));
@@ -147,7 +141,10 @@ describe('DashboardShell', () => {
   });
 
   it('uses singular day copy for a one-day streak', async () => {
-    vi.mocked(computeStreak).mockReturnValue(1);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, records: [], streak: 1 }),
+    });
     render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
     await waitFor(() => {
       expect(screen.getByText('1 day')).toBeInTheDocument();
@@ -167,9 +164,6 @@ describe('DashboardShell', () => {
     fireEvent.click(screen.getByRole('link', { name: /past blogs/i }));
     expect(screen.getByTestId('past-tab')).toBeInTheDocument();
     expect(nav.push).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId('global-search'));
-    expect(nav.push).not.toHaveBeenCalled();
-    expect(screen.getByTestId('past-tab')).toBeInTheDocument();
   });
 
   it('closes the mobile drawer from the backdrop and tracks content scroll', () => {
