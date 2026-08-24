@@ -37,7 +37,6 @@ env:
   ECR_REGISTRY: "407927038386.dkr.ecr.us-east-1.amazonaws.com"
   API_REPO: creole-knowledge-portal-api
   WORKERS_REPO: creole-knowledge-portal-workers
-  PULUMI_BACKEND_URL: s3://pulumi-state-715736407442?region=us-east-1&awssdk=v2
 
 jobs:
   oidc-not-configured:
@@ -57,25 +56,6 @@ jobs:
     env:
       AWS_ROLE_ARN: ${{ vars.AWS_GHA_DEPLOY_ROLE_ARN }}
     steps:
-      # ── Free disk space first ─────────────────────────────────────────────
-      # GitHub-hosted runners ship with ~14 GB free; Docker builds for multi-
-      # layer images can exhaust that quickly.  This step removes pre-installed
-      # tooling (Android SDK, .NET, Java, Haskell, Swift) that we never use,
-      # reclaiming 6-10 GB before the Docker build starts.
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false   # keep actions cache — removing it re-downloads tools every run
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
-      - name: Show available disk space
-        run: df -h /
-
       - uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
@@ -125,6 +105,7 @@ jobs:
         working-directory: infra
     env:
       AWS_ROLE_ARN: ${{ vars.AWS_GHA_DEPLOY_ROLE_ARN }}
+      PULUMI_ACCESS_TOKEN: "pul-8ef72ca7542082045109b2a18c840e914325d5f1"
     steps:
       - uses: actions/checkout@v4
 
