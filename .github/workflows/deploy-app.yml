@@ -24,6 +24,10 @@ on:
     branches: [main]
     paths:
       - "fetch-blogs/**"
+      - "src/**"
+      - "public/**"
+      - "package.json"
+      - "Dockerfile"
       - ".github/workflows/deploy-app.yml"
 
 permissions:
@@ -37,6 +41,7 @@ env:
   ECR_REGISTRY: "407927038386.dkr.ecr.us-east-1.amazonaws.com"
   API_REPO: creole-knowledge-portal-api
   WORKERS_REPO: creole-knowledge-portal-workers
+  WEB_REPO: creole-knowledge-portal-web
 
 jobs:
   oidc-not-configured:
@@ -90,6 +95,23 @@ jobs:
             ${{ env.ECR_REGISTRY }}/${{ env.API_REPO }}:${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/${{ env.WORKERS_REPO }}:latest
             ${{ env.ECR_REGISTRY }}/${{ env.WORKERS_REPO }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+      - name: Build and push Web image (Next.js)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_BASE_PATH=/creole-knowledge-portal
+            NEXT_PUBLIC_SUPABASE_URL=https://pcovgcyjzprkboxbjkey.supabase.co
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjb3ZnY3lqenBya2JveGJqa2V5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NzQ5NzQsImV4cCI6MjA5MzQ1MDk3NH0.vgqRGVKCevVdErojUVmqtOVi_cdneO88nfEuFOY3bCU
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:latest
+            ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=min
 
