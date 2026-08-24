@@ -125,7 +125,7 @@ class LLMSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_GEMINI_API_KEY", "GEMINI_API_KEY"),
     )
     GEMINI_MODEL: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3.6-flash",
         validation_alias=AliasChoices("LLM_GEMINI_MODEL", "GEMINI_MODEL"),
     )
     GEMINI_EMBED_MODEL: str = "models/text-embedding-004"
@@ -139,7 +139,7 @@ class ScrapingSettings(BaseSettings):
     CONCURRENCY: int = Field(default=8, ge=1, le=32)
     CONTENT_FRESHNESS_DAYS: int = Field(default=30, ge=1)
     DIGEST_WORD_TARGET: int = Field(default=4500, ge=1000)
-    CRON_SCHEDULE: str = "30 0 * * *"  # 06:00 IST = 00:30 UTC
+    CRON_SCHEDULE: str = "30 2 * * *"  # 08:00 IST = 02:30 UTC — daily scrape + 20–25 min briefing
     ROBOTS_CACHE_TTL_SECONDS: int = 3600
 
 

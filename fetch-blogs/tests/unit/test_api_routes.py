@@ -167,11 +167,15 @@ class TestFlatMapDigest:
         assert "# Morning Brief" not in content
         assert "## Daily Overview (TL;DR)" in content
         assert "- first point" in content
-        assert "## Section A" in content
+        assert "## Overview / Summary" in content
         assert "Section A body" in content
         assert "## Key Actionable Takeaways" in content
         assert "## Sources & Citations" in content
         assert "by Ada" in content
+        # Canonical display order
+        assert content.index("## Daily Overview") < content.index("## Overview / Summary")
+        assert content.index("## Overview / Summary") < content.index("## Key Actionable Takeaways")
+        assert content.index("## Key Actionable Takeaways") < content.index("## Sources & Citations")
 
     def test_appends_source_domains_to_the_tag_list(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(full_digest_doc())
@@ -214,8 +218,32 @@ class TestFlatMapDigest:
                 }
             }
         )
-        assert out["content"].count("Redis queues") == 1
+        assert "## Overview / Summary" in out["content"]
+        assert "## Redis queues" not in out["content"]
         assert "Workers drain the broker." in out["content"]
+
+    def test_orders_brief_code_and_overview_sections(self) -> None:
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {
+                "article": {
+                    "headline": "Hooks Guide",
+                    "tldr": ["point one"],
+                    "sections": [
+                        {"title": "Overview / Summary", "content": "long summary body"},
+                        {"title": "Code Snippet", "content": "```ts\nconst x = 1;\n```"},
+                        {"title": "Brief", "content": "short brief body"},
+                    ],
+                    "key_takeaways": ["ship it"],
+                    "sources": [{"title": "A", "url": "https://a.com", "source_domain": "a.com"}],
+                }
+            }
+        )
+        content = out["content"]
+        assert content.index("## Daily Overview") < content.index("## Brief")
+        assert content.index("## Brief") < content.index("## Code Snippet")
+        assert content.index("## Code Snippet") < content.index("## Overview / Summary")
+        assert content.index("## Overview / Summary") < content.index("## Key Actionable Takeaways")
+        assert content.index("## Key Actionable Takeaways") < content.index("## Sources & Citations")
 
     def test_replaces_templated_morning_briefing_with_the_source_title(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(

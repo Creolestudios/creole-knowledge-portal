@@ -11,6 +11,7 @@ from sklearn.metrics.pairwise import cosine_similarity as sklearn_cosine_similar
 
 from src.models.article import Article, ComplexityLevel, RankingBreakdown
 from src.models.profile import ContentDepth, UserProfile, effective_content_depth
+from src.extractors.topic_filter import is_career_fluff
 
 _SCORE_WEIGHTS = {
     "tfidf_relevance": 0.35,
@@ -72,6 +73,12 @@ def article_text(article: Article | ArticleScoreInput) -> str:
 def is_rankable(article: Article | ArticleScoreInput, excluded_topics: Iterable[str]) -> bool:
     """Return whether an article is allowed into ranking."""
     if article.paywalled or not article.robots_allowed:
+        return False
+    if is_career_fluff(
+        article.title,
+        f"{article.summary} {article.body_text}",
+        [*article.topics, *article.tech_stack],
+    ):
         return False
     normalized_exclusions = set(normalize_terms(excluded_topics))
     article_topics = set(normalize_terms([*article.topics, *article.tech_stack, article.title]))

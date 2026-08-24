@@ -34,7 +34,7 @@ def test_payload_from_articles_keeps_title_when_body_is_empty() -> None:
     article = _article("HN story", "")
     payload = synthesizer._payload_from_articles([article])
 
-    assert payload["sections"][0]["title"] == "HN story"
+    assert payload["sections"][0]["title"] == "Overview / Summary"
     assert "HN story" in payload["sections"][0]["content"]
     assert "Personalized articles were ranked" not in str(payload)
 
@@ -65,15 +65,17 @@ def test_synthesize_digest_uses_scraped_bodies_when_gemini_json_fails(
         url="https://dev.to/change-streams",
     )
 
-    def _boom(_prompt: str) -> tuple[dict, int]:
+    def _boom(_prompt: str, **_kwargs: object) -> tuple[dict, int]:
         raise json.JSONDecodeError("Expecting ',' delimiter", "{", 1)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", _boom)
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 40)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 200)
 
     digest = synthesizer.synthesize_digest(profile, [article])
 
     assert "Personalized articles were ranked" not in " ".join(digest.content.tldr)
-    assert digest.content.sections[0].title == "Change streams in production"
+    assert digest.content.sections[0].title == "Overview / Summary"
     assert "change streams" in digest.content.sections[0].content.lower()
     assert str(digest.content.sources[0].url).rstrip("/") == "https://dev.to/change-streams"
 
@@ -87,7 +89,7 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
     monkeypatch.setattr(
         synthesizer,
         "_call_gemini",
-        lambda _prompt: (
+        lambda _prompt, **_kwargs: (
             {
                 "headline": "Queues for your stack",
                 "tldr": ["Celery plus Redis"],
@@ -104,13 +106,16 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
             12,
         ),
     )
+    monkeypatch.setattr(synthesizer, "_generate_teaching_sections", lambda *_: ([], 0))
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 20)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
 
     digest = synthesizer.synthesize_digest(profile, [article])
 
     assert digest.content.headline == "Queues for your stack"
     assert digest.content.tldr == ["Celery plus Redis"]
     assert digest.content.sections[0].title == "Why this matters today"
-    assert digest.content.sections[1].title == "Redis queues"
+    assert digest.content.sections[1].title == "Overview / Summary"
     assert "Celery workers drain Redis" in digest.content.sections[1].content
 
 
@@ -140,6 +145,8 @@ def test_templated_gemini_headline_is_replaced_with_article_title(
         ),
     )
     monkeypatch.setattr(synthesizer, "_generate_teaching_sections", lambda *_: ([], 0))
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 10)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
 
     digest = synthesizer.synthesize_digest(profile, [article])
     assert digest.content.headline == "Redis queues"
@@ -169,6 +176,10 @@ def test_teaching_markdown_is_kept_in_the_briefing(monkeypatch: pytest.MonkeyPat
         return ("Celery workers process jobs from Redis. " * 120, 40)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 400)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 2000)
+    monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_WORDS", 20)
+    monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_TOTAL", 40)
     digest = synthesizer.synthesize_digest(profile, [article])
     body = " ".join(section.content for section in digest.content.sections)
     assert "Celery workers process jobs from Redis" in body
@@ -200,6 +211,8 @@ def test_skips_teaching_when_scraped_bodies_already_cover_20_minutes(
         raise AssertionError("teaching should not run when scraped text is already long")
 
     monkeypatch.setattr(synthesizer, "_generate_teaching_sections", _no_teaching)
+    monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_WORDS", 10_000)
+    monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_TOTAL", 10_000)
     monkeypatch.setattr(
         synthesizer,
         "_call_gemini",
@@ -403,7 +416,7 @@ def test_generate_teaching_top_up_failure_is_logged_not_fatal(
     article = _article("Chapter", "body")
 
     def fake_call(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
-        if "Continue the same morning technical briefing" in prompt:
+        if "Continue the same TECHNICAL morning briefing" in prompt:
             raise RuntimeError("top-up failed")
         return ("chapter " * 120, 20)
 
@@ -421,7 +434,9 @@ def test_synthesize_digest_with_scraped_only_and_custom_date(
     from datetime import date
 
     profile = UserProfile(user_id="u1", name="Dev")
-    article = _article("Redis queues", "Celery workers drain Redis. " * 20)
+    article = _article("Redis queues", "Celery workers drain Redis. " * 200)
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 50)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 5000)
 
     digest = synthesizer.synthesize_digest(
         profile,
@@ -431,7 +446,7 @@ def test_synthesize_digest_with_scraped_only_and_custom_date(
     )
 
     assert digest.digest_date == date(2026, 1, 2)
-    assert digest.content.sections[0].title == "Redis queues"
+    assert digest.content.sections[0].title == "Overview / Summary"
     assert digest.metrics.llm_tokens_used == 0
 
 

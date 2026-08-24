@@ -63,12 +63,14 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const fetchLatestBrief = async () => {
     setLoadingBrief(true);
     try {
+      // Prefer URL blogId (e.g. returning from quiz). Otherwise always load
+      // today's digest from the API (backend prefers IST today, else newest).
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-      const storedBlogId = urlParams?.get('blogId') || (typeof window !== 'undefined' ? sessionStorage.getItem('active_blog_id') : null);
+      const urlBlogId = urlParams?.get('blogId');
 
       let res: Response | null = null;
-      if (storedBlogId) {
-        res = await fetch(`/api/digests/by-id?id=${storedBlogId}`);
+      if (urlBlogId) {
+        res = await fetch(`/api/digests/by-id?id=${urlBlogId}`);
       }
 
       if (!res || !res.ok) {
@@ -79,7 +81,10 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         const data = await res.json();
         if (data.success && data.blog) {
           setBrief(data.blog);
-          setTimerActive(true); // Start timer when blog loads
+          setTimerActive(true);
+          if (typeof window !== 'undefined' && data.blog.id) {
+            sessionStorage.setItem('active_blog_id', data.blog.id);
+          }
 
           try {
             const qRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
@@ -311,7 +316,22 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
               </div>
             )}
 
-            <div className="lg:col-span-2 bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="mb-2 space-y-1">
+                <p className="text-sm font-bold text-zinc-500 tracking-wide">
+                  Welcome,{' '}
+                  {(
+                    profile?.full_name ||
+                    user?.user_metadata?.full_name ||
+                    user?.email?.split('@')[0] ||
+                    'there'
+                  ).trim() || 'there'}
+                </p>
+                <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+                  Morning Briefing
+                </h1>
+              </div>
+              <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
               <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
                 {brief.title}
               </h2>
@@ -429,6 +449,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                   })()}
                 </div>
               </div>
+            </div>
 
               <div className="space-y-8">
                 <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">

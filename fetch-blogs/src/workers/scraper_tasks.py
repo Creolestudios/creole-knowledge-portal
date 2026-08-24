@@ -117,10 +117,16 @@ async def _scrape_for_user(user_id: str) -> list[str]:
     discovered = _collect_payloads(terms)
     article_ids: list[str] = []
     seen: set[str] = set()
+    from src.extractors.topic_filter import is_career_fluff
+
     for payload in discovered:
         if len(article_ids) >= _MAX_ARTICLES:
             break
         url = str(payload.get("url") or "").rstrip("/")
+        title = str(payload.get("title") or "")
+        summary = str(payload.get("summary") or "")
+        if is_career_fluff(title, summary):
+            continue
         if not url or url in seen or url in already_served:
             continue
         seen.add(url)
