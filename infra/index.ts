@@ -18,11 +18,11 @@ const defaultVpc = aws.ec2.getVpcOutput({ default: true });
 const sharedVpcId = defaultVpc.id;
 const sharedVpcCidrBlock = defaultVpc.cidrBlock;
 const githubRepo = config.get("githubRepo") ?? "Creolestudios/creole-knowledge-portal";
+const defaultSubnets = aws.ec2.getSubnetsOutput({
+  filters: [{ name: "vpc-id", values: [defaultVpc.id] }],
+});
 const albSubnetIds =
-  config.getObject<string[]>("albSubnetIds") ?? [
-    "subnet-02b389cd8b541b61b",
-    "subnet-0d6aa100da345f0b3",
-  ];
+  config.getObject<string[]>("albSubnetIds") ?? defaultSubnets.ids;
 
 const webPort = config.getNumber("webPort") ?? 3000;
 const apiPort = config.getNumber("apiPort") ?? 8000;

@@ -1,5 +1,3 @@
-secretsprovider: awskms://alias/ckp-pulumi-secrets?region=us-east-1
-encryptedkey: AQICAHgP0m5aDMx2fTVj5wAZcYeytRIBqWDSQGaNrcoAhf/PeQF69Hx5koAecWC8hgm/SSyDAAAAfjB8BgkqhkiG9w0BBwagbzBtAgEAMGgGCSqGSIb3DQEHATAeBglghkgBZQMEAS4wEQQMMocn1GgDi39fGrloAgEQgDsaTr1WjwaiCsBeHDQ5nWKgdJHjYWfbIwMjN7A827qji4t7oOp7Hy0q5cmWQiGdJwzcL8Sq0b1Ol8XRhQ==
 config:
   aws:region: us-east-1
   ckp:environment: dev
@@ -12,21 +10,18 @@ config:
   ckp:workersDesiredCount: "0"
   ckp:ecsCpu: "1024"
   ckp:ecsMemory: "2048"
-  ckp:redisUrl:
-    secure: v1:DAul80mOqiZ54uMO:FpOMFJ65mYLHwPRCOJ4mow4m1Fb4YCmoQ7lTnd0QGQAXyIey08gflY+H8m6jChDlVSCpVagxNxGsofd30wBIlBwQLzBsEcYe5L3O2O7zOvY3nylMCgkPfw7CMn194hqqotHOonGEkm2ENG63Q8vNHNo=
   ckp:githubRepo: Creolestudios/creole-knowledge-portal
-  ckp:albSubnetIds:
-    - subnet-027b743555cb942a2
-    - subnet-0472667f1ee9f9289
   ckp:supabaseUrl:
-    secure: v1:qLGYztq+l8vGD0cI:AoOH3j8/b/SKkOUN8F3EL7yDYExMlUG59NF7wg6K4F4Nh+Rd5pqf1oSyfPo3GspqREmC3cir1fs=
+    secure: AAABAFKJf3Npc+BqolKnivnbUClTpBU2g49uRwuSFp0ft//kZLSyauIZI//gwnPPACOpYKprU7WbqoXukDCBrpqGNOV72Wre
   ckp:supabaseAnonKey:
-    secure: v1:WuSPdiPQKfJuw6t8:TcVA1/nLC2euyesAES2E11AhfYHwiwO/jOLfrmqOq02PXqCB5SXerLKaWGTgs7Eg3oqnj2u+/eRDKpLf1WJ7zsH8TdP7sl2b7YjR7fApdTeCVnxV0/ZpJFBqMU6kfUA+sWh/DZa9blkLgOHZPKJpigHh7Vkugc18p0kov7mbv/1tFMS7YpWjYTgUNKKn9Oi5QTUK85cZAZW5qee8WYaM6dUP9OEFMBW6Sk4CM2N06kW0s6bFO0+s605S0cnq1G4QbtSo/dx/ITt8X369VxRc0n8qRZ/qxK+3J8qYfYT/cgU=
+    secure: AAABANB5wDCc2NJxIazCkE1sCC7iTLylXUrscHFJ8xlTvklAT+Y/2oiOBIpUWsic0O3N9lrgb/tKW9lkNWL77yp4K3dx1iQ/LLxPvi19qf1Lc/BXMhdQCKaclDO4nQSxvrsel6LB+X0RN8aI23rq9Cg74lPIdNizcdeDM3cam9YU/gQe6RSMS9fuG/sKLffMPpl8at8UDF0mtxy8PVWKNa9oNkSur6jfE4yBW/iANdneQ+lwz5h1qotPXEBsamLXSMXAUd/UD+8udjZ9mqFKTG2lJOEBehqa3+OGGmYzabQoJ7wKOLFqFDZIeJo6YO+X
   ckp:supabaseServiceRoleKey:
-    secure: v1:nkUGU2h/oNI6rh88:wBXJfgRvTeEO8N/9ksvguDrfe/OMbrS6uNrPKOqNdWnXFgBnYUVAd1LxxW+Tj9enBHAMK25yhhg/6XznFi4kZYbz8PAUBQekwM9NT3GKiTUhhoPtoKUFPQkomACkEwWHu2nLiU1PRwHwoNGGJ6Z00rtRMhLSwj0LruV06CDN3kRHncnk/g5P/NZqaJDH61NLroqbJ1lDYr8LTGQYhR+DUfxFOk9j6Lya1zS3CXxW63OOmmKkzNKvWHTZfGi298wFuOmluZFMsnFF5G0JXFl+afUPlCOGiyXnskkjkQ+/zL7ty1XKz9m9cIfqnA==
+    secure: AAABAFAZlqs4dhKWFJsi1bRmcPHpaOOrfihv+T8wLP54+BSXqYB6cIIGNBKl2fKVlVJXGP5t1g5hO5yKZq604SmfVv3big3eGioJTJF19j08oGTaL3pcYaspSB/BaLsJeXaoeG11d7MhVNABZsts6MiGqNpHD0JtpusfKfpW4vtp4jnF6kaeYoIgGAxngWLot7Ls/5NUxqLl3KyHjdL9LHG5qPxFcCGhZMa8MusGH46qLjF98mpcGBHNuQanbF/6Jjrv4rCvb2dNF3R/9cYZmenoqPs8Q/HuwV2p/fZZ4SPObTIgHCSEfdnDVEVjOB+n3hVO0NXj2mNr/dk=
   ckp:geminiApiKey:
-    secure: v1:lV8fvTnJBn8oBbgT:9p+E+qqMrmg+5nQsRpm/66Di+z3B2orXgWqRuJKYjPvzSljXBYFN0+GzO/2wa09rp7BE+aiiCg==
+    secure: AAABAKHwBqSkx8Goa7EjVQqzlL+KfwzLaLgW4YiufjyQs0hI0RP+AJoMm9CH63imZhiT+NtrIt8S7wrAuid93SH3ZAOKVn2BIUSmg+1WZ5ZGDUfuMg==
   ckp:llmGeminiApiKey:
-    secure: v1:HOuoHuPfUGrlhIVH:7W68t08GuDtbB46VadZAuFljoobzZ9FeFK/tByQyettoH0Wk+2Ws9O0kPAHtHL8NEplSXXnggX0BAt14u0FcwBJ3fG/Y
+    secure: AAABAG4+hRM6DlJuja5FfOgeRSicpny+NqZxjAlt7lF9RujulTngwPuYmjiVJACPQATyTjC+vSnAjUxpZV6uy09p1+E+Q9NFADlDD9S5OPsv0Hx9xg==
   ckp:mongoUri:
-    secure: v1:sE++7ASJ/IH9Ba7h:r6SdeuR9XsodU2+dp4SAZVPAKuMsAL2ygLpJs6WadQnLVVhFIGKgfjHn4lonhTV2ZRL1Rw8hIEhKZ3g31J6uUfSVc66hSnnYWUN+sAplJOG0d+7XaXwrilLZcPPp2mr1ZFw4dBvUH27Qn+IyIjfJqanqyTzb85Lmso+5ANP/YFDIKG4=
+    secure: AAABAEOLd+en/21c6iema9I+HWmmyc4Ac2KQ5vNwD9IVDxw8Y3XAaqjD4WYgKf6jyeGWp9D0cd+4MEcytq/3GAS7EynOBS5PqP8VP3tuE+8if01FoJfCi6zuLqFU6/vlWVkHDTqhk0/WHjSveK2cOWMv1XqP3J7ayt8LeGCWdyG8DY4=
+  ckp:redisUrl:
+    secure: AAABABSiCQTbPEGXbDei42m0J7H6DWPOvJ5zu5lN66mwfkddaixTQv2XmHSSulV2C9Vjl/xEVXpPrljXBvy86AL7cBwzQnZiBLwCePUkPwJ+lJo1hJSFQox1ulNyq3kjhWWRZq5Rx663nWGkDH8sM7mbwDkHETf2tNSfTdDwRZss
