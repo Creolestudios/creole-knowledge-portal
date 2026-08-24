@@ -42,6 +42,8 @@ export async function POST(request: Request) {
             method: 'POST',
             headers: blogServiceHeaders(),
             body: JSON.stringify({ userId }),
+            // Pipeline can take several minutes (scrape → rank → Gemini).
+            signal: AbortSignal.timeout(280_000),
           });
 
           const payload = await res.json().catch(() => ({}));

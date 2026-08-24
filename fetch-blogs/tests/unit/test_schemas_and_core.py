@@ -229,9 +229,16 @@ class TestSettingsModule:
             ).celery_eager
             is True
         )
+        # Local always runs in-process regardless of CELERY_EAGER override.
         assert (
             AppSettings(
                 _env_file=None, ENVIRONMENT=Environment.LOCAL, CELERY_EAGER=False
+            ).celery_eager
+            is True
+        )
+        assert (
+            AppSettings(
+                _env_file=None, ENVIRONMENT=Environment.STAGING, CELERY_EAGER=False
             ).celery_eager
             is False
         )

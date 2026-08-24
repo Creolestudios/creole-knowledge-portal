@@ -10,7 +10,7 @@ from src.api.routes.pipeline import run_celery_pipeline_and_wait
 from src.core.db import init_db
 from src.generator.synthesizer import synthesize_digest
 from src.models.article import Article
-from src.api.routes.pipeline import execute_pipeline_for_user, run_celery_pipeline_and_wait
+from src.api.routes.pipeline import execute_pipeline_for_user
 from src.models.digest import DailyDigest
 from src.models.job import PipelineJob
 from src.models.profile import UserProfile
@@ -331,9 +331,7 @@ async def generate_digest(payload: GenerateRequest, flat: bool = True):
 
     try:
         await upsert_mongo_profile(payload.userId)
-        digest_id = await execute_pipeline_for_user(
-            payload.userId, runner_func=run_celery_pipeline_and_wait
-        )
+        digest_id = await execute_pipeline_for_user(payload.userId)
         digest = None
         try:
             digest = await DailyDigest.get(PydanticObjectId(digest_id))

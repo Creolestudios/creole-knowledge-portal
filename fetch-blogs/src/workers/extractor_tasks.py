@@ -8,7 +8,7 @@ import structlog
 from beanie import PydanticObjectId
 
 from src.core.config import get_scraping_settings
-from src.extractors.crawl4ai_client import extract_body
+from src.extractors.article_body import extract_body
 from src.extractors.embedding import embed_text
 from src.extractors.topic_filter import infer_complexity, infer_tech_stack, infer_topics
 from src.models.article import Article

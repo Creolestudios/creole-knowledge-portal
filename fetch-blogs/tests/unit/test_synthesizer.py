@@ -436,7 +436,7 @@ def test_synthesize_digest_with_scraped_only_and_custom_date(
 
 
 def test_devto_full_article_ignores_non_devto_urls() -> None:
-    from src.extractors.crawl4ai_client import _devto_full_article
+    from src.extractors.article_body import _devto_full_article
 
     assert _devto_full_article("https://news.ycombinator.com/item?id=1") is None
     assert _devto_full_article("https://dev.to/t/python") is None
@@ -445,7 +445,7 @@ def test_devto_full_article_ignores_non_devto_urls() -> None:
 def test_extract_body_returns_long_devto_article(monkeypatch: pytest.MonkeyPatch) -> None:
     import httpx
 
-    from src.extractors.crawl4ai_client import extract_body
+    from src.extractors.article_body import extract_body
 
     body = "word " * 250
 
@@ -486,7 +486,7 @@ def test_extract_body_falls_back_to_newspaper_then_jina(
 ) -> None:
     import httpx
 
-    from src.extractors import crawl4ai_client as extract_mod
+    from src.extractors import article_body as extract_mod
 
     class _Resp:
         status_code = 200
@@ -529,7 +529,7 @@ def test_extract_body_falls_back_to_newspaper_then_jina(
 def test_extract_body_returns_empty_when_all_sources_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from src.extractors import crawl4ai_client as extract_mod
+    from src.extractors import article_body as extract_mod
 
     monkeypatch.setattr(extract_mod, "_devto_full_article", lambda _url: None)
     monkeypatch.setattr(extract_mod, "extract_article_content", lambda _url: {"body_text": ""})
@@ -541,7 +541,7 @@ def test_extract_body_returns_empty_when_all_sources_fail(
 def test_devto_full_article_handles_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     import httpx
 
-    from src.extractors.crawl4ai_client import _devto_full_article
+    from src.extractors.article_body import _devto_full_article
 
     class _Bad:
         status_code = 404
@@ -576,7 +576,7 @@ def test_devto_full_article_handles_http_errors(monkeypatch: pytest.MonkeyPatch)
 def test_devto_full_article_ignores_empty_markdown(monkeypatch: pytest.MonkeyPatch) -> None:
     import httpx
 
-    from src.extractors.crawl4ai_client import _devto_full_article
+    from src.extractors.article_body import _devto_full_article
 
     class _Resp:
         status_code = 200

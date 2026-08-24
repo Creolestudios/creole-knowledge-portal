@@ -1,4 +1,4 @@
-"""Article body extraction: Dev.to API, newspaper, then Jina Reader."""
+"""Article body extraction: Dev.to API, newspaper3k, BeautifulSoup, then Jina Reader."""
 
 from __future__ import annotations
 

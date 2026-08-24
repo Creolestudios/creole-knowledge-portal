@@ -68,17 +68,6 @@ async def execute_pipeline_for_user(user_id: str, timeout: int = 300, runner_fun
     return run_celery_pipeline_and_wait(user_id, timeout=timeout)
 
 
-def _verify_internal_token(
-    x_internal_token: Annotated[str | None, Header()] = None,
-) -> None:
-    cfg = get_auth_settings()
-    if not x_internal_token or x_internal_token != cfg.SECRET_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid X-Internal-Token header.",
-        )
-
-
 @router.post(
     "/trigger",
     response_model=PipelineTriggerOut,

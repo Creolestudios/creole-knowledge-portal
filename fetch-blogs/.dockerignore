@@ -8,8 +8,9 @@ __pycache__
 .ruff_cache
 .pytest_cache
 .coverage
-htmlcov/
-dist/
+coverage.xml
+uv.lock
+docker-compose*.yml
 .venv/
 .git/
 .gitignore

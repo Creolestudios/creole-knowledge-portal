@@ -55,9 +55,13 @@ class AppSettings(BaseSettings):
     @property
     def celery_eager(self) -> bool:
         """Run Celery tasks in-process locally so Generate works without a worker."""
+        # Local always in-process — APP_CELERY_EAGER=false previously hung generate
+        # waiting on a Redis worker that wasn't consuming after Docker restarts.
+        if self.ENVIRONMENT == Environment.LOCAL:
+            return True
         if self.CELERY_EAGER is not None:
             return self.CELERY_EAGER
-        return self.ENVIRONMENT == Environment.LOCAL
+        return False
 
 
 class MongoSettings(BaseSettings):

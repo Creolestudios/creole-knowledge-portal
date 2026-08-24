@@ -1,4 +1,6 @@
-# Production image only — local dev runs FastAPI on the host via uv.
+# Production image — local dev runs FastAPI on the host via uv.
+#
+# Scraping uses httpx + feedparser + newspaper3k + BeautifulSoup + Jina (no browser).
 #
 # Stage 1: install Python deps (cached between builds)
 FROM python:3.11-slim AS builder
@@ -13,34 +15,18 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-workspace --no-dev
 
-# Stage 2: Chromium for Crawl4AI scraping
-FROM builder AS playwright-stage
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libnss3 libnspr4 libdbus-1-3 libatk1.0-0 libatk-bridge2.0-0 \
-    libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 \
-    libxrandr2 libgbm1 libasound2 curl && \
-    rm -rf /var/lib/apt/lists/*
-
-# Installed outside $HOME so it stays readable by the non-root runtime user below.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN uv run playwright install chromium
-
-# Stage 3: slim runtime image
+# Stage 2: slim runtime
 FROM python:3.11-slim AS runtime
 
-# curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl && \
-    rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY --from=playwright-stage /app/.venv /app/.venv
-COPY --from=playwright-stage /ms-playwright /ms-playwright
+COPY --from=builder /app/.venv /app/.venv
 
-ENV PATH="/app/.venv/bin:$PATH"
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
@@ -49,7 +35,7 @@ COPY scripts ./scripts
 
 RUN chmod +x scripts/prestart.sh scripts/test.sh && \
     groupadd --system appuser && useradd --system --gid appuser --home-dir /app appuser && \
-    chown -R appuser:appuser /app /ms-playwright
+    chown -R appuser:appuser /app
 USER appuser
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \

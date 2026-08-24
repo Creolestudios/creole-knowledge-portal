@@ -18,9 +18,9 @@ dependencies = [
     # Redis + Celery
     "celery[redis]>=5.4.0,<6.0.0",
     "redis>=5.0.0,<6.0.0",
-    # Scraping
-    "crawl4ai[all]>=0.3.0",
+    # Scraping (httpx APIs + newspaper3k + BeautifulSoup + Jina — no browser stack)
     "feedparser>=6.0.11,<7.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
     # LLM + Embeddings
     "google-generativeai>=0.8.0",
     # Ranking
@@ -103,8 +103,8 @@ module = [
     "kombu.*",
     "beanie.*",
     "motor.*",
-    "crawl4ai.*",
     "feedparser.*",
+    "bs4.*",
     "textstat.*",
     "apscheduler.*",
     "google.generativeai.*",

@@ -1,10 +1,22 @@
-import requests, json
+"""Print SonarQube quality gate status. Requires SONAR_HOST_URL + SONAR_TOKEN."""
 
-url = "http://34.100.239.232:9000/api/qualitygates/project_status?projectKey=ai-studio-applet"
-auth = ("squ_76811d68e795b642385b1de37dc97fb41a13c252", "")
+from __future__ import annotations
 
-res = requests.get(url, auth=auth)
-data = res.json()
+import json
+import os
 
+import requests
+
+HOST = os.environ["SONAR_HOST_URL"].rstrip("/")
+TOKEN = os.environ["SONAR_TOKEN"]
+PROJECT = os.environ.get("SONAR_PROJECT_KEY", "ai-studio-applet")
+
+res = requests.get(
+    f"{HOST}/api/qualitygates/project_status",
+    params={"projectKey": PROJECT},
+    auth=(TOKEN, ""),
+    timeout=30,
+)
+res.raise_for_status()
 print("=== QUALITY GATE PROJECT STATUS ===")
-print(json.dumps(data, indent=2))
+print(json.dumps(res.json(), indent=2))

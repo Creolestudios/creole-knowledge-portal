@@ -315,8 +315,11 @@ class TestGenerateDigestRoute:
         async def _get(_id: object) -> _Digest:
             return _Digest()
 
+        async def _pipeline(_uid: str) -> str:
+            return "d1"
+
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
-        monkeypatch.setattr(digests_mod, "run_celery_pipeline_and_wait", lambda _uid: "d1")
+        monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _pipeline)
         monkeypatch.setattr(digests_mod.DailyDigest, "get", _get)
         monkeypatch.setattr(digests_mod, "_latest_digest", _get)
 
@@ -342,8 +345,11 @@ class TestGenerateDigestRoute:
         async def _get(_id: object) -> _Digest:
             return _Digest()
 
+        async def _pipeline(_uid: str) -> str:
+            return "d1"
+
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
-        monkeypatch.setattr(digests_mod, "run_celery_pipeline_and_wait", lambda _uid: "d1")
+        monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _pipeline)
         monkeypatch.setattr(digests_mod.DailyDigest, "get", _get)
         monkeypatch.setattr(digests_mod, "_latest_digest", _get)
 
@@ -361,11 +367,11 @@ class TestGenerateDigestRoute:
         async def _upsert(_uid: str) -> None:
             return None
 
-        def _boom(_uid: str) -> str:
+        async def _boom(_uid: str) -> str:
             raise RuntimeError("gemini exploded")
 
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
-        monkeypatch.setattr(digests_mod, "run_celery_pipeline_and_wait", _boom)
+        monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _boom)
 
         res = build_client(digests_mod.router).post("/digests/generate", json={"userId": "u1"})
         assert res.status_code == 500
@@ -780,8 +786,11 @@ class TestDigestsHelperAndEdgeCases:
         async def _none(*_: object) -> None:
             return None
 
+        async def _pipeline(_uid: str) -> str:
+            return "valid_id"
+
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
-        monkeypatch.setattr(digests_mod, "run_celery_pipeline_and_wait", lambda _uid: "valid_id")
+        monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _pipeline)
         monkeypatch.setattr(digests_mod.DailyDigest, "get", _none)
         monkeypatch.setattr(digests_mod, "_latest_digest", _none)
 

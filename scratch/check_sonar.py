@@ -1,29 +1,41 @@
-import urllib.request
-import json
+"""Query SonarQube quality gate + new-code issues (local helper).
+
+Requires env:
+  SONAR_HOST_URL  e.g. https://sonar.example.com
+  SONAR_TOKEN     Sonar user token
+"""
+
+from __future__ import annotations
+
 import base64
+import json
+import os
+import urllib.request
 
-credentials = "priya.dhanani@creolestudios.com:Creole@123456"
-auth_header = f"Basic {base64.b64encode(credentials.encode()).decode()}"
+HOST = os.environ["SONAR_HOST_URL"].rstrip("/")
+TOKEN = os.environ["SONAR_TOKEN"]
+PROJECT = os.environ.get("SONAR_PROJECT_KEY", "ai-studio-applet")
+AUTH = f"Basic {base64.b64encode(f'{TOKEN}:'.encode()).decode()}"
 
-# Fetch project status and quality gate details
-url_qg = "http://34.100.239.232:9000/api/qualitygates/project_status?projectKey=ai-studio-applet"
-req_qg = urllib.request.Request(url_qg)
-req_qg.add_header("Authorization", auth_header)
-with urllib.request.urlopen(req_qg) as resp:
-    qg_data = json.loads(resp.read().decode())
 
+def _get(path: str) -> dict:
+    req = urllib.request.Request(f"{HOST}{path}")
+    req.add_header("Authorization", AUTH)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
+qg = _get(f"/api/qualitygates/project_status?projectKey={PROJECT}")
 print("=== QUALITY GATE STATUS ===")
-print(json.dumps(qg_data, indent=2))
+print(json.dumps(qg, indent=2))
 
-# Fetch issues in new code period
-url_new = "http://34.100.239.232:9000/api/issues/search?componentKeys=ai-studio-applet&inNewCodePeriod=true&resolved=false&ps=500"
-req_new = urllib.request.Request(url_new)
-req_new.add_header("Authorization", auth_header)
-with urllib.request.urlopen(req_new) as resp:
-    new_data = json.loads(resp.read().decode())
-
-print(f"\n=== NEW CODE ISSUES (Total: {new_data.get('total', 0)}) ===")
-for idx, i in enumerate(new_data.get("issues", []), 1):
-    comp = i.get('component', '').replace('ai-studio-applet:', '')
-    print(f"{idx}. [{i.get('type')}] [{i.get('severity')}] {comp}:{i.get('line')} -> {i.get('message')} (Rule: {i.get('rule')})")
-
+new = _get(
+    f"/api/issues/search?componentKeys={PROJECT}&inNewCodePeriod=true&resolved=false&ps=500"
+)
+print(f"\n=== NEW CODE ISSUES (Total: {new.get('total', 0)}) ===")
+for idx, issue in enumerate(new.get("issues", []), 1):
+    comp = issue.get("component", "").replace(f"{PROJECT}:", "")
+    print(
+        f"{idx}. [{issue.get('type')}] [{issue.get('severity')}] "
+        f"{comp}:{issue.get('line')} -> {issue.get('message')} (Rule: {issue.get('rule')})"
+    )

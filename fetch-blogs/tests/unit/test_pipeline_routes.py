@@ -101,6 +101,71 @@ def test_run_celery_pipeline_and_wait_raises_when_chain_returns_empty(
         pipeline_mod.run_celery_pipeline_and_wait("u1", timeout=120)
 
 
+@pytest.mark.asyncio
+async def test_execute_pipeline_for_user_uses_custom_runner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _runner(user_id: str) -> str:
+        assert user_id == "u1"
+        return "digest-custom"
+
+    out = await pipeline_mod.execute_pipeline_for_user("u1", runner_func=_runner)
+    assert out == "digest-custom"
+
+
+@pytest.mark.asyncio
+async def test_execute_pipeline_for_user_runs_in_process_when_celery_eager(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Cfg:
+        celery_eager = True
+
+    async def _scrape(_uid: str) -> list[str]:
+        return ["a1"]
+
+    async def _extract(ids: list[str]) -> list[str]:
+        return ids
+
+    async def _rank(ids: list[str], _uid: str, _n: int) -> list[str]:
+        return ids
+
+    async def _generate(ids: list[str], _uid: str) -> str:
+        assert ids == ["a1"]
+        return "digest-eager"
+
+    import src.core.config as core_config
+    import src.workers.extractor_tasks as extractor_tasks
+    import src.workers.generator_tasks as generator_tasks
+    import src.workers.ranker_tasks as ranker_tasks
+    import src.workers.scraper_tasks as scraper_tasks
+
+    monkeypatch.setattr(core_config, "get_app_settings", lambda: _Cfg())
+    monkeypatch.setattr(scraper_tasks, "_scrape_for_user", _scrape)
+    monkeypatch.setattr(extractor_tasks, "_extract_articles", _extract)
+    monkeypatch.setattr(ranker_tasks, "_rank_articles_for_user", _rank)
+    monkeypatch.setattr(generator_tasks, "_generate_digest", _generate)
+
+    out = await pipeline_mod.execute_pipeline_for_user("u1")
+    assert out == "digest-eager"
+
+
+@pytest.mark.asyncio
+async def test_execute_pipeline_for_user_falls_back_to_celery_when_not_eager(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Cfg:
+        celery_eager = False
+
+    import src.core.config as core_config
+
+    monkeypatch.setattr(core_config, "get_app_settings", lambda: _Cfg())
+    monkeypatch.setattr(
+        pipeline_mod, "run_celery_pipeline_and_wait", lambda uid, timeout=300: f"celery-{uid}"
+    )
+    out = await pipeline_mod.execute_pipeline_for_user("u9", timeout=60)
+    assert out == "celery-u9"
+
+
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 async def test_pipeline_status_returns_the_latest_job() -> None:
     await PipelineJob(

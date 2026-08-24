@@ -1,1 +1,1 @@
-"""Strategy B extractors — Crawl4AI content extraction and Gemini embeddings."""
+"""Extractors — article body parsing and Gemini embeddings."""

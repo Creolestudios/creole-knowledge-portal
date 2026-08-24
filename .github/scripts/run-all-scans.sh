@@ -315,9 +315,9 @@ PY
     -Dsonar.token="${SONAR_TOKEN}" \
     -Dsonar.sources=. \
     -Dsonar.tests=. \
-    -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/tests/**,**/conftest.py,**/seeds/**,**/scripts/**,**/.github/scripts/**,**/infra/**,**/.git/**,**/.venv/**,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/test_*.py,**/vitest.setup.ts" \
+    -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/tests/**,**/conftest.py,**/seeds/**,**/scripts/**,**/.github/scripts/**,**/scratch/**,**/infra/**,**/.git/**,**/.venv/**,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/test_*.py,**/vitest.setup.ts" \
     -Dsonar.test.inclusions="**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/tests/**,**/test_*.py,**/conftest.py,**/vitest.setup.ts" \
-    -Dsonar.coverage.exclusions="**/tests/**,**/conftest.py,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/test_*.py,**/vitest.setup.ts,**/.venv/**,**/node_modules/**,**/coverage/**,**/.github/scripts/**,**/infra/**,**/scripts/**" \
+    -Dsonar.coverage.exclusions="**/tests/**,**/conftest.py,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/test_*.py,**/vitest.setup.ts,**/.venv/**,**/node_modules/**,**/coverage/**,**/.github/scripts/**,**/scratch/**,**/infra/**,**/scripts/**" \
     -Dsonar.sourceEncoding=UTF-8 \
     -Dsonar.python.coverage.reportPaths="fetch-blogs/coverage.xml" \
     -Dsonar.javascript.lcov.reportPaths="coverage/lcov.info" \
