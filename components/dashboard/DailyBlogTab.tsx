@@ -145,7 +145,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
       const res = await fetch('/api/digests/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, force: false })
+        body: JSON.stringify({ userId: user.id, force: true })
       });
 
       clearInterval(stepInterval);

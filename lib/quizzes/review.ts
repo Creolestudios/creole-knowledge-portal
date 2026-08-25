@@ -38,6 +38,7 @@ export function buildQuizReviewData(
         isCorrect: Boolean(ans.is_correct),
         pointsAwarded: ans.points_awarded || 0,
         evaluationReason: ans.evaluation_reason || fallbackReason,
+        matchPercentage: ans.match_percentage || 0,
       });
     }
 
@@ -55,6 +56,7 @@ export function buildQuizReviewData(
           isCorrect: false,
           pointsAwarded: 0,
           evaluationReason: fallbackReason,
+          matchPercentage: 0,
         });
       }
     }
@@ -74,6 +76,7 @@ export function buildQuizReviewData(
       isCorrect: false,
       pointsAwarded: 0,
       evaluationReason: fallbackReason,
+      matchPercentage: 0,
     };
   });
 }

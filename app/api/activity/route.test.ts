@@ -27,6 +27,20 @@ vi.mock('@/lib/supabase/server', () => ({
   })),
 }));
 
+vi.mock('@/lib/supabase/admin', () => ({
+  supabaseAdmin: {
+    from: vi.fn(() => makeChain()),
+  }
+}));
+
+vi.mock('@/lib/blog-service', () => ({
+  blogServiceUrl: (path: string) => `http://blog-service.test${path}`,
+  blogServiceHeaders: () => ({ 'Content-Type': 'application/json' }),
+}));
+
+const mockFetch = vi.fn();
+vi.stubGlobal('fetch', mockFetch);
+
 function mockRequest(body?: unknown) {
   return new Request('http://localhost/api/activity', {
     method: body ? 'POST' : 'GET',
@@ -38,6 +52,7 @@ describe('GET /api/activity', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     responseQueue = [];
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock-key';
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -75,9 +90,79 @@ describe('GET /api/activity', () => {
     responseQueue = [
       {
         data: [
-          { date: today.toISOString(), read_seconds: 100 },
-          { date: yesterday.toISOString(), read_seconds: 200 },
-          { date: twoDaysAgo.toISOString(), read_seconds: 0 }, // breaks the streak
+          { created_at: today.toISOString(), metadata: { read_seconds: 100 } },
+          { created_at: yesterday.toISOString(), metadata: { read_seconds: 200 } },
+          { created_at: twoDaysAgo.toISOString(), metadata: { read_seconds: 0 } }, // breaks the streak
+        ],
+        error: null,
+      },
+      { data: [], error: null } // quiz_attempts
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.streak).toBe(2);
+  });
+
+  it('ignores a missing quiz_attempts table and still returns reading records', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    responseQueue = [
+      { data: [{ created_at: today.toISOString(), metadata: { read_seconds: 120 } }], error: null },
+      { data: null, error: { code: '42P01' } }, // quiz_attempts missing
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.records).toHaveLength(1);
+    expect(body.records[0].read_seconds).toBe(120);
+    expect(body.records[0].quiz_taken).toBe(false);
+    expect(body.streak).toBe(1);
+  });
+
+  it('returns a 500 when the quiz_attempts query fails for any other reason', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    responseQueue = [
+      { data: [], error: null },
+      { data: null, error: { code: 'XX000', message: 'quiz boom' } },
+    ];
+
+    const res = await GET(mockRequest());
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('quiz boom');
+  });
+
+  it('defaults read_seconds to 0 when the log metadata is absent', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    responseQueue = [
+      { data: [{ created_at: today.toISOString(), metadata: null }], error: null },
+      { data: [], error: null },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.records[0].read_seconds).toBe(0);
+    expect(body.streak).toBe(0);
+  });
+
+  it('creates a day entry from a quiz attempt even with no reading log', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    responseQueue = [
+      { data: [], error: null },
+      {
+        data: [
+          { completed_at: null, score: 99, total_questions: 5 }, // skipped: never completed
+          { completed_at: today.toISOString(), score: 3, total_questions: 5 },
         ],
         error: null,
       },
@@ -85,7 +170,130 @@ describe('GET /api/activity', () => {
 
     const res = await GET(mockRequest());
     const body = await res.json();
-    expect(body.streak).toBe(2);
+    expect(body.records).toHaveLength(1);
+    expect(body.records[0].quiz_taken).toBe(true);
+    expect(body.records[0].quiz_score).toBe(3);
+    expect(body.records[0].quiz_total).toBe(5);
+    expect(body.streak).toBe(1);
+  });
+
+  it('keeps the highest quiz score of the day', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    responseQueue = [
+      { data: [], error: null },
+      {
+        data: [
+          { completed_at: today.toISOString(), score: 2, total_questions: 5 },
+          { completed_at: today.toISOString(), score: 4, total_questions: 6 },
+          { completed_at: today.toISOString(), score: 1, total_questions: 5 }, // lower, ignored
+        ],
+        error: null,
+      },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.records[0].quiz_score).toBe(4);
+    expect(body.records[0].quiz_total).toBe(6);
+  });
+
+  it('records a zero-score attempt via the fallback branch and defaults total_questions to 5', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    responseQueue = [
+      { data: [], error: null },
+      {
+        data: [
+          { completed_at: today.toISOString(), score: 0, total_questions: null },
+          { completed_at: today.toISOString(), score: 0, total_questions: 8 },
+        ],
+        error: null,
+      },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.records[0].quiz_taken).toBe(true);
+    expect(body.records[0].quiz_score).toBe(0);
+    // Both attempts take the `quiz_score === 0` fallback; the last one wins.
+    expect(body.records[0].quiz_total).toBe(8);
+    expect(body.streak).toBe(1);
+  });
+
+  it('sorts records newest-first and stops the streak at a gap', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const threeDaysAgo = new Date(today);
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+    responseQueue = [
+      {
+        data: [
+          { created_at: threeDaysAgo.toISOString(), metadata: { read_seconds: 50 } },
+          { created_at: today.toISOString(), metadata: { read_seconds: 50 } },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.records).toHaveLength(2);
+    expect(new Date(body.records[0].date).getTime()).toBeGreaterThan(new Date(body.records[1].date).getTime());
+    expect(body.streak).toBe(1);
+  });
+
+  it('sums multiple reading logs recorded on the same day', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(9, 0, 0, 0);
+    const laterToday = new Date(today);
+    laterToday.setHours(18, 0, 0, 0);
+
+    responseQueue = [
+      {
+        data: [
+          { created_at: today.toISOString(), metadata: { read_seconds: 60 } },
+          { created_at: laterToday.toISOString(), metadata: { read_seconds: 90 } },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.records).toHaveLength(1);
+    expect(body.records[0].read_seconds).toBe(150);
+  });
+
+  it('defaults quiz_total to 5 on the highest-score branch when total_questions is null', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    responseQueue = [
+      { data: [], error: null },
+      {
+        data: [
+          { completed_at: today.toISOString(), score: 1, total_questions: 5 },
+          { completed_at: today.toISOString(), score: 4, total_questions: null },
+        ],
+        error: null,
+      },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.records[0].quiz_score).toBe(4);
+    expect(body.records[0].quiz_total).toBe(5);
   });
 });
 
@@ -93,6 +301,7 @@ describe('POST /api/activity', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     responseQueue = [];
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'mock-key';
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -110,7 +319,6 @@ describe('POST /api/activity', () => {
   it('creates a new record when none exists for the date', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     responseQueue = [
-      { data: null, error: null }, // existing lookup -> none
       { data: null, error: null }, // insert result
     ];
 
@@ -123,7 +331,6 @@ describe('POST /api/activity', () => {
   it('accumulates read seconds onto an existing record', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     responseQueue = [
-      { data: { id: 'rec-1', read_seconds: 30 }, error: null }, // existing lookup
       { data: null, error: null }, // update result
     ];
 
@@ -134,7 +341,6 @@ describe('POST /api/activity', () => {
   it('simulates success when the table does not exist', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     responseQueue = [
-      { data: null, error: null }, // existing lookup -> none
       { data: null, error: { code: '42P01' } }, // insert fails: table missing
     ];
 
@@ -147,11 +353,84 @@ describe('POST /api/activity', () => {
   it('returns a 500 for any other DB error on write', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     responseQueue = [
-      { data: null, error: null },
       { data: null, error: { code: 'XX000', message: 'write failed' } },
     ];
 
     const res = await POST(mockRequest({ date: '2026-08-01', readSeconds: 60 }));
+    expect(res.status).toBe(500);
+  });
+  it('skips the reading insert when readSeconds is zero', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    responseQueue = [];
+
+    const res = await POST(mockRequest({ date: '2026-08-01', readSeconds: 0 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.message).toBe('Activity logged successfully');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('logs a quiz submission and syncs the result to the blog service', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockFetch.mockResolvedValue({ ok: true });
+    responseQueue = [
+      { data: null, error: null }, // quiz_submit insert
+    ];
+
+    const res = await POST(mockRequest({ date: '2026-08-01', quizScore: 4, quizTotal: 5 }));
+    expect(res.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(url).toBe('http://blog-service.test/profiles/u1/quiz');
+    expect(JSON.parse(init.body)).toEqual({ score: 4, total: 5 });
+  });
+
+  it('does not sync to the blog service when quizTotal is missing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    responseQueue = [{ data: null, error: null }];
+
+    const res = await POST(mockRequest({ date: '2026-08-01', quizScore: 4 }));
+    expect(res.status).toBe(200);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('still succeeds when the blog service sync fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockFetch.mockRejectedValue(new Error('service down'));
+    responseQueue = [{ data: null, error: null }];
+
+    const res = await POST(mockRequest({ date: '2026-08-01', quizScore: 4, quizTotal: 5 }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('simulates success when the table is missing on the quiz insert', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockFetch.mockResolvedValue({ ok: true });
+    responseQueue = [{ data: null, error: { code: '42P01' } }];
+
+    const res = await POST(mockRequest({ date: '2026-08-01', quizScore: 1, quizTotal: 5 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.message).toContain('Simulated');
+  });
+
+  it('returns a 500 for any other DB error on the quiz insert', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    responseQueue = [{ data: null, error: { code: 'XX000', message: 'quiz write failed' } }];
+
+    const res = await POST(mockRequest({ date: '2026-08-01', quizScore: 1, quizTotal: 5 }));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('quiz write failed');
+  });
+
+  it('returns a 500 when the request body is not valid JSON', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const bad = new Request('http://localhost/api/activity', { method: 'POST', body: 'not-json' });
+
+    const res = await POST(bad);
     expect(res.status).toBe(500);
   });
 });

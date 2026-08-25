@@ -65,9 +65,9 @@ describe('Quiz Generator AI Service', () => {
       text: validJsonResponse
     });
 
-    const resultCount = await generateQuizForBlog('test-blog-id', 'test content');
+    const result = await generateQuizForBlog('test-blog-id', 'test content');
     
-    expect(resultCount).toBe(1);
+    expect(result.count).toBe(1);
     expect(mockInsert).toHaveBeenCalledTimes(1);
     expect(mockUpdate).toHaveBeenCalledTimes(1);
   });
@@ -77,8 +77,8 @@ describe('Quiz Generator AI Service', () => {
       text: "```json\n" + validJsonResponse + "\n```"
     });
 
-    const resultCount = await generateQuizForBlog('test-blog-id', 'test content');
-    expect(resultCount).toBe(1);
+    const result = await generateQuizForBlog('test-blog-id', 'test content');
+    expect(result.count).toBe(1);
     expect(mockInsert).toHaveBeenCalledTimes(1);
   });
 
@@ -99,9 +99,9 @@ describe('Quiz Generator AI Service', () => {
 
     const promise = generateQuizForBlog('test-blog-id', 'test content');
     await vi.runAllTimersAsync();
-    const resultCount = await promise;
+    const result = await promise;
 
-    expect(resultCount).toBe(1);
+    expect(result.count).toBe(1);
     expect(mockGenerateContent).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
@@ -109,8 +109,8 @@ describe('Quiz Generator AI Service', () => {
   it('should fallback to deterministic questions when AI throws immediately', async () => {
     mockGenerateContent.mockRejectedValue(new Error('Fatal Error'));
 
-    const resultCount = await generateQuizForBlog('test-blog-id', 'test content');
-    expect(resultCount).toBe(5);
+    const result = await generateQuizForBlog('test-blog-id', 'test content');
+    expect(result.count).toBe(5);
     expect(mockInsert).toHaveBeenCalledTimes(1);
   });
 
@@ -119,9 +119,9 @@ describe('Quiz Generator AI Service', () => {
     mockGenerateContent.mockResolvedValue({ text: validJsonResponse });
 
     const blogContentWithH2 = "## Architecture Deep Dive\n\nSome text content here.";
-    const resultCount = await generateQuizForBlog('test-blog-id', blogContentWithH2);
+    const result = await generateQuizForBlog('test-blog-id', blogContentWithH2);
 
-    expect(resultCount).toBe(1);
+    expect(result.count).toBe(1);
     expect(mockUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Architecture Deep Dive' }),
       { onConflict: 'id' }
@@ -133,9 +133,9 @@ describe('Quiz Generator AI Service', () => {
     mockGenerateContent.mockResolvedValue({ text: validJsonResponse });
 
     const blogContentPlain = "Regular paragraph line introducing technical concept.";
-    const resultCount = await generateQuizForBlog('test-blog-id', blogContentPlain);
+    const result = await generateQuizForBlog('test-blog-id', blogContentPlain);
 
-    expect(resultCount).toBe(1);
+    expect(result.count).toBe(1);
     expect(mockUpsert).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Regular paragraph line introducing technical concept.' }),
       { onConflict: 'id' }
@@ -151,12 +151,16 @@ describe('Quiz Generator AI Service', () => {
   });
 
   it('should fallback to deterministic questions if AI returns invalid non-JSON string', async () => {
+    vi.useFakeTimers();
     mockGenerateContent.mockResolvedValue({
       text: 'Sorry, I cannot generate this.'
     });
 
-    const resultCount = await generateQuizForBlog('test-blog-id', 'test content');
-    expect(resultCount).toBe(5);
+    const promise = generateQuizForBlog('test-blog-id', 'test content');
+    await vi.runAllTimersAsync();
+    const result = await promise;
+    expect(result.count).toBe(5);
+    vi.useRealTimers();
   });
 
   it('should throw error if database insert fails', async () => {

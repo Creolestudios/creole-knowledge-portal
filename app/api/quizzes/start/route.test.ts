@@ -9,6 +9,8 @@ vi.mock('@/lib/supabase/server', () => ({
   })),
 }));
 
+import { generateQuizForBlog } from '@/lib/ai/quiz-generator';
+
 vi.mock('@/lib/ai/quiz-generator', () => ({
   generateQuizForBlog: vi.fn().mockResolvedValue(5),
 }));
@@ -48,6 +50,7 @@ function mockRequest(body: unknown) {
 describe('POST /api/quizzes/start', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(generateQuizForBlog).mockReset().mockResolvedValue(5 as any);
     mockDbResponses = [];
   });
 
@@ -218,5 +221,93 @@ describe('POST /api/quizzes/start', () => {
     mockGetUser.mockRejectedValue(new Error('boom'));
     const res = await POST(mockRequest({ blogId: 'b1' }));
     expect(res.status).toBe(500);
+  });
+  it('surfaces a rate-limit warning when the generator falls back to a deterministic quiz', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    vi.mocked(generateQuizForBlog).mockResolvedValue({ usedFallback: true } as any);
+
+    mockDbResponses = [
+      { data: [], error: null }, // completedAttempts
+      { data: [], error: null }, // allQuestions
+      { data: { content: 'Blog body from supabase' }, error: null }, // blog row
+      {
+        data: [
+          { id: 'q1', question_type: 'single', question: 'Q1' },
+          { id: 'q2', question_type: 'single', question: 'Q2' },
+          { id: 'q3', question_type: 'single', question: 'Q3' },
+          { id: 'q4', question_type: 'single', question: 'Q4' },
+          { id: 'q5', question_type: 'single', question: 'Q5' },
+        ],
+        error: null,
+      }, // reloaded questions
+      { data: { id: 'attempt-warn', started_at: '2026-08-25T00:00:00Z' }, error: null },
+      { data: [], error: null },
+    ];
+
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.warning).toContain('Due to AI rate limits');
+    expect(body.questions).toHaveLength(5);
+  });
+
+  it('falls back to previous questions when on-demand generation throws', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    vi.mocked(generateQuizForBlog).mockRejectedValue(new Error('Gemini unavailable'));
+
+    mockDbResponses = [
+      { data: [{ id: 'a1', status: 'completed', total_questions: 5 }], error: null }, // completedAttempts
+      { data: [{ question_id: 'q1' }], error: null }, // answered question ids
+      { data: [{ id: 'q1', question_type: 'single', question: 'Q1' }], error: null }, // allQuestions
+      { data: { content: 'Blog body from supabase' }, error: null }, // blog row
+      { data: { id: 'attempt-genfail', started_at: '2026-08-25T00:00:00Z' }, error: null },
+      { data: [], error: null },
+    ];
+
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.warning).toContain('busy or rate-limited');
+  });
+
+  it('returns 500 when generation throws and there are no questions to fall back to', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    vi.mocked(generateQuizForBlog).mockRejectedValue(new Error('Gemini unavailable'));
+
+    mockDbResponses = [
+      { data: [], error: null }, // completedAttempts
+      { data: [], error: null }, // allQuestions - empty
+      { data: { content: 'Blog body from supabase' }, error: null }, // blog row
+    ];
+
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toContain('Gemini unavailable');
+  });
+
+  it('warns when fewer than five unique questions could be generated', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    vi.mocked(generateQuizForBlog).mockResolvedValue({ usedFallback: false } as any);
+
+    mockDbResponses = [
+      { data: [], error: null }, // completedAttempts
+      { data: [], error: null }, // allQuestions
+      { data: { content: 'Blog body from supabase' }, error: null }, // blog row
+      {
+        data: [
+          { id: 'q1', question_type: 'single', question: 'Q1' },
+          { id: 'q2', question_type: 'single', question: 'Q2' },
+        ],
+        error: null,
+      }, // only 2 reloaded
+      { data: { id: 'attempt-short', started_at: '2026-08-25T00:00:00Z' }, error: null },
+      { data: [], error: null },
+    ];
+
+    const res = await POST(mockRequest({ blogId: 'b1' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.warning).toContain('could not generate enough unique questions');
   });
 });
