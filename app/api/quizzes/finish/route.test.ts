@@ -19,7 +19,9 @@ vi.mock('@/lib/supabase/admin', () => ({
         eq: vi.fn().mockReturnThis(),
         update: vi.fn().mockReturnThis(),
         limit: vi.fn().mockReturnThis(),
+        order: vi.fn().mockReturnThis(),
         single: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockReturnThis(),
         in: vi.fn().mockReturnThis(),
         then: vi.fn((resolve) => {
           const res = mockDbResponses.length > 0 ? mockDbResponses.shift() : { data: null, error: null };
@@ -42,6 +44,7 @@ describe('POST /api/quizzes/finish', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockDbResponses = [];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
   });
 
   it('returns 401 when there is no authenticated user', async () => {
@@ -89,8 +92,33 @@ describe('POST /api/quizzes/finish', () => {
       }, // attempt lookup
       { error: { code: '42703', message: 'column passed does not exist' } }, // first update fails
       { error: null }, // retry update succeeds
-      { data: [{ id: 'q1', question_type: 'single' }], error: null }, // questions lookup
+      { data: [{ id: 'q1', question_type: 'single', question: 'React basics' }], error: null }, // questions lookup
+      { error: null }, // percentage update
       { data: [{ id: 'a1', status: 'completed' }, { id: 'a2', status: 'completed' }], error: null }, // all user attempts
+      {
+        data: [
+          {
+            id: 'a1',
+            status: 'completed',
+            score: 1,
+            percentage: 20,
+            passed: false,
+            attempt_number: 1,
+            quiz_answers: [{ question_id: 'q1', is_correct: true }],
+          },
+        ],
+        error: null,
+      }, // mongo sync attempts
+      {
+        data: {
+          primary_tech_stack: ['React'],
+          secondary_tech_stack: [],
+          interests: [],
+          current_role: 'Developer',
+        },
+        error: null,
+      }, // user profile for topic vocabulary
+      { data: [{ id: 'q1', question: 'React basics', question_type: 'single' }], error: null }, // mongo sync questions
     ];
 
     const res = await POST(mockRequest({ attemptId: 'a1' }));
@@ -143,7 +171,32 @@ describe('POST /api/quizzes/finish', () => {
         ],
         error: null,
       }, // questions
+      { error: null }, // percentage update
       { data: [{ id: 'a1', status: 'completed', total_questions: 5 }], error: null }, // all user attempts
+      {
+        data: [
+          {
+            id: 'a1',
+            status: 'completed',
+            score: 2,
+            percentage: 40,
+            passed: false,
+            attempt_number: 1,
+            quiz_answers: [{ question_id: 'q1', is_correct: true }],
+          },
+        ],
+        error: null,
+      }, // mongo sync attempts
+      {
+        data: {
+          primary_tech_stack: ['Docker'],
+          secondary_tech_stack: [],
+          interests: [],
+          current_role: 'Developer',
+        },
+        error: null,
+      }, // user profile for topic vocabulary
+      { data: [{ id: 'q1', question: 'What is Docker?', question_type: 'conceptual' }], error: null }, // mongo sync questions
     ];
 
     const res = await POST(mockRequest({ attemptId: 'a1' }));

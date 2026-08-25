@@ -95,6 +95,32 @@ function parseInlineMarkdown(text: string): ReactNode {
 
 const REAL_COMMAND = /^(curl |uv |npm |npx |pipx |pip install |git clone |git commit |docker |python3? -\w)/;
 
+/** Markdown HRs and decorative dash/equals rulers — never show as literal text. */
+export function isDecorativeSeparator(text: string): boolean {
+  const trimmed = String(text || '').trim();
+  if (!trimmed) return false;
+  // --- / *** / ___
+  if (/^([-_*])\1{2,}$/.test(trimmed)) return true;
+  // -------------------- or ==========
+  if (/^[-_=─–—]{4,}$/.test(trimmed)) return true;
+  // - - - - (spaced)
+  if (!/[a-zA-Z0-9]/.test(trimmed) && /^([-*_=─]\s*){3,}$/.test(trimmed)) return true;
+  return false;
+}
+
+/** Box-drawing / pipe trees break when rendered as proportional wrapped paragraphs. */
+export function looksLikeAsciiDiagram(text: string): boolean {
+  const lines = String(text || '')
+    .split('\n')
+    .filter((l) => l.trim().length > 0 && !isDecorativeSeparator(l));
+  if (lines.length < 2) return false;
+  const boxCharCount = (text.match(/[|+\-_═─│┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬\\/<>]/g) || []).length;
+  const indentedOrBoxy = lines.filter(
+    (l) => /^\s{2,}/.test(l) || /[|+\-_═─│┌┐└┘├┤┬┴┼]/.test(l),
+  ).length;
+  return boxCharCount >= 8 || (indentedOrBoxy >= 3 && boxCharCount >= 4);
+}
+
 function looksLikeRealHeading(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed || trimmed.length > 90) return false;
@@ -106,15 +132,24 @@ function looksLikeRealHeading(text: string): boolean {
 
 export function PremiumMarkdownRenderer({ content }: { content: string }) {
   const lines = restoreArticleMarkdown(content).split('\n');
-  const blocks: Array<{ type: string; content: string }> = [];
+  const blocks: Array<{ type: string; content: string; label?: string }> = [];
   let inCodeBlock = false;
   let codeLines: string[] = [];
   let currentParagraph: string[] = [];
 
   const flushParagraph = () => {
     if (currentParagraph.length > 0) {
-      blocks.push({ type: 'p', content: currentParagraph.join('\n') });
+      const joined = currentParagraph
+        .filter((l) => !isDecorativeSeparator(l))
+        .join('\n')
+        .trim();
       currentParagraph = [];
+      if (!joined) return;
+      if (looksLikeAsciiDiagram(joined)) {
+        blocks.push({ type: 'code', content: joined, label: 'Diagram' });
+      } else {
+        blocks.push({ type: 'p', content: joined });
+      }
     }
   };
 
@@ -134,6 +169,11 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
 
     if (inCodeBlock) {
       codeLines.push(line);
+      continue;
+    }
+
+    if (isDecorativeSeparator(trimmed)) {
+      flushParagraph();
       continue;
     }
 
@@ -183,11 +223,11 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
             return (
               <div
                 key={idx}
-                className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-[#0f0f11] my-4 font-mono text-xs shadow-lg"
+                className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-[#0f0f11] my-4 font-mono text-xs shadow-lg max-w-full"
               >
                 <div className="flex items-center justify-between px-6 py-3 bg-[#16161a] border-b border-zinc-800 text-zinc-400">
                   <span className="text-[10px] uppercase font-bold tracking-wider text-brand">
-                    Code Snippet
+                    {block.label || 'Code Snippet'}
                   </span>
                   <button
                     type="button"
@@ -197,8 +237,8 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
                     Copy
                   </button>
                 </div>
-                <pre className="p-6 overflow-x-auto text-zinc-300 whitespace-pre-wrap">
-                  <code>{block.content}</code>
+                <pre className="p-6 overflow-x-auto text-zinc-300 whitespace-pre font-mono text-[11px] leading-5 tabular-nums">
+                  <code className="font-mono whitespace-pre">{block.content}</code>
                 </pre>
               </div>
             );

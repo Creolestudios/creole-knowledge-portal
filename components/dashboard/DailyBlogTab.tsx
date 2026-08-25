@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { RefreshCw, Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 import { useRouter } from 'next/navigation';
@@ -14,16 +14,27 @@ function localDateKey(d: Date): string {
 }
 
 function toDateKey(value?: string | null): string {
-  if (!value) return localDateKey(new Date());
+  if (!value) return '';
   const day = value.match(/^(\d{4}-\d{2}-\d{2})/);
   if (day) return day[1];
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return localDateKey(new Date());
+  if (Number.isNaN(parsed.getTime())) return '';
   return localDateKey(parsed);
 }
 
+function isTodaysBrief(blog: {
+  digest_date?: string | null;
+  published_at?: string | null;
+  generated_at?: string | null;
+} | null): boolean {
+  if (!blog) return false;
+  const key = toDateKey(blog.digest_date || blog.published_at || blog.generated_at);
+  if (!key) return false;
+  return key === localDateKey(new Date());
+}
+
 function formatFetchedLabel(value?: string | null): string {
-  const dateKey = toDateKey(value);
+  const dateKey = toDateKey(value) || localDateKey(new Date());
   const today = localDateKey(new Date());
   const yesterdayDate = new Date();
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
@@ -32,6 +43,15 @@ function formatFetchedLabel(value?: string | null): string {
   const [year, month, day] = dateKey.split('-');
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return `${Number(day)} ${months[Number(month) - 1]} ${year}`;
+}
+
+/** Reading timer only while the daily quiz is still open. */
+function shouldRunReadingTimer(quizStatus: any | null | undefined): boolean {
+  if (!quizStatus) return true;
+  if (quizStatus.passed) return false;
+  if (quizStatus.failed) return false;
+  if ((quizStatus.attemptsRemaining ?? 3) <= 0) return false;
+  return true;
 }
 
 export default function DailyBlogTab({ user, profile }: { user?: any; profile?: any }) {
@@ -47,63 +67,62 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const [timerActive, setTimerActive] = useState(false);
 
   // Quiz State
-  const [quizOpen, setQuizOpen] = useState(false);
   const [quizLoading, setQuizLoading] = useState(false);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (timerActive) {
       interval = setInterval(() => {
-        setReadSeconds(prev => prev + 1);
+        setReadSeconds((prev) => prev + 1);
       }, 1000);
     }
     return () => clearInterval(interval);
   }, [timerActive]);
 
-  const fetchLatestBrief = async () => {
-    setLoadingBrief(true);
+  const applyBrief = async (blog: any) => {
+    setBrief(blog);
+    if (typeof window !== 'undefined' && blog?.id) {
+      sessionStorage.setItem('active_blog_id', blog.id);
+    }
+
+    let nextQuizStatus: any = null;
     try {
-      // Prefer URL blogId (e.g. returning from quiz). Otherwise always load
-      // today's digest from the API (backend prefers IST today, else newest).
-      const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-      const urlBlogId = urlParams?.get('blogId');
-
-      let res: Response | null = null;
-      if (urlBlogId) {
-        res = await fetch(`/api/digests/by-id?id=${urlBlogId}`);
-      }
-
-      if (!res || !res.ok) {
-        res = await fetch('/api/digests/latest');
-      }
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.blog) {
-          setBrief(data.blog);
-          setTimerActive(true);
-          if (typeof window !== 'undefined' && data.blog.id) {
-            sessionStorage.setItem('active_blog_id', data.blog.id);
-          }
-
-          try {
-            const qRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
-            if (qRes.ok) {
-              const qData = await qRes.json();
-              if (qData) {
-                setQuizStatus(qData);
-                if (qData.passed || (!qData.passed && qData.attemptsRemaining <= 0)) {
-                  setTimerActive(false);
-                }
-              }
-            }
-          } catch (e) {
-            console.error('Error loading quiz status:', e);
-          }
+      if (blog?.id) {
+        const qRes = await fetch(`/api/quizzes/status?blogId=${blog.id}`);
+        if (qRes?.ok) {
+          nextQuizStatus = await qRes.json();
+          setQuizStatus(nextQuizStatus);
         }
       }
     } catch (e) {
+      console.error('Error loading quiz status:', e);
+    }
+    setTimerActive(shouldRunReadingTimer(nextQuizStatus));
+  };
+
+  const fetchLatestBrief = async () => {
+    setLoadingBrief(true);
+    try {
+      // Always load today's digest only. Prior days live under Past Blogs.
+      const res = await fetch('/api/digests/latest');
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.blog && isTodaysBrief(data.blog)) {
+          await applyBrief(data.blog);
+        } else {
+          setBrief(null);
+          setQuizStatus(null);
+          setTimerActive(false);
+        }
+      } else {
+        setBrief(null);
+        setQuizStatus(null);
+        setTimerActive(false);
+      }
+    } catch (e) {
       console.error('Error fetching brief:', e);
+      setBrief(null);
     } finally {
       setLoadingBrief(false);
     }
@@ -142,10 +161,11 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     }, 3500);
 
     try {
+      // Never force regenerate — API returns today's existing digest if present.
       const res = await fetch('/api/digests/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, force: true })
+        body: JSON.stringify({ userId: user.id }),
       });
 
       clearInterval(stepInterval);
@@ -154,31 +174,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         setGenerationStep('Finalizing your Morning Brief...');
         const data = await res.json();
         if (data.success && data.blog) {
-          setBrief(data.blog);
-          if (typeof window !== 'undefined') {
-            if (data.blog.id) {
-              sessionStorage.setItem('active_blog_id', data.blog.id);
-            } else {
-              sessionStorage.removeItem('active_blog_id');
-            }
-          }
-          setTimerActive(true);
-
-          try {
-            const qRes = await fetch(`/api/quizzes/status?blogId=${data.blog.id}`);
-            if (qRes?.ok) {
-              const qData = await qRes.json();
-              setQuizStatus(qData);
-              if (qData.passed || (!qData.passed && qData.attemptsRemaining <= 0)) {
-                setTimerActive(false);
-              }
-            } else {
-              setQuizStatus({ completed: false, inProgress: false, attemptsCount: 0, attemptsRemaining: 3 });
-            }
-          } catch (e) {
-            console.error('Error loading quiz status after generation:', e);
-            setQuizStatus({ completed: false, inProgress: false, attemptsCount: 0, attemptsRemaining: 3 });
-          }
+          await applyBrief(data.blog);
         } else {
           alert('Generation completed but briefing was not retrieved.');
         }
@@ -202,24 +198,15 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     return `${m}m ${s}s`;
   };
 
-  const rawDate = brief?.generated_at || brief?.published_at || brief?.created_at;
-  const formattedDate = rawDate
-    ? new Date(rawDate).toLocaleDateString('en-US', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    })
-    : new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-
   const estimatedMinutes = Math.max(
     1,
     Math.round(
       Number(brief?.estimated_read_minutes) > 0
         ? Number(brief.estimated_read_minutes)
         : String(brief?.content || '')
-          .split(/\s+/)
-          .filter(Boolean).length / 225
-    )
+            .split(/\s+/)
+            .filter(Boolean).length / 225,
+    ),
   );
 
   const saveActivityAndOpenQuiz = async () => {
@@ -236,8 +223,8 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         body: JSON.stringify({
           userId: user.id,
           date: new Date().toISOString().split('T')[0],
-          readSeconds
-        })
+          readSeconds,
+        }),
       });
     } catch (e) {
       console.error('Failed to save reading time', e);
@@ -256,18 +243,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
 
   return (
     <>
-      {hasBrief && !generating && (
-        <div className="mb-8 flex justify-end">
-          <button
-            onClick={handleGenerateBriefing}
-            className="px-6 py-3 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm cursor-pointer shrink-0"
-          >
-            <RefreshCw size={15} />
-            Regenerate Briefing
-          </button>
-        </div>
-      )}
-
       <AnimatePresence mode="wait">
         {loadingBrief ? (
           <motion.div
@@ -297,7 +272,9 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 <div className="absolute top-0 left-0 h-full bg-brand rounded-full animate-progress-loading w-[85%] shadow-brand" />
               </div>
               <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5 inline-block min-w-[320px]">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-2">Current Pipeline Process</span>
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-2">
+                  Current Pipeline Process
+                </span>
                 <p className="text-brand font-mono text-xs font-bold animate-pulse">{generationStep}</p>
               </div>
             </div>
@@ -308,15 +285,14 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             animate={{ opacity: 1, y: 0 }}
             className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative"
           >
-            {/* Live Reading Timer Floating Badge - Only show if quiz can be taken */}
-            {(!quizStatus?.passed && (quizStatus?.attemptsRemaining ?? 3) > 0) && (
+            {!quizStatus?.passed && (quizStatus?.attemptsRemaining ?? 3) > 0 && (
               <div className="absolute -top-6 right-0 z-10 bg-black text-white px-4 py-2 rounded-full font-mono text-sm font-bold shadow-lg flex items-center gap-2 border border-zinc-800">
                 <Clock size={14} className="text-brand" />
                 {formatTime(readSeconds)}
               </div>
             )}
 
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-6 min-w-0">
               <div className="mb-2 space-y-1">
                 <p className="text-sm font-bold text-zinc-500 tracking-wide">
                   Welcome,{' '}
@@ -331,31 +307,37 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                   Morning Briefing
                 </h1>
               </div>
-              <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
-              <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
-                {brief.title}
-              </h2>
-              <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8 flex items-center gap-2">
-                <CalendarDays size={14} className="text-brand" />
-                Fetched {formatFetchedLabel(brief.digest_date || brief.published_at)}
-                <span className="text-zinc-300">·</span>
-                {estimatedMinutes} min read
-              </p>
-              <PremiumMarkdownRenderer content={brief.content} />
+              <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card overflow-hidden">
+                <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
+                  {brief.title}
+                </h2>
+                <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8 flex items-center gap-2">
+                  <CalendarDays size={14} className="text-brand" />
+                  Fetched {formatFetchedLabel(brief.digest_date || brief.published_at)}
+                  <span className="text-zinc-300">·</span>
+                  {estimatedMinutes} min read
+                </p>
+                <div className="overflow-x-auto max-w-full">
+                  <PremiumMarkdownRenderer content={brief.content} />
+                </div>
 
-              <div className="mt-10 pt-10 border-t border-zinc-100 flex flex-col items-center gap-4">
+                <div className="mt-10 pt-10 border-t border-zinc-100 flex flex-col items-center gap-4">
                   {(() => {
                     const attemptsCount = quizStatus?.attemptsCount || 0;
-                    const attemptsRemaining = quizStatus?.attemptsRemaining ?? Math.max(0, 3 - attemptsCount);
+                    const attemptsRemaining =
+                      quizStatus?.attemptsRemaining ?? Math.max(0, 3 - attemptsCount);
                     const isPassed = Boolean(quizStatus?.passed);
-                    const isFailedAll = Boolean(quizStatus?.failed || (!quizStatus?.passed && attemptsRemaining <= 0));
+                    const isFailedAll = Boolean(
+                      quizStatus?.failed || (!quizStatus?.passed && attemptsRemaining <= 0),
+                    );
                     const isInProgress = Boolean(quizStatus?.inProgress);
 
                     if (isPassed) {
                       return (
                         <div className="text-center space-y-3">
                           <p className="text-sm font-bold text-green-600">
-                            Quiz Passed! ({quizStatus.result?.score}/${quizStatus.result?.total} pts • {quizStatus.result?.percentage}%) 🎉
+                            Quiz Passed! ({quizStatus.result?.score}/{quizStatus.result?.total} pts •{' '}
+                            {quizStatus.result?.percentage}%) 🎉
                           </p>
                           <div className="flex flex-wrap items-center justify-center gap-3">
                             <button
@@ -420,7 +402,8 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                       <div className="text-center space-y-3">
                         {attemptsCount > 0 && (
                           <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
-                            Attempt {attemptsCount} of 3 completed • {attemptsRemaining} {attemptsRemaining === 1 ? 'attempt' : 'attempts'} left
+                            Attempt {attemptsCount} of 3 completed • {attemptsRemaining}{' '}
+                            {attemptsRemaining === 1 ? 'attempt' : 'attempts'} left
                           </p>
                         )}
                         <button
@@ -451,34 +434,42 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
               </div>
             </div>
 
-              <div className="space-y-8">
-                <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                  <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
-                    <BookOpen size={18} className="text-brand" />
-                    Curation Focus
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {brief.tags?.map((tag: string, idx: number) => (
-                      <span key={idx} className="px-3.5 py-1.5 bg-zinc-50 border text-zinc-600 rounded-xl text-xs font-bold capitalize">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
+            <div className="space-y-8">
+              <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
+                <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
+                  <BookOpen size={18} className="text-brand" />
+                  Curation Focus
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {brief.tags?.map((tag: string, idx: number) => (
+                    <span
+                      key={idx}
+                      className="px-3.5 py-1.5 bg-zinc-50 border text-zinc-600 rounded-xl text-xs font-bold capitalize"
+                    >
+                      {tag}
+                    </span>
+                  ))}
                 </div>
+              </div>
 
-                <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                  <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">Sources evaluated</span>
-                  <h4 className="text-lg font-black text-zinc-900 mb-4">Network Context</h4>
-                  <div className="space-y-3">
-                    <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
-                      <div>
-                        <p className="text-xs font-bold text-zinc-900 leading-tight">Dev.to API</p>
-                      </div>
-                      <ExternalLink size={14} className="text-zinc-400 group-hover:text-brand transition-colors" />
+              <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
+                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">
+                  Sources evaluated
+                </span>
+                <h4 className="text-lg font-black text-zinc-900 mb-4">Network Context</h4>
+                <div className="space-y-3">
+                  <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
+                    <div>
+                      <p className="text-xs font-bold text-zinc-900 leading-tight">Dev.to API</p>
                     </div>
+                    <ExternalLink
+                      size={14}
+                      className="text-zinc-400 group-hover:text-brand transition-colors"
+                    />
                   </div>
                 </div>
               </div>
+            </div>
           </motion.div>
         ) : (
           <motion.div
@@ -491,7 +482,12 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 <Sparkles size={32} />
               </div>
               <div className="space-y-4">
-                <h2 className="text-4xl font-black tracking-tight leading-none">Your Daily Tech Briefing is Ready.</h2>
+                <h2 className="text-4xl font-black tracking-tight leading-none">
+                  Your Daily Tech Briefing is Ready.
+                </h2>
+                <p className="text-zinc-400 text-sm font-medium">
+                  No briefing for today yet. Synthesize once to generate this morning&apos;s article.
+                </p>
               </div>
               <button
                 onClick={handleGenerateBriefing}

@@ -48,11 +48,19 @@ async def record_served_urls(digest: DailyDigest, profile: UserProfile) -> None:
         if url not in served:
             served.append(url)
     profile.learning_path.served_urls = served[-_SERVED_URL_CAP:]
-    themes: list[str] = []
-    for source in digest.content.sources:
-        themes.extend(topic_tokens_from_text(source.title))
-    profile.learning_path.last_topics = list(dict.fromkeys(themes))[:5] or [
-        source.title for source in digest.content.sources[:5]
+
+    titles = [
+        str(source.title).strip()
+        for source in digest.content.sources
+        if str(getattr(source, "title", "") or "").strip()
     ]
+    tokens: list[str] = []
+    for title in titles:
+        tokens.extend(topic_tokens_from_text(title))
+    # Always persist themes for next-day scrape (tokens + raw titles as fallback)
+    combined = list(dict.fromkeys([*tokens, *titles]))[:8]
+    if combined:
+        profile.learning_path.last_topics = combined
+
     profile.updated_at = datetime.now(UTC)
     await profile.save()

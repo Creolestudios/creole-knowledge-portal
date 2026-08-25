@@ -2,7 +2,7 @@
 title: System Architecture
 tags: [architecture, design, diagrams]
 created: 2026-05-27
-updated: 2026-08-22
+updated: 2026-08-25
 ---
 
 # System Architecture
@@ -17,7 +17,7 @@ The Creole Knowledge Portal is architected using a modern web application struct
 
 1. **Frontend / BFF (Backend for Frontend)**: Next.js 15 (App Router) executing React 19 Client and Server Components.
 2. **Authentication & Database**: Supabase serves as the backend infrastructure, handling passwordless authentication (Magic Link), Google OAuth, and structured data storage (PostgreSQL).
-3. **Blog Crawler & Synthesis Service** (Proposed/Planned): A separate Python microservice (`fetch-blogs`) built with FastAPI to crawler technical blogs, process payloads, and generate synthetic daily digests via Gemini AI models.
+3. **Blog Crawler & Synthesis Service**: A separate Python microservice (`fetch-blogs`) built with FastAPI. It scrapes Dev.to / Hacker News / RSS, extracts bodies (newspaper3k + Jina), ranks with TF-IDF + Gemini embeddings, synthesizes a daily briefing, and stores it in MongoDB. Next.js reads that JSON via `lib/blog-service.ts`. See [[pages/fetch-blogs-walkthrough.md|Fetch Blogs walkthrough]].
 
 ```mermaid
 graph TD
@@ -151,4 +151,4 @@ erDiagram
 - `lib/`: Houses database connection initialization factories (`lib/supabase/`).
 - `infra/`: Pulumi stack — ECS Fargate platform, Secrets Manager, Route53/ACM (see Deployment section above).
 - `scripts/`: Quality assurance verification pipelines and CI check simulations.
-- `fetch-blogs/`: Directory placeholder designated for the planned FastAPI python crawler service.
+- `fetch-blogs/`: FastAPI + Celery microservice (Mongo, Redis, Gemini). Walkthrough: [[pages/fetch-blogs-walkthrough.md]].

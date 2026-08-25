@@ -1,10 +1,12 @@
 x# Task Division Implementation Status
 
-This document compares the planned work in `task_division.md` against the current branch state of the repository as of 2026-08-13.
+This document compared the planned work in `task_division.md` against the branch as of **2026-08-13**. It is a historical snapshot.
 
-## Overall snapshot
+**Current pipeline status (2026-08-25):** the scrape → extract → rank → generate → publish chain is live. See [[pages/fetch-blogs-walkthrough.md|Fetch Blogs walkthrough]] instead of treating the tables below as current.
 
-Roughly 45–55% of the plan is already implemented in the current branch.
+## Overall snapshot (as of 2026-08-13)
+
+Roughly 45–55% of the plan was implemented on that date.
 
 The strongest delivery areas are:
 - Next.js auth routing and dashboard shell

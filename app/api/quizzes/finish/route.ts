@@ -2,6 +2,78 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { buildQuizReviewData } from '@/lib/quizzes/review';
+import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
+import { buildLearningPathQuizPayload } from '@/lib/quizzes/learning-path-sync';
+
+async function syncQuizLearningPathToMongo(
+  userId: string,
+  blogId: string,
+  fallbackScore: number,
+  fallbackTotal: number,
+  fallbackPassed: boolean,
+) {
+  try {
+    const { data: attempts } = await supabaseAdmin
+      .from('quiz_attempts')
+      .select(
+        'id, status, score, percentage, passed, attempt_number, blog_id, quiz_answers(question_id, is_correct, points_awarded)',
+      )
+      .eq('user_id', userId)
+      .eq('blog_id', blogId)
+      .eq('status', 'completed')
+      .order('attempt_number', { ascending: true });
+
+    const { data: profile } = await supabaseAdmin
+      .from('user_profiles')
+      .select('primary_tech_stack, secondary_tech_stack, interests, current_role')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const completed = attempts || [];
+    const questionIds = [
+      ...new Set(
+        completed.flatMap((a: any) =>
+          (a.quiz_answers || []).map((ans: any) => ans.question_id).filter(Boolean),
+        ),
+      ),
+    ];
+
+    let questions: any[] = [];
+    if (questionIds.length > 0) {
+      const { data: qData } = await supabaseAdmin
+        .from('quiz_questions')
+        .select('id, question, question_type')
+        .in('id', questionIds);
+      questions = qData || [];
+    }
+
+    const profileTerms = [
+      ...(profile?.primary_tech_stack || []),
+      ...(profile?.secondary_tech_stack || []),
+      ...(profile?.interests || []),
+      profile?.current_role,
+    ].filter(Boolean) as string[];
+
+    const payload = buildLearningPathQuizPayload(
+      blogId,
+      completed,
+      questions,
+      fallbackScore,
+      fallbackTotal,
+      fallbackPassed,
+      profileTerms,
+    );
+
+    await fetch(blogServiceUrl(`/profiles/${userId}/quiz`), {
+      method: 'POST',
+      headers: blogServiceHeaders(),
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8_000),
+    });
+  } catch (err) {
+    console.warn('Quiz learning path was not synced to Mongo:', err);
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -96,6 +168,12 @@ export async function POST(request: Request) {
     const wrongAnswersCount = Math.max(0, questions.length - correctAnswersCount);
     const percentage = Math.round((totalScore / maxPossibleScore) * 100);
 
+    // Persist the accurate percentage now that max score is known
+    await supabaseAdmin
+      .from('quiz_attempts')
+      .update({ percentage })
+      .eq('id', attemptId);
+
     const reviewData = buildQuizReviewData(questions, answers);
 
     const { data: allUserAttempts } = await supabaseAdmin
@@ -120,6 +198,16 @@ export async function POST(request: Request) {
       }
     }
     const attemptsRemaining = Math.max(0, 3 - finishedAttemptsCount);
+
+    // Bridge: all attempts' answers → Mongo learning_path for next-day scrape
+    await syncQuizLearningPathToMongo(
+      user.id,
+      attempt.blog_id,
+      totalScore,
+      maxPossibleScore,
+      passed,
+    );
+
     return NextResponse.json({
       success: true,
       passed,

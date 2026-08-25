@@ -6,30 +6,44 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockImplementation(() => ({ auth: { getUser: mockGetUser } })),
 }));
 
-let mockDbResponses: any[] = [];
+const mockEq = vi.fn();
+const mockIlike = vi.fn();
+const mockOrder = vi.fn();
+const mockLimit = vi.fn();
+const mockMaybeSingle = vi.fn();
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
     from: vi.fn(() => {
       const chain: any = {
         select: vi.fn().mockReturnThis(),
-        ilike: vi.fn().mockReturnThis(),
-        order: vi.fn().mockReturnThis(),
-        limit: vi.fn().mockReturnThis(),
-        then: vi.fn((resolve) => {
-          const res = mockDbResponses.length > 0 ? mockDbResponses.shift() : { data: null, error: null };
-          resolve(res);
-        }),
+        eq: mockEq.mockReturnThis(),
+        ilike: mockIlike.mockReturnThis(),
+        order: mockOrder.mockReturnThis(),
+        limit: mockLimit.mockReturnThis(),
+        maybeSingle: mockMaybeSingle,
       };
       return chain;
     }),
   },
 }));
 
+vi.mock('@/lib/blog-service', () => ({
+  blogServiceHeaders: () => ({}),
+  blogServiceUrl: (path: string) => `http://blog.test${path}`,
+}));
+
 describe('GET /api/digests/latest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDbResponses = [];
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mockLimit.mockReturnValue({
+      then: (resolve: (v: unknown) => void) => resolve({ data: [], error: null }),
+    });
+    // Make order().limit() thenable via returning chain that resolves on await
+    mockOrder.mockImplementation(() => ({
+      limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    }));
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ success: true, blog: null }),
@@ -42,96 +56,44 @@ describe('GET /api/digests/latest', () => {
     expect(res.status).toBe(401);
   });
 
-  it('falls back to the legacy daily briefing when no active series exists', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockDbResponses = [
-      { data: [], error: null }, // series blogs
-      { data: [{ id: 'brief-1', title: 'Daily Briefing' }], error: null }, // legacy brief
-    ];
-
-    const res = await GET();
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.blog).toEqual({ id: 'brief-1', title: 'Daily Briefing' });
-  });
-
-  it('returns the current unlocked series part from Supabase', async () => {
+  it('returns blog null when FastAPI has no digest for today (synthesize)', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
     (global.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => ({ success: true, blog: null }),
     });
-    mockDbResponses = [
-      {
-        data: [
-          {
-            id: 'part-1',
-            published_at: '2026-08-01T00:00:00Z',
-            summary: JSON.stringify({
-              seriesId: 's1',
-              seriesTitle: 'Async Python',
-              partNumber: 1,
-              totalParts: 2,
-              readingTime: 12,
-              completed: false,
-              unlockedAt: new Date(Date.now() - 60_000).toISOString(),
-            }),
-          },
-        ],
-        error: null,
-      },
-    ];
 
     const res = await GET();
+    expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.blog.id).toBe('part-1');
-    expect(body.meta.seriesId).toBe('s1');
-    expect(body.meta.unlocked).toBe(true);
+    expect(body).toEqual({ success: true, blog: null, meta: null });
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/digests/user-1/latest?today_only=true'),
+      expect.any(Object),
+    );
   });
 
-  it('returns seriesCompleted when every part is done', async () => {
+  it('does not fall back to an older Supabase briefing when FastAPI says null', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockDbResponses = [
-      {
-        data: [
-          {
-            id: 'part-1',
-            published_at: '2026-08-01T00:00:00Z',
-            summary: JSON.stringify({
-              seriesId: 's1',
-              partNumber: 1,
-              completed: true,
-              unlockedAt: '2026-08-01T00:00:00Z',
-            }),
-          },
-        ],
-        error: null,
-      },
-    ];
+    mockMaybeSingle.mockResolvedValue({
+      data: { id: 'old-brief', title: 'Yesterday', published_at: '2026-08-01T00:00:00Z' },
+      error: null,
+    });
 
     const res = await GET();
     const body = await res.json();
-    expect(body.seriesCompleted).toBe(true);
     expect(body.blog).toBeNull();
   });
 
-  it('returns 500 when the series query fails', async () => {
+  it('returns the Celery/Mongo digest when it is for today', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockDbResponses = [{ data: null, error: { message: 'db down' } }];
-
-    const res = await GET();
-    expect(res.status).toBe(500);
-  });
-
-  it('returns the Celery/Mongo digest when the blog service has one', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     (global.fetch as any).mockResolvedValue({
       ok: true,
       json: async () => ({
         success: true,
-        blog: { id: 'mongo-1', title: 'Morning Brief', content: '# hi' },
+        blog: { id: 'mongo-1', title: 'Morning Brief', content: '# hi', digest_date: digestDate },
       }),
     });
 
@@ -139,5 +101,46 @@ describe('GET /api/digests/latest', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.blog.title).toBe('Morning Brief');
+  });
+
+  it('treats a non-today Mongo digest as missing (synthesize)', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        blog: {
+          id: 'mongo-old',
+          title: 'Old Brief',
+          digest_date: '2020-01-01',
+        },
+      }),
+    });
+
+    const res = await GET();
+    const body = await res.json();
+    expect(body.blog).toBeNull();
+  });
+
+  it('falls back to today\'s Supabase briefing when FastAPI is down', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockRejectedValue(new Error('offline'));
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    mockMaybeSingle.mockResolvedValue({
+      data: {
+        id: 'brief-1',
+        title: 'Daily Briefing',
+        url: `briefing:user-1:${digestDate}`,
+        published_at: `${digestDate}T08:00:00.000Z`,
+      },
+      error: null,
+    });
+
+    const res = await GET();
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.blog.id).toBe('brief-1');
+    expect(body.blog.digest_date).toBe(digestDate);
   });
 });

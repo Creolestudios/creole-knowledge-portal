@@ -1,7 +1,7 @@
 ---
 title: Creole Knowledge Portal Wiki
 created: 2026-05-16
-updated: 2026-05-16
+updated: 2026-08-25
 tags: index, moc
 ---
 # Creole Knowledge Portal Wiki

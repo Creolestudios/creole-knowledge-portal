@@ -2,7 +2,7 @@
 title: Product Roadmap
 tags: [roadmap, plans, technical-debt]
 created: 2026-05-27
-updated: 2026-06-13
+updated: 2026-08-25
 ---
 
 # Product Roadmap
@@ -26,13 +26,16 @@ This document outlines the planned integrations, future feature releases, and ac
 - [x] Standardize code testing pipelines and local quality gate reporting workflows.
 - [x] Implement the AI Gatekeeper validation system and technical quiz gates.
 
-### Phase 3: Crawling & AI Summarization Engine (Proposed / Upcoming)
+### Phase 3: Crawling & AI Summarization Engine (Mostly shipped)
 
-- [ ] Implement the `fetch-blogs` FastAPI microservice in Python.
-- [ ] Connect crawl algorithms to obey remote site `robots.txt` specifications.
-- [ ] Feed crawled technical articles into the Gemini AI pipeline, generating digests tailored to each user profile's tags (`primary_tech_stack`, `future_interests`, `current_role`).
-- [ ] Save processed digests inside Supabase schema tables.
+See [[pages/fetch-blogs-walkthrough.md|Fetch Blogs walkthrough]] for the live pipeline.
+
+- [x] Implement the `fetch-blogs` FastAPI microservice in Python.
+- [x] Connect crawl algorithms to obey remote site `robots.txt` specifications.
+- [x] Feed crawled technical articles into the Gemini AI pipeline, generating digests tailored to each user profile (`primary_tech_stack`, interests, `current_role`, quiz learning path).
+- [x] Save processed digests in MongoDB (`daily_digests`); Next.js reads them over HTTP. (Not the original Supabase `blogs` table — that remains a fallback.)
 - [ ] Support expanded RSS blog sources, potentially with a UI for users to suggest custom feeds.
+- [ ] Reddit scraper, admin scoring-weight CRUD, and a wired quality gate.
 
 ### Phase 4: Active Delivery & Subscriptions (Planned)
 

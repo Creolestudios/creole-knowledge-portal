@@ -221,12 +221,12 @@ def _serialize_digest(digest: DailyDigest) -> dict:
     return payload
 
 
-async def _latest_digest(user_id: str) -> DailyDigest | None:
-    """Prefer today's digest (IST calendar day), else the newest by generated_at."""
+async def _todays_digest(user_id: str) -> DailyDigest | None:
+    """Return today's digest only (IST calendar day), or None if not generated yet."""
     from zoneinfo import ZoneInfo
 
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
-    todays = (
+    return (
         await DailyDigest.find(
             DailyDigest.user_id == user_id,
             DailyDigest.digest_date == today,
@@ -234,6 +234,11 @@ async def _latest_digest(user_id: str) -> DailyDigest | None:
         .sort(-DailyDigest.generated_at)
         .first_or_none()
     )
+
+
+async def _latest_digest(user_id: str) -> DailyDigest | None:
+    """Prefer today's digest (IST calendar day), else the newest by generated_at."""
+    todays = await _todays_digest(user_id)
     if todays is not None:
         return todays
     return (
@@ -387,12 +392,28 @@ async def get_past_digests(user_id: str, date: str | None = None, flat: bool = T
 
 @router.post("/generate")
 async def generate_digest(payload: GenerateRequest, flat: bool = True):
-    """Sync profile, run the Celery scrape→publish chain, return the digest."""
+    """Sync profile, run the Celery scrape→publish chain, return the digest.
+
+    Idempotent for the IST calendar day: if today's digest already exists,
+    return it without re-running the pipeline.
+    """
     if not payload.userId:
         raise HTTPException(status_code=400, detail="userId is required")
 
     try:
         await upsert_mongo_profile(payload.userId)
+
+        existing = await _todays_digest(payload.userId)
+        if existing is not None:
+            digest_dict = _serialize_digest(existing)
+            if flat:
+                return {
+                    "success": True,
+                    "blog": flat_map_digest_for_dashboard(digest_dict),
+                    "cached": True,
+                }
+            return {"success": True, "blog": digest_dict, "cached": True}
+
         digest_id = await execute_pipeline_for_user(payload.userId)
         digest = None
         try:
@@ -439,10 +460,13 @@ async def get_scraped_sources(limit: int = 50):
 
 
 @router.get("/{user_id}/latest")
-async def get_latest_digest(user_id: str, flat: bool = True):
-    """Return the newest Beanie DailyDigest for the user."""
+async def get_latest_digest(user_id: str, flat: bool = True, today_only: bool = True):
+    """Return today's digest for Daily Blog (synthesize CTA when missing).
+
+    Set ``today_only=false`` to fall back to the newest prior digest.
+    """
     try:
-        digest = await _latest_digest(user_id)
+        digest = await (_todays_digest(user_id) if today_only else _latest_digest(user_id))
         if digest is None:
             return {"success": True, "blog": None}
         digest_dict = _serialize_digest(digest)

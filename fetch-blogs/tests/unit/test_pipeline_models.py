@@ -474,6 +474,28 @@ class TestUserProfileModel:
         assert scrape_focus_terms(profile)[0] == "graphql"
         assert "go" in scrape_focus_terms(profile)
 
+    def test_apply_quiz_result_uses_answer_derived_topics(self) -> None:
+        profile = UserProfile(
+            user_id="u1",
+            learning_path=LearningPath(last_topics=["fallback-theme"]),
+        )
+        apply_quiz_result(
+            profile,
+            score=1,
+            total=5,
+            weak_topics=["redis", "graphql"],
+            next_step_topics=["docker"],
+            percentage=20,
+            passed=False,
+            attempt_number=2,
+            blog_id="blog-xyz",
+        )
+        assert profile.learning_path.last_quiz_outcome is QuizOutcome.FAILED
+        assert profile.learning_path.weak_topics == ["redis", "graphql"]
+        assert profile.learning_path.last_quiz_blog_id == "blog-xyz"
+        assert profile.learning_path.last_quiz_percentage == 20
+        assert profile.learning_path.last_quiz_attempt_number == 2
+
     def test_apply_quiz_result_updates_learning_path_by_score_band(self) -> None:
         failed = UserProfile(
             user_id="u1",
