@@ -36,6 +36,9 @@ describe('DailyBlogTab', () => {
   });
 
   it('renders the fetched brief with its title, content, and tags', async () => {
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -44,6 +47,7 @@ describe('DailyBlogTab', () => {
           title: 'Today’s Brief',
           content: 'Some **bold** content',
           tags: ['react', 'ai'],
+          digest_date: digestDate,
           estimated_read_minutes: 20,
         },
       }),
@@ -58,9 +62,10 @@ describe('DailyBlogTab', () => {
     expect(screen.getByText(/20 min read/i)).toBeInTheDocument();
     expect(screen.getByText('react')).toBeInTheDocument();
     expect(screen.getByText(/Start Quiz/)).toBeInTheDocument();
+    expect(screen.queryByText('Regenerate Briefing')).not.toBeInTheDocument();
   });
 
-  it('labels a briefing scraped yesterday as Fetched Yesterday', async () => {
+  it('shows synthesize when the latest digest is from a prior day', async () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const key = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
@@ -81,12 +86,15 @@ describe('DailyBlogTab', () => {
 
     render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
     await waitFor(() => {
-      expect(screen.getByText(/Fetched Yesterday/i)).toBeInTheDocument();
+      expect(screen.getByText('Synthesize Morning Briefing')).toBeInTheDocument();
     });
-    expect(screen.getByText(/18 min read/i)).toBeInTheDocument();
+    expect(screen.queryByText('Older Brief')).not.toBeInTheDocument();
   });
 
   it('generates a new briefing when "Synthesize Morning Briefing" is clicked', async () => {
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
     global.fetch = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ success: false }) }) // initial fetch: none
@@ -94,7 +102,13 @@ describe('DailyBlogTab', () => {
         ok: true,
         json: async () => ({
           success: true,
-          blog: { title: 'Fresh Brief', content: 'x', tags: [], estimated_read_minutes: 20 },
+          blog: {
+            title: 'Fresh Brief',
+            content: 'x',
+            tags: [],
+            digest_date: digestDate,
+            estimated_read_minutes: 20,
+          },
         }),
       }); // generate
 
@@ -110,6 +124,12 @@ describe('DailyBlogTab', () => {
     await waitFor(() => {
       expect(screen.getByText('Fresh Brief')).toBeInTheDocument();
     });
+
+    const generateCall = (global.fetch as any).mock.calls.find(
+      (c: any[]) => c[0] === '/api/digests/generate',
+    );
+    expect(generateCall).toBeTruthy();
+    expect(JSON.parse(generateCall[1].body)).toEqual({ userId: 'u1' });
   });
 
   it('alerts with the error message when generation fails', async () => {
@@ -143,11 +163,17 @@ describe('DailyBlogTab', () => {
   });
 
   it('redirects to the quiz page and posts reading activity when "Start Quiz" is clicked', async () => {
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.startsWith('/api/digests')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ success: true, blog: { id: 'blog-1', title: 'B', content: 'c', tags: [] } }),
+          json: async () => ({
+            success: true,
+            blog: { id: 'blog-1', title: 'B', content: 'c', tags: [], digest_date: digestDate },
+          }),
         });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });
@@ -169,6 +195,9 @@ describe('DailyBlogTab', () => {
   });
 
   it('renders passed quiz status and allows reviewing results', async () => {
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/quizzes/status')) {
         return Promise.resolve({
@@ -179,7 +208,10 @@ describe('DailyBlogTab', () => {
       if (url.startsWith('/api/digests')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ success: true, blog: { id: 'blog-1', title: 'B', content: 'c', tags: [] } }),
+          json: async () => ({
+            success: true,
+            blog: { id: 'blog-1', title: 'B', content: 'c', tags: [], digest_date: digestDate },
+          }),
         });
       }
       return Promise.resolve({ ok: true, json: async () => ({}) });

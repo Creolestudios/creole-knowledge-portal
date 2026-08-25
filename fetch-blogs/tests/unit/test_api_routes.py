@@ -346,7 +346,11 @@ class TestGenerateDigestRoute:
         async def _pipeline(_uid: str) -> str:
             return "d1"
 
+        async def _no_today(_uid: str) -> None:
+            return None
+
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _no_today)
         monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _pipeline)
         monkeypatch.setattr(digests_mod.DailyDigest, "get", _get)
         monkeypatch.setattr(digests_mod, "_latest_digest", _get)
@@ -376,7 +380,11 @@ class TestGenerateDigestRoute:
         async def _pipeline(_uid: str) -> str:
             return "d1"
 
+        async def _no_today(_uid: str) -> None:
+            return None
+
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _no_today)
         monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _pipeline)
         monkeypatch.setattr(digests_mod.DailyDigest, "get", _get)
         monkeypatch.setattr(digests_mod, "_latest_digest", _get)
@@ -391,14 +399,60 @@ class TestGenerateDigestRoute:
         res = build_client(digests_mod.router).post("/digests/generate", json={"userId": ""})
         assert res.status_code == 400
 
+    def test_returns_todays_existing_digest_without_running_pipeline(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        pipeline_calls = {"n": 0}
+
+        async def _upsert(_uid: str) -> None:
+            return None
+
+        class _Digest:
+            id = "cached-1"
+
+            def model_dump(self, mode: str = "json") -> dict[str, Any]:
+                return {
+                    "id": "cached-1",
+                    "generated_at": "2026-08-25T00:00:00",
+                    "content": {
+                        "headline": "Already Generated",
+                        "tldr": ["a"],
+                        "sections": [],
+                        "key_takeaways": [],
+                        "sources": [],
+                    },
+                }
+
+        async def _today(_uid: str) -> _Digest:
+            return _Digest()
+
+        async def _pipeline(_uid: str) -> str:
+            pipeline_calls["n"] += 1
+            return "should-not-run"
+
+        monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _today)
+        monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _pipeline)
+
+        res = build_client(digests_mod.router).post("/digests/generate", json={"userId": "u1"})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["cached"] is True
+        assert body["blog"]["title"] == "Already Generated"
+        assert pipeline_calls["n"] == 0
+
     def test_surfaces_a_pipeline_failure_as_a_500(self, monkeypatch: pytest.MonkeyPatch) -> None:
         async def _upsert(_uid: str) -> None:
+            return None
+
+        async def _none(_uid: str) -> None:
             return None
 
         async def _boom(_uid: str) -> str:
             raise RuntimeError("gemini exploded")
 
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _none)
         monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _boom)
 
         res = build_client(digests_mod.router).post("/digests/generate", json={"userId": "u1"})
@@ -433,10 +487,10 @@ class TestGetLatestDigestRoute:
                     },
                 }
 
-        async def _latest(_uid: str) -> _Digest:
+        async def _today(_uid: str) -> _Digest:
             return _Digest()
 
-        monkeypatch.setattr(digests_mod, "_latest_digest", _latest)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _today)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest")
         assert res.status_code == 200
@@ -451,10 +505,10 @@ class TestGetLatestDigestRoute:
             def model_dump(self, mode: str = "json") -> dict[str, Any]:
                 return {"id": "mongo-1", "content": {"headline": "Morning Brief"}}
 
-        async def _latest(_uid: str) -> _Digest:
+        async def _today(_uid: str) -> _Digest:
             return _Digest()
 
-        monkeypatch.setattr(digests_mod, "_latest_digest", _latest)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _today)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest?flat=false")
         assert res.json()["blog"]["id"] == "mongo-1"
@@ -465,7 +519,7 @@ class TestGetLatestDigestRoute:
         async def _none(_uid: str) -> None:
             return None
 
-        monkeypatch.setattr(digests_mod, "_latest_digest", _none)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _none)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest")
         assert res.status_code == 200
@@ -475,10 +529,38 @@ class TestGetLatestDigestRoute:
         async def _boom(_uid: str) -> None:
             raise RuntimeError("mongo unavailable")
 
-        monkeypatch.setattr(digests_mod, "_latest_digest", _boom)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _boom)
 
         res = build_client(digests_mod.router).get("/digests/u1/latest")
         assert res.status_code == 500
+
+    def test_today_only_false_falls_back_to_latest(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class _Digest:
+            id = "old-1"
+
+            def model_dump(self, mode: str = "json") -> dict[str, Any]:
+                return {
+                    "id": "old-1",
+                    "generated_at": datetime(2026, 8, 1),
+                    "content": {
+                        "headline": "Yesterday Brief",
+                        "tldr": [],
+                        "sections": [],
+                        "key_takeaways": [],
+                        "sources": [],
+                    },
+                }
+
+        async def _latest(_uid: str) -> _Digest:
+            return _Digest()
+
+        monkeypatch.setattr(digests_mod, "_latest_digest", _latest)
+
+        res = build_client(digests_mod.router).get("/digests/u1/latest?today_only=false")
+        assert res.status_code == 200
+        assert res.json()["blog"]["title"] == "Yesterday Brief"
 
 
 class TestGetPastDigestsRoute:
@@ -818,6 +900,7 @@ class TestDigestsHelperAndEdgeCases:
             return "valid_id"
 
         monkeypatch.setattr(digests_mod, "upsert_mongo_profile", _upsert)
+        monkeypatch.setattr(digests_mod, "_todays_digest", _none)
         monkeypatch.setattr(digests_mod, "execute_pipeline_for_user", _pipeline)
         monkeypatch.setattr(digests_mod.DailyDigest, "get", _none)
         monkeypatch.setattr(digests_mod, "_latest_digest", _none)

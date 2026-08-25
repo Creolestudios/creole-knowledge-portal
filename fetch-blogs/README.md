@@ -31,9 +31,13 @@ bash scripts/test.sh                                    # Run full quality gate 
 
 ## Current Status & Scope
 
-This service is in a staged implementation phase:
-* **Active**: Configuration validation, database and Redis connection pooling, Celery worker setup, health check APIs (`/health`, `/health/live`, `/health/ready`), and the rank stage's Article/UserProfile contracts plus deterministic scoring, vector similarity, and Gemini-assisted re-ranking with fallback.
-* **Stubs**: Blog scrapers, text extractors, digest synthesis, publisher, and several API route handlers remain placeholders to be implemented.
+The scrape → extract → rank → generate → publish chain is live. Next.js calls `POST /api/v1/digests/generate` and `GET /api/v1/digests/{user_id}/latest`.
+
+* **Done**: Dev.to / HN / RSS scrapers, robots.txt cache, newspaper3k + Jina extraction, Gemini embeddings, TF-IDF + cosine + Gemini re-rank, digest synthesis, Mongo publisher, profile sync from Supabase, quiz learning-path write-back, health/pipeline/digest APIs, local eager mode (no Celery required).
+* **Still stubs**: Reddit scraper, admin config CRUD, quality-gate module, dedicated prompt-builder module.
+* **Not used (plan leftovers)**: Crawl4AI / Playwright, Ollama fallback.
+
+Full walkthrough: `wiki/pages/fetch-blogs-walkthrough.md`.
 
 ---
 
@@ -198,7 +202,7 @@ fetch-blogs/
 │   ├── api/                  # FastAPI routers and dependency injections
 │   ├── workers/              # Celery task definitions and worker configuration
 │   ├── scrapers/             # Blog crawl adapters (RSS, HackerNews, Dev.to, Reddit)
-│   ├── extractors/           # Content cleaning (Crawl4AI) and text embeddings (Gemini)
+│   ├── extractors/           # newspaper3k / BeautifulSoup / Jina + Gemini embeddings
 │   ├── ranker/               # numpy cosine similarity and LLM re-ranking
 │   ├── generator/            # LLM newsletter generator & quality check gates
 │   └── publisher/            # Persistence handlers

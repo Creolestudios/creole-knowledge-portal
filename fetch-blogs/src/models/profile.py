@@ -43,6 +43,9 @@ class LearningPath(BaseModel):
     last_quiz_date: datetime | None = None
     source_article_url: HttpUrl | None = None
     difficulty_direction: DifficultyDirection = DifficultyDirection.SAME
+    last_quiz_blog_id: str | None = None
+    last_quiz_percentage: float | None = None
+    last_quiz_attempt_number: int | None = None
 
 
 class UserProfile(Document):
@@ -152,25 +155,84 @@ def scrape_focus_terms(profile: UserProfile) -> list[str]:
     return list(dict.fromkeys(term for term in normalized if term))[:6]
 
 
-def apply_quiz_result(profile: UserProfile, score: int, total: int) -> UserProfile:
-    """Update learning-path difficulty from a quiz score without wiping topics."""
+def apply_quiz_result(
+    profile: UserProfile,
+    score: int,
+    total: int,
+    *,
+    weak_topics: list[str] | None = None,
+    next_step_topics: list[str] | None = None,
+    percentage: float | None = None,
+    passed: bool | None = None,
+    attempt_number: int | None = None,
+    blog_id: str | None = None,
+) -> UserProfile:
+    """Update learning-path from quiz score and optional answer-derived topics."""
     total = max(int(total), 1)
     ratio = max(0.0, min(1.0, int(score) / total))
+    if percentage is not None:
+        ratio = max(0.0, min(1.0, float(percentage) / 100.0))
     now = datetime.now(UTC)
     path = profile.learning_path
     path.last_quiz_date = now
-    themes = list(path.last_topics)
-    if ratio < 0.5:
+    if blog_id:
+        path.last_quiz_blog_id = blog_id
+    path.last_quiz_percentage = (
+        float(percentage) if percentage is not None else round(ratio * 100, 2)
+    )
+    if attempt_number is not None:
+        path.last_quiz_attempt_number = int(attempt_number)
+
+    digest_themes = list(path.last_topics)
+    stack_fallback = list(
+        dict.fromkeys(
+            t.strip().lower()
+            for t in [
+                *profile.primary_tech_stack,
+                *profile.interests,
+                *profile.secondary_tech_stack,
+            ]
+            if t and str(t).strip()
+        )
+    )
+    weak = list(dict.fromkeys(t.strip().lower() for t in (weak_topics or []) if t and t.strip()))
+    nxt = list(dict.fromkeys(t.strip().lower() for t in (next_step_topics or []) if t and t.strip()))
+
+    failed = (passed is False) if passed is not None else ratio < 0.5
+    strong = ratio >= 0.8
+
+    if failed:
         path.last_quiz_outcome = QuizOutcome.FAILED
         path.difficulty_direction = DifficultyDirection.EASIER
-        path.weak_topics = themes or path.weak_topics
-    elif ratio >= 0.8:
+        # Prefer answer-derived topics, else digest themes, else user stack
+        path.weak_topics = weak or digest_themes or stack_fallback or path.weak_topics
+        if not path.weak_topics:
+            # Last resort: tokens from recent served URL slugs so scrape still has focus
+            from urllib.parse import urlparse
+
+            slug_terms: list[str] = []
+            for raw_url in path.served_urls[-5:]:
+                slug = urlparse(str(raw_url)).path.rstrip("/").split("/")[-1]
+                slug_terms.extend(
+                    part for part in slug.replace("-", " ").split() if len(part) >= 4
+                )
+            path.weak_topics = list(dict.fromkeys(slug_terms))[:6] or [
+                "fundamentals-review"
+            ]
+    elif strong:
         path.last_quiz_outcome = QuizOutcome.PASSED
         path.difficulty_direction = DifficultyDirection.HARDER
-        path.next_step_topics = themes or path.next_step_topics
+        path.next_step_topics = nxt or digest_themes or stack_fallback or path.next_step_topics
+        if weak:
+            path.weak_topics = weak
+        elif not path.weak_topics and digest_themes:
+            path.weak_topics = digest_themes
     else:
         path.last_quiz_outcome = QuizOutcome.PASSED
         path.difficulty_direction = DifficultyDirection.SAME
+        path.weak_topics = weak or path.weak_topics or digest_themes
+        path.next_step_topics = nxt or path.next_step_topics or digest_themes or stack_fallback
+
     profile.updated_at = now
     return profile
 

@@ -70,6 +70,37 @@ async def test_sync_preserves_learning_path(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
+async def test_quiz_result_accepts_topic_payload() -> None:
+    existing = UserProfile(
+        user_id="u1",
+        name="Dev",
+        learning_path=LearningPath(last_topics=["python"]),
+    )
+    await existing.insert()
+
+    res = _client().post(
+        "/profiles/u1/quiz",
+        headers={"X-Internal-Token": "change-me-to-a-32-char-secret"},
+        json={
+            "score": 1,
+            "total": 5,
+            "percentage": 20,
+            "passed": False,
+            "attempt_number": 3,
+            "blog_id": "blog-1",
+            "weak_topics": ["redis", "docker"],
+            "next_step_topics": ["python"],
+        },
+    )
+    assert res.status_code == 200
+    profile = await UserProfile.find_one(UserProfile.user_id == "u1")
+    assert profile is not None
+    assert profile.learning_path.weak_topics == ["redis", "docker"]
+    assert profile.learning_path.last_quiz_blog_id == "blog-1"
+    assert profile.learning_path.last_quiz_attempt_number == 3
+
+
+@pytest.mark.filterwarnings("ignore::RuntimeWarning")
 async def test_quiz_result_marks_weak_topics() -> None:
     existing = UserProfile(
         user_id="u1",

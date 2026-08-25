@@ -63,6 +63,16 @@ async def record_quiz_result(
     profile = await UserProfile.find_one(UserProfile.user_id == user_id)
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not mirrored.")
-    apply_quiz_result(profile, payload.score, payload.total)
+    apply_quiz_result(
+        profile,
+        payload.score,
+        payload.total,
+        weak_topics=payload.weak_topics,
+        next_step_topics=payload.next_step_topics,
+        percentage=payload.percentage,
+        passed=payload.passed,
+        attempt_number=payload.attempt_number,
+        blog_id=payload.blog_id,
+    )
     await profile.save()
     return _profile_out(profile)

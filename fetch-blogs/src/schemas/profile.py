@@ -37,3 +37,9 @@ class QuizResultIn(BaseModel):
 
     score: int = Field(ge=0)
     total: int = Field(ge=1)
+    weak_topics: list[str] = Field(default_factory=list)
+    next_step_topics: list[str] = Field(default_factory=list)
+    percentage: float | None = Field(default=None, ge=0, le=100)
+    passed: bool | None = None
+    attempt_number: int | None = Field(default=None, ge=1, le=3)
+    blog_id: str | None = None

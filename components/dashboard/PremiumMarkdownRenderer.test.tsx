@@ -87,4 +87,43 @@ describe('PremiumMarkdownRenderer', () => {
     render(<PremiumMarkdownRenderer content={long} />);
     expect(screen.getByText(/Next sentence starts here/)).toBeInTheDocument();
   });
+
+  it('renders unfenced ASCII diagrams as monospace pre without wrapping', () => {
+    const diagram = [
+      '  +------------------+',
+      '  | Dense Retrieval  |',
+      '  +--------+---------+',
+      '           |',
+      '           v',
+      '  +--------+---------+',
+      '  | Rank Fusion      |',
+      '  +------------------+',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={diagram} />);
+    expect(screen.getByText('Diagram')).toBeInTheDocument();
+    const pre = container.querySelector('pre');
+    expect(pre).toBeTruthy();
+    expect(pre?.className).toContain('whitespace-pre');
+    expect(pre?.className).not.toContain('whitespace-pre-wrap');
+  });
+
+  it('hides decorative dash separators and markdown horizontal rules', () => {
+    const content = [
+      'Intro text.',
+      '--------------------',
+      '---',
+      '## Data Models',
+      '--------------------',
+      '---',
+      'Body after heading.',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={content} />);
+    expect(screen.getByRole('heading', { name: 'Data Models' })).toBeInTheDocument();
+    expect(screen.getByText('Intro text.')).toBeInTheDocument();
+    expect(screen.getByText('Body after heading.')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/-{4,}/);
+    expect(container.textContent).not.toContain('---');
+  });
 });
