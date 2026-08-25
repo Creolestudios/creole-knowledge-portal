@@ -341,15 +341,25 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
               <div key={review.questionId} className={`p-6 rounded-xl border ${review.isCorrect ? 'bg-green-950/20 border-green-900/50' : 'bg-red-950/20 border-red-900/50'} text-left`}>
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-zinc-400 text-sm font-bold uppercase tracking-wider">Question {idx + 1}</span>
-                  <span className={`text-sm font-bold px-3 py-1 rounded-full ${review.isCorrect ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                    {review.isCorrect ? 'Correct' : 'Incorrect'} ({review.pointsAwarded} pts)
-                  </span>
+                  <div className="flex items-center gap-2">
+
+                    <span className={`text-sm font-bold px-3 py-1 rounded-full ${review.isCorrect ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {review.isCorrect ? 'Correct' : 'Incorrect'} ({review.pointsAwarded} pts)
+                    </span>
+                  </div>
                 </div>
                 <p className="text-white font-medium mb-6 text-lg">{review.question}</p>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="bg-black/20 p-4 rounded-lg border border-white/5">
-                    <span className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-2 block">Your Answer</span>
+                  <div className="bg-black/20 p-4 rounded-lg border border-white/5 relative">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs text-zinc-500 uppercase font-bold tracking-wider block">Your Answer</span>
+                      {['conceptual', 'code', 'descriptive'].includes(review.questionType) && review.matchPercentage !== undefined && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${review.matchPercentage >= 70 ? 'bg-green-500/20 text-green-400 border-green-500/30' : review.matchPercentage >= 50 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
+                          {review.matchPercentage}% AI Semantic Match
+                        </span>
+                      )}
+                    </div>
                     <div className="text-zinc-300 font-medium">{Array.isArray(review.userAnswer) ? review.userAnswer.join(', ') : review.userAnswer || 'No answer provided'}</div>
                   </div>
                   <div className="bg-emerald-950/20 p-4 rounded-lg border border-emerald-900/30">

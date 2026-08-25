@@ -27,44 +27,80 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Try to fetch activity, if table doesn't exist, this will error
-    // In a real app, ensure `user_activity` table is created
-    const { data: records, error } = await supabase
-      .from('user_activity')
-      .select('*')
+    // 1. Fetch reading logs from user_activity_logs
+    const { data: readLogs, error: readError } = await supabaseAdmin
+      .from('user_activity_logs')
+      .select('created_at, metadata')
       .eq('user_id', user.id)
-      .order('date', { ascending: false });
+      .eq('action_type', 'article_read');
 
-    if (error) {
-      if (
-        error.code === '42P01' ||
-        error.code === 'PGRST205' ||
-        error.message?.includes('schema cache') ||
-        error.message?.includes('user_activity')
-      ) {
-        // Table doesn't exist in Supabase schema, return empty records gracefully
-        return NextResponse.json({ success: true, records: [], streak: 0 });
-      }
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    if (readError && readError.code !== '42P01') {
+      throw readError;
     }
 
-    // Calculate basic streak (mock logic based on consecutive days)
+    // 2. Fetch quiz attempts
+    const { data: quizAttempts, error: quizError } = await supabaseAdmin
+      .from('quiz_attempts')
+      .select('completed_at, score, total_questions')
+      .eq('user_id', user.id)
+      .eq('status', 'completed');
+
+    if (quizError && quizError.code !== '42P01') {
+      throw quizError;
+    }
+
+    // 3. Aggregate by Date
+    const dailyMap: Record<string, any> = {};
+
+    // Process read logs
+    if (readLogs) {
+      for (const log of readLogs) {
+        const dateObj = new Date(log.created_at);
+        const dateStr = dateObj.toISOString().split('T')[0];
+        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_score: 0, quiz_total: 0 };
+        
+        const readSeconds = log.metadata?.read_seconds || 0;
+        dailyMap[dateStr].read_seconds += readSeconds;
+      }
+    }
+
+    // Process quiz attempts
+    if (quizAttempts) {
+      for (const attempt of quizAttempts) {
+        if (!attempt.completed_at) continue;
+        const dateObj = new Date(attempt.completed_at);
+        const dateStr = dateObj.toISOString().split('T')[0];
+        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_score: 0, quiz_total: 0 };
+        
+        dailyMap[dateStr].quiz_taken = true;
+        // Keep the highest score of the day
+        if (attempt.score > dailyMap[dateStr].quiz_score) {
+          dailyMap[dateStr].quiz_score = attempt.score;
+          dailyMap[dateStr].quiz_total = attempt.total_questions || 5;
+        } else if (dailyMap[dateStr].quiz_score === 0) {
+           // Default fallback
+           dailyMap[dateStr].quiz_score = attempt.score;
+           dailyMap[dateStr].quiz_total = attempt.total_questions || 5;
+        }
+      }
+    }
+
+    const records = Object.values(dailyMap).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    // Calculate basic streak
     let streak = 0;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Sort records descending by date
-    const sorted = [...(records || [])].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
     let currentDate = new Date(today);
 
-    for (const r of sorted) {
-      const rDate = new Date(r.date);
+    for (const r of records) {
+      const rDate = new Date((r as any).date);
       rDate.setHours(0, 0, 0, 0);
 
-      // If it's today or yesterday and read_seconds > 0, we can start counting
+      // If it's today or yesterday and read_seconds > 0 or quiz taken, we can start counting
       if (rDate.getTime() === currentDate.getTime() || rDate.getTime() === currentDate.getTime() - 86400000) {
-        if (r.read_seconds > 0) {
+        if ((r as any).read_seconds > 0 || (r as any).quiz_taken) {
           streak++;
           currentDate = rDate;
           currentDate.setDate(currentDate.getDate() - 1);
@@ -78,7 +114,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      records: records || [],
+      records: records,
       streak
     });
   } catch (error: any) {
@@ -103,54 +139,43 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Date is required' }, { status: 400 });
     }
 
-    // Check if record exists
-    const { data: existing } = await supabase
-      .from('user_activity')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('date', date)
-      .single();
+    let isSimulated = false;
 
-    let updateData: any = {};
-    if (readSeconds !== undefined) {
-      updateData.read_seconds = (existing?.read_seconds || 0) + readSeconds;
-    }
-    if (quizScore !== undefined) {
-      updateData.quiz_score = quizScore;
-      updateData.quiz_total = quizTotal;
-      updateData.quiz_taken = true;
-    }
-
-    let result;
-    if (existing) {
-      result = await supabase
-        .from('user_activity')
-        .update(updateData)
-        .eq('id', existing.id);
-    } else {
-      updateData.user_id = user.id;
-      updateData.date = date;
-      result = await supabase
-        .from('user_activity')
-        .insert(updateData);
-    }
-
-    if (result.error) {
-      if (
-        result.error.code === '42P01' ||
-        result.error.code === 'PGRST205' ||
-        result.error.message?.includes('schema cache') ||
-        result.error.message?.includes('user_activity')
-      ) {
-        console.warn('user_activity table does not exist in schema cache');
-        await recordQuizOnBlogService(user.id, quizScore, quizTotal);
-        return NextResponse.json({ success: true, message: 'Simulated activity update (table missing)' });
+    // Insert into user_activity_logs directly (since it is known to exist via migrations)
+    if (readSeconds !== undefined && readSeconds > 0) {
+      const { error } = await supabaseAdmin
+        .from('user_activity_logs')
+        .insert({
+          user_id: user.id,
+          action_type: 'article_read',
+          metadata: { read_seconds: readSeconds, date: date }
+        });
+        
+      if (error) {
+        if (error.code === '42P01') isSimulated = true;
+        else throw error;
       }
-      return NextResponse.json({ error: result.error.message }, { status: 500 });
     }
 
-    await recordQuizOnBlogService(user.id, quizScore, quizTotal);
-    return NextResponse.json({ success: true });
+    // Note: Quiz score is now automatically captured by fetching from `quiz_attempts` in GET /api/activity.
+    // However, if we receive an explicit payload from an old client flow, we can also record a log.
+    if (quizScore !== undefined) {
+      const { error } = await supabaseAdmin
+        .from('user_activity_logs')
+        .insert({
+          user_id: user.id,
+          action_type: 'quiz_submit',
+          metadata: { score: quizScore, total: quizTotal, date: date }
+        });
+        
+      if (error) {
+        if (error.code === '42P01') isSimulated = true;
+        else throw error;
+      }
+      await recordQuizOnBlogService(user.id, quizScore, quizTotal);
+    }
+
+    return NextResponse.json({ success: true, message: isSimulated ? 'Simulated activity log' : 'Activity logged successfully' });
   } catch (error: any) {
     console.error('Error in activity POST:', error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });

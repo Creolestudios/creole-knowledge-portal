@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     // Verify attempt belongs to user and is in_progress
     const { data: attempt } = await supabaseAdmin
       .from('quiz_attempts')
-      .select('*, quiz_answers(points_awarded, question_id, is_correct, user_answer, evaluation_reason, created_at)')
+      .select('*, quiz_answers(points_awarded, question_id, is_correct, user_answer, evaluation_reason, match_percentage, created_at)')
       .eq('id', attemptId)
       .eq('user_id', user.id)
       .single();
@@ -120,7 +120,6 @@ export async function POST(request: Request) {
       }
     }
     const attemptsRemaining = Math.max(0, 3 - finishedAttemptsCount);
-
     return NextResponse.json({
       success: true,
       passed,

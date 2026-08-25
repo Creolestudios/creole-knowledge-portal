@@ -58,7 +58,7 @@ export async function GET(request: Request) {
     const getReviewDetails = async (attempt: any) => {
       const { data: fullAttempt } = await supabaseAdmin
         .from('quiz_attempts')
-        .select('*, quiz_answers(points_awarded, question_id, is_correct, user_answer, evaluation_reason, created_at)')
+        .select('*, quiz_answers(points_awarded, question_id, is_correct, user_answer, evaluation_reason, match_percentage, created_at)')
         .eq('id', attempt.id)
         .single();
 
@@ -117,6 +117,7 @@ export async function GET(request: Request) {
           correctAnswers: correctAnswersCount,
           totalQuestions,
           reviewData,
+          passed: true,
           attemptsCount: finishedAttemptsCount,
           attemptsRemaining
         }
@@ -205,6 +206,7 @@ export async function GET(request: Request) {
               correctAnswers: correctAnswersCount,
               totalQuestions,
               reviewData,
+              passed: passed,
               attemptsCount: updatedAttemptsCount,
               attemptsRemaining: Math.max(0, 3 - updatedAttemptsCount)
             }
@@ -247,6 +249,7 @@ export async function GET(request: Request) {
           correctAnswers: correctAnswersCount,
           totalQuestions,
           reviewData,
+          passed: false,
           attemptsCount: finishedAttemptsCount,
           attemptsRemaining: 0
         }

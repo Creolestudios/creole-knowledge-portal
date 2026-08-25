@@ -101,7 +101,24 @@ export async function POST(request: Request) {
             config: { responseMimeType: 'application/json' }
           });
           if (response?.text) {
-            parsed = JSON.parse(response.text.trim());
+            let rawText = response.text.trim();
+            if (rawText.startsWith('```')) {
+              rawText = rawText.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '');
+            }
+            parsed = JSON.parse(rawText.trim());
+            
+            if (!parsed.title || !parsed.content) {
+              throw new Error("AI output missing title or content");
+            }
+            
+            // Ensure tags is an array
+            if (parsed.tags && !Array.isArray(parsed.tags)) {
+              if (typeof parsed.tags === 'string') {
+                parsed.tags = parsed.tags.split(',').map((t: string) => t.trim());
+              } else {
+                parsed.tags = ['tech'];
+              }
+            }
             break;
           }
         } catch (err: any) {
@@ -173,7 +190,7 @@ export async function executeWithResilientFallback<T>(
 
       if (insertError || !newBlog) {
         console.error('[DigestGenerate] Error saving generated blog:', insertError);
-        return NextResponse.json({ error: 'Failed to persist fresh blog digest.' }, { status: 500 });
+        return NextResponse.json({ error: `Failed to persist fresh blog digest: ${insertError?.message || 'Unknown error'}` }, { status: 500 });
       }
 
       return NextResponse.json({

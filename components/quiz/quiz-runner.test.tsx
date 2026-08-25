@@ -387,4 +387,77 @@ describe('QuizRunner', () => {
     expect(screen.getByText('What is Next.js?')).toBeInTheDocument();
     expect(screen.getByText('Next.js is a React framework.')).toBeInTheDocument();
   });
+  it('renders the AI semantic match badge across all three score bands and an incorrect review item', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        completed: true,
+        result: {
+          score: 2,
+          total: 4,
+          percentage: 50,
+          correctAnswers: 1,
+          timeTaken: 42,
+          reviewData: [
+            {
+              questionId: 'q1',
+              question: 'Explain hydration',
+              questionType: 'conceptual',
+              isCorrect: true,
+              pointsAwarded: 2,
+              matchPercentage: 90,
+              userAnswer: 'The client attaches handlers to server HTML.',
+              correctAnswers: ['hydration'],
+              explanation: 'Correct explanation.',
+            },
+            {
+              questionId: 'q2',
+              question: 'Explain suspense',
+              questionType: 'descriptive',
+              isCorrect: false,
+              pointsAwarded: 1,
+              matchPercentage: 55,
+              userAnswer: 'Something about loading.',
+              correctAnswers: ['suspense'],
+              explanation: 'Partially right.',
+            },
+            {
+              questionId: 'q3',
+              question: 'Explain streaming',
+              questionType: 'code',
+              isCorrect: false,
+              pointsAwarded: 0,
+              matchPercentage: 10,
+              userAnswer: '',
+              correctAnswers: ['streaming'],
+              explanation: 'Missed the point.',
+            },
+            {
+              questionId: 'q4',
+              question: 'Pick the framework',
+              questionType: 'single',
+              isCorrect: false,
+              pointsAwarded: 0,
+              userAnswer: 'Angular',
+              correctAnswers: ['Next.js'],
+              explanation: 'Wrong choice.',
+            },
+          ],
+        },
+      }),
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await waitFor(() => expect(screen.getByText('Quiz Completed!')).toBeInTheDocument());
+
+    expect(screen.getByText('90% AI Semantic Match')).toBeInTheDocument();
+    expect(screen.getByText('55% AI Semantic Match')).toBeInTheDocument();
+    expect(screen.getByText('10% AI Semantic Match')).toBeInTheDocument();
+    // A non-AI question type gets no badge at all.
+    expect(screen.getAllByText(/AI Semantic Match/)).toHaveLength(3);
+
+    expect(screen.getByText('Correct (2 pts)')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Incorrect \(\d+ pts\)$/)).toHaveLength(3);
+    expect(screen.getByText('No answer provided')).toBeInTheDocument();
+  });
 });

@@ -259,5 +259,8 @@ ${blogContent}
     .update({ quiz_generated: true })
     .eq('id', formattedBlogId);
 
-  return generatedQuestions.length;
+  return {
+    count: generatedQuestions.length,
+    usedFallback: !success
+  };
 }

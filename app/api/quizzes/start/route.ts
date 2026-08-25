@@ -163,7 +163,11 @@ export async function POST(request: Request) {
         const existingTexts = (allQuestions || []).map(q => q.question);
         try {
           console.log(`[Quiz On-Demand] Generating 5 fresh unattempted questions for blog ${blogId}...`);
-          await generateQuizForBlog(formattedBlogId, blogContent, 5, existingTexts);
+          const genResult = await generateQuizForBlog(formattedBlogId, blogContent, 5, existingTexts);
+
+          if (genResult && genResult.usedFallback) {
+            fallbackWarning = 'Due to AI rate limits, we have loaded a default deterministic quiz covering core architectural concepts.';
+          }
 
           const { data: reloadedQuestions } = await supabaseAdmin
             .from('quiz_questions')

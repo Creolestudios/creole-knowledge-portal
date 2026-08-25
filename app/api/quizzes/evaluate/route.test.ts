@@ -144,6 +144,39 @@ describe('POST /api/quizzes/evaluate', () => {
     expect(body.pointsAwarded).toBe(2);
   });
 
+  it('awards a 50% partial match when a multiple-choice answer overlaps but is incomplete', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    tableResponses = {
+      quiz_attempts: [{ data: { status: 'in_progress' }, error: null }],
+      quiz_questions: [
+        { data: { question_type: 'multiple', correct_answers: ['A', 'B'] }, error: null },
+      ],
+      quiz_answers: [{ data: { id: 'existing-answer' }, error: null }, { error: null }],
+    };
+
+    const res = await POST(mockRequest({ attemptId: 'a1', questionId: 'q1', userAnswer: ['a'] }));
+    const body = await res.json();
+    expect(body.isCorrect).toBe(false);
+    expect(body.pointsAwarded).toBe(0);
+    expect(body.matchPercentage).toBe(50);
+  });
+
+  it('reports a 0% match when a multiple-choice answer overlaps with nothing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    tableResponses = {
+      quiz_attempts: [{ data: { status: 'in_progress' }, error: null }],
+      quiz_questions: [
+        { data: { question_type: 'multiple', correct_answers: ['A', 'B'] }, error: null },
+      ],
+      quiz_answers: [{ data: { id: 'existing-answer' }, error: null }, { error: null }],
+    };
+
+    const res = await POST(mockRequest({ attemptId: 'a1', questionId: 'q1', userAnswer: ['x', 'y'] }));
+    const body = await res.json();
+    expect(body.isCorrect).toBe(false);
+    expect(body.matchPercentage).toBe(0);
+  });
+
   it('returns 500 when evaluation throws', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     tableResponses = {

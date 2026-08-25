@@ -48,6 +48,7 @@ export async function POST(request: Request) {
     let isCorrect = false;
     let pointsAwarded = 0;
     let evaluationReason = '';
+    let matchPercentage = 0;
 
     const normalizeText = (val: any): string => {
       if (!val) return '';
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
       const userStr = normalizeText(rawUserStr);
       isCorrect = correctStr === userStr && userStr.length > 0;
       pointsAwarded = isCorrect ? 1 : 0;
+      matchPercentage = isCorrect ? 100 : 0;
     } else if (question.question_type === 'multiple') {
       const rawUserArray = Array.isArray(userAnswer) ? userAnswer : [userAnswer];
       const correctArray = (question.correct_answers || []).map(normalizeText).sort((a: string, b: string) => a.localeCompare(b));
@@ -72,6 +74,7 @@ export async function POST(request: Request) {
       
       isCorrect = correctArray.length === userArray.length && correctArray.every((v: string, i: number) => v === userArray[i]);
       pointsAwarded = isCorrect ? 2 : 0;
+      matchPercentage = isCorrect ? 100 : (userArray.some(v => correctArray.includes(v)) ? 50 : 0);
     } else {
       // AI Evaluation for Conceptual, Code Analysis, Descriptive
       const result = await evaluateDescriptiveAnswer(
@@ -83,6 +86,7 @@ export async function POST(request: Request) {
       isCorrect = result.isCorrect;
       pointsAwarded = result.points;
       evaluationReason = result.reason;
+      matchPercentage = result.matchPercentage;
     }
 
     // Upsert into quiz_answers (update latest answer for current attempt)
@@ -104,6 +108,7 @@ export async function POST(request: Request) {
           is_correct: isCorrect,
           points_awarded: pointsAwarded,
           evaluation_reason: evaluationReason,
+          match_percentage: matchPercentage,
           created_at: new Date().toISOString()
         })
         .eq('id', existingAnswer.id);
@@ -116,7 +121,8 @@ export async function POST(request: Request) {
           user_answer: userAnswer,
           is_correct: isCorrect,
           points_awarded: pointsAwarded,
-          evaluation_reason: evaluationReason
+          evaluation_reason: evaluationReason,
+          match_percentage: matchPercentage
         });
     }
 
@@ -124,7 +130,8 @@ export async function POST(request: Request) {
       success: true,
       isCorrect,
       pointsAwarded,
-      evaluationReason
+      evaluationReason,
+      matchPercentage
     });
 
   } catch (error: any) {
