@@ -3,6 +3,23 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 
+/**
+ * True when a Supabase error means "this table does not exist".
+ *
+ * Two distinct codes can surface, depending on how far the query got:
+ *  - `PGRST205` - PostgREST resolved the request against its cached schema and
+ *    never reached Postgres ("Could not find the table ... in the schema cache").
+ *    This is what supabase-js actually returns for an unmigrated table.
+ *  - `42P01`    - Postgres' own `undefined_table`, raised when a statement does
+ *    reach the database (e.g. via RPC or after a stale cache reload).
+ *
+ * The activity tables are optional gamification extras, so a missing table is
+ * degraded to an empty result rather than a 500 that breaks the whole sidebar.
+ */
+function isMissingTableError(error: { code?: string } | null): boolean {
+  return error?.code === 'PGRST205' || error?.code === '42P01';
+}
+
 async function recordQuizOnBlogService(userId: string, quizScore?: number, quizTotal?: number) {
   if (quizScore === undefined || quizTotal === undefined) {
     return;
@@ -34,7 +51,7 @@ export async function GET(request: Request) {
       .eq('user_id', user.id)
       .eq('action_type', 'article_read');
 
-    if (readError && readError.code !== '42P01') {
+    if (readError && !isMissingTableError(readError)) {
       throw readError;
     }
 
@@ -45,7 +62,7 @@ export async function GET(request: Request) {
       .eq('user_id', user.id)
       .eq('status', 'completed');
 
-    if (quizError && quizError.code !== '42P01') {
+    if (quizError && !isMissingTableError(quizError)) {
       throw quizError;
     }
 
@@ -152,7 +169,7 @@ export async function POST(request: Request) {
         });
         
       if (error) {
-        if (error.code === '42P01') isSimulated = true;
+        if (isMissingTableError(error)) isSimulated = true;
         else throw error;
       }
     }
@@ -169,7 +186,7 @@ export async function POST(request: Request) {
         });
         
       if (error) {
-        if (error.code === '42P01') isSimulated = true;
+        if (isMissingTableError(error)) isSimulated = true;
         else throw error;
       }
       await recordQuizOnBlogService(user.id, quizScore, quizTotal);

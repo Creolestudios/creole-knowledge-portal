@@ -153,7 +153,7 @@ describe('QuizRunner', () => {
           json: async () => ({
             inProgress: true,
             attemptId: 'a1',
-            timeLeft: 120,
+            timeLeft: 1200,
             questions: [mcQuestion],
             answers: { q1: ['useEffect'] },
           }),
@@ -306,7 +306,7 @@ describe('QuizRunner', () => {
           json: async () => ({
             inProgress: true,
             attemptId: 'a-idle',
-            timeLeft: 120,
+            timeLeft: 5,
             questions: [mcQuestion],
             answers: {},
           }),
@@ -320,9 +320,9 @@ describe('QuizRunner', () => {
       await Promise.resolve();
     });
 
-    // Advance 125 seconds so elapsed seconds reaches 1200s (1080 + 120 = 1200s)
+    // Advance 5 seconds so elapsed seconds reaches 1200s (1195 + 5 = 1200s)
     await act(async () => {
-      vi.advanceTimersByTime(125 * 1000);
+      vi.advanceTimersByTime(5 * 1000);
     });
 
     expect(screen.getByText(/Still working on your quiz\?/i)).toBeInTheDocument();

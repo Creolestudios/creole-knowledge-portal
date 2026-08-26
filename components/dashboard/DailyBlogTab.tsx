@@ -6,11 +6,19 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 import { useRouter } from 'next/navigation';
 
+/**
+ * "Today" in IST (Asia/Kolkata) — must match the server's definition of
+ * "today" (`/api/digests/latest`, and the blog-service behind it), so a
+ * digest already generated for today never gets mistaken for stale and
+ * re-shown as the "Synthesize" empty state.
+ */
 function localDateKey(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
 }
 
 function toDateKey(value?: string | null): string {
@@ -103,18 +111,38 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const fetchLatestBrief = async () => {
     setLoadingBrief(true);
     try {
-      // Always load today's digest only. Prior days live under Past Blogs.
-      const res = await fetch('/api/digests/latest');
-
+      // 1. Always check the network for today's latest digest first.
+      // Use cache: 'no-store' to prevent browser/Next.js client-side caching of the GET request.
+      const res = await fetch('/api/digests/latest', { cache: 'no-store' });
+      let data: any = null;
       if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.blog && isTodaysBrief(data.blog)) {
-          await applyBrief(data.blog);
-        } else {
-          setBrief(null);
-          setQuizStatus(null);
-          setTimerActive(false);
+        data = await res.json();
+      }
+
+      let fetchedBlog = null;
+
+      if (data?.success && data.blog && isTodaysBrief(data.blog)) {
+        fetchedBlog = data.blog;
+      } else {
+        // 2. If no valid digest for today, check if the user is actively reading a past blog
+        const activeBlogId = typeof window !== 'undefined' ? sessionStorage.getItem('active_blog_id') : null;
+        if (activeBlogId) {
+          try {
+            const fallbackRes = await fetch(`/api/digests/by-id?id=${activeBlogId}`, { cache: 'no-store' });
+            if (fallbackRes.ok) {
+              const fallbackData = await fallbackRes.json();
+              if (fallbackData?.success && fallbackData.blog) {
+                fetchedBlog = fallbackData.blog;
+              }
+            }
+          } catch (fallbackErr) {
+            console.error('Error fetching fallback active blog:', fallbackErr);
+          }
         }
+      }
+
+      if (fetchedBlog) {
+        await applyBrief(fetchedBlog);
       } else {
         setBrief(null);
         setQuizStatus(null);

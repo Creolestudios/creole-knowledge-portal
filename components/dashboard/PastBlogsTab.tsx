@@ -53,6 +53,7 @@ export default function PastBlogsTab({
   const [blog, setBlog] = useState<PastBlog | null>(null);
   const [blogs, setBlogs] = useState<PastBlog[]>([]);
   const [loading, setLoading] = useState(false);
+  const [activities, setActivities] = useState<Record<string, any>>({});
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const year = currentDate.getFullYear();
@@ -83,7 +84,22 @@ export default function PastBlogsTab({
         console.error(err);
       }
     };
+    const loadActivities = async () => {
+      try {
+        const res = await fetch('/api/activity');
+        if (!res.ok) return;
+        const data = await res.json();
+        const activityMap: Record<string, any> = {};
+        data.records?.forEach((r: any) => {
+          activityMap[r.date] = r;
+        });
+        setActivities(activityMap);
+      } catch (err) {
+        console.error(err);
+      }
+    };
     void load();
+    void loadActivities();
   }, []);
 
   const fetchBlogForDate = async (dateStr: string) => {
@@ -185,13 +201,26 @@ export default function PastBlogsTab({
                   bgClass = 'bg-zinc-50 text-zinc-300 border border-zinc-100';
                 } else {
                   isClickable = true;
-                  bgClass = hasBlog
-                    ? 'bg-brand/10 text-brand border border-brand/20 hover:bg-brand/20 cursor-pointer'
-                    : 'bg-zinc-50 text-zinc-500 border border-zinc-100 hover:bg-zinc-100 cursor-pointer';
+                  if (hasBlog) {
+                    const activity = activities[dateStr];
+                    const isRead = activity && activity.read_seconds > 0;
+                    const isQuizTaken = activity && activity.quiz_taken;
+                    const passedQuiz = isQuizTaken && (activity.quiz_score >= 3 || (activity.quiz_score / (activity.quiz_total || 5)) >= 0.6);
+
+                    if (passedQuiz) {
+                      bgClass = 'bg-green-500 text-white hover:bg-green-600 cursor-pointer shadow-sm';
+                    } else if (isRead || isQuizTaken) {
+                      bgClass = 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer shadow-sm';
+                    } else {
+                      bgClass = 'bg-red-500 text-white hover:bg-red-600 cursor-pointer shadow-sm';
+                    }
+                  } else {
+                    bgClass = 'bg-zinc-50 text-zinc-500 hover:bg-zinc-100 cursor-pointer';
+                  }
                 }
 
                 if (isSelected) {
-                  bgClass += ' ring-2 ring-brand ring-offset-1 font-black';
+                  bgClass += ' scale-110 shadow-md font-black z-10 border-2 border-zinc-900';
                 }
               }
 
@@ -216,33 +245,21 @@ export default function PastBlogsTab({
           </div>
         </div>
 
-        {blogs.length > 0 && (
-          <div className="bg-white rounded-[32px] p-5 border border-zinc-100 shadow-card space-y-2">
-            {blogs.map((item, idx) => {
-              const key = toDateKey(item.digest_date || item.published_at);
-              return (
-                <button
-                  key={`${key}-${idx}`}
-                  type="button"
-                  onClick={() => {
-                    if (!key) return;
-                    setSelectedDate(key);
-                    onSelect?.(key);
-                    void fetchBlogForDate(key);
-                  }}
-                  className={`w-full text-left rounded-2xl px-3 py-2 border transition-colors ${
-                    selectedDate === key ? 'border-brand bg-brand/10' : 'border-zinc-100 hover:bg-zinc-50'
-                  }`}
-                >
-                  <p className="text-xs font-black text-zinc-900 truncate">{item.title || 'Morning Briefing'}</p>
-                  <p id="past-blog-fetched-date" className="text-[10px] font-bold text-zinc-400 mt-1">
-                    Fetched {formatFetchedLabel(key)}
-                  </p>
-                </button>
-              );
-            })}
+        <div className="bg-white rounded-[32px] p-6 border border-zinc-100 shadow-card space-y-3">
+          <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">Activity Legend</h4>
+          <div className="flex items-center gap-3">
+            <div className="w-4 h-4 rounded bg-green-500 flex-shrink-0 shadow-sm"></div>
+            <span className="text-xs font-bold text-zinc-700">Mastered (Passed Quiz)</span>
           </div>
-        )}
+          <div className="flex items-center gap-3">
+            <div className="w-4 h-4 rounded bg-blue-500 flex-shrink-0 shadow-sm"></div>
+            <span className="text-xs font-bold text-zinc-700">Read (Needs Practice)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-4 h-4 rounded bg-red-500 flex-shrink-0 shadow-sm"></div>
+            <span className="text-xs font-bold text-zinc-700">Unread (Missed)</span>
+          </div>
+        </div>
       </div>
 
       <div className="lg:col-span-2">

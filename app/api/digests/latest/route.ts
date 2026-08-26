@@ -3,11 +3,20 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 
+/**
+ * "Today" in IST (Asia/Kolkata) — must match the blog-service's own definition
+ * of "today" (see `_todays_digest` in fetch-blogs/src/api/routes/digests.py).
+ * Using the Node process's local timezone here (often UTC in production) would
+ * disagree with IST for part of the day and cause an already-generated
+ * digest to be wrongly treated as stale.
+ */
 function localDateKey(d = new Date()): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
 }
 
 function blogDateKey(blog: {
