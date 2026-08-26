@@ -38,7 +38,11 @@ export function restoreArticleMarkdown(content: string): string {
   text = text.replaceAll(' #', '\n\n#');
   text = text.replaceAll(' ```', '\n\n```');
   text = text.replace(/ Step (\d+:)/gi, '\n\n### Step $1');
-  text = text.replace(/ (curl |uv |npm |npx |pip |git |docker |python3? )/gi, '\n\n```bash\n$1');
+  // Open AND close a bash fence for a single command (never leave fences unclosed).
+  text = text.replace(
+    / (curl |uv |npm |npx |pip |git |docker |python3? )([^\n]+)/gi,
+    '\n\n```bash\n$1$2\n```\n\n',
+  );
   text = text.replace(/ (\d+\. )/g, '\n$1');
   text = text.replace(/ ([-*] )/g, '\n$1');
   if (!text.includes('\n\n') && text.length > 280) {
@@ -65,7 +69,10 @@ function parseInlineMarkdown(text: string): ReactNode {
       );
     } else if (match[3]) {
       parts.push(
-        <code key={match.index} className="bg-zinc-100 text-brand px-1.5 py-0.5 rounded text-xs font-mono border border-zinc-200">
+        <code
+          key={match.index}
+          className="bg-zinc-100 text-brand px-1.5 py-0.5 rounded text-xs font-mono border border-zinc-200"
+        >
           {match[3]}
         </code>
       );
@@ -99,26 +106,116 @@ const REAL_COMMAND = /^(curl |uv |npm |npx |pipx |pip install |git clone |git co
 export function isDecorativeSeparator(text: string): boolean {
   const trimmed = String(text || '').trim();
   if (!trimmed) return false;
-  // --- / *** / ___
   if (/^([-_*])\1{2,}$/.test(trimmed)) return true;
-  // -------------------- or ==========
   if (/^[-_=─–—]{4,}$/.test(trimmed)) return true;
-  // - - - - (spaced)
   if (!/[a-zA-Z0-9]/.test(trimmed) && /^([-*_=─]\s*){3,}$/.test(trimmed)) return true;
   return false;
 }
 
-/** Box-drawing / pipe trees break when rendered as proportional wrapped paragraphs. */
+/** Single-line architecture / queue flows belong in a diagram box. */
+export function looksLikeFlowLine(text: string): boolean {
+  const t = String(text || '').trim();
+  if (!t || t.length < 24) return false;
+  if (/\b(==>|-->|<-+>|=>)\b/.test(t)) return true;
+  if (/==\s*\[.+\]\s*==/.test(t)) return true;
+  if (/\bArchitecture\b/i.test(t) && /\[[^\]]+\]/.test(t) && /==|->|→/.test(t)) return true;
+  if ((t.match(/\[[^\]]{2,40}\]/g) || []).length >= 2 && /==|->|→|⇒/.test(t)) return true;
+  return false;
+}
+
+/** Box-drawing / pipe trees — only real structure, not prose with hyphens. */
 export function looksLikeAsciiDiagram(text: string): boolean {
-  const lines = String(text || '')
+  const raw = String(text || '');
+  if (looksLikeFlowLine(raw)) return true;
+
+  const lines = raw
     .split('\n')
     .filter((l) => l.trim().length > 0 && !isDecorativeSeparator(l));
   if (lines.length < 2) return false;
-  const boxCharCount = (text.match(/[|+\-_═─│┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬\\/<>]/g) || []).length;
-  const indentedOrBoxy = lines.filter(
-    (l) => /^\s{2,}/.test(l) || /[|+\-_═─│┌┐└┘├┤┬┴┼]/.test(l),
+
+  // Count structural art only — do NOT count plain -, _, /, <, > (those appear in prose).
+  const boxDrawing = (raw.match(/[│┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬]/g) || []).length;
+  const asciiBoxes = (raw.match(/\+[-=]{2,}\+|[|=]{2,}|\|[^|\n]{2,}\|/g) || []).length;
+  const arrowLines = lines.filter((l) => /(?:-->|==>|<-+|⇒|→|\bv\b|\^)/.test(l)).length;
+  const indentedBoxes = lines.filter(
+    (l) => /^\s{2,}/.test(l) && /[|+]/.test(l),
   ).length;
-  return boxCharCount >= 8 || (indentedOrBoxy >= 3 && boxCharCount >= 4);
+
+  if (boxDrawing >= 4) return true;
+  if (asciiBoxes >= 2 && lines.length >= 3) return true;
+  if (indentedBoxes >= 3 && asciiBoxes >= 1) return true;
+  if (arrowLines >= 2 && asciiBoxes >= 1) return true;
+  return false;
+}
+
+/** Real source / shell — belongs in the black box. */
+export function looksLikeSourceCode(text: string): boolean {
+  const lines = String(text || '')
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter((l) => l.trim().length > 0 && !isDecorativeSeparator(l));
+  if (lines.length === 0) return false;
+
+  let hits = 0;
+  for (const line of lines) {
+    const t = line.trim();
+    if (REAL_COMMAND.test(t)) {
+      hits += 2;
+      continue;
+    }
+    if (
+      /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |async |try:|except |elif |else:|if __name__|for \w+ in |for .+ in |while |with |console\.|asyncio\.|npm |yarn |pnpm )/.test(
+        t,
+      )
+    ) {
+      hits += 2;
+      continue;
+    }
+    if (/^\w[\w.]*\([^)]*\)\s*:$/.test(t)) {
+      hits += 2;
+      continue;
+    }
+    // Indented continuation typical of code blocks
+    if (/^( {2,}|\t)/.test(line) && /[(){}[\]=.;:]/.test(t) && t.split(/\s+/).length <= 14) {
+      hits += 1;
+      continue;
+    }
+    if (/[{};]$/.test(t) && /[=()[\]{}]/.test(t) && t.split(/\s+/).length <= 12) {
+      hits += 1;
+    }
+  }
+
+  const wordyProse = lines.filter((l) => {
+    const words = l.trim().split(/\s+/);
+    return words.length >= 14 && /[.!?]$/.test(l.trim());
+  }).length;
+
+  if (wordyProse >= 2 && hits < 3) return false;
+  return hits >= 2 || (lines.length <= 8 && hits >= 1 && wordyProse === 0);
+}
+
+/**
+ * Fenced blocks that are really markdown prose (Gemini often wraps teaching text in ```).
+ * Those must render as normal text, not CODE SNIPPET.
+ */
+export function looksLikeProseMistakenlyFenced(text: string): boolean {
+  if (looksLikeAsciiDiagram(text) || looksLikeSourceCode(text)) return false;
+
+  const lines = String(text || '')
+    .split('\n')
+    .filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return true;
+
+  let proseSignals = 0;
+  for (const line of lines) {
+    const t = line.trim();
+    if (/^#{1,6}\s+\S/.test(t)) proseSignals += 2;
+    if (/^[-*]\s+\S/.test(t) && t.split(/\s+/).length >= 6) proseSignals += 1;
+    if (/^\d+\.\s+\S/.test(t) && t.split(/\s+/).length >= 6) proseSignals += 1;
+    if (t.split(/\s+/).length >= 16 && /[.!?]/.test(t)) proseSignals += 1;
+  }
+
+  return proseSignals >= 2;
 }
 
 function looksLikeRealHeading(text: string): boolean {
@@ -130,12 +227,133 @@ function looksLikeRealHeading(text: string): boolean {
   return true;
 }
 
-export function PremiumMarkdownRenderer({ content }: { content: string }) {
-  const lines = restoreArticleMarkdown(content).split('\n');
-  const blocks: Array<{ type: string; content: string; label?: string }> = [];
+function looksLikeCodeLine(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (REAL_COMMAND.test(t)) return true;
+  if (
+    /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |asyncio\.|console\.|for \w+ in |for .+ in |while |try:|except |elif |else:)/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (/^\w[\w.]*\([^)]*\)\s*:$/.test(t)) return true;
+  if (/^( {4}|\t)/.test(line) && /[(){}[\]=.;:]/.test(t) && t.split(/\s+/).length <= 14) {
+    return true;
+  }
+  return false;
+}
+
+type MdBlock = { type: string; content: string; label?: string };
+
+/** Drop mid-blog "From [title](url):" attribution lines (sources belong at the end). */
+export function stripMidBlogSourceLines(content: string): string {
+  return String(content || '')
+    .replace(/^\s*\*\*From\s+\[[^\]]+\]\([^)]*\)(?:\s*\(continued\))?:\*\*\s*$/gim, '')
+    .replace(/^\s*From\s+\[[^\]]+\]\([^)]*\)(?:\s*\(continued\))?:\s*$/gim, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function isShortCodeAnnotation(block: MdBlock): boolean {
+  if (!['h2', 'h3', 'p'].includes(block.type)) return false;
+  const t = block.content.trim();
+  if (!t || t.length > 120) return false;
+  if (/\n/.test(t)) return false;
+  // Full teaching paragraphs stay outside; short labels mid-code fold in.
+  if (t.split(/\s+/).length > 18) return false;
+  return true;
+}
+
+function isCodeContinuation(text: string): boolean {
+  const raw = String(text || '');
+  const firstLine = raw.split('\n')[0] || '';
+  const t = firstLine.trim();
+  if (/^( {2,}|\t)/.test(firstLine)) return true;
+  if (
+    /^(await |return |else:|elif |except |finally:|yield |pass$|break$|continue$|\)|:|,)/.test(t)
+  ) {
+    return true;
+  }
+  if (/^(import |from |async def |def |class |const |let |var |function )/.test(t)) return true;
+  return looksLikeSourceCode(raw) || looksLikeAsciiDiagram(raw);
+}
+
+/** Keep one logical code/diagram in a single black box (no half-split boxes). */
+export function coalesceFragmentedCodeBlocks(blocks: MdBlock[]): MdBlock[] {
+  const out: MdBlock[] = [];
+  let i = 0;
+  while (i < blocks.length) {
+    const block = blocks[i];
+    if (block.type !== 'code') {
+      out.push(block);
+      i += 1;
+      continue;
+    }
+
+    let merged: MdBlock = { ...block, content: block.content };
+    let j = i + 1;
+    while (j < blocks.length) {
+      let k = j;
+      while (k < blocks.length && blocks[k].type === 'empty') k += 1;
+
+      const middles: MdBlock[] = [];
+      while (
+        k < blocks.length &&
+        isShortCodeAnnotation(blocks[k]) &&
+        k + 1 < blocks.length
+      ) {
+        // Peek: only swallow annotation if a code block follows
+        let peek = k + 1;
+        while (peek < blocks.length && blocks[peek].type === 'empty') peek += 1;
+        if (peek >= blocks.length || blocks[peek].type !== 'code') break;
+        if (!isCodeContinuation(blocks[peek].content) && !looksLikeAsciiDiagram(blocks[peek].content)) {
+          break;
+        }
+        middles.push(blocks[k]);
+        k = peek;
+      }
+
+      if (k >= blocks.length || blocks[k].type !== 'code') break;
+      const next = blocks[k];
+
+      const mergedIsDiagram =
+        merged.label === 'Diagram' || looksLikeAsciiDiagram(merged.content);
+      const nextIsDiagram = next.label === 'Diagram' || looksLikeAsciiDiagram(next.content);
+      const bothDiagram = mergedIsDiagram && nextIsDiagram;
+      const onlyEmptiesBetween = middles.length === 0;
+      const continuation = isCodeContinuation(next.content);
+
+      if (!bothDiagram && !onlyEmptiesBetween && !continuation) break;
+      if (!bothDiagram && !onlyEmptiesBetween && middles.length > 0 && !continuation) break;
+
+      const commentLines = middles.map((m) => `# ${m.content.replace(/^#+\s*/, '').trim()}`);
+      const label = bothDiagram
+        ? 'Diagram'
+        : merged.label === 'Diagram' || next.label === 'Diagram'
+          ? 'Diagram'
+          : merged.label || next.label || 'Code Snippet';
+      merged = {
+        type: 'code',
+        label,
+        content: [merged.content, ...commentLines, next.content].filter((p) => p.length > 0).join('\n'),
+      };
+      j = k + 1;
+    }
+
+    out.push(merged);
+    i = j > i ? j : i + 1;
+  }
+  return out;
+}
+
+function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
+  const blocks: MdBlock[] = [];
   let inCodeBlock = false;
   let codeLines: string[] = [];
   let currentParagraph: string[] = [];
+  let pendingCode: string[] = [];
 
   const flushParagraph = () => {
     if (currentParagraph.length > 0) {
@@ -145,12 +363,44 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
         .trim();
       currentParagraph = [];
       if (!joined) return;
-      if (looksLikeAsciiDiagram(joined)) {
+      if (looksLikeAsciiDiagram(joined) || looksLikeFlowLine(joined)) {
         blocks.push({ type: 'code', content: joined, label: 'Diagram' });
+      } else if (looksLikeSourceCode(joined)) {
+        blocks.push({ type: 'code', content: joined, label: 'Code Snippet' });
       } else {
         blocks.push({ type: 'p', content: joined });
       }
     }
+  };
+
+  const flushPendingCode = () => {
+    if (pendingCode.length === 0) return;
+    const content = pendingCode.join('\n');
+    pendingCode = [];
+    if (looksLikeProseMistakenlyFenced(content)) {
+      if (depth < 2) {
+        blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
+      } else {
+        blocks.push({ type: 'p', content });
+      }
+      return;
+    }
+    const label = looksLikeAsciiDiagram(content) ? 'Diagram' : 'Code Snippet';
+    blocks.push({ type: 'code', content, label });
+  };
+
+  const pushFencedContent = (content: string) => {
+    if (!content.trim()) return;
+    if (looksLikeProseMistakenlyFenced(content) && depth < 2) {
+      blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
+      return;
+    }
+    if (looksLikeProseMistakenlyFenced(content)) {
+      blocks.push({ type: 'p', content });
+      return;
+    }
+    const label = looksLikeAsciiDiagram(content) ? 'Diagram' : 'Code Snippet';
+    blocks.push({ type: 'code', content, label });
   };
 
   for (const line of lines) {
@@ -158,9 +408,10 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
     if (trimmed.startsWith('```')) {
       if (inCodeBlock) {
         inCodeBlock = false;
-        blocks.push({ type: 'code', content: codeLines.join('\n') });
+        pushFencedContent(codeLines.join('\n'));
         codeLines = [];
       } else {
+        flushPendingCode();
         flushParagraph();
         inCodeBlock = true;
       }
@@ -173,8 +424,29 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
     }
 
     if (isDecorativeSeparator(trimmed)) {
+      // Keep separators from splitting diagrams/code; treat like blank inside pending code
+      if (pendingCode.length > 0) {
+        pendingCode.push(line);
+        continue;
+      }
       flushParagraph();
       continue;
+    }
+
+    // Accumulate unfenced source lines; blank lines stay inside the same box
+    if (
+      looksLikeCodeLine(line) ||
+      (pendingCode.length > 0 &&
+        (trimmed === '' || /^( {2,}|\t)/.test(line) || looksLikeCodeLine(line)))
+    ) {
+      if (pendingCode.length === 0) {
+        flushParagraph();
+      }
+      pendingCode.push(line);
+      continue;
+    }
+    if (pendingCode.length > 0) {
+      flushPendingCode();
     }
 
     if (trimmed.startsWith('# ') && looksLikeRealHeading(trimmed.substring(2))) {
@@ -200,8 +472,19 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
       blocks.push({ type: 'blockquote', content: trimmed.substring(2) });
     } else if (REAL_COMMAND.test(trimmed)) {
       flushParagraph();
-      blocks.push({ type: 'code', content: trimmed });
+      blocks.push({ type: 'code', content: trimmed, label: 'Code Snippet' });
+    } else if (looksLikeFlowLine(trimmed)) {
+      flushParagraph();
+      blocks.push({ type: 'code', content: trimmed, label: 'Diagram' });
     } else if (trimmed === '') {
+      // Keep blank lines inside a growing ASCII diagram paragraph
+      if (
+        currentParagraph.length > 0 &&
+        looksLikeAsciiDiagram(currentParagraph.join('\n'))
+      ) {
+        currentParagraph.push(line);
+        continue;
+      }
       flushParagraph();
       blocks.push({ type: 'empty', content: '' });
     } else {
@@ -209,11 +492,20 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
     }
   }
 
-  if (inCodeBlock && codeLines.length > 0) {
-    blocks.push({ type: 'code', content: codeLines.join('\n') });
+  if (inCodeBlock) {
+    pushFencedContent(codeLines.join('\n'));
   } else {
+    flushPendingCode();
     flushParagraph();
   }
+
+  return coalesceFragmentedCodeBlocks(blocks);
+}
+
+export function PremiumMarkdownRenderer({ content }: { content: string }) {
+  const blocks = parseMarkdownBlocks(
+    restoreArticleMarkdown(stripMidBlogSourceLines(content)).split('\n'),
+  );
 
   return (
     <div className="space-y-5 text-zinc-700 leading-relaxed font-sans">

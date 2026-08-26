@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from beanie import Document, Indexed
@@ -46,6 +46,11 @@ class LearningPath(BaseModel):
     last_quiz_blog_id: str | None = None
     last_quiz_percentage: float | None = None
     last_quiz_attempt_number: int | None = None
+    # Yesterday's briefing — used so today's digest continues the series
+    last_digest_headline: str = ""
+    last_digest_tldr: list[str] = Field(default_factory=list)
+    last_digest_takeaways: list[str] = Field(default_factory=list)
+    last_digest_date: date | None = None
 
 
 class UserProfile(Document):

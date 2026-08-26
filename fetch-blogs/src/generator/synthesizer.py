@@ -25,8 +25,10 @@ from src.extractors.topic_filter import is_career_fluff
 log = structlog.get_logger(__name__)
 
 _WPM = 225
-_MIN_READ_MINUTES = 20
-_MAX_READ_MINUTES = 25
+_MIN_READ_MINUTES = 18  # ~4000 words
+_MAX_READ_MINUTES = 20  # ~4500 words
+_WORD_FLOOR = 4000
+_WORD_CEILING = 4500
 _ARTICLE_LIMIT = 10
 _TEACHING_ARTICLE_LIMIT = 5
 # Never paste entire source blogs into the digest — short technical excerpts only.
@@ -36,11 +38,13 @@ _SCRAPE_EXCERPT_ARTICLES = 4
 
 
 def _min_words() -> int:
-    return max(get_scraping_settings().DIGEST_WORD_TARGET, _MIN_READ_MINUTES * _WPM)
+    """Lower bound: config target, floored at 4000 (~18 min)."""
+    return max(get_scraping_settings().DIGEST_WORD_TARGET, _WORD_FLOOR)
 
 
 def _max_words() -> int:
-    return _MAX_READ_MINUTES * _WPM
+    """Upper bound: keep digests in the 4000–4500 band."""
+    return _WORD_CEILING
 
 
 def _words_in(sections: list[dict[str, Any]]) -> int:
@@ -201,7 +205,7 @@ def _payload_from_articles(
         sections.append(
             _section(
                 "Overview / Summary",
-                f"**From [{article.title}]({article.url}):**\n\n{text}",
+                text,
                 [index],
             )
         )
@@ -273,6 +277,36 @@ def _trim_sections(sections: list[dict[str, Any]], max_words: int) -> list[dict[
     return kept
 
 
+def _previous_briefing_block(profile: UserProfile) -> str:
+    """Format yesterday's digest so today can continue the series."""
+    path = profile.learning_path
+    headline = (path.last_digest_headline or "").strip()
+    if not headline and not path.last_topics:
+        return "No prior briefing — start a fresh technical series for this reader."
+    tldr = path.last_digest_tldr or []
+    takeaways = path.last_digest_takeaways or []
+    topics = path.last_topics or []
+    lines = [
+        "YESTERDAY'S BRIEFING (you MUST continue this series today — deepen the same theme, do not restart from zero):",
+        f"Headline: {headline or '(unknown)'}",
+    ]
+    if path.last_digest_date:
+        lines.append(f"Date: {path.last_digest_date}")
+    if topics:
+        lines.append(f"Themes: {', '.join(topics[:8])}")
+    if tldr:
+        lines.append("TL;DR:")
+        lines.extend(f"- {item}" for item in tldr[:6])
+    if takeaways:
+        lines.append("Key takeaways to build on:")
+        lines.extend(f"- {item}" for item in takeaways[:8])
+    lines.append(
+        "Today: pick the next technical step (deeper API, edge case, production pattern, "
+        "or related source) that extends yesterday — not a random new topic."
+    )
+    return "\n".join(lines)
+
+
 def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
     stack = (
         f"Role: {profile.current_role}\n"
@@ -280,6 +314,7 @@ def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
         f"Primary: {', '.join(profile.primary_tech_stack)}\n"
         f"Interests: {', '.join(profile.interests)}\n"
         f"Next-step topics: {', '.join(profile.learning_path.next_step_topics)}\n"
+        f"Weak topics: {', '.join(profile.learning_path.weak_topics)}\n"
         f"Excluded: {', '.join(profile.excluded_topics)}"
     )
     sources = []
@@ -294,10 +329,14 @@ def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
             f"Body:\n{body}"
         )
     return f"""
-You are writing a short personalized intro for a morning TECH briefing.
-Return strict JSON only. Do not invent URLs. Keep total under 400 words.
+You are writing the OPENING of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute personalized TECH briefing.
+Return strict JSON only. Do not invent URLs.
+The opening JSON is short (~300-500 words); longer teaching chapters are attached separately.
+The FULL briefing must ultimately be {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minutes of reading.
 Focus only on the reader's stack and the cited articles' technical ideas.
 Do NOT write career advice, portfolios, interview tips, or soft skills.
+
+{_previous_briefing_block(profile)}
 
 Profile:
 {stack}
@@ -308,11 +347,17 @@ Articles:
 Return this shape:
 {{
   "headline": "the exact primary source article title — never a template like Your Morning X Briefing",
-  "tldr": ["technical bullet", "technical bullet", "technical bullet"],
+  "tldr": ["technical bullet continuing yesterday when possible", "technical bullet", "technical bullet"],
   "sections": [
     {{
+      "title": "Continuation from yesterday",
+      "content": "2-4 short paragraphs that explicitly pick up from yesterday's briefing and connect today's sources",
+      "sources_cited": [1],
+      "estimated_read_minutes": 3.0
+    }},
+    {{
       "title": "Brief",
-      "content": "2-4 short paragraphs on the technical theme for today's reader",
+      "content": "2-4 short paragraphs on today's technical theme for this reader",
       "sources_cited": [1],
       "estimated_read_minutes": 2.0
     }},
@@ -329,10 +374,10 @@ Return this shape:
       "estimated_read_minutes": 2.0
     }}
   ],
-  "key_takeaways": ["actionable technical takeaway"],
+  "key_takeaways": ["actionable technical takeaway that advances yesterday's learning"],
   "further_reading": []
 }}
-Use exactly those three section titles when possible. Longer teaching chapters are attached separately.
+Prefer those section titles. Longer teaching chapters are attached separately to hit {_MIN_READ_MINUTES}+ minutes.
 """.strip()
 
 
@@ -341,17 +386,26 @@ def _teaching_prompt(profile: UserProfile, article: Article, word_target: int) -
     stack = ", ".join(profile.primary_tech_stack) or "software engineering"
     interests = ", ".join(profile.interests) or stack
     return f"""
-You are writing one TECHNICAL chapter of a { _MIN_READ_MINUTES }-{ _MAX_READ_MINUTES } minute morning briefing.
+You are writing one TECHNICAL chapter of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute morning briefing.
 Write about {word_target} words of markdown. No JSON. Do not wrap the whole answer in a code fence.
 Stay strictly on the source article's technical content as it relates to: {stack} / {interests}.
+
+{_previous_briefing_block(profile)}
 
 HARD RULES — do NOT write about:
 - career advice, interviews, portfolios, "what companies expect", soft skills
 - generic "learn JavaScript / HTML / CSS" motivational fluff
 - unrelated beginner roadmaps
 
+MARKDOWN FENCES — critical for the reader UI:
+- Use ``` fences ONLY for real source code, shell commands, or ASCII/box diagrams.
+- NEVER put explanations, bullet lists, or ### headings inside a fence.
+- Put teaching prose, bullets, and headings outside fences on normal markdown lines.
+- Unfenced paragraphs of prose that belong in a fence will break the UI — fence code tightly.
+
 ONLY write: concrete APIs, code patterns, architecture, debugging, configs, and tradeoffs from the source.
 Do not invent APIs, URLs, or library names that are not in the source.
+If yesterday's briefing exists, open with one short paragraph that continues that thread.
 
 Reader: {profile.current_role or "developer"}, {profile.years_of_experience} years, stack: {stack}.
 
@@ -362,6 +416,7 @@ Source:
 
 Use this structure:
 ## {article.title}
+### How this continues yesterday (1 short paragraph)
 ### Technical takeaway
 ### How it works (with a small code example if the source has one)
 ### Apply it on {stack} today
@@ -377,8 +432,12 @@ def _top_up_prompt(profile: UserProfile, articles: list[Article], needed: int, t
 Continue the same TECHNICAL morning briefing. Write {needed} more words of markdown.
 No JSON. Do not repeat prior chapters.
 No career advice, portfolios, interviews, or soft skills — only code, APIs, debugging, and architecture for {stack}.
+The full briefing MUST reach {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minutes of reading (~{_WORD_FLOOR}-{_WORD_CEILING} words).
+Use ``` fences ONLY for real code or ASCII diagrams — never for prose, bullets, or headings.
 
-Add: one worked example, one debugging checklist, one concrete next experiment.
+{_previous_briefing_block(profile)}
+
+Add: one worked example, one debugging checklist, one concrete next experiment that advances yesterday's theme.
 
 Sources still in play:
 {titles}
@@ -386,6 +445,14 @@ Sources still in play:
 Last part already written:
 {tail[-1500:]}
 """.strip()
+
+
+_GEMINI_MODEL_FALLBACKS = (
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+)
 
 
 def _call_gemini(
@@ -401,23 +468,44 @@ def _call_gemini(
     import google.generativeai as genai
 
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    model = genai.GenerativeModel(settings.GEMINI_MODEL)
-    config: dict[str, Any] = {"max_output_tokens": max_output_tokens}
-    if as_json:
-        config["response_mime_type"] = "application/json"
-    response = model.generate_content(prompt, generation_config=config)
-    text = getattr(response, "text", "") or ""
+    primary = (settings.GEMINI_MODEL or "").strip()
+    models = list(
+        dict.fromkeys(
+            [primary, *_GEMINI_MODEL_FALLBACKS] if primary else list(_GEMINI_MODEL_FALLBACKS)
+        )
+    )
+    last_error: Exception | None = None
     tokens = len(prompt.split()) * 2
-    if as_json:
-        return _parse_json_object(text), tokens
-    return _strip_fences(text), tokens
+
+    for model_name in models:
+        if not model_name:
+            continue
+        try:
+            model = genai.GenerativeModel(model_name)
+            config: dict[str, Any] = {"max_output_tokens": max_output_tokens}
+            if as_json:
+                config["response_mime_type"] = "application/json"
+            response = model.generate_content(prompt, generation_config=config)
+            text = getattr(response, "text", "") or ""
+            if as_json:
+                return _parse_json_object(text), tokens
+            stripped = _strip_fences(text)
+            if stripped.strip():
+                return stripped, tokens
+            last_error = RuntimeError(f"empty response from {model_name}")
+        except Exception as exc:
+            last_error = exc
+            log.warning("generator: gemini model failed", model=model_name, error=str(exc))
+            continue
+
+    raise RuntimeError(str(last_error) if last_error else "All Gemini models failed")
 
 
 def _generate_teaching_sections(
     profile: UserProfile,
     articles: list[Article],
 ) -> tuple[list[dict[str, Any]], int]:
-    """Ask Gemini for long markdown chapters until we reach a 20 minute floor."""
+    """Ask Gemini for long markdown chapters until we reach the word floor."""
     sections: list[dict[str, Any]] = []
     tokens = 0
     floor = _min_words()
@@ -480,6 +568,72 @@ def _technical_articles(articles: list[Article]) -> list[Article]:
     return kept or articles
 
 
+def _expand_from_articles(
+    articles: list[Article],
+    working: list[dict[str, Any]],
+    *,
+    floor: int,
+    ceiling: int,
+) -> list[dict[str, Any]]:
+    """Keep appending longer technical excerpts until we hit the word floor."""
+    result = list(working)
+    for each in (1400, 2000, 2800, 4000):
+        if _words_in(result) >= floor:
+            break
+        long_scrape = _payload_from_articles(
+            articles,
+            max_total_words=ceiling,
+            max_words_each=each,
+            article_limit=_ARTICLE_LIMIT,
+        )
+        result = _trim_sections([*result, *long_scrape["sections"]], ceiling)
+    return result
+
+
+def _pad_shortfall_from_articles(
+    articles: list[Article],
+    working: list[dict[str, Any]],
+    *,
+    floor: int,
+    ceiling: int,
+) -> list[dict[str, Any]]:
+    """Append leftover source body until we clear a small shortfall under the floor."""
+    result = list(working)
+    shortfall = floor - _words_in(result)
+    if shortfall <= 0:
+        return result
+    # Leave headroom up to the 25-minute ceiling
+    room = max(0, ceiling - _words_in(result))
+    need = min(max(shortfall + 50, shortfall), room or shortfall + 50)
+    chunks: list[str] = []
+    taken = 0
+    for index, article in enumerate(articles[:_ARTICLE_LIMIT], start=1):
+        if taken >= need:
+            break
+        body = _ensure_readable_markdown(
+            _clean_scraped_markdown((article.body_text or article.summary or "").strip())
+        )
+        if not body:
+            continue
+        already = " ".join(str(section.get("content") or "") for section in result)
+        # Prefer unseen tail of the article so we don't duplicate the short excerpt
+        words = body.split()
+        if not words:
+            continue
+        start = max(0, len(words) // 3)
+        slice_words = words[start : start + min(800, need - taken + 20)]
+        if len(slice_words) < 40:
+            slice_words = words[: min(800, need - taken + 20)]
+        piece = " ".join(slice_words)
+        if piece and piece not in already:
+            chunks.append(piece)
+            taken += len(slice_words)
+    if chunks:
+        result.append(_section("Deep dive (source continuation)", "\n\n".join(chunks), [1]))
+        result = _trim_sections(result, max(ceiling, floor + 100))
+    return result
+
+
 def _enforce_min_length(
     profile: UserProfile,
     articles: list[Article],
@@ -494,26 +648,37 @@ def _enforce_min_length(
     working = list(sections)
 
     if scraped_only:
+        working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
         if _words_in(working) < floor:
-            # Last resort for offline mode: use longer technical source excerpts.
-            long_scrape = _payload_from_articles(
-                articles,
-                max_total_words=ceiling,
-                max_words_each=1200,
-                article_limit=_ARTICLE_LIMIT,
+            working = _pad_shortfall_from_articles(
+                articles, working, floor=floor, ceiling=ceiling
             )
-            working = _trim_sections([*working, *long_scrape["sections"]], ceiling)
+        if _words_in(working) < floor:
+            raise RuntimeError(
+                f"Digest too short ({_words_in(working)} words); "
+                f"need at least {floor} words (~{_MIN_READ_MINUTES} min). "
+                "Need longer scraped article bodies before offline synthesis."
+            )
         return working, tokens
 
     rounds = 0
-    while _words_in(working) < floor and rounds < 4:
+    while _words_in(working) < floor and rounds < 6:
         rounds += 1
         needed = min(ceiling - _words_in(working), floor - _words_in(working))
-        if needed < 300:
+        # Small shortfalls (e.g. 4489/4500) — pad from sources instead of giving up
+        if needed < 200:
+            working = _pad_shortfall_from_articles(
+                articles, working, floor=floor, ceiling=ceiling
+            )
             break
         try:
             extra, used = _call_gemini(
-                _top_up_prompt(profile, articles, needed, working[-1]["content"] if working else ""),
+                _top_up_prompt(
+                    profile,
+                    articles,
+                    needed,
+                    working[-1]["content"] if working else "",
+                ),
                 as_json=False,
                 max_output_tokens=min(8192, max(2048, needed * 3)),
             )
@@ -527,20 +692,20 @@ def _enforce_min_length(
             log.warning("generator: min-length top-up failed", error=str(exc), round=rounds)
 
         # Gemini unavailable — expand technical source bodies (never career fluff).
-        long_scrape = _payload_from_articles(
-            articles,
-            max_total_words=ceiling,
-            max_words_each=1000,
-            article_limit=_ARTICLE_LIMIT,
+        working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
+        if _words_in(working) >= floor:
+            break
+
+    if _words_in(working) < floor:
+        working = _pad_shortfall_from_articles(
+            articles, working, floor=floor, ceiling=ceiling
         )
-        working = _trim_sections([*working, *long_scrape["sections"]], ceiling)
-        break
 
     if _words_in(working) < floor:
         raise RuntimeError(
             f"Digest too short ({_words_in(working)} words); "
             f"need at least {floor} words (~{_MIN_READ_MINUTES} min). "
-            "Fill the user tech stack and retry when Gemini quota is available."
+            "Retry synthesize, or fill the user tech stack so Gemini can write longer chapters."
         )
     return working, tokens
 
@@ -623,6 +788,12 @@ def synthesize_digest(
     ]
     word_count = len(" ".join(section.content for section in sections).split())
     reading = round(max(1.0, word_count / _WPM), 1)
+    floor = _min_words()
+    if word_count < floor:
+        raise RuntimeError(
+            f"Digest too short for the {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute target "
+            f"({word_count} words; need at least {floor})."
+        )
     further = payload.get("further_reading") or []
     further_reading = [
         {"title": str(item.get("title") or ""), "url": str(item.get("url") or "")}

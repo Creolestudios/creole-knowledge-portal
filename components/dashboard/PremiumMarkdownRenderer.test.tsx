@@ -108,6 +108,122 @@ describe('PremiumMarkdownRenderer', () => {
     expect(pre?.className).not.toContain('whitespace-pre-wrap');
   });
 
+  it('renders prose that was wrongly wrapped in fences as normal text, not CODE SNIPPET', () => {
+    const mistenced = [
+      '```',
+      '- Prefer ThreadPoolExecutor for I/O bound work that shares memory.',
+      '- Prefer ProcessPoolExecutor for CPU bound work that needs isolation.',
+      '### 3. Queue Sizing and Preventing Unbounded Task Execution',
+      'A common anti-pattern in concurrent Python code is spawning unlimited tasks.',
+      '```',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={mistenced} />);
+    expect(screen.queryByText('Code Snippet')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Queue Sizing/i })).toBeInTheDocument();
+    expect(screen.getByText(/Prefer ThreadPoolExecutor/i)).toBeInTheDocument();
+    expect(container.querySelector('pre')).toBeNull();
+  });
+
+  it('puts unfenced Python in a black code box and keeps nearby prose outside', () => {
+    const content = [
+      '## ANTI-PATTERN: Will cause memory bloat and OOM on 1,000,000 documents',
+      'for doc in massive_document_list:',
+      '    asyncio.create_task(process_doc(doc))',
+      '',
+      '## Unbounded memory growth!',
+      'This paragraph explains why the loop above is dangerous in production.',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={content} />);
+    expect(screen.getByText('Code Snippet')).toBeInTheDocument();
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toContain('asyncio.create_task');
+    expect(pre?.textContent).toContain('for doc in massive_document_list:');
+    expect(screen.getByText(/explains why the loop above/i)).toBeInTheDocument();
+    const prose = Array.from(container.querySelectorAll('p')).map((p) => p.textContent || '');
+    expect(prose.some((t) => /explains why/.test(t))).toBe(true);
+  });
+
+  it('renders architecture flow lines as Diagram boxes', () => {
+    const flow =
+      'ProcessPoolExecutor Architecture: Main Process Thread == [ Pickle Pipe Queue ] == [ Worker Process 1 (Isolated RAM) ]';
+    render(<PremiumMarkdownRenderer content={flow} />);
+    expect(screen.getByText('Diagram')).toBeInTheDocument();
+    expect(screen.getByText(/Pickle Pipe Queue/)).toBeInTheDocument();
+  });
+
+  it('merges split fenced code and mid-code headings into one CODE SNIPPET', () => {
+    const content = [
+      '```python',
+      'import asyncio',
+      'import time',
+      '```',
+      '',
+      '```python',
+      'async def fetch_vector(doc_id: int) -> list[float]:',
+      '```',
+      '',
+      '## Non-blocking yield: Control releases back to event loop immediately',
+      '',
+      '```python',
+      '    await asyncio.sleep(0.1)',
+      '    return [0.12, 0.45, 0.78]',
+      '```',
+      '',
+      '```python',
+      'async def main():',
+      '```',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={content} />);
+    expect(screen.getAllByText('Code Snippet')).toHaveLength(1);
+    expect(screen.queryByRole('heading', { name: /Non-blocking yield/i })).not.toBeInTheDocument();
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toContain('import asyncio');
+    expect(pre?.textContent).toContain('await asyncio.sleep');
+    expect(pre?.textContent).toContain('async def main');
+    expect(pre?.textContent).toMatch(/Non-blocking yield/);
+  });
+
+  it('merges split ASCII diagram halves into one Diagram box', () => {
+    const content = [
+      '```',
+      '+-------------------------------------+',
+      '|     Asyncio Event Loop Thread      |',
+      '```',
+      '',
+      '```',
+      '|  Event Loop (epoll/kqueue)         |',
+      '|           |                        |',
+      '|           v                        |',
+      '|  OS Network Protocol Stack         |',
+      '+-------------------------------------+',
+      '```',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={content} />);
+    expect(screen.getAllByText('Diagram')).toHaveLength(1);
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toContain('Asyncio Event Loop Thread');
+    expect(pre?.textContent).toContain('OS Network Protocol Stack');
+  });
+
+  it('strips mid-blog From [source] attribution lines', () => {
+    const content = [
+      'Teaching paragraph about asyncio.',
+      '',
+      '**From [Python Concurrency](https://dev.to/example):**',
+      '',
+      'More teaching after the source line.',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={content} />);
+    expect(container.textContent).not.toMatch(/From \[Python Concurrency\]/);
+    expect(screen.getByText(/Teaching paragraph/)).toBeInTheDocument();
+    expect(screen.getByText(/More teaching after/)).toBeInTheDocument();
+  });
+
   it('hides decorative dash separators and markdown horizontal rules', () => {
     const content = [
       'Intro text.',
