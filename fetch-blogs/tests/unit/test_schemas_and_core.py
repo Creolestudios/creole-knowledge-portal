@@ -221,7 +221,7 @@ class TestSettingsModule:
         assert local.show_docs is True
         assert staging.show_docs is True
         assert prod.show_docs is False
-        assert local.celery_eager is True
+        assert local.celery_eager is False
         assert prod.celery_eager is False
         assert (
             AppSettings(
@@ -229,10 +229,16 @@ class TestSettingsModule:
             ).celery_eager
             is True
         )
-        # Local always runs in-process regardless of CELERY_EAGER override.
+        # APP_CELERY_EAGER is respected on local (worker path is the default).
         assert (
             AppSettings(
                 _env_file=None, ENVIRONMENT=Environment.LOCAL, CELERY_EAGER=False
+            ).celery_eager
+            is False
+        )
+        assert (
+            AppSettings(
+                _env_file=None, ENVIRONMENT=Environment.LOCAL, CELERY_EAGER=True
             ).celery_eager
             is True
         )

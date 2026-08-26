@@ -147,7 +147,7 @@ POST /api/v1/digests/generate  { "userId": "<supabase uuid>" }
         └─ scrape → extract → rank → generate → publish
 ```
 
-Locally (`APP_ENVIRONMENT=local`) Celery is **eager**: the five stages run inside the FastAPI process so you do not need a worker. In production they are a real `celery.chain` across five queues; each task passes only IDs (article IDs, then a digest ID).
+Local and staging/prod use the same path: FastAPI enqueues a `celery.chain` across five Redis queues (`scrape_queue` → … → `publish_queue`); Celery workers build the digest. Each task passes only IDs (article IDs, then a digest ID). Set `APP_CELERY_EAGER=true` only for in-process debug (no workers).
 
 ### Stage 1 — Scrape (`scrape_queue`)
 
@@ -235,19 +235,17 @@ Infra in Docker, API on the host with hot reload:
 
 ```bash
 cd fetch-blogs
-cp .env.example .env          # fill LLM_GEMINI_API_KEY + Supabase keys
+cp .env.example .env          # fill LLM_GEMINI_API_KEY + Supabase keys; keep APP_CELERY_EAGER=false
 uv sync
 docker compose up -d          # Mongo :27017, Redis :6379
 uv run fastapi dev src/main.py
+# Required — same worker path as staging/prod (Windows: solo pool):
+powershell -File scripts/start-workers.ps1
+# Or:
+uv run celery -A src.workers.celery_app worker -Q scrape_queue,extract_queue,rank_queue,generate_queue,publish_queue -P solo -l info
 ```
 
-Point Next.js at it (`BLOG_SERVICE_URL=http://localhost:8000/api/v1`, `BLOG_INTERNAL_TOKEN` matching `AUTH_SECRET_KEY`). Local eager mode means Generate works **without** starting Celery.
-
-Optional worker (only if you set eager off):
-
-```bash
-uv run celery -A src.workers.celery_app worker -l info
-```
+Point Next.js at it (`BLOG_SERVICE_URL=http://localhost:8000/api/v1`, `BLOG_INTERNAL_TOKEN` matching `AUTH_SECRET_KEY`). FastAPI only enqueues; workers must be running for Synthesize / Generate.
 
 ### Full Docker stack (API + five workers + Flower)
 

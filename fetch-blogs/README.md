@@ -9,11 +9,16 @@ Next.js communicates with this service via `GET /api/v1/digests/{user_id}/latest
 ## Quick Commands
 
 ```bash
-# Local dev — infra in Docker, app on your machine
+# Local = same path as staging/prod (APP_CELERY_EAGER=false)
 uv sync
 docker compose up -d                                    # Mongo + Redis
-uv run fastapi dev src/main.py                          # hot reload on :8000
-uv run celery -A src.workers.celery_app worker -l info  # optional, if you need workers locally
+uv run fastapi dev src/main.py                          # API enqueues jobs only
+# Workers required for Synthesize / pipeline (Windows: solo pool):
+powershell -File scripts/start-workers.ps1
+# Or one process for all queues:
+uv run celery -A src.workers.celery_app worker -Q scrape_queue,extract_queue,rank_queue,generate_queue,publish_queue -P solo -l info
+
+# Debug only: APP_CELERY_EAGER=true runs the chain in-process (no workers)
 
 # Production — everything in Docker
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
@@ -27,13 +32,14 @@ uv run mypy src --strict                                # Run strict type checki
 bash scripts/test.sh                                    # Run full quality gate (mypy + ruff + pytest)
 ```
 
+
 ---
 
 ## Current Status & Scope
 
 The scrape → extract → rank → generate → publish chain is live. Next.js calls `POST /api/v1/digests/generate` and `GET /api/v1/digests/{user_id}/latest`.
 
-* **Done**: Dev.to / HN / RSS scrapers, robots.txt cache, newspaper3k + Jina extraction, Gemini embeddings, TF-IDF + cosine + Gemini re-rank, digest synthesis, Mongo publisher, profile sync from Supabase, quiz learning-path write-back, health/pipeline/digest APIs, local eager mode (no Celery required).
+* **Done**: Dev.to / HN / RSS scrapers, robots.txt cache, newspaper3k + Jina extraction, Gemini embeddings, TF-IDF + cosine + Gemini re-rank, digest synthesis, Mongo publisher, profile sync from Supabase, quiz learning-path write-back, health/pipeline/digest APIs. Local uses Redis + Celery workers (same as staging/prod); `APP_CELERY_EAGER=true` is debug-only.
 * **Still stubs**: Reddit scraper, admin config CRUD, quality-gate module, dedicated prompt-builder module.
 * **Not used (plan leftovers)**: Crawl4AI / Playwright, Ollama fallback.
 

@@ -41,7 +41,7 @@ async def upsert_digest(digest: DailyDigest) -> str:
 
 
 async def record_served_urls(digest: DailyDigest, profile: UserProfile) -> None:
-    """Append cited source URLs onto the profile learning path."""
+    """Append cited source URLs and yesterday's briefing summary for next-day continuation."""
     served = [str(url) for url in profile.learning_path.served_urls]
     for source in digest.content.sources:
         url = str(source.url)
@@ -61,6 +61,18 @@ async def record_served_urls(digest: DailyDigest, profile: UserProfile) -> None:
     combined = list(dict.fromkeys([*tokens, *titles]))[:8]
     if combined:
         profile.learning_path.last_topics = combined
+
+    # Persist briefing summary so tomorrow continues this series
+    headline = str(digest.content.headline or "").strip()
+    if headline:
+        profile.learning_path.last_digest_headline = headline
+    profile.learning_path.last_digest_tldr = [
+        str(item).strip() for item in (digest.content.tldr or []) if str(item).strip()
+    ][:6]
+    profile.learning_path.last_digest_takeaways = [
+        str(item).strip() for item in (digest.content.key_takeaways or []) if str(item).strip()
+    ][:8]
+    profile.learning_path.last_digest_date = digest.digest_date
 
     profile.updated_at = datetime.now(UTC)
     await profile.save()

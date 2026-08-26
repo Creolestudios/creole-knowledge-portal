@@ -185,7 +185,7 @@ def test_teaching_markdown_is_kept_in_the_briefing(monkeypatch: pytest.MonkeyPat
     assert "Celery workers process jobs from Redis" in body
 
 
-def test_briefing_is_capped_at_25_minutes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_briefing_is_capped_at_word_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
     profile = UserProfile(user_id="u1", name="Dev")
     article = _article("Long piece", "source " * 50)
 
@@ -196,9 +196,10 @@ def test_briefing_is_capped_at_25_minutes(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)
     digest = synthesizer.synthesize_digest(profile, [article])
-    assert digest.word_count <= synthesizer._MAX_READ_MINUTES * synthesizer._WPM
+    assert digest.word_count <= synthesizer._WORD_CEILING
+    assert digest.word_count >= synthesizer._WORD_FLOOR
     assert digest.reading_time_minutes <= synthesizer._MAX_READ_MINUTES
-    assert digest.reading_time_minutes >= synthesizer._MIN_READ_MINUTES
+    assert digest.reading_time_minutes >= synthesizer._MIN_READ_MINUTES - 0.5
 
 
 def test_skips_teaching_when_scraped_bodies_already_cover_20_minutes(
@@ -224,8 +225,8 @@ def test_skips_teaching_when_scraped_bodies_already_cover_20_minutes(
 
     digest = synthesizer.synthesize_digest(profile, [article])
     assert "scraped" in digest.content.sections[-1].content
-    assert digest.reading_time_minutes >= synthesizer._MIN_READ_MINUTES
-    assert digest.reading_time_minutes <= synthesizer._MAX_READ_MINUTES
+    assert digest.word_count >= synthesizer._WORD_FLOOR
+    assert digest.word_count <= synthesizer._WORD_CEILING
 
 
 def test_pick_daily_theme_keeps_yesterday_python() -> None:
@@ -616,4 +617,67 @@ def test_devto_full_article_ignores_empty_markdown(monkeypatch: pytest.MonkeyPat
     assert _devto_full_article("https://dev.to/ada/empty") is None
 
 
+def test_previous_briefing_block_includes_yesterday_headline() -> None:
+    from src.models.profile import LearningPath
+
+    profile = UserProfile(
+        user_id="u1",
+        learning_path=LearningPath(
+            last_digest_headline="Redis queues in production",
+            last_digest_tldr=["Use Celery with Redis"],
+            last_digest_takeaways=["Watch worker backlog"],
+            last_topics=["redis", "celery"],
+        ),
+    )
+    block = synthesizer._previous_briefing_block(profile)
+    assert "Redis queues in production" in block
+    assert "MUST continue" in block
+    assert "Celery with Redis" in block
+
+
+def test_enforce_min_length_raises_when_sources_too_thin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = UserProfile(user_id="u1")
+    article = _article("Tiny", "short body only")
+
+    def _boom(*_a: object, **_k: object) -> tuple[str, int]:
+        raise RuntimeError("gemini down")
+
+    monkeypatch.setattr(synthesizer, "_call_gemini", _boom)
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 500)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 600)
+
+    with pytest.raises(RuntimeError, match="Digest too short"):
+        synthesizer._enforce_min_length(
+            profile,
+            [article],
+            [synthesizer._section("Overview / Summary", "tiny", [1])],
+            0,
+            scraped_only=False,
+        )
+
+
+def test_enforce_min_length_pads_near_miss_shortfall(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """4489/4500-style shortfalls should pad from source bodies, not fail."""
+    profile = UserProfile(user_id="u1")
+    # Long body so pad has material to pull from
+    body = ("Redis streams buffer events for consumers. " * 200)
+    article = _article("Redis streams", body)
+    # Start just under the floor
+    almost = "word " * 90
+    monkeypatch.setattr(synthesizer, "_call_gemini", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("skip")))
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 100)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 5000)
+
+    sections, _ = synthesizer._enforce_min_length(
+        profile,
+        [article],
+        [synthesizer._section("Overview / Summary", almost, [1])],
+        0,
+        scraped_only=False,
+    )
+    assert synthesizer._words_in(sections) >= 100
 

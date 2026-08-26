@@ -55,14 +55,20 @@ async def execute_pipeline_for_user(user_id: str, timeout: int = 300, runner_fun
     if cfg.celery_eager:
         from src.workers.extractor_tasks import _extract_articles
         from src.workers.generator_tasks import _generate_digest
+        from src.workers.publisher_tasks import _publish_digest
         from src.workers.ranker_tasks import _rank_articles_for_user
         from src.workers.scraper_tasks import _scrape_for_user
 
-        log.info("pipeline (in-process): scrape → extract → rank → generate  user=%s", user_id)
+        log.info(
+            "pipeline (in-process): scrape → extract → rank → generate → publish  user=%s",
+            user_id,
+        )
         article_ids = await _scrape_for_user(user_id)
         extracted_ids = await _extract_articles(article_ids)
         ranked_ids = await _rank_articles_for_user(extracted_ids, user_id, 10)
         digest_id = await _generate_digest(ranked_ids, user_id)
+        if digest_id:
+            await _publish_digest(digest_id)
         return str(digest_id)
 
     return run_celery_pipeline_and_wait(user_id, timeout=timeout)

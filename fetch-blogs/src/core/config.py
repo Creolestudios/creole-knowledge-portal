@@ -48,13 +48,13 @@ class AppSettings(BaseSettings):
 
     @property
     def celery_eager(self) -> bool:
-        """Run Celery tasks in-process locally so Generate works without a worker."""
-        # Local always in-process — APP_CELERY_EAGER=false previously hung generate
-        # waiting on a Redis worker that wasn't consuming after Docker restarts.
-        if self.ENVIRONMENT == Environment.LOCAL:
-            return True
+        """When True, Celery runs in-process (no Redis workers needed).
+
+        Local and prod both use real workers by default. Set APP_CELERY_EAGER=true
+        only for quick debugging without Redis.
+        """
         if self.CELERY_EAGER is not None:
-            return self.CELERY_EAGER
+            return bool(self.CELERY_EAGER)
         return False
 
 
@@ -125,7 +125,7 @@ class LLMSettings(BaseSettings):
         validation_alias=AliasChoices("LLM_GEMINI_API_KEY", "GEMINI_API_KEY"),
     )
     GEMINI_MODEL: str = Field(
-        default="gemini-3.6-flash",
+        default="gemini-2.5-flash",
         validation_alias=AliasChoices("LLM_GEMINI_MODEL", "GEMINI_MODEL"),
     )
     GEMINI_EMBED_MODEL: str = "models/text-embedding-004"
@@ -138,7 +138,7 @@ class ScrapingSettings(BaseSettings):
 
     CONCURRENCY: int = Field(default=8, ge=1, le=32)
     CONTENT_FRESHNESS_DAYS: int = Field(default=30, ge=1)
-    DIGEST_WORD_TARGET: int = Field(default=4500, ge=1000)
+    DIGEST_WORD_TARGET: int = Field(default=4000, ge=1000)
     CRON_SCHEDULE: str = "30 2 * * *"  # 08:00 IST = 02:30 UTC — daily scrape + 20–25 min briefing
     ROBOTS_CACHE_TTL_SECONDS: int = 3600
 
