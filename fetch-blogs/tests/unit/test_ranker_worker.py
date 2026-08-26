@@ -56,7 +56,21 @@ class FakeVectorResult:
 @pytest.fixture
 def patched_ranker(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Neutralise every collaborator of _rank_articles_for_user."""
-    state: dict[str, Any] = {"profile": object(), "articles": []}
+    from types import SimpleNamespace
+
+    path = SimpleNamespace(served_urls=[])
+    profile = SimpleNamespace(
+        learning_path=path,
+        profile_embedding=[0.1, 0.2],
+        updated_at=None,
+        save=lambda: None,
+    )
+
+    async def _save() -> None:
+        return None
+
+    profile.save = _save  # type: ignore[method-assign]
+    state: dict[str, Any] = {"profile": profile, "articles": []}
 
     async def _find_one(*_: object, **__: object) -> Any:
         return state["profile"]
@@ -66,7 +80,12 @@ def patched_ranker(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     async def _load(_ids: list[str]) -> list[Any]:
         return state["articles"]
 
+    async def _corpus(_profile: Any, _exclude: set[str]) -> list[Any]:
+        return []
+
     monkeypatch.setattr(ranker_tasks, "_load_articles", _load)
+    monkeypatch.setattr(ranker_tasks, "_corpus_candidates", _corpus)
+    monkeypatch.setattr(ranker_tasks, "refresh_profile_embedding", lambda _p: [0.1, 0.2])
     monkeypatch.setattr(
         ranker_tasks,
         "score_articles_for_profile",
@@ -75,12 +94,18 @@ def patched_ranker(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(
         ranker_tasks,
         "rank_by_vector_similarity",
-        lambda _p, arts, limit=50: [FakeVectorResult(a) for a in arts],
+        lambda _p, arts, limit=50, query_embedding=None: [FakeVectorResult(a) for a in arts],
     )
     monkeypatch.setattr(
         ranker_tasks.RerankCandidate,
         "from_article",
-        classmethod(lambda cls, **kw: kw),
+        classmethod(
+            lambda cls, **kw: SimpleNamespace(
+                vector_similarity=kw.get("vector_similarity", 0.0),
+                composite_score=kw.get("composite_score", 0.0),
+                **{k: v for k, v in kw.items() if k not in {"vector_similarity", "composite_score"}},
+            )
+        ),
     )
     monkeypatch.setattr(
         ranker_tasks,
@@ -192,8 +217,10 @@ class TestRankArticlesForUser:
             lambda _p, candidates, limit=20: (seen.append(candidates), [])[1],
         )
 
-        await ranker_tasks._rank_articles_for_user(["a1"], "u1", 10)
-        assert seen[0] == []
+        out = await ranker_tasks._rank_articles_for_user(["a1"], "u1", 10)
+        # Unsaved articles never enter the merge pool, so ranking ends with no IDs
+        assert out == []
+        assert seen == []
 
 
 class TestRankArticlesTask:

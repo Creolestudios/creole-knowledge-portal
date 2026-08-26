@@ -101,10 +101,11 @@ async def test_quiz_result_accepts_topic_payload() -> None:
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-async def test_quiz_result_marks_weak_topics() -> None:
+async def test_quiz_result_stores_marks_and_sets_active_stack() -> None:
     existing = UserProfile(
         user_id="u1",
         name="Dev",
+        primary_tech_stack=["python"],
         learning_path=LearningPath(last_topics=["python"]),
     )
     await existing.insert()
@@ -112,12 +113,15 @@ async def test_quiz_result_marks_weak_topics() -> None:
     res = _client().post(
         "/profiles/u1/quiz",
         headers={"X-Internal-Token": "change-me-to-a-32-char-secret"},
-        json={"score": 1, "total": 5},
+        json={"score": 1, "total": 5, "percentage": 20, "passed": False, "attempt_number": 2},
     )
     assert res.status_code == 200
     profile = await UserProfile.find_one(UserProfile.user_id == "u1")
     assert profile is not None
-    assert profile.learning_path.weak_topics == ["python"]
+    assert profile.learning_path.last_quiz_outcome.value == "failed"
+    assert profile.learning_path.last_quiz_score == 1
+    assert profile.learning_path.last_quiz_attempt_number == 2
+    assert profile.learning_path.active_stack == "python"
 
 
 def test_sync_requires_internal_token() -> None:

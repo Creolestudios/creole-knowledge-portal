@@ -19,7 +19,7 @@ from src.models.digest import (
     DigestSection,
     DigestSource,
 )
-from src.models.profile import UserProfile, scrape_focus_terms, topic_tokens_from_text
+from src.models.profile import UserProfile, next_scrape_pace, pace_teaching_instructions, resolve_active_stack, scrape_focus_terms, topic_tokens_from_text
 from src.extractors.topic_filter import is_career_fluff
 
 log = structlog.get_logger(__name__)
@@ -280,14 +280,19 @@ def _trim_sections(sections: list[dict[str, Any]], max_words: int) -> list[dict[
 def _previous_briefing_block(profile: UserProfile) -> str:
     """Format yesterday's digest so today can continue the series."""
     path = profile.learning_path
+    active = resolve_active_stack(profile)
+    pace = next_scrape_pace(profile)
     headline = (path.last_digest_headline or "").strip()
-    if not headline and not path.last_topics:
+    if not headline and not path.last_topics and not active:
         return "No prior briefing — start a fresh technical series for this reader."
     tldr = path.last_digest_tldr or []
     takeaways = path.last_digest_takeaways or []
     topics = path.last_topics or []
     lines = [
-        "YESTERDAY'S BRIEFING (you MUST continue this series today — deepen the same theme, do not restart from zero):",
+        "ACTIVE STACK RUN (stay on this stack until its important coverage is done): "
+        f"{active or '(infer from themes)'}",
+        pace_teaching_instructions(pace),
+        "YESTERDAY'S BRIEFING (continue this series — do not jump to an unrelated stack):",
         f"Headline: {headline or '(unknown)'}",
     ]
     if path.last_digest_date:
@@ -301,20 +306,27 @@ def _previous_briefing_block(profile: UserProfile) -> str:
         lines.append("Key takeaways to build on:")
         lines.extend(f"- {item}" for item in takeaways[:8])
     lines.append(
-        "Today: pick the next technical step (deeper API, edge case, production pattern, "
-        "or related source) that extends yesterday — not a random new topic."
+        "Today: next technical step INSIDE the active stack (deeper API, edge case, "
+        "or clearer explanation) — never a random new stack."
     )
     return "\n".join(lines)
 
 
 def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
+    active = resolve_active_stack(profile)
+    pace = next_scrape_pace(profile)
     stack = (
         f"Role: {profile.current_role}\n"
         f"Experience: {profile.years_of_experience} years ({profile.content_depth.value})\n"
         f"Primary: {', '.join(profile.primary_tech_stack)}\n"
         f"Interests: {', '.join(profile.interests)}\n"
-        f"Next-step topics: {', '.join(profile.learning_path.next_step_topics)}\n"
-        f"Weak topics: {', '.join(profile.learning_path.weak_topics)}\n"
+        f"Active stack run: {active}\n"
+        f"Quiz marks: {profile.learning_path.last_quiz_score}/"
+        f"{profile.learning_path.last_quiz_total} "
+        f"({profile.learning_path.last_quiz_percentage}%); "
+        f"attempt {profile.learning_path.last_quiz_attempt_number}; "
+        f"result {profile.learning_path.last_quiz_outcome}\n"
+        f"Pace: {pace.value}\n"
         f"Excluded: {', '.join(profile.excluded_topics)}"
     )
     sources = []
@@ -333,7 +345,7 @@ You are writing the OPENING of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute 
 Return strict JSON only. Do not invent URLs.
 The opening JSON is short (~300-500 words); longer teaching chapters are attached separately.
 The FULL briefing must ultimately be {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minutes of reading.
-Focus only on the reader's stack and the cited articles' technical ideas.
+Focus only on the reader's ACTIVE STACK and the cited articles' technical ideas.
 Do NOT write career advice, portfolios, interview tips, or soft skills.
 
 {_previous_briefing_block(profile)}
@@ -383,12 +395,15 @@ Prefer those section titles. Longer teaching chapters are attached separately to
 
 def _teaching_prompt(profile: UserProfile, article: Article, word_target: int) -> str:
     body = (article.body_text or article.summary or "")[:8000]
-    stack = ", ".join(profile.primary_tech_stack) or "software engineering"
+    active = resolve_active_stack(profile) or (
+        ", ".join(profile.primary_tech_stack) or "software engineering"
+    )
+    stack = ", ".join(profile.primary_tech_stack) or active
     interests = ", ".join(profile.interests) or stack
     return f"""
 You are writing one TECHNICAL chapter of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute morning briefing.
 Write about {word_target} words of markdown. No JSON. Do not wrap the whole answer in a code fence.
-Stay strictly on the source article's technical content as it relates to: {stack} / {interests}.
+Stay strictly on the ACTIVE STACK ({active}) and the source article — do not switch stacks.
 
 {_previous_briefing_block(profile)}
 
@@ -396,6 +411,7 @@ HARD RULES — do NOT write about:
 - career advice, interviews, portfolios, "what companies expect", soft skills
 - generic "learn JavaScript / HTML / CSS" motivational fluff
 - unrelated beginner roadmaps
+- a different tech stack than {active}
 
 MARKDOWN FENCES — critical for the reader UI:
 - Use ``` fences ONLY for real source code, shell commands, or ASCII/box diagrams.
@@ -407,7 +423,7 @@ ONLY write: concrete APIs, code patterns, architecture, debugging, configs, and 
 Do not invent APIs, URLs, or library names that are not in the source.
 If yesterday's briefing exists, open with one short paragraph that continues that thread.
 
-Reader: {profile.current_role or "developer"}, {profile.years_of_experience} years, stack: {stack}.
+Reader: {profile.current_role or "developer"}, {profile.years_of_experience} years, stack: {stack} / interests: {interests}.
 
 Title: {article.title}
 URL: {article.url}
@@ -419,7 +435,7 @@ Use this structure:
 ### How this continues yesterday (1 short paragraph)
 ### Technical takeaway
 ### How it works (with a small code example if the source has one)
-### Apply it on {stack} today
+### Apply it on {active} today
 ### Pitfalls
 End with one markdown link to the source URL.
 """.strip()

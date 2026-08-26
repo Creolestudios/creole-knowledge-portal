@@ -538,7 +538,7 @@ def test_collect_payloads_deduplicates_filters_hn_and_rss(
         source_domain="news.ycombinator.com",
         body_text="",
     )
-    hn_skip = LegacyArticle(
+    hn_other = LegacyArticle(
         url="https://news.ycombinator.com/item?id=2",
         title="Unrelated headline",
         source_domain="news.ycombinator.com",
@@ -560,12 +560,12 @@ def test_collect_payloads_deduplicates_filters_hn_and_rss(
     monkeypatch.setattr(
         scraper_tasks,
         "fetch_devto_articles",
-        lambda tag=None, limit=6: [devto, devto, blocked],
+        lambda tag=None, limit=4: [devto, devto, blocked],
     )
     monkeypatch.setattr(
         scraper_tasks,
         "fetch_hn_top_stories",
-        lambda limit=8: [hn_match, hn_skip],
+        lambda limit=16: [hn_match, hn_other],
     )
     monkeypatch.setattr(
         scraper_tasks,
@@ -578,14 +578,95 @@ def test_collect_payloads_deduplicates_filters_hn_and_rss(
         lambda url: "blocked.example.com" not in url,
     )
 
-    payloads = scraper_tasks._collect_payloads(["python", "go"])
+    payloads = scraper_tasks._collect_payloads(["python", "go"], prefer_hn_match=True)
     urls = [str(payload["url"]) for payload in payloads]
 
     assert urls.count("https://dev.to/python-post") == 1
-    assert "https://news.ycombinator.com/item?id=1" in urls
-    assert "https://news.ycombinator.com/item?id=2" not in urls
+    # HN matching titles come before non-matching; both kept for source parity
+    assert urls.index("https://news.ycombinator.com/item?id=1") < urls.index(
+        "https://news.ycombinator.com/item?id=2"
+    )
     assert "https://blog.example.com/go" in urls
     assert "https://blocked.example.com/post" not in urls
+    # Interleave: HN and Dev.to alternate (HN first slot)
+    assert urls[0] == "https://news.ycombinator.com/item?id=1"
+    assert "https://dev.to/python-post" in urls[:3]
+
+
+def test_collect_payloads_empty_terms_fetches_untagged_latest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty admin prefs → Dev.to latest (no tag) + HN tops, interleaved."""
+    from src.models.schemas import Article as LegacyArticle
+
+    latest = LegacyArticle(
+        url="https://dev.to/latest-1",
+        title="Hot today",
+        source_domain="dev.to",
+        body_text="",
+    )
+    hn_a = LegacyArticle(
+        url="https://example.com/a",
+        title="Show HN: widgets",
+        source_domain="example.com",
+        body_text="",
+    )
+    hn_b = LegacyArticle(
+        url="https://example.com/b",
+        title="Ask HN: careers",
+        source_domain="example.com",
+        body_text="",
+    )
+    calls: list[object] = []
+
+    def fake_devto(tag=None, limit=12):
+        calls.append({"tag": tag, "limit": limit})
+        return [latest]
+
+    monkeypatch.setattr(scraper_tasks, "fetch_devto_articles", fake_devto)
+    monkeypatch.setattr(
+        scraper_tasks,
+        "fetch_hn_top_stories",
+        lambda limit=16: [hn_a, hn_b],
+    )
+    monkeypatch.setattr(scraper_tasks, "sources_by_kind", lambda kind: [])
+    monkeypatch.setattr(scraper_tasks, "is_url_allowed", lambda url: True)
+
+    payloads = scraper_tasks._collect_payloads([], prefer_hn_match=False)
+    urls = [str(p["url"]) for p in payloads]
+    assert calls == [{"tag": None, "limit": 12}]
+    assert urls[0] == "https://example.com/a"
+    assert "https://dev.to/latest-1" in urls
+    assert "https://example.com/b" in urls
+
+
+def test_collect_payloads_includes_admin_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from src.models.schemas import Article as LegacyArticle
+
+    admin_art = LegacyArticle(
+        url="https://company.example/posts/1",
+        title="Company eng blog",
+        source_domain="company.example",
+        body_text="ship it",
+    )
+    monkeypatch.setattr(scraper_tasks, "fetch_devto_articles", lambda **_: [])
+    monkeypatch.setattr(scraper_tasks, "fetch_hn_top_stories", lambda **_: [])
+    monkeypatch.setattr(scraper_tasks, "sources_by_kind", lambda kind: [])
+    monkeypatch.setattr(
+        scraper_tasks,
+        "scrape_admin_source_articles",
+        lambda urls, limit_per_feed=3: [admin_art] if urls else [],
+    )
+    monkeypatch.setattr(scraper_tasks, "is_url_allowed", lambda url: True)
+
+    payloads = scraper_tasks._collect_payloads(
+        [],
+        prefer_hn_match=False,
+        admin_source_urls=["https://company.example/blog"],
+    )
+    assert [str(p["url"]) for p in payloads] == ["https://company.example/posts/1"]
 
 
 def test_collect_payloads_skips_rss_sources_without_feed_url(

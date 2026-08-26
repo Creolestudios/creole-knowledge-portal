@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import structlog
 
 from src.models.digest import DailyDigest
-from src.models.profile import UserProfile, topic_tokens_from_text
+from src.models.profile import UserProfile, record_stack_run_progress, topic_tokens_from_text
 
 log = structlog.get_logger(__name__)
 
@@ -73,6 +73,9 @@ async def record_served_urls(digest: DailyDigest, profile: UserProfile) -> None:
         str(item).strip() for item in (digest.content.key_takeaways or []) if str(item).strip()
     ][:8]
     profile.learning_path.last_digest_date = digest.digest_date
+
+    # Progress the active stack run (stay on one stack until coverage target)
+    record_stack_run_progress(profile, combined)
 
     profile.updated_at = datetime.now(UTC)
     await profile.save()

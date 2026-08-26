@@ -51,13 +51,18 @@ def cosine_similarity(query_embedding: list[float], article_embedding: list[floa
 
 
 def rank_by_vector_similarity(
-    profile: UserProfile, articles: list[Article], limit: int | None = None
+    profile: UserProfile,
+    articles: list[Article],
+    limit: int | None = None,
+    *,
+    query_embedding: list[float] | None = None,
 ) -> list[VectorRankedArticle]:
-    """Rank articles by cosine similarity against the user's profile embedding."""
+    """Rank articles by cosine similarity against the next-day query embedding."""
+    query = query_embedding if query_embedding is not None else list(profile.profile_embedding or [])
     ranked = [
         VectorRankedArticle(
             article=article,
-            similarity=cosine_similarity(profile.profile_embedding, article.embedding),
+            similarity=cosine_similarity(query, article.embedding or []),
         )
         for article in articles
     ]
