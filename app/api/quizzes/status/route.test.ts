@@ -70,8 +70,8 @@ describe('GET /api/quizzes/status', () => {
   it('should accurately calculate timeLeft based on wall-clock', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-123' } } });
 
-    // Simulate started 400 seconds ago
-    const startedAt = new Date(Date.now() - 400000).toISOString();
+    // Simulate started 40 seconds ago
+    const startedAt = new Date(Date.now() - 40000).toISOString();
 
     mockDbResponses = [
       { data: [{ id: 'attempt-123', status: 'in_progress', started_at: startedAt }], error: null }, // attempts
@@ -83,8 +83,8 @@ describe('GET /api/quizzes/status', () => {
     const data = await response.json();
 
     expect(data.inProgress).toBe(true);
-    expect(data.timeLeft).toBeGreaterThanOrEqual(798);
-    expect(data.timeLeft).toBeLessThanOrEqual(802);
+    expect(data.timeLeft).toBeGreaterThanOrEqual(1158);
+    expect(data.timeLeft).toBeLessThanOrEqual(1162);
   });
 
   it('should return inProgress false if no attempt exists', async () => {

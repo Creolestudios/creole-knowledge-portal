@@ -240,4 +240,35 @@ describe('DailyBlogTab', () => {
     // handleGenerateBriefing returns early without `user`, so no new fetch call happens.
     expect((global.fetch as any).mock.calls.length).toBe(callsBefore);
   });
+
+  it('falls back to active_blog_id from sessionStorage if latest is not found', async () => {
+    sessionStorage.setItem('active_blog_id', 'fallback-blog-id');
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const digestDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/digests/latest')) {
+        return Promise.resolve({ ok: true, json: async () => ({ success: false, blog: null }) });
+      }
+      if (url.includes('/api/digests/by-id')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            blog: { id: 'fallback-blog-id', title: 'Fallback Active Blog', content: 'Active', tags: [], digest_date: digestDate },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Fallback Active Blog')).toBeInTheDocument();
+    });
+    
+    sessionStorage.removeItem('active_blog_id');
+  });
 });

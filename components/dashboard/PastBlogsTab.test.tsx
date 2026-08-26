@@ -18,8 +18,19 @@ describe('PastBlogsTab', () => {
     global.fetch = originalFetch;
   });
 
-  it('lists every dated briefing and keeps the stored calendar day', async () => {
+  it('marks every dated briefing on the calendar and renders the activity legend', async () => {
     global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return {
+          ok: true,
+          json: async () => ({
+            records: [
+              { date: '2026-07-18', read_seconds: 120, quiz_taken: true, quiz_score: 4, quiz_total: 5 },
+              { date: '2026-07-17', read_seconds: 30, quiz_taken: false },
+            ],
+          }),
+        };
+      }
       if (String(url).includes('date=')) {
         return {
           ok: true,
@@ -38,6 +49,7 @@ describe('PastBlogsTab', () => {
           blogs: [
             { title: 'Redis queues', digest_date: '2026-07-18T18:30:00.000Z' },
             { title: 'FastAPI auth', digest_date: '2026-07-17' },
+            { title: 'No activity yet', digest_date: '2026-07-16' },
           ],
         }),
       };
@@ -45,12 +57,32 @@ describe('PastBlogsTab', () => {
 
     render(<PastBlogsTab />);
 
+    // Legend is always visible
+    expect(screen.getByText('Mastered (Passed Quiz)')).toBeInTheDocument();
+    expect(screen.getByText('Read (Needs Practice)')).toBeInTheDocument();
+    expect(screen.getByText('Unread (Missed)')).toBeInTheDocument();
+
+    // Walk the calendar back to July 2026, where the stored briefings live.
+    const prev = screen.getByText('<');
+    for (let i = 0; i < 24; i++) {
+      if (screen.queryByText('July 2026')) break;
+      fireEvent.click(prev);
+    }
+    expect(screen.getByText('July 2026')).toBeInTheDocument();
+
+    const cellFor = (day: string) =>
+      screen.getAllByText(day).find((el) => el.getAttribute('role') === 'button');
+
     await waitFor(() => {
-      expect(screen.getAllByText('Redis queues').length).toBeGreaterThan(0);
-      expect(screen.getByText('FastAPI auth')).toBeInTheDocument();
+      // Passed the quiz → green
+      expect(cellFor('18')?.className).toContain('bg-green-500');
     });
-    expect(screen.getAllByText('Fetched 2026-07-18').length).toBeGreaterThan(0);
-    expect(screen.getByText('Fetched 2026-07-17')).toBeInTheDocument();
+    // Read but no passing quiz → blue
+    expect(cellFor('17')?.className).toContain('bg-blue-500');
+    // Briefing exists but never opened → red
+    expect(cellFor('16')?.className).toContain('bg-red-500');
+    // No briefing stored for that day → neutral
+    expect(cellFor('15')?.className).toContain('bg-zinc-50');
   });
 
   it('shows the blog title above the fetched date in the reader', async () => {

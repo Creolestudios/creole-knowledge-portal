@@ -117,8 +117,8 @@ export function looksLikeFlowLine(text: string): boolean {
   const t = String(text || '').trim();
   if (!t || t.length < 24) return false;
   if (/\b(==>|-->|<-+>|=>)\b/.test(t)) return true;
-  if (/==\s*\[.+\]\s*==/.test(t)) return true;
-  if (/\bArchitecture\b/i.test(t) && /\[[^\]]+\]/.test(t) && /==|->|→/.test(t)) return true;
+  if (/==[ \t]*\[[^\]]+\][ \t]*==/.test(t)) return true;
+  if (/\bArchitecture\b/i.test(t) && /\[[^\]]{1,200}\]/.test(t) && /==|->|→/.test(t)) return true;
   if ((t.match(/\[[^\]]{2,40}\]/g) || []).length >= 2 && /==|->|→|⇒/.test(t)) return true;
   return false;
 }
@@ -221,7 +221,7 @@ export function looksLikeProseMistakenlyFenced(text: string): boolean {
 function looksLikeRealHeading(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed || trimmed.length > 90) return false;
-  if (/^(enter|exit) fullscreen|report abuse|^copy link$|^like$|^comment$|^bookmark$/i.test(trimmed)) {
+  if (/^((enter|exit) fullscreen|report abuse|copy link|like|comment|bookmark)$/i.test(trimmed)) {
     return false;
   }
   return true;
@@ -250,8 +250,8 @@ type MdBlock = { type: string; content: string; label?: string };
 /** Drop mid-blog "From [title](url):" attribution lines (sources belong at the end). */
 export function stripMidBlogSourceLines(content: string): string {
   return String(content || '')
-    .replace(/^\s*\*\*From\s+\[[^\]]+\]\([^)]*\)(?:\s*\(continued\))?:\*\*\s*$/gim, '')
-    .replace(/^\s*From\s+\[[^\]]+\]\([^)]*\)(?:\s*\(continued\))?:\s*$/gim, '')
+    .replace(/^[ \t]*\*\*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:\*\*[ \t\r]*$/gim, '')
+    .replace(/^[ \t]*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:[ \t\r]*$/gim, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

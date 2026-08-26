@@ -4,21 +4,23 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'motion/react';
-import { User, Newspaper, History, BarChart3, Menu, X, Flame, Sparkles } from 'lucide-react';
+import { User, Newspaper, History, BarChart3, Menu, X, Flame, Sparkles, Trophy } from 'lucide-react';
 import type { WeeklyStats, ISODate } from '@/types/contracts';
 import { computeWeeklyStats } from '@/lib/data/activity';
 import { computeStreak } from '@/lib/data/streak';
 import DailyBlogTab from './DailyBlogTab';
 import PastBlogsTab from './PastBlogsTab';
 import ActivityTab from './ActivityTab';
+import LeaderboardTab from './LeaderboardTab';
 import SidebarActivityWidget from './SidebarActivityWidget';
 
-type TabKey = 'daily' | 'past' | 'activity' | 'roulette';
+type TabKey = 'daily' | 'past' | 'activity' | 'leaderboard' | 'roulette';
 
 const TAB_HREFS: Record<TabKey, string> = {
   daily: '/dashboard',
   past: '/dashboard?tab=past',
   activity: '/dashboard?tab=activity',
+  leaderboard: '/dashboard?tab=leaderboard',
   roulette: '/blog-roulette',
 };
 
@@ -29,6 +31,7 @@ function tabFromLocation(
   if (pathname?.startsWith('/blog-roulette')) return 'roulette';
   if (tabParam === 'past') return 'past';
   if (tabParam === 'activity') return 'activity';
+  if (tabParam === 'leaderboard') return 'leaderboard';
   return 'daily';
 }
 
@@ -36,6 +39,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'daily', label: 'Daily Blog', icon: <Newspaper size={18} /> },
   { key: 'past', label: 'Past Blogs', icon: <History size={18} /> },
   { key: 'activity', label: 'Activity Tracker', icon: <BarChart3 size={18} /> },
+  { key: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={18} /> },
   { key: 'roulette', label: 'Blog Roulette', icon: <Sparkles size={18} /> },
 ];
 
@@ -270,6 +274,7 @@ export default function DashboardShell({
               />
             )}
             {active === 'activity' && <ActivityTab user={activeUser} />}
+            {active === 'leaderboard' && <LeaderboardTab />}
             {active === 'roulette' && children}
           </div>
         </div>

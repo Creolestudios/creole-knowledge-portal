@@ -295,6 +295,52 @@ describe('GET /api/activity', () => {
     expect(body.records[0].quiz_score).toBe(4);
     expect(body.records[0].quiz_total).toBe(5);
   });
+
+  it('degrades to empty records when PostgREST reports the table is not in the schema cache', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    responseQueue = [
+      {
+        data: null,
+        error: {
+          code: 'PGRST205',
+          message: "Could not find the table 'public.user_activity_logs' in the schema cache",
+        },
+      },
+    ];
+
+    const res = await GET(mockRequest());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, records: [], streak: 0 });
+  });
+
+  it('still reports quiz activity when only the reading-log table is missing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+
+    responseQueue = [
+      { data: null, error: { code: 'PGRST205', message: 'schema cache' } }, // user_activity_logs missing
+      { data: [{ completed_at: today.toISOString(), score: 4, total_questions: 5 }], error: null },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.records).toHaveLength(1);
+    expect(body.records[0].quiz_score).toBe(4);
+    expect(body.streak).toBe(1);
+  });
+
+  it('ignores a PGRST205 error from the quiz_attempts table', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    responseQueue = [
+      { data: [], error: null },
+      { data: null, error: { code: 'PGRST205', message: 'schema cache' } },
+    ];
+
+    const res = await GET(mockRequest());
+    expect(res.status).toBe(200);
+  });
 });
 
 describe('POST /api/activity', () => {
@@ -432,5 +478,34 @@ describe('POST /api/activity', () => {
 
     const res = await POST(bad);
     expect(res.status).toBe(500);
+  });
+  it('simulates success when PostgREST reports the log table is not in the schema cache', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    responseQueue = [
+      {
+        data: null,
+        error: {
+          code: 'PGRST205',
+          message: "Could not find the table 'public.user_activity_logs' in the schema cache",
+        },
+      },
+    ];
+
+    const res = await POST(mockRequest({ date: '2026-08-25', readSeconds: 60 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.message).toContain('Simulated');
+  });
+
+  it('simulates success when the quiz log insert hits a missing table', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockFetch.mockResolvedValue({ ok: true });
+    responseQueue = [{ data: null, error: { code: 'PGRST205', message: 'schema cache' } }];
+
+    const res = await POST(mockRequest({ date: '2026-08-25', quizScore: 3, quizTotal: 5 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.message).toContain('Simulated');
   });
 });
