@@ -38,7 +38,14 @@ async def fetch_admin_blog_source_urls() -> list[str]:
     out: list[str] = []
     for row in rows:
         raw = str((row or {}).get("url") or "").strip()
-        if not raw or not raw.startswith(("http://", "https://")):
+        if not raw:
+            continue
+        scheme, sep, rest = raw.partition("://")
+        if not sep or not rest:
+            continue
+        if scheme.lower() == "http":
+            raw = f"https://{rest}"
+        elif scheme.lower() != "https":
             continue
         normalized = raw.rstrip("/")
         if normalized in seen:
