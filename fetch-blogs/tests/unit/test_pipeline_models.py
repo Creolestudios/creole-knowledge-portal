@@ -24,9 +24,11 @@ from src.models.profile import (
     DifficultyDirection,
     LearningPath,
     QuizOutcome,
+    ScrapePace,
     UserProfile,
     apply_quiz_result,
     effective_content_depth,
+    next_scrape_pace,
     scrape_focus_terms,
     topic_tokens_from_text,
 )
@@ -52,6 +54,19 @@ class TestSupabaseProfileAdapter:
         assert fields["preferred_content_depth"] == ContentDepth.ADVANCED
         assert "learning_path" not in fields
         assert "profile_embedding" not in fields
+
+    def test_maps_future_interests_string_from_next_app(self) -> None:
+        fields = to_user_profile_fields(
+            {
+                "user_id": "u1",
+                "primary_tech_stack": ["python"],
+                "secondary_tech_stack": ["docker"],
+                "future_interests": "AI, Redis, asyncio",
+            }
+        )
+        assert fields["primary_tech_stack"] == ["python"]
+        assert fields["secondary_tech_stack"] == ["docker"]
+        assert fields["interests"] == ["AI", "Redis", "asyncio"]
 
     def test_requires_user_id(self) -> None:
         with pytest.raises(ValueError, match="user_id"):
@@ -435,10 +450,9 @@ class TestUserProfileModel:
         )
 
         terms = profile.ranking_terms
+        # Next scrape ignores weak/next-step; ranking uses active stack + last topics + profile
         assert terms == [
             "python",
-            "docker",
-            "hooks",
             "fastapi",
             "react",
             "llm",
@@ -449,79 +463,99 @@ class TestUserProfileModel:
     def test_topic_tokens_from_text_finds_known_topics(self) -> None:
         assert topic_tokens_from_text("Building FastAPI apps with Python") == ["python", "fastapi"]
 
-    def test_scrape_focus_terms_prioritises_recent_topics_and_stack(self) -> None:
+    def test_scrape_focus_terms_stays_on_active_stack_not_weak_next(self) -> None:
         profile = UserProfile(
             user_id="u1",
-            primary_tech_stack=["Rust"],
+            primary_tech_stack=["python", "rust"],
             interests=["AI"],
             learning_path=LearningPath(
+                active_stack="python",
                 last_topics=["Python async patterns"],
                 next_step_topics=["kubernetes"],
-            ),
-        )
-        assert scrape_focus_terms(profile) == ["python", "kubernetes", "rust", "ai"]
-
-    def test_scrape_focus_terms_uses_weak_topics_after_failed_quiz(self) -> None:
-        profile = UserProfile(
-            user_id="u1",
-            primary_tech_stack=["go"],
-            learning_path=LearningPath(
-                last_topics=["GraphQL APIs"],
                 weak_topics=["graphql"],
-                last_quiz_outcome=QuizOutcome.FAILED,
+                last_quiz_outcome=QuizOutcome.PASSED,
+                last_quiz_percentage=70,
+                last_quiz_attempt_number=1,
             ),
         )
-        assert scrape_focus_terms(profile)[0] == "graphql"
-        assert "go" in scrape_focus_terms(profile)
+        terms = scrape_focus_terms(profile)
+        assert terms[0] == "python"
+        assert "kubernetes" not in terms
+        assert "graphql" not in terms
 
-    def test_apply_quiz_result_uses_answer_derived_topics(self) -> None:
+    def test_scrape_focus_terms_fail_attempt_keeps_stack_with_simpler_angle(self) -> None:
         profile = UserProfile(
             user_id="u1",
-            learning_path=LearningPath(last_topics=["fallback-theme"]),
+            primary_tech_stack=["python"],
+            learning_path=LearningPath(
+                active_stack="python",
+                last_topics=["asyncio event loop"],
+                last_quiz_outcome=QuizOutcome.FAILED,
+                last_quiz_percentage=20,
+                last_quiz_attempt_number=3,
+                last_quiz_score=1,
+                last_quiz_total=5,
+            ),
+        )
+        terms = scrape_focus_terms(profile)
+        assert terms[0] == "python"
+        assert "basics" in terms or "fundamentals" in terms or "explained" in terms
+
+    def test_apply_quiz_result_stores_marks_attempt_result_pass_at_60(self) -> None:
+        profile = UserProfile(
+            user_id="u1",
+            primary_tech_stack=["python"],
+            learning_path=LearningPath(last_topics=["asyncio"]),
         )
         apply_quiz_result(
             profile,
-            score=1,
+            score=3,
             total=5,
-            weak_topics=["redis", "graphql"],
+            weak_topics=["redis"],
             next_step_topics=["docker"],
-            percentage=20,
-            passed=False,
-            attempt_number=2,
+            percentage=60,
+            passed=True,
+            attempt_number=1,
             blog_id="blog-xyz",
         )
-        assert profile.learning_path.last_quiz_outcome is QuizOutcome.FAILED
-        assert profile.learning_path.weak_topics == ["redis", "graphql"]
-        assert profile.learning_path.last_quiz_blog_id == "blog-xyz"
-        assert profile.learning_path.last_quiz_percentage == 20
-        assert profile.learning_path.last_quiz_attempt_number == 2
+        assert profile.learning_path.last_quiz_outcome is QuizOutcome.PASSED
+        assert profile.learning_path.last_quiz_score == 3
+        assert profile.learning_path.last_quiz_total == 5
+        assert profile.learning_path.last_quiz_percentage == 60
+        assert profile.learning_path.last_quiz_attempt_number == 1
+        assert profile.learning_path.active_stack == "python"
+        assert profile.learning_path.difficulty_direction is DifficultyDirection.SAME
 
     def test_apply_quiz_result_updates_learning_path_by_score_band(self) -> None:
         failed = UserProfile(
             user_id="u1",
+            primary_tech_stack=["react"],
             learning_path=LearningPath(last_topics=["react"]),
         )
-        apply_quiz_result(failed, score=1, total=5)
+        apply_quiz_result(failed, score=1, total=5, percentage=20, passed=False, attempt_number=2)
         assert failed.learning_path.last_quiz_outcome is QuizOutcome.FAILED
         assert failed.learning_path.difficulty_direction is DifficultyDirection.EASIER
-        assert failed.learning_path.weak_topics == ["react"]
+        assert next_scrape_pace(failed) is ScrapePace.SIMPLER
 
         passed = UserProfile(
             user_id="u2",
+            primary_tech_stack=["docker"],
             learning_path=LearningPath(last_topics=["docker"]),
         )
-        apply_quiz_result(passed, score=3, total=5)
+        apply_quiz_result(passed, score=3, total=5, percentage=60, passed=True, attempt_number=1)
         assert passed.learning_path.last_quiz_outcome is QuizOutcome.PASSED
         assert passed.learning_path.difficulty_direction is DifficultyDirection.SAME
+        assert next_scrape_pace(passed) is ScrapePace.ADVANCE
 
         strong = UserProfile(
             user_id="u3",
+            primary_tech_stack=["llm"],
             learning_path=LearningPath(last_topics=["llm"]),
         )
-        apply_quiz_result(strong, score=4, total=4)
+        apply_quiz_result(strong, score=4, total=4, percentage=100, passed=True, attempt_number=1)
         assert strong.learning_path.last_quiz_outcome is QuizOutcome.PASSED
         assert strong.learning_path.difficulty_direction is DifficultyDirection.HARDER
-        assert strong.learning_path.next_step_topics == ["llm"]
+        assert next_scrape_pace(strong) is ScrapePace.ADVANCE_HARD
 
     def test_effective_content_depth_shifts_with_quiz_direction(self) -> None:
         profile = UserProfile(user_id="u1", years_of_experience=3)

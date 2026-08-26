@@ -48,6 +48,9 @@ def to_user_profile_fields(row: Mapping[str, Any]) -> dict[str, Any]:
 
     interests = _as_str_list(row.get("interests"))
     if not interests:
+        # Next.js / admin UI stores this as a string column `future_interests`
+        interests = _as_str_list(row.get("future_interests"))
+    if not interests:
         interests = _as_str_list(row.get("future_learning_goals"))
 
     freshness = _as_int(row.get("content_freshness_days"), default=30)

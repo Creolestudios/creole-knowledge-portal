@@ -631,7 +631,7 @@ def test_previous_briefing_block_includes_yesterday_headline() -> None:
     )
     block = synthesizer._previous_briefing_block(profile)
     assert "Redis queues in production" in block
-    assert "MUST continue" in block
+    assert "ACTIVE STACK RUN" in block
     assert "Celery with Redis" in block
 
 

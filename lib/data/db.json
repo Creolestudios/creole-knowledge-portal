@@ -12449,13 +12449,22 @@
       }
     },
     {
+<<<<<<< Updated upstream
       "id": "test-sub-1787731601756",
+=======
+      "id": "test-sub-1787725550209",
+>>>>>>> Stashed changes
       "title": "Test Integration Post",
       "content": "This is test content for validating database operations.",
       "author": "integrator@creolestudios.com",
       "status": "PENDING_QUIZ",
+<<<<<<< Updated upstream
       "createdAt": "2026-08-26T08:06:41.762Z",
       "updatedAt": "2026-08-26T08:06:41.762Z",
+=======
+      "createdAt": "2026-08-26T06:25:50.225Z",
+      "updatedAt": "2026-08-26T06:25:50.225Z",
+>>>>>>> Stashed changes
       "validationReport": {
         "qualityScore": 90,
         "gibberishDetected": false,
@@ -12479,13 +12488,22 @@
       }
     },
     {
+<<<<<<< Updated upstream
       "id": "test-quiz-pass-1787731601819",
+=======
+      "id": "test-quiz-pass-1787725550359",
+>>>>>>> Stashed changes
       "title": "Grading Pass Post",
       "content": "Test content.",
       "author": "integrator@creolestudios.com",
       "status": "APPROVED",
+<<<<<<< Updated upstream
       "createdAt": "2026-08-26T08:06:41.819Z",
       "updatedAt": "2026-08-26T08:06:41.831Z",
+=======
+      "createdAt": "2026-08-26T06:25:50.359Z",
+      "updatedAt": "2026-08-26T06:25:50.410Z",
+>>>>>>> Stashed changes
       "quiz": {
         "questions": [
           {
@@ -12525,13 +12543,22 @@
       }
     },
     {
+<<<<<<< Updated upstream
       "id": "test-sub-1787732742193",
+=======
+      "id": "test-sub-1787726102078",
+>>>>>>> Stashed changes
       "title": "Test Integration Post",
       "content": "This is test content for validating database operations.",
       "author": "integrator@creolestudios.com",
       "status": "PENDING_QUIZ",
+<<<<<<< Updated upstream
       "createdAt": "2026-08-26T08:25:42.199Z",
       "updatedAt": "2026-08-26T08:25:42.199Z",
+=======
+      "createdAt": "2026-08-26T06:35:02.094Z",
+      "updatedAt": "2026-08-26T06:35:02.094Z",
+>>>>>>> Stashed changes
       "validationReport": {
         "qualityScore": 90,
         "gibberishDetected": false,
@@ -12555,11 +12582,16 @@
       }
     },
     {
+<<<<<<< Updated upstream
       "id": "test-quiz-pass-1787732742244",
+=======
+      "id": "test-quiz-pass-1787726102292",
+>>>>>>> Stashed changes
       "title": "Grading Pass Post",
       "content": "Test content.",
       "author": "integrator@creolestudios.com",
       "status": "APPROVED",
+<<<<<<< Updated upstream
       "createdAt": "2026-08-26T08:25:42.244Z",
       "updatedAt": "2026-08-26T08:25:42.260Z",
       "quiz": {
@@ -13170,6 +13202,10 @@
       "status": "APPROVED",
       "createdAt": "2026-08-26T13:26:00.263Z",
       "updatedAt": "2026-08-26T13:26:00.277Z",
+=======
+      "createdAt": "2026-08-26T06:35:02.292Z",
+      "updatedAt": "2026-08-26T06:35:02.341Z",
+>>>>>>> Stashed changes
       "quiz": {
         "questions": [
           {
@@ -14555,6 +14591,7 @@
       "details": "Integration test submission event."
     },
     {
+<<<<<<< Updated upstream
       "id": "32776f65-616b-473a-8d6c-284713fad37a",
       "submissionId": "test-audit-1787731601838",
       "action": "SUBMITTED",
@@ -14632,6 +14669,21 @@
       "action": "SUBMITTED",
       "performedBy": "auditor@creolestudios.com",
       "timestamp": "2026-08-26T13:26:00.292Z",
+=======
+      "id": "cca6df07-de2a-43ea-9bf3-23ac50a7deae",
+      "submissionId": "test-audit-1787725550447",
+      "action": "SUBMITTED",
+      "performedBy": "auditor@creolestudios.com",
+      "timestamp": "2026-08-26T06:25:50.458Z",
+      "details": "Integration test submission event."
+    },
+    {
+      "id": "a0f0bcab-6d0d-4e24-9e57-984457e0f2f9",
+      "submissionId": "test-audit-1787726102381",
+      "action": "SUBMITTED",
+      "performedBy": "auditor@creolestudios.com",
+      "timestamp": "2026-08-26T06:35:02.403Z",
+>>>>>>> Stashed changes
       "details": "Integration test submission event."
     }
   ]
