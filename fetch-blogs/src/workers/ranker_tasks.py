@@ -15,6 +15,7 @@ from beanie import PydanticObjectId
 
 from src.models.article import Article, RankingBreakdown
 from src.models.profile import UserProfile
+from src.extractors.topic_filter import is_non_learning
 from src.ranker.llm_reranker import RerankCandidate, rerank_with_gemini
 from src.ranker.next_day import refresh_profile_embedding
 from src.ranker.scorer import score_articles_for_profile
@@ -90,6 +91,14 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
     for article in [*pipeline_articles, *corpus]:
         aid = _article_id(article)
         if not aid or aid in seen:
+            continue
+        if is_non_learning(
+            str(article.title or ""),
+            str(article.summary or article.body_text or "")[:1500],
+            list(article.topics or []),
+            source_domain=str(article.source_domain or ""),
+            url=str(article.url or ""),
+        ):
             continue
         seen.add(aid)
         merged.append(article)

@@ -20,7 +20,7 @@ from src.models.digest import (
     DigestSource,
 )
 from src.models.profile import UserProfile, next_scrape_pace, pace_teaching_instructions, resolve_active_stack, scrape_focus_terms, topic_tokens_from_text
-from src.extractors.topic_filter import is_career_fluff
+from src.extractors.topic_filter import is_non_learning
 
 log = structlog.get_logger(__name__)
 
@@ -115,6 +115,17 @@ def _ensure_readable_markdown(text: str) -> str:
     cleaned = _clean_scraped_markdown(text.replace("\r\n", "\n").replace("\r", "\n")).strip()
     cleaned = re.sub(r"(?<=[^\n#])(#{1,6} )", r"\n\n\1", cleaned)
     cleaned = re.sub(r"(?<=[^\n`])(```)", r"\n\n\1", cleaned)
+    # Flattened directory trees → one branch per line
+    if cleaned.count("├──") + cleaned.count("└──") + cleaned.count("+--") >= 2:
+        cleaned = re.sub(r"\*\*", "", cleaned)
+        cleaned = re.sub(
+            r"([^\n])(\s*)((?:\|[\s|]*)?)(├──|└──|├─|└─|\+--|\|--)\s*",
+            lambda m: f"{m.group(1)}\n{'  ' * min(m.group(3).count('|'), 6)}{m.group(4)} ",
+            cleaned,
+        )
+        cleaned = re.sub(r"([/\w.-]+/)\s+(?=├──|└──|├─|└─|\+--|\|--)", r"\1\n", cleaned)
+        cleaned = re.sub(r"\s+\|\s+\|\s+\|\s+", "\n", cleaned)
+        cleaned = re.sub(r"\s+\|\s+\|\s+", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     if cleaned.count("\n\n") < 2 and cleaned.count("\n") >= 2:
         cleaned = re.sub(r"\n+", "\n\n", cleaned)
@@ -341,12 +352,14 @@ def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
             f"Body:\n{body}"
         )
     return f"""
-You are writing the OPENING of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute personalized TECH briefing.
+You are writing the OPENING of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute personalized LEARNING briefing.
 Return strict JSON only. Do not invent URLs.
 The opening JSON is short (~300-500 words); longer teaching chapters are attached separately.
 The FULL briefing must ultimately be {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minutes of reading.
-Focus only on the reader's ACTIVE STACK and the cited articles' technical ideas.
+Focus only on LEARNING TOPICS: tutorials, how-tos, architecture, debugging, APIs, and the reader's ACTIVE STACK.
+Do NOT write news, M&A, funding, earnings, layoffs, market rumors, or company announcements.
 Do NOT write career advice, portfolios, interview tips, or soft skills.
+If a source looks like news, ignore it and teach the underlying technical concept from learning sources only.
 
 {_previous_briefing_block(profile)}
 
@@ -401,13 +414,15 @@ def _teaching_prompt(profile: UserProfile, article: Article, word_target: int) -
     stack = ", ".join(profile.primary_tech_stack) or active
     interests = ", ".join(profile.interests) or stack
     return f"""
-You are writing one TECHNICAL chapter of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute morning briefing.
+You are writing one LEARNING chapter of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute morning briefing.
 Write about {word_target} words of markdown. No JSON. Do not wrap the whole answer in a code fence.
 Stay strictly on the ACTIVE STACK ({active}) and the source article — do not switch stacks.
+Teach a technical skill — never report news or business deals.
 
 {_previous_briefing_block(profile)}
 
 HARD RULES — do NOT write about:
+- news, acquisitions, funding rounds, earnings, valuations, layoffs, market rumors
 - career advice, interviews, portfolios, "what companies expect", soft skills
 - generic "learn JavaScript / HTML / CSS" motivational fluff
 - unrelated beginner roadmaps
@@ -447,7 +462,7 @@ def _top_up_prompt(profile: UserProfile, articles: list[Article], needed: int, t
     return f"""
 Continue the same TECHNICAL morning briefing. Write {needed} more words of markdown.
 No JSON. Do not repeat prior chapters.
-No career advice, portfolios, interviews, or soft skills — only code, APIs, debugging, and architecture for {stack}.
+No news/M&A/funding and no career advice — only learning: code, APIs, debugging, and architecture for {stack}.
 The full briefing MUST reach {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minutes of reading (~{_WORD_FLOOR}-{_WORD_CEILING} words).
 Use ``` fences ONLY for real code or ASCII diagrams — never for prose, bullets, or headings.
 
@@ -464,10 +479,10 @@ Last part already written:
 
 
 _GEMINI_MODEL_FALLBACKS = (
+    "gemini-3.6-flash",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
+    "gemini-flash-latest",
 )
 
 
@@ -571,17 +586,19 @@ def _generate_teaching_sections(
 
 
 def _technical_articles(articles: list[Article]) -> list[Article]:
-    """Drop career / soft-skill posts before synthesis."""
+    """Keep learning articles only — drop career fluff and news/M&A noise."""
     kept = [
         article
         for article in articles
-        if not is_career_fluff(
+        if not is_non_learning(
             article.title,
             f"{article.summary or ''} {article.body_text or ''}",
             [*article.topics, *article.tech_stack],
+            source_domain=str(article.source_domain or ""),
+            url=str(article.url or ""),
         )
     ]
-    return kept or articles
+    return kept
 
 
 def _expand_from_articles(

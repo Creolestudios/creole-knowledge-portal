@@ -39,6 +39,39 @@ function isTodayBlog(blog: Parameters<typeof blogDateKey>[0]): boolean {
   return Boolean(key) && key === localDateKey();
 }
 
+function attachFallbackMeta(blog: Record<string, unknown> | null) {
+  if (!blog) return blog;
+  let meta: {
+    fallback?: boolean;
+    fallbackReason?: string;
+    fallbackKind?: string;
+  } = {};
+  const rawSummary = blog.summary;
+  if (typeof rawSummary === 'string' && rawSummary.trim()) {
+    try {
+      meta = JSON.parse(rawSummary);
+    } catch {
+      meta = {};
+    }
+  } else if (rawSummary && typeof rawSummary === 'object') {
+    meta = rawSummary as typeof meta;
+  }
+  const isFallback =
+    Boolean(meta.fallback) ||
+    blog.source === 'AI Resilient Synthesis Engine' ||
+    blog.is_fallback === true;
+  if (!isFallback) return blog;
+  return {
+    ...blog,
+    is_fallback: true,
+    fallback_reason:
+      meta.fallbackReason ||
+      (typeof blog.fallback_reason === 'string' ? blog.fallback_reason : null) ||
+      'Primary synthesis pipeline was unavailable; this is a Next.js fallback briefing.',
+    fallback_kind: meta.fallbackKind || blog.fallback_kind || 'next_js',
+  };
+}
+
 /**
  * Daily Blog "latest" = today's digest only.
  * Missing today → `{ blog: null }` so the UI shows Synthesize (never yesterday).
@@ -74,7 +107,10 @@ export async function GET() {
             return NextResponse.json({ success: true, blog: null, meta: null });
           }
           if (isTodayBlog(blog)) {
-            return NextResponse.json(payload);
+            return NextResponse.json({
+              ...payload,
+              blog: attachFallbackMeta(blog),
+            });
           }
           // Stale / mis-dated payload — treat as missing today
           return NextResponse.json({ success: true, blog: null, meta: null });
@@ -99,7 +135,7 @@ export async function GET() {
     if (legacyBrief && isTodayBlog(legacyBrief)) {
       return NextResponse.json({
         success: true,
-        blog: { ...legacyBrief, digest_date: today },
+        blog: attachFallbackMeta({ ...legacyBrief, digest_date: today }),
         meta: null,
       });
     }
@@ -121,7 +157,7 @@ export async function GET() {
     if (candidate && isTodayBlog(candidate)) {
       return NextResponse.json({
         success: true,
-        blog: { ...candidate, digest_date: today },
+        blog: attachFallbackMeta({ ...candidate, digest_date: today }),
         meta: null,
       });
     }

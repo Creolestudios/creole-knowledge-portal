@@ -194,7 +194,46 @@ describe('POST /api/digests/generate', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+    expect(body.fallback).toBe(true);
+    expect(body.blog.is_fallback).toBe(true);
+    expect(String(body.fallback_reason || '')).toMatch(/Pipeline:/i);
     expect(body.blog.title).toBe('Fresh AI Briefing');
+  });
+
+  it('falls through to Next.js fallback when FastAPI returns a pipeline error', async () => {
+    (global.fetch as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, blog: null }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({
+          detail: 'Synthesis pipeline error: Pipeline finished without a digest id.',
+        }),
+      });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    mockGenerateContent.mockResolvedValue({ text: '' });
+    mockInsertSingle.mockResolvedValue({
+      data: {
+        id: 'b-pipe',
+        title: 'Architectural Deep-Dive: Building High-Performance Systems with Next.js 15',
+        content: 'static',
+        published_at: new Date().toISOString(),
+        tags: ['architecture'],
+        summary: '{}',
+      },
+      error: null,
+    });
+
+    const res = await POST(mockRequest({}));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fallback).toBe(true);
+    expect(body.blog.is_fallback).toBe(true);
+    expect(body.fallback_reason).toContain('without a digest id');
+    expect(insertedRows.at(-1).summary).toContain('fallback');
   });
 
   it('returns 500 when blog insert fails in fallback mode', async () => {

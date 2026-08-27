@@ -32,7 +32,7 @@ def build_pipeline_chain(user_id: str):
     )
 
 
-def run_celery_pipeline_and_wait(user_id: str, timeout: int = 300) -> str:
+def run_celery_pipeline_and_wait(user_id: str, timeout: int = 600) -> str:
     """Run the Celery chain and return the published digest id."""
     log.info("pipeline: scrape → extract → rank → generate → publish  user=%s", user_id)
     result = build_pipeline_chain(user_id).apply_async()
@@ -42,36 +42,52 @@ def run_celery_pipeline_and_wait(user_id: str, timeout: int = 300) -> str:
     return str(digest_id)
 
 
-async def execute_pipeline_for_user(user_id: str, timeout: int = 300, runner_func=None) -> str:
+async def _run_pipeline_in_process(user_id: str) -> str:
+    """scrape → extract → rank → generate → publish inside the API process."""
+    from src.workers.extractor_tasks import _extract_articles
+    from src.workers.generator_tasks import _generate_digest
+    from src.workers.publisher_tasks import _publish_digest
+    from src.workers.ranker_tasks import _rank_articles_for_user
+    from src.workers.scraper_tasks import _scrape_for_user
+
+    log.info(
+        "pipeline (in-process): scrape → extract → rank → generate → publish  user=%s",
+        user_id,
+    )
+    article_ids = await _scrape_for_user(user_id)
+    extracted_ids = await _extract_articles(article_ids)
+    ranked_ids = await _rank_articles_for_user(extracted_ids, user_id, 10)
+    digest_id = await _generate_digest(ranked_ids, user_id)
+    if digest_id:
+        await _publish_digest(digest_id)
+    if not digest_id:
+        raise RuntimeError("Pipeline finished without a digest id.")
+    return str(digest_id)
+
+
+async def execute_pipeline_for_user(user_id: str, timeout: int = 600, runner_func=None) -> str:
     """Run scrape → extract → rank → generate → publish asynchronously in-process or via Celery."""
     from src.core.config import get_app_settings
 
-    target_runner = runner_func or run_celery_pipeline_and_wait
-    func_name = getattr(target_runner, "__name__", "")
-    if func_name != "run_celery_pipeline_and_wait" or hasattr(target_runner, "mock_calls"):
-        return target_runner(user_id)
+    if runner_func is not None:
+        return runner_func(user_id)
 
     cfg = get_app_settings()
     if cfg.celery_eager:
-        from src.workers.extractor_tasks import _extract_articles
-        from src.workers.generator_tasks import _generate_digest
-        from src.workers.publisher_tasks import _publish_digest
-        from src.workers.ranker_tasks import _rank_articles_for_user
-        from src.workers.scraper_tasks import _scrape_for_user
+        return await _run_pipeline_in_process(user_id)
 
-        log.info(
-            "pipeline (in-process): scrape → extract → rank → generate → publish  user=%s",
-            user_id,
-        )
-        article_ids = await _scrape_for_user(user_id)
-        extracted_ids = await _extract_articles(article_ids)
-        ranked_ids = await _rank_articles_for_user(extracted_ids, user_id, 10)
-        digest_id = await _generate_digest(ranked_ids, user_id)
-        if digest_id:
-            await _publish_digest(digest_id)
-        return str(digest_id)
-
-    return run_celery_pipeline_and_wait(user_id, timeout=timeout)
+    try:
+        return run_celery_pipeline_and_wait(user_id, timeout=timeout)
+    except Exception as celery_exc:
+        # Local resilience: workers/time-limits/empty pools should not brick Synthesize
+        env = getattr(cfg.ENVIRONMENT, "value", cfg.ENVIRONMENT)
+        if str(env).lower() == "local":
+            log.warning(
+                "pipeline: celery failed (%s); falling back to in-process for local",
+                celery_exc,
+            )
+            return await _run_pipeline_in_process(user_id)
+        raise
 
 
 @router.post(

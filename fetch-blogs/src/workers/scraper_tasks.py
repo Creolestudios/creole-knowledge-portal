@@ -204,7 +204,7 @@ async def _scrape_for_user(user_id: str) -> list[str]:
             )
     article_ids: list[str] = []
     seen: set[str] = set()
-    from src.extractors.topic_filter import is_career_fluff
+    from src.extractors.topic_filter import is_non_learning
 
     for payload in discovered:
         if len(article_ids) >= _MAX_ARTICLES:
@@ -212,7 +212,9 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         url = str(payload.get("url") or "").rstrip("/")
         title = str(payload.get("title") or "")
         summary = str(payload.get("summary") or "")
-        if is_career_fluff(title, summary):
+        domain = str(payload.get("source_domain") or "")
+        # Learning briefings only — drop career fluff and business/news noise
+        if is_non_learning(title, summary, source_domain=domain, url=url):
             continue
         if not url or url in seen or url in already_served:
             continue
@@ -220,6 +222,28 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         article_id = await _upsert_thin_article(payload)
         if article_id:
             article_ids.append(article_id)
+
+    # If everything was already served / filtered, reuse recent unserved Mongo articles
+    if not article_ids:
+        log.warning("scrape: no new URLs; falling back to unserved corpus", user_id=user_id)
+        cursor = Article.find_all().sort(-Article.created_at).limit(60)
+        async for article in cursor:
+            if len(article_ids) >= _MAX_ARTICLES:
+                break
+            url = str(article.url or "").rstrip("/")
+            if not url or url in already_served or url in seen:
+                continue
+            if article.id is None:
+                continue
+            if is_non_learning(
+                str(article.title or ""),
+                str(article.summary or article.body_text or "")[:1500],
+                source_domain=str(article.source_domain or ""),
+                url=url,
+            ):
+                continue
+            seen.add(url)
+            article_ids.append(str(article.id))
 
     job.article_ids = article_ids
     await mark_stage(

@@ -220,20 +220,20 @@ async def test_generate_upserts_digest(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-async def test_generate_returns_empty_when_profile_missing() -> None:
-    digest_id = await generator_tasks._generate_digest(
-        ["507f1f77bcf86cd799439011"], "missing-user"
-    )
-    assert digest_id == ""
+async def test_generate_raises_when_profile_missing() -> None:
+    with pytest.raises(RuntimeError, match="profile missing"):
+        await generator_tasks._generate_digest(
+            ["507f1f77bcf86cd799439011"], "missing-user"
+        )
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-async def test_generate_returns_empty_when_no_articles_resolve() -> None:
+async def test_generate_raises_when_no_articles_resolve() -> None:
     await UserProfile(user_id="u1", name="Dev").insert()
-    digest_id = await generator_tasks._generate_digest(
-        ["507f1f77bcf86cd799439011"], "u1"
-    )
-    assert digest_id == ""
+    with pytest.raises(RuntimeError, match="no articles available"):
+        await generator_tasks._generate_digest(
+            ["507f1f77bcf86cd799439011"], "u1"
+        )
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")

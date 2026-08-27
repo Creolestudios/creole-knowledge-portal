@@ -79,12 +79,39 @@ async def _hydrate_previous_briefing(profile: UserProfile) -> None:
     )
 
 
+async def _fallback_articles(profile: UserProfile, limit: int = 10) -> list[Article]:
+    """Use recent unserved learning articles when the live scrape pool is empty."""
+    from src.extractors.topic_filter import is_non_learning
+
+    served = {str(url).rstrip("/") for url in profile.learning_path.served_urls}
+    out: list[Article] = []
+    cursor = Article.find_all().sort(-Article.created_at).limit(80)
+    async for article in cursor:
+        url = str(article.url or "").rstrip("/")
+        if url and url in served:
+            continue
+        if not (article.body_text or "").strip():
+            continue
+        if is_non_learning(
+            str(article.title or ""),
+            str(article.body_text or "")[:1500],
+            list(article.topics or []),
+            source_domain=str(article.source_domain or ""),
+            url=url,
+        ):
+            continue
+        out.append(article)
+        if len(out) >= limit:
+            break
+    return out
+
+
 async def _generate_digest(article_ids: list[str], user_id: str) -> str:
     await ensure_db()
     profile = await UserProfile.find_one(UserProfile.user_id == user_id)
     if profile is None:
         log.warning("generate: profile missing", user_id=user_id)
-        return ""
+        raise RuntimeError(f"Cannot synthesize: profile missing for {user_id}")
 
     articles: list[Article] = []
     for article_id in article_ids:
@@ -92,12 +119,24 @@ async def _generate_digest(article_ids: list[str], user_id: str) -> str:
         if article is not None:
             articles.append(article)
     if not articles:
-        return ""
+        articles = await _fallback_articles(profile)
+        log.warning(
+            "generate: empty ranked pool, using corpus fallback",
+            user_id=user_id,
+            count=len(articles),
+        )
+    if not articles:
+        raise RuntimeError(
+            "Cannot synthesize: no articles available after scrape/rank "
+            "(and no unserved corpus articles)."
+        )
 
     await _hydrate_previous_briefing(profile)
 
     digest = synthesize_digest(profile, articles)
     digest_id = await upsert_digest(digest)
+    if not digest_id:
+        raise RuntimeError("Cannot synthesize: digest upsert returned empty id.")
     log.info(
         "generate: digest stored",
         digest_id=digest_id,
@@ -112,8 +151,10 @@ async def _generate_digest(article_ids: list[str], user_id: str) -> str:
     name="src.workers.generator_tasks.generate_digest",
     queue="generate_queue",
     acks_late=True,
-    max_retries=3,
+    max_retries=2,
     default_retry_delay=60,
+    soft_time_limit=540,
+    time_limit=600,
 )
 def generate_digest(article_ids: list[str], user_id: str) -> str:
     """Create a DailyDigest for the user from ranked article IDs."""
