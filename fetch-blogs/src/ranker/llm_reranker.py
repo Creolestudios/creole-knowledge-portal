@@ -84,8 +84,9 @@ def build_rerank_prompt(profile: UserProfile, candidates: list[RerankCandidate])
     }
     candidate_payload = [candidate.model_dump() for candidate in candidates]
     return f"""
-You are ranking technical blog articles for a personalized engineering digest.
-Prefer deep technical posts (APIs, frameworks, databases, architecture, debugging).
+You are ranking LEARNING articles for a personalized engineering study digest.
+Prefer tutorials, how-tos, deep technical posts (APIs, frameworks, databases, architecture, debugging).
+Score news, M&A, funding, earnings, layoffs, and market rumors near 0.
 Never prefer career advice, job hunting, LinkedIn/GitHub branding, portfolios, or soft skills.
 Return strict JSON only. Do not include markdown.
 
@@ -151,18 +152,57 @@ def rerank_with_gemini(
     if not settings.GEMINI_API_KEY and model is None:
         return fallback_rerank(bounded_candidates, limit)
 
-    try:
-        gemini_model = model
-        if gemini_model is None:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            gemini_model = genai.GenerativeModel(settings.GEMINI_MODEL)
-        response = gemini_model.generate_content(build_rerank_prompt(profile, bounded_candidates))
-        parsed = parse_gemini_rerank_response(response.text, bounded_candidates)
-        if not parsed:
+    prompt = build_rerank_prompt(profile, bounded_candidates)
+    if model is not None:
+        try:
+            response = model.generate_content(prompt)
+            parsed = parse_gemini_rerank_response(response.text, bounded_candidates)
+            if not parsed:
+                return fallback_rerank(bounded_candidates, limit)
+            missing = [
+                candidate
+                for candidate in bounded_candidates
+                if candidate.article_id not in {r.article_id for r in parsed}
+            ]
+            return [*parsed, *fallback_rerank(missing, limit)][:limit]
+        except (json.JSONDecodeError, ValidationError, ValueError, RuntimeError, Exception) as exc:
+            log.warning("ranker: gemini rerank fallback", error=str(exc))
             return fallback_rerank(bounded_candidates, limit)
-        missing = [candidate for candidate in bounded_candidates if candidate.article_id not in {r.article_id for r in parsed}]
-        merged = [*parsed, *fallback_rerank(missing, limit)]
-        return merged[:limit]
-    except (json.JSONDecodeError, ValidationError, ValueError, RuntimeError, Exception) as exc:
-        log.warning("ranker: gemini rerank fallback", error=str(exc))
-        return fallback_rerank(bounded_candidates, limit)
+
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    primary = (settings.GEMINI_MODEL or "").strip()
+    models = list(
+        dict.fromkeys(
+            [
+                primary,
+                "gemini-3.6-flash",
+                "gemini-2.5-flash",
+                "gemini-2.0-flash",
+                "gemini-flash-latest",
+            ]
+        )
+    )
+    last_error: Exception | None = None
+    for model_name in models:
+        if not model_name:
+            continue
+        try:
+            gemini_model = genai.GenerativeModel(model_name)
+            response = gemini_model.generate_content(prompt)
+            parsed = parse_gemini_rerank_response(response.text, bounded_candidates)
+            if not parsed:
+                continue
+            missing = [
+                candidate
+                for candidate in bounded_candidates
+                if candidate.article_id not in {r.article_id for r in parsed}
+            ]
+            return [*parsed, *fallback_rerank(missing, limit)][:limit]
+        except (json.JSONDecodeError, ValidationError, ValueError, RuntimeError, Exception) as exc:
+            last_error = exc
+            log.warning("ranker: gemini rerank model failed", model=model_name, error=str(exc))
+            continue
+
+    if last_error is not None:
+        log.warning("ranker: gemini rerank fallback", error=str(last_error))
+    return fallback_rerank(bounded_candidates, limit)

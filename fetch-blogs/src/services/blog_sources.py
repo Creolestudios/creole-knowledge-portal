@@ -6,6 +6,7 @@ import httpx
 import structlog
 
 from src.core.config import get_supabase_settings
+from src.extractors.topic_filter import is_news_noise
 from src.scrapers import parse_rss_feed
 
 log = structlog.get_logger(__name__)
@@ -49,6 +50,10 @@ async def fetch_admin_blog_source_urls() -> list[str]:
             continue
         normalized = raw.rstrip("/")
         if normalized in seen:
+            continue
+        # Learning briefings only — skip news outlets registered in Admin → Sources
+        if is_news_noise("", "", url=normalized):
+            log.info("admin feed skipped (news domain)", source=normalized)
             continue
         seen.add(normalized)
         out.append(raw)

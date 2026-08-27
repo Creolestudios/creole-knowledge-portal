@@ -73,8 +73,8 @@ def test_run_celery_pipeline_and_wait_returns_the_digest_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeResult:
-        def get(self, timeout: int = 300) -> str:
-            assert timeout == 300
+        def get(self, timeout: int = 600) -> str:
+            assert timeout == 600
             return "digest-99"
 
     class FakeChain:
@@ -133,9 +133,13 @@ async def test_execute_pipeline_for_user_runs_in_process_when_celery_eager(
         assert ids == ["a1"]
         return "digest-eager"
 
+    async def _publish(digest_id: str) -> str:
+        return digest_id
+
     import src.core.config as core_config
     import src.workers.extractor_tasks as extractor_tasks
     import src.workers.generator_tasks as generator_tasks
+    import src.workers.publisher_tasks as publisher_tasks
     import src.workers.ranker_tasks as ranker_tasks
     import src.workers.scraper_tasks as scraper_tasks
 
@@ -144,6 +148,7 @@ async def test_execute_pipeline_for_user_runs_in_process_when_celery_eager(
     monkeypatch.setattr(extractor_tasks, "_extract_articles", _extract)
     monkeypatch.setattr(ranker_tasks, "_rank_articles_for_user", _rank)
     monkeypatch.setattr(generator_tasks, "_generate_digest", _generate)
+    monkeypatch.setattr(publisher_tasks, "_publish_digest", _publish)
 
     out = await pipeline_mod.execute_pipeline_for_user("u1")
     assert out == "digest-eager"
@@ -155,15 +160,62 @@ async def test_execute_pipeline_for_user_falls_back_to_celery_when_not_eager(
 ) -> None:
     class _Cfg:
         celery_eager = False
+        ENVIRONMENT = "staging"
 
     import src.core.config as core_config
 
     monkeypatch.setattr(core_config, "get_app_settings", lambda: _Cfg())
     monkeypatch.setattr(
-        pipeline_mod, "run_celery_pipeline_and_wait", lambda uid, timeout=300: f"celery-{uid}"
+        pipeline_mod, "run_celery_pipeline_and_wait", lambda uid, timeout=600: f"celery-{uid}"
     )
     out = await pipeline_mod.execute_pipeline_for_user("u9", timeout=60)
     assert out == "celery-u9"
+
+
+@pytest.mark.asyncio
+async def test_execute_pipeline_local_falls_back_in_process_on_celery_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Cfg:
+        celery_eager = False
+        ENVIRONMENT = "local"
+
+    async def _scrape(_uid: str) -> list[str]:
+        return ["a1"]
+
+    async def _extract(ids: list[str]) -> list[str]:
+        return ids
+
+    async def _rank(ids: list[str], _uid: str, _n: int) -> list[str]:
+        return ids
+
+    async def _generate(ids: list[str], _uid: str) -> str:
+        return "digest-fallback"
+
+    async def _publish(digest_id: str) -> str:
+        return digest_id
+
+    import src.core.config as core_config
+    import src.workers.extractor_tasks as extractor_tasks
+    import src.workers.generator_tasks as generator_tasks
+    import src.workers.publisher_tasks as publisher_tasks
+    import src.workers.ranker_tasks as ranker_tasks
+    import src.workers.scraper_tasks as scraper_tasks
+
+    monkeypatch.setattr(core_config, "get_app_settings", lambda: _Cfg())
+    monkeypatch.setattr(
+        pipeline_mod,
+        "run_celery_pipeline_and_wait",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("without a digest id")),
+    )
+    monkeypatch.setattr(scraper_tasks, "_scrape_for_user", _scrape)
+    monkeypatch.setattr(extractor_tasks, "_extract_articles", _extract)
+    monkeypatch.setattr(ranker_tasks, "_rank_articles_for_user", _rank)
+    monkeypatch.setattr(generator_tasks, "_generate_digest", _generate)
+    monkeypatch.setattr(publisher_tasks, "_publish_digest", _publish)
+
+    out = await pipeline_mod.execute_pipeline_for_user("u1")
+    assert out == "digest-fallback"
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")

@@ -74,6 +74,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ ...existing, cached: true });
     }
 
+    let pipelineFailureReason: string | null = null;
+
     try {
       const res = await fetch(blogServiceUrl('/digests/generate'), {
         method: 'POST',
@@ -86,19 +88,25 @@ export async function POST(request: Request) {
       if (res.ok && payload.success && payload.blog) {
         return NextResponse.json(payload);
       }
-      if (!res.ok) {
-        if (res.status === 404) {
-          const detail = payload.detail || payload.error || 'Supabase profile not found';
-          return NextResponse.json({ error: detail }, { status: 404 });
-        }
-        const errorMsg = payload.error || payload.detail || 'Blog service generation failed';
-        return NextResponse.json({ error: errorMsg }, { status: 500 });
+      if (res.status === 404) {
+        const detail = payload.detail || payload.error || 'Supabase profile not found';
+        return NextResponse.json({ error: detail }, { status: 404 });
       }
+      // Non-ok or incomplete success → Next.js fallback (still show something today)
+      pipelineFailureReason = String(
+        payload.detail || payload.error || `Blog service returned HTTP ${res.status}`,
+      );
+      console.warn(
+        '[DigestGenerate] FastAPI generate failed, using Next.js fallback:',
+        pipelineFailureReason,
+      );
     } catch (e: unknown) {
+      pipelineFailureReason =
+        e instanceof Error ? e.message : 'Blog service unreachable or timed out';
       console.warn('[DigestGenerate] FastAPI service not available, using fallback:', e);
     }
 
-    // Local Gemini fallback only when FastAPI is unreachable
+    // Local Gemini / static fallback when FastAPI could not produce today's digest
     const { data: profile } = await supabaseAdmin
       .from('user_profiles')
       .select('*')
@@ -112,26 +120,28 @@ export async function POST(request: Request) {
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const prompt = `
-      You are an expert tech compiler and lead architect.
-      Generate a fresh, highly engaging, comprehensive technical briefing blog post tailored for a ${role} working with ${userStack}.
-      The blog must cover current architectural trends, code examples, best practices, and performance tips.
+      You are an expert tech educator and lead architect.
+      Generate a fresh LEARNING briefing (tutorials, architecture, code, debugging) tailored for a ${role} working with ${userStack}.
+      Cover only educational topics: patterns, code examples, best practices, and performance tips.
+      Do NOT include news, company acquisitions, funding, earnings, layoffs, or market rumors.
 
       Return JSON with schema:
       {
-        "title": "A compelling technical headline",
+        "title": "A compelling technical learning headline",
         "content": "Detailed Markdown content with code blocks, headings (## Overview, ## Best Practices, ## Code Deep-Dive, ## Key Takeaways), and explanations.",
         "tags": ["tech", "architecture", "nextjs", "performance"],
         "estimated_read_minutes": 15
       }
     `;
 
-    const modelsToTry = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro'];
+    const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
     let parsed: {
       title?: string;
       content?: string;
       tags?: string[] | string;
       estimated_read_minutes?: number;
     } | null = null;
+    let geminiFailureReason: string | null = null;
 
     for (const modelName of modelsToTry) {
       try {
@@ -160,8 +170,10 @@ export async function POST(request: Request) {
           }
           break;
         }
+        geminiFailureReason = `${modelName} returned empty text`;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
+        geminiFailureReason = message;
         console.warn(`[DigestGenerate] Model ${modelName} error:`, message);
         const isQuota = message.includes('429') || message.includes('quota');
         if (isQuota) {
@@ -170,10 +182,12 @@ export async function POST(request: Request) {
       }
     }
 
+    let fallbackKind: 'gemini_local' | 'static' = 'gemini_local';
     if (!parsed) {
       console.warn(
         '[DigestGenerate] All Gemini AI models hit quota/error. Using static resilient synthesis generator.',
       );
+      fallbackKind = 'static';
       parsed = {
         title: `Architectural Deep-Dive: Building High-Performance Systems with ${userStack.split(',')[0]}`,
         content: `## Daily Overview (TL;DR)
@@ -211,8 +225,31 @@ export async function executeWithResilientFallback<T>(
       };
     }
 
+    const fallbackReasonParts = [
+      pipelineFailureReason
+        ? `Pipeline: ${pipelineFailureReason}`
+        : 'Pipeline: primary FastAPI synthesis did not return a digest',
+    ];
+    if (fallbackKind === 'static' && geminiFailureReason) {
+      fallbackReasonParts.push(`Local Gemini: ${geminiFailureReason}`);
+    }
+    const fallbackReason = fallbackReasonParts.join(' | ');
+
     const today = localDateKey();
     const slugKey = `briefing:${userId}:${today}`;
+    const summaryPayload = {
+      readingTime: parsed.estimated_read_minutes || 15,
+      fallback: true,
+      fallbackReason,
+      fallbackKind,
+    };
+
+    const withFallbackFields = (blog: Record<string, unknown>) => ({
+      ...blog,
+      is_fallback: true,
+      fallback_reason: fallbackReason,
+      fallback_kind: fallbackKind,
+    });
 
     const { data: existingBlog } = await supabaseAdmin
       .from('blogs')
@@ -224,7 +261,10 @@ export async function executeWithResilientFallback<T>(
       return NextResponse.json({
         success: true,
         cached: true,
-        blog: {
+        fallback: true,
+        fallback_reason: fallbackReason,
+        fallback_kind: fallbackKind,
+        blog: withFallbackFields({
           id: existingBlog.id,
           title: existingBlog.title,
           content: existingBlog.content,
@@ -233,7 +273,8 @@ export async function executeWithResilientFallback<T>(
           tags: existingBlog.tags,
           word_count: String(existingBlog.content || '').split(/\s+/).length,
           estimated_read_minutes: parsed.estimated_read_minutes || 15,
-        },
+          summary: existingBlog.summary || JSON.stringify(summaryPayload),
+        }),
       });
     }
 
@@ -245,7 +286,7 @@ export async function executeWithResilientFallback<T>(
         content: parsed.content,
         source: 'AI Resilient Synthesis Engine',
         author: 'AI Curation Agent',
-        summary: JSON.stringify({ readingTime: parsed.estimated_read_minutes || 15 }),
+        summary: JSON.stringify(summaryPayload),
         tags: parsed.tags || ['synthesis', 'tech'],
         published_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -265,7 +306,10 @@ export async function executeWithResilientFallback<T>(
 
     return NextResponse.json({
       success: true,
-      blog: {
+      fallback: true,
+      fallback_reason: fallbackReason,
+      fallback_kind: fallbackKind,
+      blog: withFallbackFields({
         id: newBlog.id,
         title: newBlog.title,
         content: newBlog.content,
@@ -274,7 +318,8 @@ export async function executeWithResilientFallback<T>(
         tags: newBlog.tags,
         word_count: newBlog.content.split(/\s+/).length,
         estimated_read_minutes: parsed.estimated_read_minutes || 15,
-      },
+        summary: newBlog.summary,
+      }),
     });
   } catch (error: unknown) {
     console.error('Digest synthesis error:', error);

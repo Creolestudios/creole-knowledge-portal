@@ -56,9 +56,10 @@ celery_app.conf.update(
     result_expires=86_400,  # 24 hours
     # Time zones
     timezone="UTC",
-    # Global safety limits (override per-task if needed)
-    task_soft_time_limit=150,
-    task_time_limit=180,  # 3 min hard cap — daily briefing, not a 70-min rewrite
+    # Global safety limits (override per-task if needed).
+    # Scrape + Gemini synthesis of a long briefing needs more than 3 minutes.
+    task_soft_time_limit=480,
+    task_time_limit=600,
     task_always_eager=_app_cfg.celery_eager,
     task_eager_propagates=True,
 )

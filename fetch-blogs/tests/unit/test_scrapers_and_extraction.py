@@ -876,3 +876,31 @@ class TestTopicFilter:
             + "python javascript typescript react fastapi docker kubernetes aws mongodb"
         )
         assert infer_complexity(long_jargon) == ComplexityLevel.ADVANCED
+
+    def test_is_news_noise_blocks_ma_and_news_domains(self) -> None:
+        from src.extractors.topic_filter import is_news_noise, is_non_learning
+
+        assert is_news_noise(
+            "Nvidia has been in talks to acquire Hugging Face for more than $13 billion"
+        )
+        assert is_news_noise(
+            "Nvidia may buy into Perplexity above $30B before Wednesday's earnings"
+        )
+        assert is_news_noise("", "", url="https://www.businessinsider.com/foo")
+        assert is_news_noise("", "", url="https://timesofindia.indiatimes.com/tech")
+        assert is_non_learning(
+            "Nvidia has been in talks to acquire Hugging Face for more than $13 billion"
+        )
+        assert not is_non_learning(
+            "A Practical Guide to React Suspense and Lazy Loading",
+            "How to implement Suspense boundaries step by step with code examples.",
+        )
+        assert not is_news_noise(
+            "How to debug funding-related Stripe webhooks",
+            "A step-by-step debugging tutorial for webhook handlers.",
+        )
+        assert is_non_learning(
+            "GitHub - SenteLabsAI/OpenExecutive: AI-powered virtual executive team",
+            "openexecutive/ ├── packages/ ├── core/ └── agents/",
+            url="https://github.com/SenteLabsAI/OpenExecutive",
+        )

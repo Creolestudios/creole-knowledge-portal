@@ -30,6 +30,9 @@ export function restoreArticleMarkdown(content: string): string {
     text = clean;
   }
 
+  // Flattened repo trees: "pkg/ ├── a/ | └── b/" → real multiline diagram
+  text = restoreFlattenedTreeDiagram(text);
+
   const newlineCount = (text.match(/\n/g) || []).length;
   if (newlineCount >= 3) {
     return text.replace(/\n{3,}/g, '\n\n');
@@ -49,6 +52,67 @@ export function restoreArticleMarkdown(content: string): string {
     text = text.replace(/([.!?])\s+(?=[A-Z#])/g, '$1\n\n');
   }
   return text.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Turn one-line "dir/ ├── a/ | └── b/" dumps into a vertical tree diagram. */
+export function restoreFlattenedTreeDiagram(content: string): string {
+  const raw = String(content || '');
+  if (!raw) return raw;
+
+  // Caption → folder rows from mangled README maps (not ASCII +--+ boxes)
+  const mapLine =
+    /^(#{1,6}\s+)?\*{0,2}(.+?)\*{0,2}\s+(?:\|\s*){1,6}(?:——|—|├──|└──|├─|└─)\s*([A-Za-z0-9_.@/-]+\/?)\s*$/;
+
+  const lines = raw.split('\n');
+  const out: string[] = [];
+  let diagramBuf: string[] = [];
+
+  const flushDiagram = () => {
+    if (diagramBuf.length === 0) return;
+    out.push('```');
+    out.push(...diagramBuf);
+    out.push('```');
+    diagramBuf = [];
+  };
+
+  for (const line of lines) {
+    const markers = (line.match(/├──|└──|├─|└─/g) || []).length;
+    const pipeRuns = (line.match(/\|\s+\|/g) || []).length;
+    const mapMatch = line.trim().match(mapLine);
+
+    if (mapMatch) {
+      const caption = mapMatch[2].replace(/\*\*/g, '').trim();
+      const folder = mapMatch[3].trim();
+      diagramBuf.push(caption);
+      diagramBuf.push(`  └── ${folder}`);
+      continue;
+    }
+
+    // Only unicode tree branches — never ASCII +---+ box borders
+    if (markers >= 2 || (markers >= 1 && pipeRuns >= 1)) {
+      let working = line.replace(/\*\*/g, '');
+      working = working.replace(
+        /([^\n])(\s*)(\|[\s|]*)?(├──|└──|├─|└─)\s*/g,
+        (_m, before: string, _sp: string, pipes: string | undefined, branch: string) => {
+          const indent = pipes ? pipes.replace(/[^\|]/g, '').length : 0;
+          const pad = '  '.repeat(Math.min(indent, 6));
+          return `${before}\n${pad}${branch} `;
+        },
+      );
+      working = working.replace(/([/\w.-]+\/)\s+(?=├──|└──|├─|└─)/g, '$1\n');
+      working = working.replace(/\s+\|\s+\|\s+\|\s+/g, '\n');
+      working = working.replace(/\s+\|\s+\|\s+/g, '\n');
+      for (const part of working.split('\n')) {
+        if (part.trim()) diagramBuf.push(part.trimEnd());
+      }
+      continue;
+    }
+
+    flushDiagram();
+    out.push(line);
+  }
+  flushDiagram();
+  return out.join('\n');
 }
 
 function parseInlineMarkdown(text: string): ReactNode {
@@ -128,10 +192,16 @@ export function looksLikeAsciiDiagram(text: string): boolean {
   const raw = String(text || '');
   if (looksLikeFlowLine(raw)) return true;
 
+  const treeBranches = (raw.match(/├──|└──|├─|└─/g) || []).length;
+  if (treeBranches >= 2) return true;
+
   const lines = raw
     .split('\n')
     .filter((l) => l.trim().length > 0 && !isDecorativeSeparator(l));
-  if (lines.length < 2) return false;
+  if (lines.length < 2) {
+    // Single flattened tree line still counts as a diagram
+    return treeBranches >= 1 && /\/\s+(?:├|└|\|)/.test(raw);
+  }
 
   // Count structural art only — do NOT count plain -, _, /, <, > (those appear in prose).
   const boxDrawing = (raw.match(/[│┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬]/g) || []).length;
@@ -140,8 +210,10 @@ export function looksLikeAsciiDiagram(text: string): boolean {
   const indentedBoxes = lines.filter(
     (l) => /^\s{2,}/.test(l) && /[|+]/.test(l),
   ).length;
+  const treeLines = lines.filter((l) => /(?:├──|└──|├─|└─)/.test(l)).length;
 
   if (boxDrawing >= 4) return true;
+  if (treeLines >= 2) return true;
   if (asciiBoxes >= 2 && lines.length >= 3) return true;
   if (indentedBoxes >= 3 && asciiBoxes >= 1) return true;
   if (arrowLines >= 2 && asciiBoxes >= 1) return true;

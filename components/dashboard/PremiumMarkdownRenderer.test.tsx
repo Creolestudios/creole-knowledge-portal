@@ -224,6 +224,26 @@ describe('PremiumMarkdownRenderer', () => {
     expect(screen.getByText(/More teaching after/)).toBeInTheDocument();
   });
 
+  it('restores flattened directory trees into one Diagram box', () => {
+    const content = [
+      'openexecutive/ ├── packages/ | ├── core/ | | └── openexecutive/ | | └── orchestrator/',
+      '**Executive persona + routing loop** | | | —— agents/',
+      '**8 specialist agents** | | | —— knowledge/',
+      '**ChromaDB store + RAG pipeline** | | | —— memory/',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={content} />);
+    expect(screen.getByText('Diagram')).toBeInTheDocument();
+    const pre = container.querySelector('pre');
+    expect(pre?.textContent).toMatch(/openexecutive\//);
+    expect(pre?.textContent).toMatch(/agents\//);
+    expect(pre?.textContent).toMatch(/knowledge\//);
+    expect(pre?.textContent).toMatch(/\n/);
+    // Must not render as a chain of blue-bar headings
+    expect(screen.queryByRole('heading', { name: /Executive persona/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /ChromaDB/i })).not.toBeInTheDocument();
+  });
+
   it('hides decorative dash separators and markdown horizontal rules', () => {
     const content = [
       'Intro text.',

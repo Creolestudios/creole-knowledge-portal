@@ -202,7 +202,12 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         setGenerationStep('Finalizing your Morning Brief...');
         const data = await res.json();
         if (data.success && data.blog) {
-          await applyBrief(data.blog);
+          await applyBrief({
+            ...data.blog,
+            is_fallback: data.blog.is_fallback ?? data.fallback ?? false,
+            fallback_reason: data.blog.fallback_reason ?? data.fallback_reason,
+            fallback_kind: data.blog.fallback_kind ?? data.fallback_kind,
+          });
         } else {
           alert('Generation completed but briefing was not retrieved.');
         }
@@ -336,6 +341,22 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 </h1>
               </div>
               <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card overflow-hidden">
+                {(brief.is_fallback || brief.fallback) && (
+                  <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+                    <p className="text-xs font-black uppercase tracking-widest text-amber-900">
+                      Fallback article
+                    </p>
+                    <p className="mt-1 text-sm text-amber-900/90">
+                      The normal scrape and synthesize pipeline could not produce today&apos;s
+                      briefing, so this Next.js fallback was shown instead.
+                    </p>
+                    {brief.fallback_reason && (
+                      <p className="mt-2 text-xs font-mono text-amber-800 break-words whitespace-pre-wrap">
+                        Error: {String(brief.fallback_reason)}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
                   {brief.title}
                 </h2>
