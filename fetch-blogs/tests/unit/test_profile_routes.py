@@ -37,7 +37,7 @@ async def test_sync_inserts_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     assert res.status_code == 200
     body = res.json()
     assert body["created"] is True
-    assert "python" in body["ranking_terms"]
+    assert body["ranking_terms"] == []
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
@@ -161,7 +161,7 @@ async def test_get_profile_returns_the_mongo_mirror() -> None:
     assert body["user_id"] == "u1"
     assert body["name"] == "Dev"
     assert body["content_depth"] == "intermediate"
-    assert "python" in body["ranking_terms"]
+    assert body["ranking_terms"] == []
 
 
 def test_get_profile_returns_404_when_not_mirrored() -> None:

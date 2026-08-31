@@ -6,8 +6,8 @@ config:
   ckp:listenerPriorityBase: "1100"
   ckp:ecsDesiredCount: "1"
   ckp:webDesiredCount: "1"
-  ckp:apiDesiredCount: "0"
-  ckp:workersDesiredCount: "0"
+  ckp:apiDesiredCount: "1"
+  ckp:workersDesiredCount: "1"
   ckp:ecsCpu: "1024"
   ckp:ecsMemory: "2048"
   ckp:githubRepo: Creolestudios/creole-knowledge-portal

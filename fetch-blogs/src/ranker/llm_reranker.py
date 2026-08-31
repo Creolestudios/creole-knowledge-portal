@@ -170,25 +170,24 @@ def rerank_with_gemini(
             return fallback_rerank(bounded_candidates, limit)
 
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    primary = (settings.GEMINI_MODEL or "").strip()
-    models = list(
-        dict.fromkeys(
-            [
-                primary,
-                "gemini-3.6-flash",
-                "gemini-2.5-flash",
-                "gemini-2.0-flash",
-                "gemini-flash-latest",
-            ]
-        )
-    )
+    primary = (settings.GEMINI_MODEL or "").strip() or "gemini-3.6-flash"
+    dead = {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"}
+    models = [
+        name
+        for name in dict.fromkeys([primary, "gemini-3.6-flash"])
+        if name and name not in dead
+    ]
     last_error: Exception | None = None
     for model_name in models:
-        if not model_name:
-            continue
         try:
             gemini_model = genai.GenerativeModel(model_name)
-            response = gemini_model.generate_content(prompt)
+            try:
+                response = gemini_model.generate_content(
+                    prompt,
+                    request_options={"timeout": 45},
+                )
+            except TypeError:
+                response = gemini_model.generate_content(prompt)
             parsed = parse_gemini_rerank_response(response.text, bounded_candidates)
             if not parsed:
                 continue

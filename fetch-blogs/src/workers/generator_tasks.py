@@ -80,10 +80,24 @@ async def _hydrate_previous_briefing(profile: UserProfile) -> None:
 
 
 async def _fallback_articles(profile: UserProfile, limit: int = 10) -> list[Article]:
-    """Use recent unserved learning articles when the live scrape pool is empty."""
-    from src.extractors.topic_filter import is_non_learning
+    """Corpus fallback: interest-matched, or tech from configured sites when interests empty."""
+    from src.extractors.topic_filter import (
+        has_tech_learning_signal,
+        is_non_learning,
+        matches_any_term,
+    )
+    from src.ranker.next_day import continuity_scrape_terms, interest_scrape_terms, profile_has_interests
 
     served = {str(url).rstrip("/") for url in profile.learning_path.served_urls}
+    terms = interest_scrape_terms(profile)
+    has_interests = profile_has_interests(profile)
+    continuity = continuity_scrape_terms(profile) if not has_interests else []
+    site_hosts = {
+        "dev.to",
+        "www.dev.to",
+        "news.ycombinator.com",
+        "hacker-news.firebaseio.com",
+    }
     out: list[Article] = []
     cursor = Article.find_all().sort(-Article.created_at).limit(80)
     async for article in cursor:
@@ -92,14 +106,29 @@ async def _fallback_articles(profile: UserProfile, limit: int = 10) -> list[Arti
             continue
         if not (article.body_text or "").strip():
             continue
+        title = str(article.title or "")
+        body = str(article.body_text or "")[:1500]
         if is_non_learning(
-            str(article.title or ""),
-            str(article.body_text or "")[:1500],
+            title,
+            body,
             list(article.topics or []),
             source_domain=str(article.source_domain or ""),
             url=url,
         ):
             continue
+        hay = f"{title} {body} {' '.join(article.topics or [])}"
+        if has_interests:
+            if not terms or not matches_any_term(hay, terms):
+                continue
+        else:
+            host = url.split("/")[2].lower() if "://" in url else ""
+            domain = str(article.source_domain or "").lower()
+            site_ok = host in site_hosts or domain in site_hosts
+            theme_ok = continuity and matches_any_term(hay, continuity)
+            if not site_ok and not theme_ok:
+                continue
+            if not has_tech_learning_signal(title, body):
+                continue
         out.append(article)
         if len(out) >= limit:
             break
@@ -158,4 +187,7 @@ async def _generate_digest(article_ids: list[str], user_id: str) -> str:
 )
 def generate_digest(article_ids: list[str], user_id: str) -> str:
     """Create a DailyDigest for the user from ranked article IDs."""
-    return run_async(_generate_digest(article_ids or [], user_id))
+    ids = [aid for aid in (article_ids or []) if aid]
+    if not ids:
+        return ""
+    return run_async(_generate_digest(ids, user_id))

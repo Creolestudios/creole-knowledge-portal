@@ -434,12 +434,12 @@ class TestUserProfileModel:
         assert intermediate.content_depth is ContentDepth.INTERMEDIATE
         assert advanced.content_depth is ContentDepth.ADVANCED
 
-    def test_ranking_terms_normalize_and_deduplicate(self) -> None:
+    def test_ranking_terms_use_interests_field_only(self) -> None:
         profile = UserProfile(
             user_id="u1",
             primary_tech_stack=["Python", " FastAPI "],
             secondary_tech_stack=["React"],
-            interests=["LLM"],
+            interests=["LLM", " Redis "],
             current_role="Engineer",
             learning_path=LearningPath(
                 last_topics=["python"],
@@ -450,15 +450,15 @@ class TestUserProfileModel:
         )
 
         terms = profile.ranking_terms
-        # Next scrape ignores weak/next-step; ranking uses active stack + last topics + profile
-        assert terms == [
-            "python",
-            "fastapi",
-            "react",
-            "llm",
-            "engineer",
-            "advanced",
-        ]
+        assert terms == ["llm", "redis"]
+
+    def test_ranking_terms_empty_without_interests(self) -> None:
+        profile = UserProfile(
+            user_id="u1",
+            primary_tech_stack=["Python"],
+            current_role="Engineer",
+        )
+        assert profile.ranking_terms == []
 
     def test_topic_tokens_from_text_finds_known_topics(self) -> None:
         assert topic_tokens_from_text("Building FastAPI apps with Python") == ["python", "fastapi"]
@@ -483,7 +483,7 @@ class TestUserProfileModel:
         assert "kubernetes" not in terms
         assert "graphql" not in terms
 
-    def test_scrape_focus_terms_fail_attempt_keeps_stack_with_simpler_angle(self) -> None:
+    def test_scrape_focus_terms_no_hardcoded_pace_keywords(self) -> None:
         profile = UserProfile(
             user_id="u1",
             primary_tech_stack=["python"],
@@ -499,7 +499,12 @@ class TestUserProfileModel:
         )
         terms = scrape_focus_terms(profile)
         assert terms[0] == "python"
-        assert "basics" in terms or "fundamentals" in terms or "explained" in terms
+        assert "basics" not in terms
+        assert "fundamentals" not in terms
+        assert "explained" not in terms
+        assert "beginners" not in terms
+        assert "advanced" not in terms
+        assert "production" not in terms
 
     def test_apply_quiz_result_stores_marks_attempt_result_pass_at_60(self) -> None:
         profile = UserProfile(

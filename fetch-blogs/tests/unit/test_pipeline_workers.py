@@ -19,14 +19,20 @@ from src.workers import extractor_tasks, generator_tasks, publisher_tasks, scrap
 async def test_scrape_inserts_thin_articles_and_returns_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    await UserProfile(user_id="u1", name="Dev", primary_tech_stack=["python"]).insert()
+    await UserProfile(
+        user_id="u1",
+        name="Dev",
+        interests=["python"],
+        primary_tech_stack=["python"],
+    ).insert()
     monkeypatch.setattr(
         scraper_tasks,
         "_collect_payloads",
-        lambda terms: [
+        lambda terms, **_kwargs: [
             {
                 "url": "https://dev.to/a",
-                "title": "A",
+                "title": "Python tips",
+                "summary": "python asyncio",
                 "source_domain": "dev.to",
                 "topics": ["python"],
             }
@@ -38,7 +44,7 @@ async def test_scrape_inserts_thin_articles_and_returns_ids(
     stored = await Article.get(ids[0])
     assert stored is not None
     assert stored.body_text == ""
-    assert stored.title == "A"
+    assert stored.title == "Python tips"
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
@@ -274,7 +280,12 @@ def test_generate_digest_task_coerces_none_and_empty_ids(
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-async def test_publish_records_served_urls() -> None:
+async def test_publish_records_served_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_embed(profile: UserProfile, **_kwargs: object) -> list[float]:
+        profile.learning_path.last_digest_embedding = [0.5]
+        return [0.5]
+
+    monkeypatch.setattr(mongo_publisher, "embed_and_store_digest", _fake_embed)
     profile = UserProfile(user_id="u1", name="Dev")
     await profile.insert()
     digest = DailyDigest(
@@ -337,7 +348,15 @@ async def test_upsert_digest_inserts_then_replaces_existing_row() -> None:
 
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-async def test_record_served_urls_deduplicates_and_caps_history() -> None:
+async def test_record_served_urls_deduplicates_and_caps_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fake_embed(profile: UserProfile, **_kwargs: object) -> list[float]:
+        profile.learning_path.last_digest_embedding = [0.1, 0.2]
+        profile.profile_embedding = [0.1, 0.2]
+        return [0.1, 0.2]
+
+    monkeypatch.setattr(mongo_publisher, "embed_and_store_digest", _fake_embed)
     existing_urls = [f"https://example.com/{index}" for index in range(99)]
     profile = UserProfile(
         user_id="u1",
@@ -370,7 +389,7 @@ async def test_record_served_urls_deduplicates_and_caps_history() -> None:
     assert served[-1] == "https://example.com/new"
     assert loaded.learning_path.last_topics
     assert "python" in loaded.learning_path.last_topics
-
+    assert loaded.learning_path.last_digest_embedding == [0.1, 0.2]
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 async def test_publish_returns_empty_for_blank_digest_id() -> None:
@@ -521,6 +540,11 @@ def test_matches_terms_treats_empty_filters_as_match_all() -> None:
     assert scraper_tasks._matches_terms("Anything", []) is True
 
 
+def test_matches_terms_does_not_match_go_inside_golf() -> None:
+    assert scraper_tasks._matches_terms("Early Golf Habits", ["go"]) is False
+    assert scraper_tasks._matches_terms("Writing Go concurrency", ["go"]) is True
+
+
 def test_collect_payloads_deduplicates_filters_hn_and_rss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -582,40 +606,64 @@ def test_collect_payloads_deduplicates_filters_hn_and_rss(
     urls = [str(payload["url"]) for payload in payloads]
 
     assert urls.count("https://dev.to/python-post") == 1
-    # HN matching titles come before non-matching; both kept for source parity
-    assert urls.index("https://news.ycombinator.com/item?id=1") < urls.index(
-        "https://news.ycombinator.com/item?id=2"
-    )
+    assert "https://news.ycombinator.com/item?id=1" in urls
+    # Unmatched HN must not enter the pool
+    assert "https://news.ycombinator.com/item?id=2" not in urls
     assert "https://blog.example.com/go" in urls
     assert "https://blocked.example.com/post" not in urls
-    # Interleave: HN and Dev.to alternate (HN first slot)
-    assert urls[0] == "https://news.ycombinator.com/item?id=1"
-    assert "https://dev.to/python-post" in urls[:3]
+    # Dev.to (tech tags) leads; matched HN is a supplement
+    assert urls[0] == "https://dev.to/python-post"
 
 
-def test_collect_payloads_empty_terms_fetches_untagged_latest(
+def test_collect_payloads_empty_terms_without_trending_returns_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Empty admin prefs → Dev.to latest (no tag) + HN tops, interleaved."""
+    """Without interests and without trending_mode, do not scrape generic day posts."""
     from src.models.schemas import Article as LegacyArticle
 
     latest = LegacyArticle(
         url="https://dev.to/latest-1",
-        title="Hot today",
+        title="Hot today python tips",
         source_domain="dev.to",
-        body_text="",
+        body_text="python",
     )
-    hn_a = LegacyArticle(
-        url="https://example.com/a",
-        title="Show HN: widgets",
-        source_domain="example.com",
-        body_text="",
+
+    monkeypatch.setattr(
+        scraper_tasks,
+        "fetch_devto_articles",
+        lambda tag=None, limit=12: [latest],
     )
-    hn_b = LegacyArticle(
-        url="https://example.com/b",
-        title="Ask HN: careers",
-        source_domain="example.com",
-        body_text="",
+    monkeypatch.setattr(scraper_tasks, "fetch_hn_top_stories", lambda limit=16: [])
+    monkeypatch.setattr(scraper_tasks, "sources_by_kind", lambda kind: [])
+    monkeypatch.setattr(scraper_tasks, "is_url_allowed", lambda url: True)
+
+    payloads = scraper_tasks._collect_payloads([], prefer_hn_match=False, trending_mode=False)
+    assert payloads == []
+
+
+def test_collect_payloads_trending_mode_uses_configured_sites_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty interests + trending_mode → tech posts from registry/admin sites only."""
+    from src.models.schemas import Article as LegacyArticle
+
+    latest = LegacyArticle(
+        url="https://dev.to/latest-1",
+        title="Hot today python tips",
+        source_domain="dev.to",
+        body_text="python asyncio tutorial",
+    )
+    hn_tech = LegacyArticle(
+        url="https://news.ycombinator.com/item?id=1",
+        title="Show HN: a new Rust compiler trick",
+        source_domain="news.ycombinator.com",
+        body_text="rust",
+    )
+    hn_offsite = LegacyArticle(
+        url="https://random.example.com/a",
+        title="Show HN: widgets with python",
+        source_domain="random.example.com",
+        body_text="python",
     )
     calls: list[object] = []
 
@@ -627,17 +675,61 @@ def test_collect_payloads_empty_terms_fetches_untagged_latest(
     monkeypatch.setattr(
         scraper_tasks,
         "fetch_hn_top_stories",
-        lambda limit=16: [hn_a, hn_b],
+        lambda limit=16: [hn_tech, hn_offsite],
     )
     monkeypatch.setattr(scraper_tasks, "sources_by_kind", lambda kind: [])
     monkeypatch.setattr(scraper_tasks, "is_url_allowed", lambda url: True)
 
-    payloads = scraper_tasks._collect_payloads([], prefer_hn_match=False)
+    payloads = scraper_tasks._collect_payloads([], prefer_hn_match=False, trending_mode=True)
     urls = [str(p["url"]) for p in payloads]
     assert calls == [{"tag": None, "limit": 12}]
-    assert urls[0] == "https://example.com/a"
     assert "https://dev.to/latest-1" in urls
-    assert "https://example.com/b" in urls
+    assert "https://news.ycombinator.com/item?id=1" in urls
+    assert "https://random.example.com/a" not in urls
+
+
+def test_collect_payloads_continuity_and_trending_when_no_interests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No interests: scrape yesterday theme tags AND today's trending posts."""
+    from src.models.schemas import Article as LegacyArticle
+
+    cont = LegacyArticle(
+        url="https://dev.to/rag-next",
+        title="RAG chunking strategies",
+        source_domain="dev.to",
+        body_text="rag embedding vector search",
+    )
+    latest = LegacyArticle(
+        url="https://dev.to/latest-1",
+        title="Hot today rust tips",
+        source_domain="dev.to",
+        body_text="rust async tutorial",
+    )
+    devto_calls: list[object] = []
+
+    def fake_devto(tag=None, limit=12):
+        devto_calls.append({"tag": tag, "limit": limit})
+        if tag == "rag":
+            return [cont]
+        return [latest]
+
+    monkeypatch.setattr(scraper_tasks, "fetch_devto_articles", fake_devto)
+    monkeypatch.setattr(scraper_tasks, "fetch_hn_top_stories", lambda limit=16: [])
+    monkeypatch.setattr(scraper_tasks, "sources_by_kind", lambda kind: [])
+    monkeypatch.setattr(scraper_tasks, "is_url_allowed", lambda url: True)
+
+    payloads = scraper_tasks._collect_payloads(
+        [],
+        prefer_hn_match=False,
+        trending_mode=True,
+        continuity_terms=["rag"],
+    )
+    urls = [str(p["url"]) for p in payloads]
+    assert {"tag": "rag", "limit": 4} in devto_calls
+    assert {"tag": None, "limit": 12} in devto_calls
+    assert "https://dev.to/rag-next" in urls
+    assert "https://dev.to/latest-1" in urls
 
 
 def test_collect_payloads_includes_admin_urls(
@@ -647,9 +739,9 @@ def test_collect_payloads_includes_admin_urls(
 
     admin_art = LegacyArticle(
         url="https://company.example/posts/1",
-        title="Company eng blog",
+        title="Company eng blog on kubernetes",
         source_domain="company.example",
-        body_text="ship it",
+        body_text="kubernetes deployment guide",
     )
     monkeypatch.setattr(scraper_tasks, "fetch_devto_articles", lambda **_: [])
     monkeypatch.setattr(scraper_tasks, "fetch_hn_top_stories", lambda **_: [])
@@ -665,6 +757,7 @@ def test_collect_payloads_includes_admin_urls(
         [],
         prefer_hn_match=False,
         admin_source_urls=["https://company.example/blog"],
+        trending_mode=True,
     )
     assert [str(p["url"]) for p in payloads] == ["https://company.example/posts/1"]
 
@@ -790,21 +883,24 @@ async def test_scrape_skips_already_served_urls(monkeypatch: pytest.MonkeyPatch)
     await UserProfile(
         user_id="u1",
         name="Dev",
+        interests=["python"],
         primary_tech_stack=["python"],
         learning_path=LearningPath(served_urls=["https://dev.to/served"]),
     ).insert()
     monkeypatch.setattr(
         scraper_tasks,
         "_collect_payloads",
-        lambda terms: [
+        lambda terms, **_kwargs: [
             {
                 "url": "https://dev.to/served",
-                "title": "Served",
+                "title": "Served python tips",
+                "summary": "python",
                 "source_domain": "dev.to",
             },
             {
                 "url": "https://dev.to/new",
-                "title": "New",
+                "title": "New python tips",
+                "summary": "python",
                 "source_domain": "dev.to",
             },
         ],
@@ -819,14 +915,20 @@ async def test_scrape_skips_already_served_urls(monkeypatch: pytest.MonkeyPatch)
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 async def test_scrape_stops_after_max_article_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    await UserProfile(user_id="u1", name="Dev", primary_tech_stack=["python"]).insert()
+    await UserProfile(
+        user_id="u1",
+        name="Dev",
+        interests=["python"],
+        primary_tech_stack=["python"],
+    ).insert()
     monkeypatch.setattr(
         scraper_tasks,
         "_collect_payloads",
-        lambda terms: [
+        lambda terms, **_kwargs: [
             {
                 "url": f"https://dev.to/post-{index}",
-                "title": f"Post {index}",
+                "title": f"Python post {index}",
+                "summary": "python tutorial",
                 "source_domain": "dev.to",
             }
             for index in range(30)

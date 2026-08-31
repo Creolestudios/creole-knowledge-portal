@@ -955,6 +955,39 @@ class TestFastAPIApplicationFactory:
         client = TestClient(main_mod.create_app(), raise_server_exceptions=False)
         assert client.get("/api/v1/health/live").status_code == 200
 
+    def test_strip_root_path_drops_alb_prefix(self) -> None:
+        from src.main import strip_root_path
+
+        assert strip_root_path("/api/v1/health", "") == "/api/v1/health"
+        assert strip_root_path("/api/v1/health", "/creole-knowledge-portal") == "/api/v1/health"
+        assert (
+            strip_root_path(
+                "/creole-knowledge-portal/api/v1/digests/generate",
+                "/creole-knowledge-portal",
+            )
+            == "/api/v1/digests/generate"
+        )
+        assert strip_root_path("/creole-knowledge-portal", "/creole-knowledge-portal") == "/"
+
+    def test_create_app_strips_alb_root_path(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from fastapi.testclient import TestClient
+
+        from src.core.config import AppSettings, Environment
+        import src.main as main_mod
+
+        cfg = AppSettings(
+            ENVIRONMENT=Environment.LOCAL,
+            API_V1_STR="/api/v1",
+            ROOT_PATH="/creole-knowledge-portal",
+        )
+        monkeypatch.setattr(main_mod, "get_app_settings", lambda: cfg)
+
+        client = TestClient(main_mod.create_app(), raise_server_exceptions=False)
+        assert client.get("/api/v1/health/live").status_code == 200
+        assert client.get("/creole-knowledge-portal/api/v1/health/live").status_code == 200
+
     def test_create_app_initializes_sentry_outside_local_dev(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

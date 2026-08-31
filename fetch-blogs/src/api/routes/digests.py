@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from datetime import date, datetime
 
 from beanie import PydanticObjectId
@@ -8,7 +9,7 @@ from pydantic import BaseModel
 
 from src.api.routes.pipeline import run_celery_pipeline_and_wait
 from src.core.db import init_db
-from src.generator.synthesizer import synthesize_digest
+from src.generator.synthesizer import synthesize_digest, _strip_blog_frontmatter
 from src.models.article import Article
 from src.api.routes.pipeline import execute_pipeline_for_user
 from src.models.digest import DailyDigest
@@ -62,6 +63,19 @@ def _calendar_date_key(value: object) -> str | None:
     return None
 
 
+def _is_junk_headline(headline: str) -> bool:
+    text = (headline or "").strip().lower()
+    if not text:
+        return True
+    if re.search(r"\.(pdf|zip|exe|dmg|tar|gz)\b", text):
+        return True
+    if text.startswith("next steps after:") and re.search(
+        r"\.(pdf|zip|exe|dmg)\b", text
+    ):
+        return True
+    return False
+
+
 def _display_title(headline: str, article: dict) -> str:
     sources = article.get("sources") or []
     first_title = ""
@@ -89,11 +103,16 @@ def _display_title(headline: str, article: dict) -> str:
             "code snippet",
             "overview / summary",
             "overview/summary",
+            "continuation from yesterday",
         }:
             first_section = ""
-    if _is_templated_briefing_headline(headline):
-        return first_title or first_section or headline or "Morning Briefing"
-    return headline or first_title or "Morning Briefing"
+    candidates = [headline, first_title, first_section]
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if not text or _is_junk_headline(text) or _is_templated_briefing_headline(text):
+            continue
+        return text
+    return "Morning Briefing"
 
 
 def _section_bucket(title: str) -> str:
@@ -101,7 +120,11 @@ def _section_bucket(title: str) -> str:
     text = title.strip().lower()
     if "code" in text:
         return "code"
-    if text in {"brief", "why this matters today"} or text.startswith("brief"):
+    if text in {
+        "brief",
+        "why this matters today",
+        "continuation from yesterday",
+    } or text.startswith("brief"):
         return "brief"
     if "overview" in text or "summary" in text or text == "going deeper":
         return "overview"
@@ -110,13 +133,20 @@ def _section_bucket(title: str) -> str:
 
 def _ordered_section_markdown(sections: list) -> list[str]:
     """Emit Brief → Code Snippet → Overview/Summary in that order."""
+    from src.extractors.topic_filter import is_off_topic_lifestyle
+
     buckets: dict[str, list[str]] = {"brief": [], "code": [], "overview": []}
     for sec in sections:
         if not isinstance(sec, dict):
             sec = getattr(sec, "model_dump", lambda: {})()
         title = str(sec.get("title") or "Untitled")
-        body = _strip_matching_heading(title, str(sec.get("content") or "")).strip()
+        body = _strip_blog_frontmatter(
+            _strip_matching_heading(title, str(sec.get("content") or "")).strip(),
+        )
         if not body:
+            continue
+        # Never surface lifestyle how-tos (screenshots, golf, etc.) in the digest body
+        if is_off_topic_lifestyle(title, body[:1500]):
             continue
         buckets[_section_bucket(title)].append(body)
 
@@ -168,17 +198,88 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
             markdown_parts.append(f"- {item}")
         markdown_parts.append("")
 
-    sources = article.get("sources", [])
+    sources_raw = article.get("sources", []) or []
+    sections_for_cite = article.get("sections") or []
+    cited_ids: set[int] = set()
+    for sec in sections_for_cite:
+        if not isinstance(sec, dict):
+            sec = getattr(sec, "model_dump", lambda: {})()
+        for item in sec.get("sources_cited") or []:
+            try:
+                cited_ids.add(int(item))
+            except (TypeError, ValueError):
+                continue
+
+    from src.extractors.topic_filter import is_source_title_junk
+
+    def _source_ok(src: dict) -> bool:
+        title = str(src.get("title") or "").strip()
+        url = str(src.get("url") or "").strip()
+        if not title or not url or url == "#":
+            return False
+        if is_source_title_junk(title):
+            return False
+        # Keep cited sources even when the title lacks an obvious tech keyword
+        return True
+
+    sources: list = []
+    for src in sources_raw:
+        if not isinstance(src, dict):
+            src = getattr(src, "model_dump", lambda: {})()
+        if not _source_ok(src):
+            continue
+        src_id = src.get("id")
+        if cited_ids and src_id is not None:
+            try:
+                if int(src_id) not in cited_ids:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        sources.append(src)
+
+    # If citation filtering emptied the list, keep tech-filtered sources only
+    if not sources:
+        for src in sources_raw:
+            if not isinstance(src, dict):
+                src = getattr(src, "model_dump", lambda: {})()
+            if _source_ok(src):
+                sources.append(src)
+
+    # Last resort: further_reading links (still interest-filtered)
+    if not sources:
+        for item in article.get("further_reading") or []:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            url = str(item.get("url") or "").strip()
+            if not title or not url or url == "#":
+                continue
+            if is_source_title_junk(title):
+                continue
+            sources.append(
+                {
+                    "title": title,
+                    "url": url,
+                    "source_domain": "",
+                    "author": "",
+                }
+            )
+
+    # Always end the digest with Sources & Citations when we have real links
     if sources:
         markdown_parts.append("## Sources & Citations\n")
         for src in sources:
             if not isinstance(src, dict):
                 src = getattr(src, "model_dump", lambda: {})()
-            author_str = f" by {src.get('author')}" if src.get("author") else ""
-            markdown_parts.append(
-                f"- **[{src.get('title')}]({src.get('url')})** — Published on "
-                f"*{src.get('source_domain')}*{author_str}"
-            )
+            title = str(src.get("title") or "").strip() or "Source"
+            url = str(src.get("url") or "").strip()
+            domain = str(src.get("source_domain") or "").strip()
+            author = str(src.get("author") or "").strip()
+            if not url or url == "#":
+                continue
+            meta_bits = [bit for bit in [domain, author] if bit]
+            meta = f" — {' · '.join(meta_bits)}" if meta_bits else ""
+            markdown_parts.append(f"- [{title}]({url}){meta}")
         markdown_parts.append("")
 
     flat_tags = ["morning-briefing", "mongodb", "synthesis"]
@@ -432,9 +533,20 @@ async def generate_digest(payload: GenerateRequest, flat: bool = True):
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:
         logger.error("Digest generation failed: %s", exc, exc_info=True)
+        msg = str(exc)
+        lower = msg.lower()
+        if "429" in lower or "quota" in lower:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Gemini API quota exceeded (429). "
+                    "Daily free-tier limit reached — wait for reset or upgrade the API plan, "
+                    "then retry synthesize."
+                ),
+            ) from exc
         raise HTTPException(
             status_code=500,
-            detail=f"Synthesis pipeline error: {str(exc)}",
+            detail=f"Synthesis pipeline error: {msg}",
         ) from exc
 
 

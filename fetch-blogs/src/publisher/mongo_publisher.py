@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 import structlog
 
 from src.models.digest import DailyDigest
 from src.models.profile import UserProfile, record_stack_run_progress, topic_tokens_from_text
+from src.ranker.next_day import embed_and_store_digest
 
 log = structlog.get_logger(__name__)
 
@@ -41,7 +43,7 @@ async def upsert_digest(digest: DailyDigest) -> str:
 
 
 async def record_served_urls(digest: DailyDigest, profile: UserProfile) -> None:
-    """Append cited source URLs and yesterday's briefing summary for next-day continuation."""
+    """Append cited URLs, persist yesterday summary + digest embedding for next day."""
     served = [str(url) for url in profile.learning_path.served_urls]
     for source in digest.content.sources:
         url = str(source.url)
@@ -57,24 +59,51 @@ async def record_served_urls(digest: DailyDigest, profile: UserProfile) -> None:
     tokens: list[str] = []
     for title in titles:
         tokens.extend(topic_tokens_from_text(title))
-    # Always persist themes for next-day scrape (tokens + raw titles as fallback)
-    combined = list(dict.fromkeys([*tokens, *titles]))[:8]
+    headline = str(digest.content.headline or "").strip()
+    if headline and not re.search(r"\.(pdf|zip|exe|dmg|tar|gz)\b", headline.lower()):
+        tokens.extend(topic_tokens_from_text(headline))
+    combined = list(dict.fromkeys(t for t in tokens if t))[:8]
     if combined:
         profile.learning_path.last_topics = combined
 
-    # Persist briefing summary so tomorrow continues this series
-    headline = str(digest.content.headline or "").strip()
-    if headline:
-        profile.learning_path.last_digest_headline = headline
-    profile.learning_path.last_digest_tldr = [
+    # Never persist PDF/binary dump names as tomorrow's continuity headline
+    if headline and not re.search(r"\.(pdf|zip|exe|dmg|tar|gz)\b", headline.lower()):
+        if not headline.lower().startswith("next steps after:"):
+            profile.learning_path.last_digest_headline = headline
+        else:
+            rest = headline.split(":", 1)[-1].strip()
+            if not re.search(r"\.(pdf|zip|exe|dmg)\b", rest.lower()):
+                profile.learning_path.last_digest_headline = rest or headline
+    tldr = [
         str(item).strip() for item in (digest.content.tldr or []) if str(item).strip()
     ][:6]
-    profile.learning_path.last_digest_takeaways = [
-        str(item).strip() for item in (digest.content.key_takeaways or []) if str(item).strip()
+    takeaways = [
+        str(item).strip()
+        for item in (digest.content.key_takeaways or [])
+        if str(item).strip()
     ][:8]
+    profile.learning_path.last_digest_tldr = tldr
+    profile.learning_path.last_digest_takeaways = takeaways
     profile.learning_path.last_digest_date = digest.digest_date
 
-    # Progress the active stack run (stay on one stack until coverage target)
+    snippets = [
+        str(section.content or "")[:800]
+        for section in (digest.content.sections or [])[:4]
+        if str(getattr(section, "content", "") or "").strip()
+    ]
+    vector = embed_and_store_digest(
+        profile,
+        headline=headline,
+        tldr=tldr,
+        takeaways=takeaways,
+        section_snippets=snippets,
+    )
+    log.info(
+        "publisher: last_digest_embedding stored",
+        dims=len(vector),
+        user_id=profile.user_id,
+    )
+
     record_stack_run_progress(profile, combined)
 
     profile.updated_at = datetime.now(UTC)

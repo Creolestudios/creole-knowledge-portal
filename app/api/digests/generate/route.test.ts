@@ -300,7 +300,7 @@ describe('POST /api/digests/generate', () => {
     expect(insertedRows.at(-1).tags).toEqual(['tech']);
   });
 
-  it('retries every model when the AI output is missing required fields', async () => {
+  it('retries when the AI output is missing required fields, then uses static fallback', async () => {
     mockFastApiDown();
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
     mockGenerateContent.mockResolvedValue({
@@ -313,7 +313,7 @@ describe('POST /api/digests/generate', () => {
 
     const res = await POST(mockRequest({}));
     expect(res.status).toBe(200);
-    expect(mockGenerateContent).toHaveBeenCalledTimes(4);
+    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
     expect(insertedRows.at(-1).title).toBe('Only a title');
   });
 
@@ -331,19 +331,32 @@ describe('POST /api/digests/generate', () => {
     expect(insertedRows.at(-1).title).toContain('Architectural Deep-Dive');
   });
 
-  it('backs off and still falls back when the model reports a quota error', async () => {
+  it('returns a clear 429 error when Gemini quota is exceeded', async () => {
     mockFastApiDown();
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
     mockGenerateContent.mockRejectedValue(new Error('429 quota exceeded'));
-    mockInsertSingle.mockResolvedValue({
-      data: { id: 'b-quota', title: 'static', content: 'static', tags: [] },
-      error: null,
-    });
 
     const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
-    expect(mockGenerateContent).toHaveBeenCalledTimes(4);
-    expect(insertedRows.at(-1).title).toContain('Architectural Deep-Dive');
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error).toMatch(/quota exceeded \(429\)/i);
+    expect(mockGenerateContent).toHaveBeenCalled();
+  });
+
+  it('returns 503 when FastAPI times out and Gemini fallback also fails', async () => {
+    (global.fetch as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, blog: null }),
+      })
+      .mockRejectedValueOnce(new Error('The operation was aborted due to timeout'));
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    mockGenerateContent.mockRejectedValue(new Error('503 UNAVAILABLE'));
+
+    const res = await POST(mockRequest({}));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error).toMatch(/timed out/i);
   });
 
   it('treats an unparseable request body as an empty body and falls through to the session', async () => {
