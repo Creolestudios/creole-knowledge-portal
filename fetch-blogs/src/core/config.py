@@ -31,6 +31,7 @@ class AppSettings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SENTRY_DSN: AnyUrl | None = None
     CELERY_EAGER: bool | None = None
+    ROOT_PATH: str = ""
 
     @field_validator("SENTRY_DSN", mode="before")
     @classmethod

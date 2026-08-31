@@ -92,10 +92,22 @@ export async function POST(request: Request) {
         const detail = payload.detail || payload.error || 'Supabase profile not found';
         return NextResponse.json({ error: detail }, { status: 404 });
       }
-      // Non-ok or incomplete success → Next.js fallback (still show something today)
       pipelineFailureReason = String(
         payload.detail || payload.error || `Blog service returned HTTP ${res.status}`,
       );
+      const quotaHit =
+        res.status === 429 ||
+        /429|quota/i.test(pipelineFailureReason);
+      if (quotaHit) {
+        console.error('[DigestGenerate] Gemini quota exceeded (429):', pipelineFailureReason);
+        return NextResponse.json(
+          {
+            error:
+              'Gemini API quota exceeded (429). Daily free-tier limit reached — wait for reset or upgrade the API plan, then retry synthesize.',
+          },
+          { status: 429 },
+        );
+      }
       console.warn(
         '[DigestGenerate] FastAPI generate failed, using Next.js fallback:',
         pipelineFailureReason,
@@ -103,7 +115,7 @@ export async function POST(request: Request) {
     } catch (e: unknown) {
       pipelineFailureReason =
         e instanceof Error ? e.message : 'Blog service unreachable or timed out';
-      console.warn('[DigestGenerate] FastAPI service not available, using fallback:', e);
+      console.error('[DigestGenerate] FastAPI service not available:', pipelineFailureReason);
     }
 
     // Local Gemini / static fallback when FastAPI could not produce today's digest
@@ -128,13 +140,13 @@ export async function POST(request: Request) {
       Return JSON with schema:
       {
         "title": "A compelling technical learning headline",
-        "content": "Detailed Markdown content with code blocks, headings (## Overview, ## Best Practices, ## Code Deep-Dive, ## Key Takeaways), and explanations.",
+        "content": "Detailed Markdown using EXACTLY these H2 headings in order: ## Daily Overview (TL;DR), ## Brief, ## Code Snippet, ## Overview / Summary, ## Key Actionable Takeaways, ## Sources & Citations. Put real code only inside ## Code Snippet fences.",
         "tags": ["tech", "architecture", "nextjs", "performance"],
         "estimated_read_minutes": 15
       }
     `;
 
-    const modelsToTry = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-flash-latest'];
+    const modelsToTry = ['gemini-3.6-flash'];
     let parsed: {
       title?: string;
       content?: string;
@@ -142,6 +154,7 @@ export async function POST(request: Request) {
       estimated_read_minutes?: number;
     } | null = null;
     let geminiFailureReason: string | null = null;
+    let sawQuota = false;
 
     for (const modelName of modelsToTry) {
       try {
@@ -174,18 +187,46 @@ export async function POST(request: Request) {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         geminiFailureReason = message;
-        console.warn(`[DigestGenerate] Model ${modelName} error:`, message);
-        const isQuota = message.includes('429') || message.includes('quota');
+        const isQuota =
+          message.includes('429') ||
+          /quota/i.test(message) ||
+          /RESOURCE_EXHAUSTED/i.test(message);
         if (isQuota) {
-          await new Promise((r) => setTimeout(r, 1500));
+          sawQuota = true;
+          console.error(`[DigestGenerate] Gemini quota exceeded (429) on ${modelName}:`, message);
+          break;
         }
+        console.warn(`[DigestGenerate] Model ${modelName} error:`, message);
       }
+    }
+
+    if (sawQuota) {
+      const error =
+        'Gemini API quota exceeded (429). Daily free-tier limit reached — wait for reset or upgrade the API plan, then retry synthesize.';
+      console.error('[DigestGenerate]', error);
+      return NextResponse.json({ error }, { status: 429 });
     }
 
     let fallbackKind: 'gemini_local' | 'static' = 'gemini_local';
     if (!parsed) {
+      const timedOut =
+        !!pipelineFailureReason &&
+        (/timeout|aborted|timed out/i.test(pipelineFailureReason));
+      if (timedOut) {
+        const error = [
+          'Blog service timed out waiting for the scrape→publish pipeline.',
+          geminiFailureReason
+            ? `Gemini fallback also failed: ${geminiFailureReason.slice(0, 240)}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' ');
+        console.error('[DigestGenerate]', error);
+        return NextResponse.json({ error }, { status: 503 });
+      }
       console.warn(
-        '[DigestGenerate] All Gemini AI models hit quota/error. Using static resilient synthesis generator.',
+        '[DigestGenerate] All Gemini AI models hit error. Using static resilient synthesis generator.',
+        geminiFailureReason,
       );
       fallbackKind = 'static';
       parsed = {
@@ -195,10 +236,10 @@ export async function POST(request: Request) {
 - Optimizing database queries across SQL (Supabase) and NoSQL (MongoDB) data stores.
 - Implementing resilient fallback patterns for external third-party API dependencies.
 
-## Modern Architectural Best Practices
+## Brief
 In modern production applications, separation of concerns between state storage, authentication, and background task queues is critical. When scaling web applications, microservices should delegate compute-intensive LLM and scraping tasks to specialized async workers (e.g. Celery / FastAPI) while Next.js handles user interaction.
 
-## Code Deep-Dive: Resilient Multi-Provider Strategy
+## Code Snippet
 \`\`\`typescript
 export async function executeWithResilientFallback<T>(
   providers: (() => Promise<T>)[]
@@ -216,10 +257,16 @@ export async function executeWithResilientFallback<T>(
 }
 \`\`\`
 
+## Overview / Summary
+Use a provider chain so one failed Gemini/model call does not fail the whole digest request. Keep HTTP handlers thin and push scrape/rank/synthesize work to async workers.
+
 ## Key Actionable Takeaways
 - Always decouple heavy background processing from HTTP request handlers.
 - Use explicit 20-minute idle check counters for long-running user assessments to maximize engagement.
-- Store structured user data in relational databases while archiving unstructured documents in Mongo or Object Storage.`,
+- Store structured user data in relational databases while archiving unstructured documents in Mongo or Object Storage.
+
+## Sources & Citations
+- Internal architecture notes (static fallback)`,
         tags: ['architecture', 'performance', 'nextjs', 'resilience'],
         estimated_read_minutes: 12,
       };

@@ -31,17 +31,17 @@ def test_payload_from_articles_uses_scraped_bodies() -> None:
 
 
 def test_payload_from_articles_keeps_title_when_body_is_empty() -> None:
-    article = _article("HN story", "")
+    article = _article("HN story about Python asyncio", "")
     payload = synthesizer._payload_from_articles([article])
 
     assert payload["sections"][0]["title"] == "Overview / Summary"
-    assert "HN story" in payload["sections"][0]["content"]
+    assert "Python asyncio" in payload["sections"][0]["content"]
     assert "Personalized articles were ranked" not in str(payload)
 
 
 def test_payload_from_articles_preserves_markdown_structure() -> None:
     body = "## Install uv\n\nRun this:\n\n```bash\nuv sync\n```\n"
-    payload = synthesizer._payload_from_articles([_article("Setup", body)])
+    payload = synthesizer._payload_from_articles([_article("Python setup with uv", body)])
     content = payload["sections"][0]["content"]
 
     assert "## Install uv" in content
@@ -55,10 +55,23 @@ def test_parse_json_object_unwraps_gemini_fences() -> None:
     assert parsed["headline"] == "Hi"
 
 
-def test_synthesize_digest_uses_scraped_bodies_when_gemini_json_fails(
+def test_parse_json_object_repairs_trailing_commas() -> None:
+    raw = '{"headline": "Hi", "tldr": ["a",], "sections": [],}'
+    parsed = synthesizer._parse_json_object(raw)
+    assert parsed["headline"] == "Hi"
+    assert parsed["tldr"] == ["a"]
+
+
+def test_synthesize_digest_uses_continuity_when_gemini_json_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    profile = UserProfile(user_id="u1", name="Dev", primary_tech_stack=["mongodb"])
+    profile = UserProfile(
+        user_id="u1",
+        name="Dev",
+        interests=["mongodb"],
+        primary_tech_stack=["mongodb"],
+    )
+    profile.learning_path.last_digest_headline = "Yesterday Mongo streams"
     article = _article(
         "Change streams in production",
         "MongoDB change streams let you watch inserts. " * 30,
@@ -74,10 +87,15 @@ def test_synthesize_digest_uses_scraped_bodies_when_gemini_json_fails(
 
     digest = synthesizer.synthesize_digest(profile, [article])
 
-    assert "Personalized articles were ranked" not in " ".join(digest.content.tldr)
-    assert digest.content.sections[0].title == "Overview / Summary"
-    assert "change streams" in digest.content.sections[0].content.lower()
+    assert digest.content.sections[0].title == "Brief"
+    assert any("change streams" in s.content.lower() for s in digest.content.sections)
     assert str(digest.content.sources[0].url).rstrip("/") == "https://dev.to/change-streams"
+
+
+def test_parse_json_object_repairs_raw_newlines_in_strings() -> None:
+    raw = '{"headline": "Hi\nthere", "tldr": ["a"], "sections": []}'
+    parsed = synthesizer._parse_json_object(raw)
+    assert parsed["headline"] == "Hi\nthere"
 
 
 def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
@@ -93,14 +111,7 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
             {
                 "headline": "Queues for your stack",
                 "tldr": ["Celery plus Redis"],
-                "sections": [
-                    {
-                        "title": "Why this matters today",
-                        "content": "A short overview.",
-                        "sources_cited": [1],
-                        "estimated_read_minutes": 1.0,
-                    }
-                ],
+                "continuation": "Yesterday's Redis basics lead into Celery workers today.",
                 "key_takeaways": ["Watch the worker logs"],
             },
             12,
@@ -114,9 +125,60 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
 
     assert digest.content.headline == "Queues for your stack"
     assert digest.content.tldr == ["Celery plus Redis"]
-    assert digest.content.sections[0].title == "Why this matters today"
-    assert digest.content.sections[1].title == "Overview / Summary"
-    assert "Celery workers drain Redis" in digest.content.sections[1].content
+    assert digest.content.sections[0].title == "Brief"
+    assert "Celery workers today" in digest.content.sections[0].content
+    overview = next(s for s in digest.content.sections if s.title == "Overview / Summary")
+    assert "Celery workers drain Redis" in overview.content
+
+
+def test_call_gemini_raises_clear_quota_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Boom:
+        def generate_content(self, *_a, **_k):
+            raise RuntimeError(
+                "429 You exceeded your current quota, please check your plan and billing details."
+            )
+
+    monkeypatch.setattr(
+        synthesizer,
+        "get_llm_settings",
+        lambda: type("S", (), {"GEMINI_API_KEY": "k", "GEMINI_MODEL": "gemini-3.6-flash"})(),
+    )
+
+    import sys
+    import types
+
+    fake_genai = types.ModuleType("google.generativeai")
+    fake_genai.configure = lambda **_: None
+    fake_genai.GenerativeModel = lambda *_a, **_k: _Boom()
+    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+
+    with pytest.raises(synthesizer.GeminiQuotaExceeded, match="quota exceeded \\(429\\)"):
+        synthesizer._call_gemini("hello", as_json=False)
+
+
+def test_junk_pdf_headline_is_replaced_with_article_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = UserProfile(user_id="u1", name="Dev", primary_tech_stack=["python"])
+    profile.learning_path.last_digest_headline = "Eight_Worlds_Planetary_Archive.pdf"
+    article = _article("Python asyncio patterns", "await gather tasks. " * 40)
+
+    monkeypatch.setattr(
+        synthesizer,
+        "_call_gemini",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            __import__("json").JSONDecodeError("boom", "{", 0)
+        ),
+    )
+    monkeypatch.setattr(synthesizer, "_generate_teaching_sections", lambda *_: ([], 0))
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 10)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
+
+    digest = synthesizer.synthesize_digest(profile, [article])
+    assert ".pdf" not in digest.content.headline.lower()
+    assert "Next steps after:" not in digest.content.headline
+    assert "Python asyncio" in digest.content.headline
 
 
 def test_templated_gemini_headline_is_replaced_with_article_title(
@@ -187,7 +249,7 @@ def test_teaching_markdown_is_kept_in_the_briefing(monkeypatch: pytest.MonkeyPat
 
 def test_briefing_is_capped_at_word_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
     profile = UserProfile(user_id="u1", name="Dev")
-    article = _article("Long piece", "source " * 50)
+    article = _article("Long Python piece", "python asyncio source " * 50)
 
     def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
         if as_json:
@@ -202,29 +264,44 @@ def test_briefing_is_capped_at_word_ceiling(monkeypatch: pytest.MonkeyPatch) -> 
     assert digest.reading_time_minutes >= synthesizer._MIN_READ_MINUTES - 0.5
 
 
-def test_skips_teaching_when_scraped_bodies_already_cover_20_minutes(
+def test_teaching_still_runs_when_scraped_bodies_are_long(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Teaching chapters are the primary briefing; long scrapes stay as excerpts."""
     profile = UserProfile(user_id="u1", name="Dev")
-    article = _article("Long source", "scraped " * 5000)
+    article = _article("Long Python source", "python asyncio scraped " * 5000)
+    calls = {"teaching": 0}
 
-    def _no_teaching(*_args: object, **_kwargs: object) -> tuple[list, int]:
-        raise AssertionError("teaching should not run when scraped text is already long")
+    def _teaching(*_args: object, **_kwargs: object) -> tuple[list, int]:
+        calls["teaching"] += 1
+        return (
+            [
+                {
+                    "title": "Deep dive",
+                    "content": "teach " * 80,
+                    "sources_cited": [1],
+                    "estimated_read_minutes": 2.0,
+                }
+            ],
+            1,
+        )
 
-    monkeypatch.setattr(synthesizer, "_generate_teaching_sections", _no_teaching)
+    monkeypatch.setattr(synthesizer, "_generate_teaching_sections", _teaching)
     monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_WORDS", 10_000)
     monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_TOTAL", 10_000)
     monkeypatch.setattr(
         synthesizer,
         "_call_gemini",
         lambda *_args, **_kwargs: (
-            {"headline": "H", "tldr": ["t"], "sections": [], "key_takeaways": []},
+            {"headline": "H", "tldr": ["t"], "continuation": "c", "key_takeaways": []},
             1,
         ),
     )
 
     digest = synthesizer.synthesize_digest(profile, [article])
-    assert "scraped" in digest.content.sections[-1].content
+    assert calls["teaching"] == 1
+    # Canonical normalize maps teaching into Brief / Code / Overview
+    assert any(s.title in {"Brief", "Deep dive", "Overview / Summary"} for s in digest.content.sections)
     assert digest.word_count >= synthesizer._WORD_FLOOR
     assert digest.word_count <= synthesizer._WORD_CEILING
 
@@ -253,6 +330,19 @@ def test_clip_to_words_and_markdown_helpers() -> None:
     assert "Body" in cleaned
 
     assert synthesizer._strip_fences("```json\n{\"a\": 1}\n```") == '{"a": 1}'
+
+    frontmatter = (
+        "title: Kubeflow Without Kubernetes\n"
+        "published: true\n"
+        "description: Run JupyterLab and MLflow\n"
+        "tags: #docker\n"
+        "series: gubernator\n\n"
+        "The Kubernetes Tax on ML\n"
+    )
+    stripped = synthesizer._strip_blog_frontmatter(frontmatter)
+    assert "published:" not in stripped
+    assert "tags:" not in stripped
+    assert "Kubernetes Tax" in stripped
 
 
 def test_theme_helpers_and_fallback_payload() -> None:
@@ -447,7 +537,7 @@ def test_synthesize_digest_with_scraped_only_and_custom_date(
     )
 
     assert digest.digest_date == date(2026, 1, 2)
-    assert digest.content.sections[0].title == "Overview / Summary"
+    assert digest.content.sections[0].title == "Brief"
     assert digest.metrics.llm_tokens_used == 0
 
 
@@ -633,6 +723,21 @@ def test_previous_briefing_block_includes_yesterday_headline() -> None:
     assert "Redis queues in production" in block
     assert "ACTIVE STACK RUN" in block
     assert "Celery with Redis" in block
+    assert "YESTERDAY'S BRIEFING" in block
+
+
+def test_previous_briefing_block_first_day_has_no_fake_yesterday() -> None:
+    profile = UserProfile(user_id="u-new", primary_tech_stack=["python"])
+    block = synthesizer._previous_briefing_block(profile)
+    assert "FIRST BRIEFING" in block
+    assert "YESTERDAY'S BRIEFING" not in block
+    assert "Do NOT mention yesterday" in block
+    assert synthesizer._has_previous_briefing(profile) is False
+
+    opening = synthesizer._continuity_opening(profile, [_article("Python asyncio", "body")])
+    brief = opening["sections"][0]["content"]
+    assert "Yesterday covered" not in brief
+    assert "introduces" in brief.lower() or "Today's briefing" in brief
 
 
 def test_enforce_min_length_raises_when_sources_too_thin(
@@ -680,4 +785,37 @@ def test_enforce_min_length_pads_near_miss_shortfall(
         scraped_only=False,
     )
     assert synthesizer._words_in(sections) >= 100
+
+
+def test_normalize_digest_sections_enforces_canonical_titles() -> None:
+    messy = [
+        {
+            "title": "Continuation from yesterday",
+            "content": "Yesterday we covered hooks. Today we deepen effects.",
+            "sources_cited": [1],
+        },
+        {
+            "title": "Some random article title",
+            "content": (
+                "## Brief\n\nHook into the render cycle carefully.\n\n"
+                "## Overview / Summary\n\n"
+                "Effects run after paint.\n\n"
+                "```ts\nuseEffect(() => {}, []);\n```\n"
+            ),
+            "sources_cited": [2],
+        },
+        {
+            "title": "Going deeper",
+            "content": "Cleanup functions avoid leaks.",
+            "sources_cited": [2],
+        },
+    ]
+    out = synthesizer._normalize_digest_sections(messy)
+    titles = [s["title"] for s in out]
+    assert titles == ["Brief", "Code Snippet", "Overview / Summary"]
+    assert "useEffect" in out[1]["content"]
+    assert "```" in out[1]["content"]
+    assert "Yesterday we covered hooks" in out[0]["content"]
+    assert "Effects run after paint" in out[2]["content"]
+    assert "Cleanup functions" in out[2]["content"]
 

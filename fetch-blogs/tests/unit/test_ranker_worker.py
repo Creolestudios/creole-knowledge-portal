@@ -24,6 +24,12 @@ class FakeBreakdown:
 class FakeArticle:
     def __init__(self, article_id: str | None = "a1") -> None:
         self.id = article_id
+        self.title = "Python asyncio patterns"
+        self.summary = "Learn python asyncio"
+        self.body_text = "python asyncio tutorial for backends"
+        self.topics = ["python"]
+        self.url = "https://dev.to/python-asyncio"
+        self.source_domain = "dev.to"
         self.quality_score = 0.0
         self.ranking_breakdown: Any = None
         self.llm_rerank_reason: str | None = None
@@ -63,6 +69,8 @@ def patched_ranker(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         learning_path=path,
         profile_embedding=[0.1, 0.2],
         updated_at=None,
+        interests=[],
+        preferred_sources=[],
         save=lambda: None,
     )
 
@@ -202,8 +210,10 @@ class TestRankArticlesForUser:
         )
 
         out = await ranker_tasks._rank_articles_for_user(["a1"], "u1", 10)
-        assert out == ["unknown-id"]
-        assert art.saved is False
+        # Gemini may return unknown ids; thin pipeline still pads with today's scrape id
+        assert "unknown-id" in out
+        assert "a1" in out
+        assert art.saved is True
 
     @pytest.mark.asyncio
     async def test_excludes_unsaved_articles_from_the_candidate_set(

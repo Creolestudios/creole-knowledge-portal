@@ -238,7 +238,7 @@ function envOrSecret(
 
 /**
  * Builds the Mongo/Redis/Celery env-or-secret entries shared by the API and
- * worker task definitions, plus the optional Gemini LLM key secret.
+ * worker task definitions, plus Gemini and Supabase secrets FastAPI needs.
  */
 function buildCeleryEnvSecrets(
   mongoArn: string | undefined,
@@ -247,7 +247,12 @@ function buildCeleryEnvSecrets(
   mongoFallback: string,
   redisFallback: string,
   env: EcsEnvVar[],
-  secrets: EcsSecretRef[]
+  secrets: EcsSecretRef[],
+  supabase?: {
+    urlArn?: string;
+    anonArn?: string;
+    serviceArn?: string;
+  }
 ): void {
   envOrSecret("MONGO_URI", mongoArn, mongoFallback, env, secrets);
   envOrSecret("REDIS_URL", redisArn, redisFallback, env, secrets);
@@ -255,6 +260,17 @@ function buildCeleryEnvSecrets(
   envOrSecret("CELERY_BROKER_URL", redisArn, redisFallback, env, secrets);
   if (llmArn) {
     secrets.push({ name: "LLM_GEMINI_API_KEY", valueFrom: llmArn });
+    secrets.push({ name: "GEMINI_API_KEY", valueFrom: llmArn });
+  }
+  if (supabase?.urlArn) {
+    secrets.push({ name: "SUPABASE_URL", valueFrom: supabase.urlArn });
+    secrets.push({ name: "NEXT_PUBLIC_SUPABASE_URL", valueFrom: supabase.urlArn });
+  }
+  if (supabase?.anonArn) {
+    secrets.push({ name: "NEXT_PUBLIC_SUPABASE_ANON_KEY", valueFrom: supabase.anonArn });
+  }
+  if (supabase?.serviceArn) {
+    secrets.push({ name: "SUPABASE_SERVICE_ROLE_KEY", valueFrom: supabase.serviceArn });
   }
 }
 
@@ -279,18 +295,35 @@ const apiTask = new aws.ecs.TaskDefinition(`${appName}-api-task`, {
       appSecrets.mongoUri?.arn ?? pulumi.output(""),
       appSecrets.redisUrl?.arn ?? pulumi.output(""),
       appSecrets.llmGeminiApiKey?.arn ?? pulumi.output(""),
+      appSecrets.supabaseUrl?.arn ?? pulumi.output(""),
+      appSecrets.supabaseAnonKey?.arn ?? pulumi.output(""),
+      appSecrets.supabaseServiceRoleKey?.arn ?? pulumi.output(""),
       pulumi.interpolate`${webOrigin},http://localhost:3000`,
     ])
-    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn, corsOrigins]) => {
+    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn, supaUrlArn, supaAnonArn, supaServiceArn, corsOrigins]) => {
       const environment: EcsEnvVar[] = [
         { name: "NODE_ENV", value: "production" },
         { name: "HOSTNAME", value: "0.0.0.0" },
         { name: "PORT", value: String(apiPort) },
         { name: "APP_ENVIRONMENT", value: "production" },
         { name: "APP_CORS_ORIGINS", value: corsOrigins },
+        { name: "APP_ROOT_PATH", value: basePath },
       ];
       const secrets: EcsSecretRef[] = [];
-      buildCeleryEnvSecrets(mongoArn || undefined, redisArn || undefined, llmArn || undefined, mongoFallback, redisFallback, environment, secrets);
+      buildCeleryEnvSecrets(
+        mongoArn || undefined,
+        redisArn || undefined,
+        llmArn || undefined,
+        mongoFallback,
+        redisFallback,
+        environment,
+        secrets,
+        {
+          urlArn: supaUrlArn || undefined,
+          anonArn: supaAnonArn || undefined,
+          serviceArn: supaServiceArn || undefined,
+        }
+      );
       return JSON.stringify([
         {
           name: "api",
@@ -382,18 +415,44 @@ const workersTask = new aws.ecs.TaskDefinition(`${appName}-workers-task`, {
       appSecrets.mongoUri?.arn ?? pulumi.output(""),
       appSecrets.redisUrl?.arn ?? pulumi.output(""),
       appSecrets.llmGeminiApiKey?.arn ?? pulumi.output(""),
+      appSecrets.supabaseUrl?.arn ?? pulumi.output(""),
+      appSecrets.supabaseAnonKey?.arn ?? pulumi.output(""),
+      appSecrets.supabaseServiceRoleKey?.arn ?? pulumi.output(""),
     ])
-    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn]) => {
+    .apply(([image, log, mongoFallback, redisFallback, mongoArn, redisArn, llmArn, supaUrlArn, supaAnonArn, supaServiceArn]) => {
       const environment: EcsEnvVar[] = [
         { name: "NODE_ENV", value: "production" },
+        { name: "APP_ENVIRONMENT", value: "production" },
       ];
       const secrets: EcsSecretRef[] = [];
-      buildCeleryEnvSecrets(mongoArn || undefined, redisArn || undefined, llmArn || undefined, mongoFallback, redisFallback, environment, secrets);
+      buildCeleryEnvSecrets(
+        mongoArn || undefined,
+        redisArn || undefined,
+        llmArn || undefined,
+        mongoFallback,
+        redisFallback,
+        environment,
+        secrets,
+        {
+          urlArn: supaUrlArn || undefined,
+          anonArn: supaAnonArn || undefined,
+          serviceArn: supaServiceArn || undefined,
+        }
+      );
       return JSON.stringify([
         {
           name: "workers",
           image,
-          command: ["celery", "-A", "src.workers.celery_app", "worker", "--loglevel=info"],
+          command: [
+            "celery",
+            "-A",
+            "src.workers.celery_app",
+            "worker",
+            "-Q",
+            "scrape_queue,extract_queue,rank_queue,generate_queue,publish_queue",
+            "--loglevel=info",
+            "--time-limit=700",
+          ],
           environment,
           secrets: secrets.length > 0 ? secrets : undefined,
           logConfiguration: {

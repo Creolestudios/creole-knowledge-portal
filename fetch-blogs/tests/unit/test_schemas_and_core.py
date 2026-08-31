@@ -223,6 +223,7 @@ class TestSettingsModule:
         assert prod.show_docs is False
         assert local.celery_eager is False
         assert prod.celery_eager is False
+        assert local.ROOT_PATH == ""
         assert (
             AppSettings(
                 _env_file=None, ENVIRONMENT=Environment.PRODUCTION, CELERY_EAGER=True

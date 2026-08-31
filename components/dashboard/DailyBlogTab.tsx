@@ -68,6 +68,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const [loadingBrief, setLoadingBrief] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState('');
+  const [synthError, setSynthError] = useState<string | null>(null);
   const [quizStatus, setQuizStatus] = useState<any>(null);
 
   // Timer State
@@ -165,6 +166,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const handleGenerateBriefing = async () => {
     if (!user) return;
     setGenerating(true);
+    setSynthError(null);
     setBrief(null);
     setTimerActive(false);
     setReadSeconds(0);
@@ -202,6 +204,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         setGenerationStep('Finalizing your Morning Brief...');
         const data = await res.json();
         if (data.success && data.blog) {
+          setSynthError(null);
           await applyBrief({
             ...data.blog,
             is_fallback: data.blog.is_fallback ?? data.fallback ?? false,
@@ -209,15 +212,25 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             fallback_kind: data.blog.fallback_kind ?? data.fallback_kind,
           });
         } else {
-          alert('Generation completed but briefing was not retrieved.');
+          const msg = 'Generation completed but briefing was not retrieved.';
+          setSynthError(msg);
+          alert(`Synthesis failed: ${msg}`);
         }
       } else {
-        const errorData = await res.json();
-        alert(`Synthesis failed: ${errorData.error || 'Unknown error'}`);
+        const errorData = await res.json().catch(() => ({}));
+        const msg =
+          errorData.error ||
+          (res.status === 429
+            ? 'Gemini API quota exceeded (429). Wait for reset, then retry.'
+            : `Synthesis failed (HTTP ${res.status}).`);
+        setSynthError(msg);
+        alert(`Synthesis failed: ${msg}`);
       }
     } catch (e: any) {
       clearInterval(stepInterval);
-      alert(`Network error: ${e.message || e}`);
+      const msg = e.message || String(e);
+      setSynthError(`Network error: ${msg}`);
+      alert(`Network error: ${msg}`);
     } finally {
       setGenerating(false);
     }
@@ -312,7 +325,20 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
               </div>
             </div>
           </motion.div>
-        ) : hasBrief ? (
+        ) : (
+          <>
+            {synthError && (
+              <div
+                role="alert"
+                className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-left text-red-800 shadow-sm"
+              >
+                <p className="text-xs font-extrabold uppercase tracking-widest text-red-600 mb-1">
+                  Synthesis error
+                </p>
+                <p className="text-sm font-semibold leading-relaxed whitespace-pre-wrap">{synthError}</p>
+              </div>
+            )}
+            {hasBrief ? (
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
@@ -546,6 +572,8 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
               </button>
             </div>
           </motion.div>
+            )}
+          </>
         )}
       </AnimatePresence>
     </>

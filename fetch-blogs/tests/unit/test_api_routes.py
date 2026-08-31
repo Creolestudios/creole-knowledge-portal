@@ -171,7 +171,8 @@ class TestFlatMapDigest:
         assert "Section A body" in content
         assert "## Key Actionable Takeaways" in content
         assert "## Sources & Citations" in content
-        assert "by Ada" in content
+        assert "Ada" in content
+        assert "a.com · Ada" in content
         # Canonical display order
         assert content.index("## Daily Overview") < content.index("## Overview / Summary")
         assert content.index("## Overview / Summary") < content.index("## Key Actionable Takeaways")
@@ -244,6 +245,75 @@ class TestFlatMapDigest:
         assert content.index("## Code Snippet") < content.index("## Overview / Summary")
         assert content.index("## Overview / Summary") < content.index("## Key Actionable Takeaways")
         assert content.index("## Key Actionable Takeaways") < content.index("## Sources & Citations")
+
+    def test_maps_continuation_title_into_brief(self) -> None:
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {
+                "article": {
+                    "headline": "Effects deep dive",
+                    "sections": [
+                        {
+                            "title": "Continuation from yesterday",
+                            "content": "We pick up from useEffect cleanup.",
+                        },
+                        {
+                            "title": "Going deeper",
+                            "content": "Deps arrays control re-runs.",
+                        },
+                    ],
+                }
+            }
+        )
+        content = out["content"]
+        assert "## Brief" in content
+        assert "## Overview / Summary" in content
+        assert content.index("## Brief") < content.index("## Overview / Summary")
+        assert "We pick up from useEffect cleanup." in content
+        assert "Continuation from yesterday" not in content
+
+    def test_sources_drop_lifestyle_and_render_clean_links(self) -> None:
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {
+                "article": {
+                    "headline": "React hooks",
+                    "sections": [
+                        {
+                            "title": "Brief",
+                            "content": "Hooks lesson",
+                            "sources_cited": [1],
+                        }
+                    ],
+                    "sources": [
+                        {
+                            "id": 1,
+                            "title": "React useEffect cleanup",
+                            "url": "https://dev.to/a",
+                            "source_domain": "dev.to",
+                            "author": "Ada",
+                        },
+                        {
+                            "id": 2,
+                            "title": "Early Golf Habits for better scores",
+                            "url": "https://dev.to/golf",
+                            "source_domain": "dev.to",
+                        },
+                        {
+                            "id": 3,
+                            "title": "How to Jump Start a Car Safely",
+                            "url": "https://dev.to/car",
+                            "source_domain": "dev.to",
+                        },
+                    ],
+                }
+            }
+        )
+        content = out["content"]
+        assert "## Sources & Citations" in content
+        assert "[React useEffect cleanup](https://dev.to/a)" in content
+        assert "**[" not in content
+        assert "Golf" not in content
+        assert "Jump Start" not in content
+        assert "Published on" not in content
 
     def test_replaces_templated_morning_briefing_with_the_source_title(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(

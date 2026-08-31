@@ -77,6 +77,8 @@ class LearningPath(BaseModel):
     last_digest_tldr: list[str] = Field(default_factory=list)
     last_digest_takeaways: list[str] = Field(default_factory=list)
     last_digest_date: date | None = None
+    # Embedding of yesterday's digest — primary signal for next-day article selection
+    last_digest_embedding: list[float] = Field(default_factory=list)
 
 
 class UserProfile(Document):
@@ -111,19 +113,15 @@ class UserProfile(Document):
 
     @property
     def ranking_terms(self) -> list[str]:
-        """Return normalized profile terms for content relevance scoring."""
-        path = self.learning_path
-        terms = [
-            path.active_stack,
-            *path.last_topics,
-            *self.primary_tech_stack,
-            *self.secondary_tech_stack,
-            *self.interests,
-            self.current_role,
-            self.content_depth.value,
+        """Interest field drives matching; empty interests → no forced topic terms."""
+        interests = [
+            term.strip().lower()
+            for term in (self.interests or [])
+            if term and str(term).strip()
         ]
-        normalized = (term.strip().lower() for term in terms)
-        return list(dict.fromkeys(term for term in normalized if term))
+        if interests:
+            return list(dict.fromkeys(interests))
+        return []
 
     class Settings:
         """Beanie collection settings."""
@@ -154,16 +152,46 @@ _KNOWN_TOPICS = (
     "graphql",
     "aws",
     "llm",
+    "rag",
+    "embeddings",
+    "embedding",
+    "langchain",
+    "vector",
+    "transformers",
+    "pytorch",
+    "tensorflow",
     "ai",
     "asyncio",
     "celery",
+    "concurrency",
+    "threading",
 )
 
 
 def topic_tokens_from_text(text: str) -> list[str]:
-    """Return known tech topics found in a title or article blob."""
-    haystack = text.lower()
-    return list(dict.fromkeys(topic for topic in _KNOWN_TOPICS if topic in haystack))
+    """Return tech topics from a title/blob — known list + acronyms like (RAG)."""
+    import re
+
+    haystack = (text or "").lower()
+    if not haystack.strip():
+        return []
+    found: list[str] = [
+        topic for topic in _KNOWN_TOPICS if topic in haystack
+    ]
+    # Parenthetical acronyms: Retrieval-Augmented Generation (RAG)
+    for match in re.findall(r"\(([a-z0-9]{2,8})\)", haystack):
+        if match not in {"the", "and", "for", "with"}:
+            found.append(match)
+    # Standalone ALL-CAPS / Title acronyms in original text (RAG, LLM)
+    for match in re.findall(r"\b([A-Z]{2,8})\b", text or ""):
+        token = match.lower()
+        if token not in {"the", "and", "for", "with", "api"}:
+            found.append(token)
+    # Prefer specific topics before ultra-generic "ai"
+    priority = ("rag", "embeddings", "embedding", "langchain", "llm", "asyncio")
+    ordered = [t for t in priority if t in found]
+    ordered.extend(t for t in found if t not in ordered)
+    return list(dict.fromkeys(ordered))
 
 
 def _normalize_term(term: str) -> str:
@@ -272,44 +300,16 @@ def next_scrape_pace(profile: UserProfile) -> ScrapePace:
 
 
 def scrape_focus_terms(profile: UserProfile) -> list[str]:
-    """Focus scrape on the active stack run + continuity themes (not weak/next-step)."""
+    """User/admin stack + interests only — no invented pace/continuity keywords.
+
+    Next-day article choice is driven by ``last_digest_embedding``, not these tags.
+    """
     resolve_active_stack(profile)
     maybe_rotate_stack_run(profile)
-    active = resolve_active_stack(profile)
-    path = profile.learning_path
-    pace = next_scrape_pace(profile)
-
-    continuity: list[str] = []
-    for item in path.last_topics:
-        continuity.extend(topic_tokens_from_text(item) or [_normalize_term(item)])
-    continuity = [t for t in continuity if t]
-
-    # Prefer continuity terms that stay inside the active stack family
-    if active:
-        related = [
-            t
-            for t in continuity
-            if active in t or t in active or active.split()[0] in t
-        ]
-        # Always lead with active stack so we do not leave the run
-        ordered = [active, *related, *continuity]
-    else:
-        ordered = [*continuity, *_stack_candidates(profile)]
-
-    # Pace only tweaks angle keywords — still same stack
-    if pace in {ScrapePace.REMEDIAL, ScrapePace.SIMPLER, ScrapePace.SIMPLEST}:
-        extras = ["basics", "fundamentals", "explained"]
-        if active:
-            ordered = [active, *extras, *ordered]
-        else:
-            ordered = [*extras, *ordered]
-    elif pace is ScrapePace.ADVANCE_HARD:
-        extras = ["advanced", "production"]
-        if active:
-            ordered = [active, *extras, *ordered]
-        else:
-            ordered = [*extras, *ordered]
-
+    ordered = [
+        resolve_active_stack(profile),
+        *_stack_candidates(profile),
+    ]
     normalized = (_normalize_term(term) for term in ordered)
     return list(dict.fromkeys(term for term in normalized if term))[:6]
 
