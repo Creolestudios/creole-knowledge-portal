@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
@@ -88,7 +88,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     return () => clearInterval(interval);
   }, [timerActive]);
 
-  const applyBrief = async (blog: any) => {
+  const applyBrief = useCallback(async (blog: any) => {
     setBrief(blog);
     if (typeof window !== 'undefined' && blog?.id) {
       sessionStorage.setItem('active_blog_id', blog.id);
@@ -107,9 +107,9 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
       console.error('Error loading quiz status:', e);
     }
     setTimerActive(shouldRunReadingTimer(nextQuizStatus));
-  };
+  }, []);
 
-  const fetchLatestBrief = async () => {
+  const fetchLatestBrief = useCallback(async () => {
     setLoadingBrief(true);
     try {
       // 1. Always check the network for today's latest digest first.
@@ -155,13 +155,13 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     } finally {
       setLoadingBrief(false);
     }
-  };
+  }, [applyBrief]);
 
   useEffect(() => {
     queueMicrotask(() => {
-      fetchLatestBrief();
+      void fetchLatestBrief();
     });
-  }, []);
+  }, [fetchLatestBrief]);
 
   const handleGenerateBriefing = async () => {
     if (!user) return;
