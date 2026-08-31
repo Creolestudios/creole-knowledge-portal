@@ -1953,23 +1953,12 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
   return coalesceFragmentedCodeBlocks(blocks);
 }
 
-export function PremiumMarkdownRenderer({ content }: { content: string }) {
-  const isDigest = looksLikeDigestDocument(content);
-  const prepared = fenceLooseAsciiDiagrams(
-    extractTablesFromFences(
-      restoreMissingCodeFences(
-        ensureSourcesAtEnd(
-          sanitizeDigestSources(
-            stripOffTopicBodyContent(
-              stripDigestBodyChrome(stripMidBlogSourceLines(normalizeDigestFormatting(content))),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
-  let renderSection: 'body' | 'code' | 'sources' = 'body';
-  const blocks = parseMarkdownBlocks(restoreArticleMarkdown(prepared).split('\n'))
+type RenderSection = 'body' | 'code' | 'sources';
+
+/** Apply digest section context and normalize blocks before React render. */
+function prepareRenderableBlocks(rawBlocks: MdBlock[], isDigest: boolean): MdBlock[] {
+  let renderSection: RenderSection = 'body';
+  return rawBlocks
     .map((block) => {
       if (block.type === 'h2') {
         if (/^code snippet/i.test(block.content)) renderSection = 'code';
@@ -2017,7 +2006,28 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
       }
       return block;
     })
-    .filter((block): block is NonNullable<typeof block> => block != null);
+    .filter((block): block is MdBlock => block != null);
+}
+
+export function PremiumMarkdownRenderer({ content }: { content: string }) {
+  const isDigest = looksLikeDigestDocument(content);
+  const prepared = fenceLooseAsciiDiagrams(
+    extractTablesFromFences(
+      restoreMissingCodeFences(
+        ensureSourcesAtEnd(
+          sanitizeDigestSources(
+            stripOffTopicBodyContent(
+              stripDigestBodyChrome(stripMidBlogSourceLines(normalizeDigestFormatting(content))),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  const blocks = prepareRenderableBlocks(
+    parseMarkdownBlocks(restoreArticleMarkdown(prepared).split('\n')),
+    isDigest,
+  );
 
   return (
     <div className="space-y-5 text-zinc-700 leading-relaxed font-sans">
