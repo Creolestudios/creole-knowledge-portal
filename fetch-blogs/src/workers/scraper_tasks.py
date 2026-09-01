@@ -1,4 +1,4 @@
-"""Celery stage 1: discover interest-matched or site-trending articles."""
+"""Celery stage 1: discover interest-matched or stack-trending articles."""
 
 from __future__ import annotations
 
@@ -17,8 +17,11 @@ from src.models.job import JobStatus, PipelineJob, PipelineStage
 from src.models.profile import UserProfile
 from src.ranker.next_day import (
     continuity_scrape_terms,
-    interest_scrape_terms,
+    discovery_match_terms,
+    discovery_scrape_terms,
+    hay_is_off_yesterday_family,
     profile_has_interests,
+    profile_has_yesterday,
     refresh_profile_embedding,
 )
 from src.scrapers import fetch_devto_articles, fetch_hn_top_stories, parse_rss_feed
@@ -112,10 +115,11 @@ def _collect_payloads(
     trending_mode: bool = False,
     continuity_terms: list[str] | None = None,
 ) -> list[dict[str, object]]:
-    """Discover posts for interests, or continuity + trending when interests empty.
+    """Discover posts for interests, or stack-tagged trending when interests empty.
 
-    Interests (terms set): Dev.to by tag + HN/RSS/admin only when title matches terms.
-    No interests: yesterday theme tags + today's trending from registry/admin sites.
+    Interests / stack tags (terms set): Dev.to by tag + HN/RSS/admin only when
+    the title matches those terms. Untagged latest is used only when the user
+    has neither interests nor a tech stack.
     """
     from src.extractors.topic_filter import has_tech_learning_signal
 
@@ -271,8 +275,10 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         return []
 
     has_interests = profile_has_interests(profile)
-    terms = interest_scrape_terms(profile)
-    continuity = continuity_scrape_terms(profile) if not has_interests else []
+    returning = (not has_interests) and profile_has_yesterday(profile)
+    scrape_terms = discovery_scrape_terms(profile)
+    match_terms = discovery_match_terms(profile)
+    continuity_terms = continuity_scrape_terms(profile) if returning else None
     refresh_profile_embedding(profile)
     profile.updated_at = datetime.now(UTC)
     await profile.save()
@@ -281,18 +287,26 @@ async def _scrape_for_user(user_id: str) -> list[str]:
     admin_urls = await fetch_admin_blog_source_urls()
     extra = [*(admin_urls or []), *(profile.preferred_sources or [])]
     discovered = _collect_payloads(
-        terms,
-        prefer_hn_match=bool(terms),
+        scrape_terms,
+        prefer_hn_match=bool(scrape_terms),
         admin_source_urls=extra,
-        trending_mode=not has_interests,
-        continuity_terms=continuity,
+        trending_mode=not match_terms,
+        continuity_terms=continuity_terms,
     )
+    if has_interests:
+        mode = "interests"
+    elif returning:
+        mode = "continuity"
+    elif match_terms:
+        mode = "stack_trending"
+    else:
+        mode = "unscoped_learning"
     log.info(
         "scrape: discovery mode",
         user_id=user_id,
-        mode="interests" if has_interests else "continuity_and_trending",
-        terms=terms[:6],
-        continuity=continuity[:6],
+        mode=mode,
+        terms=scrape_terms[:6],
+        match=match_terms[:6],
         admin_feeds=len(extra),
         discovered=len(discovered),
     )
@@ -311,14 +325,15 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         domain = str(payload.get("source_domain") or "")
         if is_non_learning(title, summary, source_domain=domain, url=url):
             continue
-        if has_interests and terms and not _matches_terms(f"{title} {summary}", terms):
+        if not has_interests and hay_is_off_yesterday_family(f"{title} {summary}", profile):
             continue
-        if not has_interests:
+        if match_terms:
+            if not _matches_terms(f"{title} {summary}", match_terms):
+                continue
+        else:
             if not has_tech_learning_signal(title, summary):
                 continue
-            site_ok = _is_from_configured_sites(url, allowed_hosts)
-            theme_ok = continuity and _matches_terms(f"{title} {summary}", continuity)
-            if not site_ok and not theme_ok:
+            if not _is_from_configured_sites(url, allowed_hosts):
                 continue
         if not url or url in seen or url in already_served:
             continue
@@ -332,7 +347,7 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         log.warning(
             "scrape: no new URLs; falling back to filtered corpus",
             user_id=user_id,
-            mode="interests" if has_interests else "continuity_and_trending",
+            mode=mode,
         )
         cursor = Article.find_all().sort(-Article.created_at).limit(80)
         async for article in cursor:
@@ -352,13 +367,13 @@ async def _scrape_for_user(user_id: str) -> list[str]:
                 url=url,
             ):
                 continue
-            if has_interests:
-                if terms and not _matches_terms(f"{title} {summary}", terms):
+            if not has_interests and hay_is_off_yesterday_family(f"{title} {summary}", profile):
+                continue
+            if match_terms:
+                if not _matches_terms(f"{title} {summary}", match_terms):
                     continue
             else:
-                site_ok = _is_from_configured_sites(url, allowed_hosts)
-                theme_ok = continuity and _matches_terms(f"{title} {summary}", continuity)
-                if not site_ok and not theme_ok:
+                if not _is_from_configured_sites(url, allowed_hosts):
                     continue
                 if not has_tech_learning_signal(title, summary):
                     continue

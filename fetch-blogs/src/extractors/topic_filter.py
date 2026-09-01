@@ -49,6 +49,144 @@ _SOFT_LEARNING_WORDS = (
 )
 
 _CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]")
+_CYRILLIC_RE = re.compile(r"[\u0400-\u04ff]")
+_ARABIC_RE = re.compile(r"[\u0600-\u06ff]")
+_THAI_RE = re.compile(r"[\u0e00-\u0e7f]")
+_LATIN_ACCENT_RE = re.compile(
+    r"[àáâãäåèéêëìíîïòóôõöùúûüçñÿÀÁÂÃÄÅÈÉÊËÌÍÎÏÒÓÔÕÖÙÚÛÜÇÑ]"
+)
+
+# Distinctive non-English words (avoid tokens that are also English: die, per, non, a, de)
+_FOREIGN_HIGH_CONFIDENCE = frozenset(
+    {
+        "não",
+        "você",
+        "vocês",
+        "também",
+        "estão",
+        "então",
+        "pelo",
+        "pela",
+        "pelos",
+        "pelas",
+        "isso",
+        "isto",
+        "artigos",
+        "artigo",
+        "série",
+        "cobrimos",
+        "últimos",
+        "matemática",
+        "milhões",
+        "geometria",
+        "vetorial",
+        "expõe",
+        "farsa",
+        "informação",
+        "aplicación",
+        "artículo",
+        "después",
+        "también",
+        "pourquoi",
+        "nicht",
+        "über",
+        "zwischen",
+        "della",
+        "custos",
+        "busca",
+        "anos",
+    }
+)
+_FOREIGN_MEDIUM = frozenset(
+    {
+        "que",
+        "seu",
+        "sua",
+        "seus",
+        "suas",
+        "dos",
+        "das",
+        "nos",
+        "nas",
+        "uma",
+        "está",
+        "são",
+        "mais",
+        "mas",
+        "como",
+        "los",
+        "las",
+        "del",
+        "les",
+        "dans",
+        "pour",
+        "avec",
+        "cette",
+        "sont",
+        "nous",
+        "vous",
+        "der",
+        "und",
+        "ist",
+        "von",
+        "mit",
+        "den",
+        "dem",
+        "auf",
+        "für",
+        "sich",
+        "auch",
+        "als",
+        "gli",
+        "sono",
+        "desde",
+        "sobre",
+        "entre",
+        "quando",
+        "ainda",
+        "após",
+        "muito",
+        "porque",
+    }
+)
+_ENGLISH_FUNCTION_WORDS = frozenset(
+    {
+        "the",
+        "and",
+        "of",
+        "to",
+        "in",
+        "is",
+        "for",
+        "that",
+        "on",
+        "with",
+        "as",
+        "this",
+        "are",
+        "be",
+        "or",
+        "by",
+        "an",
+        "from",
+        "at",
+        "it",
+        "you",
+        "we",
+        "can",
+        "your",
+        "how",
+        "what",
+        "when",
+        "not",
+        "but",
+        "if",
+        "into",
+        "using",
+        "use",
+        "used",
+    }
+)
 
 # Soft-skill / job-hunt posts that should never enter the morning briefing.
 _CAREER_FLUFF_MARKERS = (
@@ -132,6 +270,36 @@ _REPO_DUMP_MARKERS = (
     "getting started with our monorepo",
 )
 
+# Consumer Apple/Mac hardware roundups — not a coding lesson unless the post
+# is actually about Swift / iOS / macOS development.
+_CONSUMER_APPLE_MARKERS = (
+    "macbook",
+    "imac",
+    "iphone",
+    "ipad pro",
+    "ipad air",
+    "airpods",
+    "apple watch",
+    "vision pro",
+    "apple silicon mac",
+    "m4 mac",
+    "m3 mac",
+    "m2 mac",
+)
+def is_consumer_apple_mac_noise(title: str, body: str = "", topics: list[str] | None = None) -> bool:
+    """True for Apple/Mac product posts that are not software-engineering lessons."""
+    hay = f"{title} {' '.join(topics or [])} {body[:800]}".lower()
+    if re.search(r"\b(swiftui|swift|xcode|uikit|cocoa|objective-c|appkit)\b", hay):
+        return False
+    if "ios app" in hay or "macos app" in hay:
+        return False
+    if any(marker in hay for marker in _CONSUMER_APPLE_MARKERS):
+        return True
+    if re.search(r"\bapple\b", hay) and re.search(r"\bmacs?\b", hay):
+        return True
+    return False
+
+
 _NEWS_DOMAINS = (
     "wsj.com",
     "bloomberg.com",
@@ -182,15 +350,36 @@ def infer_topics(text: str, extra: list[str] | None = None) -> list[str]:
 
 
 def is_non_english_dominant(text: str) -> bool:
-    """True when the text is mostly CJK / non-English (not useful for EN digests)."""
+    """True when the text is not English (CJK, Cyrillic, Arabic, or Portuguese/etc.)."""
     sample = (text or "")[:4000]
     if not sample.strip():
         return False
     cjk = len(_CJK_RE.findall(sample))
+    cyr = len(_CYRILLIC_RE.findall(sample))
+    arabic = len(_ARABIC_RE.findall(sample))
+    thai = len(_THAI_RE.findall(sample))
     latin = len(re.findall(r"[A-Za-z]", sample))
-    if cjk >= 20 and cjk >= max(latin, 1) * 0.25:
+    other_script = cjk + cyr + arabic + thai
+    if other_script >= 20 and other_script >= max(latin, 1) * 0.25:
         return True
-    if cjk >= 12 and latin < 40:
+    if other_script >= 12 and latin < 40:
+        return True
+
+    words = re.findall(r"[a-zà-ÿ']+", sample.lower())
+    high = sum(1 for word in words if word in _FOREIGN_HIGH_CONFIDENCE)
+    medium = sum(1 for word in words if word in _FOREIGN_MEDIUM)
+    english = sum(1 for word in words if word in _ENGLISH_FUNCTION_WORDS)
+    accents = len(_LATIN_ACCENT_RE.findall(sample))
+    foreign = high + medium
+    if high >= 1 and foreign >= 3:
+        return True
+    if medium >= 5 and medium > english:
+        return True
+    if accents >= 4 and foreign >= 2:
+        return True
+    if accents >= 6:
+        return True
+    if len(words) <= 28 and accents >= 3 and foreign >= 3:
         return True
     return False
 
@@ -334,6 +523,8 @@ def is_non_learning(
     if is_career_fluff(title, body, topics):
         return True
     if is_news_noise(title, body, source_domain=source_domain, url=url):
+        return True
+    if is_consumer_apple_mac_noise(title, body, topics):
         return True
     if is_repo_dump(title, body, source_domain=source_domain, url=url):
         return True

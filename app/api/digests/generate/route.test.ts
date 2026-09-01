@@ -10,59 +10,10 @@ vi.mock('@/lib/dev/mock-user', () => ({
   mockUserFromCookie: vi.fn().mockReturnValue(null),
 }));
 
-const mockInsertSingle = vi.fn();
-const mockMaybeSingle = vi.fn();
-const insertedRows: any[] = [];
-
-vi.mock('@/lib/supabase/admin', () => ({
-  supabaseAdmin: {
-    from: vi.fn((table: string) => {
-      if (table === 'user_profiles') {
-        return {
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single: vi.fn().mockResolvedValue({
-            data: { primary_tech_stack: ['Next.js 15'], current_role: 'Fullstack Dev' },
-            error: null,
-          }),
-        };
-      }
-      return {
-        select: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        maybeSingle: mockMaybeSingle,
-        insert: vi.fn((row: any) => {
-          insertedRows.push(row);
-          return {
-            select: vi.fn().mockReturnValue({
-              single: mockInsertSingle,
-            }),
-          };
-        }),
-      };
-    }),
-  },
-}));
-
-const mockGenerateContent = vi.fn();
-
-vi.mock('@google/genai', () => ({
-  GoogleGenAI: vi.fn().mockImplementation(function () {
-    return { models: { generateContent: mockGenerateContent } };
-  }),
-}));
-
 vi.mock('@/lib/blog-service', () => ({
   blogServiceHeaders: () => ({}),
   blogServiceUrl: (path: string) => `http://blog.test${path}`,
 }));
-
-const DEFAULT_AI_PAYLOAD = {
-  title: 'Fresh AI Briefing',
-  content: '## Overview\n\nContent here',
-  tags: ['ai'],
-  estimated_read_minutes: 10,
-};
 
 vi.mock('next/headers', () => ({
   cookies: vi.fn().mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) }),
@@ -76,11 +27,14 @@ function mockRequest(body: unknown) {
 }
 
 function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
 }
 
-/** Both today-check and generate calls fail → Gemini fallback path. */
 function mockFastApiDown() {
   (global.fetch as any).mockRejectedValue(new Error('ECONNREFUSED'));
 }
@@ -89,9 +43,6 @@ describe('POST /api/digests/generate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
-    insertedRows.length = 0;
-    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
-    mockGenerateContent.mockResolvedValue({ text: JSON.stringify(DEFAULT_AI_PAYLOAD) });
   });
 
   it('returns 401 when there is no session', async () => {
@@ -100,7 +51,7 @@ describe('POST /api/digests/generate', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns today\'s existing digest without regenerating', async () => {
+  it("returns today's existing digest without regenerating", async () => {
     const digestDate = todayKey();
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
@@ -117,6 +68,39 @@ describe('POST /api/digests/generate', () => {
     expect(body.cached).toBe(true);
     expect(body.blog.title).toBe('Already Today');
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat an invented Next.js filler as today\'s cached digest', async () => {
+    const digestDate = todayKey();
+    (global.fetch as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          blog: {
+            id: 'filler-1',
+            title: 'Architectural Deep-Dive: Next.js 15',
+            digest_date: digestDate,
+            source: 'AI Resilient Synthesis Engine',
+            is_fallback: true,
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          blog: { id: 'd1', title: 'Real Morning Brief', content: '# hi' },
+        }),
+      });
+
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    const res = await POST(mockRequest({}));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cached).not.toBe(true);
+    expect(body.blog.title).toBe('Real Morning Brief');
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('proxies generation to the Celery blog service', async () => {
@@ -157,7 +141,6 @@ describe('POST /api/digests/generate', () => {
     const body = await res.json();
     expect(body.cached).toBe(true);
     expect(body.blog.title).toBe('Today Brief');
-    expect(mockGenerateContent).not.toHaveBeenCalled();
   });
 
   it('maps a missing profile from the blog service to 404', async () => {
@@ -176,31 +159,17 @@ describe('POST /api/digests/generate', () => {
     expect(res.status).toBe(404);
   });
 
-  it('falls back to local AI synthesis when the blog service is unreachable', async () => {
+  it('does not invent a Next.js filler briefing when FastAPI is unreachable', async () => {
     mockFastApiDown();
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockInsertSingle.mockResolvedValue({
-      data: {
-        id: 'new-b1',
-        title: 'Fresh AI Briefing',
-        content: '## Overview\n\nContent here',
-        published_at: new Date().toISOString(),
-        tags: ['ai'],
-      },
-      error: null,
-    });
-
     const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.fallback).toBe(true);
-    expect(body.blog.is_fallback).toBe(true);
-    expect(String(body.fallback_reason || '')).toMatch(/Pipeline:/i);
-    expect(body.blog.title).toBe('Fresh AI Briefing');
+    expect(body.error).toMatch(/not generated/i);
+    expect(body.blog).toBeUndefined();
   });
 
-  it('falls through to Next.js fallback when FastAPI returns a pipeline error', async () => {
+  it('returns the pipeline error when FastAPI synthesis fails', async () => {
     (global.fetch as any)
       .mockResolvedValueOnce({
         ok: true,
@@ -210,153 +179,82 @@ describe('POST /api/digests/generate', () => {
         ok: false,
         status: 500,
         json: async () => ({
-          detail: 'Synthesis pipeline error: Pipeline finished without a digest id.',
+          detail: 'Synthesis pipeline error: Digest too short for the 18-20 minute target',
         }),
       });
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockResolvedValue({ text: '' });
-    mockInsertSingle.mockResolvedValue({
-      data: {
-        id: 'b-pipe',
-        title: 'Architectural Deep-Dive: Building High-Performance Systems with Next.js 15',
-        content: 'static',
-        published_at: new Date().toISOString(),
-        tags: ['architecture'],
-        summary: '{}',
-      },
-      error: null,
-    });
-
     const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.fallback).toBe(true);
-    expect(body.blog.is_fallback).toBe(true);
-    expect(body.fallback_reason).toContain('without a digest id');
-    expect(insertedRows.at(-1).summary).toContain('fallback');
+    expect(body.error).toMatch(/Digest too short/i);
   });
 
-  it('returns 500 when blog insert fails in fallback mode', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockInsertSingle.mockResolvedValue({
-      data: null,
-      error: { message: 'Insert failed' },
-    });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe('Failed to persist fresh blog digest: Insert failed');
-  });
-
-  it('strips markdown code fences from the AI response', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockResolvedValue({
-      text: '```json\n' + JSON.stringify(DEFAULT_AI_PAYLOAD) + '\n```',
-    });
-    mockInsertSingle.mockResolvedValue({
-      data: { id: 'b-fenced', title: 'Fresh AI Briefing', content: '## Overview', tags: ['ai'] },
-      error: null,
-    });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.blog.title).toBe('Fresh AI Briefing');
-  });
-
-  it('normalises a comma-separated tags string into an array', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockResolvedValue({
-      text: JSON.stringify({ ...DEFAULT_AI_PAYLOAD, tags: 'ai, nextjs , performance' }),
-    });
-    mockInsertSingle.mockResolvedValue({
-      data: { id: 'b-tags', title: 'Fresh AI Briefing', content: '## Overview', tags: [] },
-      error: null,
-    });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
-    const inserted = insertedRows.at(-1);
-    expect(inserted.tags).toEqual(['ai', 'nextjs', 'performance']);
-  });
-
-  it('replaces a non-string, non-array tags value with a default tag', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockResolvedValue({
-      text: JSON.stringify({ ...DEFAULT_AI_PAYLOAD, tags: { primary: 'ai' } }),
-    });
-    mockInsertSingle.mockResolvedValue({
-      data: { id: 'b-tags2', title: 'Fresh AI Briefing', content: '## Overview', tags: [] },
-      error: null,
-    });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
-    expect(insertedRows.at(-1).tags).toEqual(['tech']);
-  });
-
-  it('retries when the AI output is missing required fields, then uses static fallback', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockResolvedValue({
-      text: JSON.stringify({ title: 'Only a title' }),
-    });
-    mockInsertSingle.mockResolvedValue({
-      data: { id: 'b-static', title: 'Only a title', content: '', tags: [] },
-      error: null,
-    });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
-    expect(mockGenerateContent).toHaveBeenCalledTimes(1);
-    expect(insertedRows.at(-1).title).toBe('Only a title');
-  });
-
-  it('falls back to the static briefing when the model returns no text at all', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockResolvedValue({ text: '' });
-    mockInsertSingle.mockResolvedValue({
-      data: { id: 'b-empty', title: 'static', content: 'static', tags: [] },
-      error: null,
-    });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
-    expect(insertedRows.at(-1).title).toContain('Architectural Deep-Dive');
-  });
-
-  it('returns a clear 429 error when Gemini quota is exceeded', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockRejectedValue(new Error('429 quota exceeded'));
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(429);
-    const body = await res.json();
-    expect(body.error).toMatch(/quota exceeded \(429\)/i);
-    expect(mockGenerateContent).toHaveBeenCalled();
-  });
-
-  it('returns 503 when FastAPI times out and Gemini fallback also fails', async () => {
+  it('returns a clear 429 error when the blog service reports quota exceeded', async () => {
     (global.fetch as any)
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ success: true, blog: null }),
       })
-      .mockRejectedValueOnce(new Error('The operation was aborted due to timeout'));
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        json: async () => ({ detail: '429 quota exceeded' }),
+      });
     mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockGenerateContent.mockRejectedValue(new Error('503 UNAVAILABLE'));
+    const res = await POST(mockRequest({}));
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error).toMatch(/quota exceeded \(429\)/i);
+  });
+
+  it('returns 503 when FastAPI times out', async () => {
+    (global.fetch as any).mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        throw new Error('The operation was aborted due to timeout');
+      }
+      return {
+        ok: true,
+        json: async () => ({ success: true, blog: null }),
+      };
+    });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
 
     const res = await POST(mockRequest({}));
     expect(res.status).toBe(503);
     const body = await res.json();
-    expect(body.error).toMatch(/timed out/i);
+    expect(body.error).toMatch(/still being written/i);
+    expect(body.blog).toBeUndefined();
+  });
+
+  it('returns a digest that landed after the generate call timed out', async () => {
+    const digestDate = todayKey();
+    let posts = 0;
+    (global.fetch as any).mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        posts += 1;
+        throw new Error('The operation was aborted due to timeout');
+      }
+      if (posts > 0) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            blog: { id: 'late-1', title: 'Landed Brief', digest_date: digestDate },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ success: true, blog: null }),
+      };
+    });
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+
+    const res = await POST(mockRequest({}));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.cached).toBe(true);
+    expect(body.blog.title).toBe('Landed Brief');
   });
 
   it('treats an unparseable request body as an empty body and falls through to the session', async () => {
@@ -368,40 +266,5 @@ describe('POST /api/digests/generate', () => {
 
     const res = await POST(bad);
     expect(res.status).toBe(401);
-  });
-
-  it('reports an unknown-error message when the insert fails with no error detail', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    mockInsertSingle.mockResolvedValue({ data: null, error: null });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.error).toBe('Failed to persist fresh blog digest: Unknown error');
-  });
-
-  it('reuses an existing same-day Supabase briefing in fallback mode', async () => {
-    mockFastApiDown();
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
-    const digestDate = todayKey();
-    mockMaybeSingle.mockResolvedValue({
-      data: {
-        id: 'existing-sb',
-        title: 'Already Saved',
-        content: 'body',
-        published_at: `${digestDate}T08:00:00.000Z`,
-        tags: ['ai'],
-        url: `briefing:user-1:${digestDate}`,
-      },
-      error: null,
-    });
-
-    const res = await POST(mockRequest({}));
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.cached).toBe(true);
-    expect(body.blog.id).toBe('existing-sb');
-    expect(mockInsertSingle).not.toHaveBeenCalled();
   });
 });

@@ -452,13 +452,14 @@ class TestUserProfileModel:
         terms = profile.ranking_terms
         assert terms == ["llm", "redis"]
 
-    def test_ranking_terms_empty_without_interests(self) -> None:
+    def test_ranking_terms_use_stack_when_interests_empty(self) -> None:
         profile = UserProfile(
             user_id="u1",
             primary_tech_stack=["Python"],
+            secondary_tech_stack=["React"],
             current_role="Engineer",
         )
-        assert profile.ranking_terms == []
+        assert profile.ranking_terms == ["python", "react"]
 
     def test_topic_tokens_from_text_finds_known_topics(self) -> None:
         assert topic_tokens_from_text("Building FastAPI apps with Python") == ["python", "fastapi"]

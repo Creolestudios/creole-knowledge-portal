@@ -407,6 +407,7 @@ export function looksLikeMarkdownTable(text: string): boolean {
 /** Wide Unicode shells or misaligned ASCII — should be rebuilt, not shown raw. */
 export function looksLikeBrokenAsciiDiagram(text: string): boolean {
   const raw = String(text || '');
+  if (looksLikeSourceCode(raw)) return false;
   const lines = raw.split('\n').filter((l) => l.trim().length > 0);
   if (lines.length < 2) return false;
 
@@ -574,8 +575,17 @@ export function extractFlowSteps(text: string): string[] {
   };
 
   let steps = salvageDiagramLabels(raw);
+  if (steps.length < 2 && looksLikeBracketFlowDiagram(raw)) {
+    steps = salvageBracketFlowSteps(raw);
+  }
   if (steps.length < 2) {
     steps = salvageBracketFlowSteps(raw);
+  }
+  if (steps.length < 2 && looksLikePlusEqualsStack(raw)) {
+    steps = raw
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && !/^[+=|v↓]$/.test(l));
   }
   if (steps.length < 2 && (looksLikeSimpleArrowFlow(raw) || looksLikeBrokenAsciiDiagram(raw))) {
     steps = raw
@@ -611,13 +621,30 @@ export function rebuildArrowFlowDiagram(steps: string[]): string {
 }
 
 export function looksLikeSimpleArrowFlow(text: string): boolean {
-  const lines = String(text || '')
+  const raw = String(text || '');
+  if (looksLikeSourceCode(raw)) return false;
+  const lines = raw
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
   if (lines.length < 3) return false;
   const arrows = lines.filter((l) => /^v$|^\|$|^↓$/.test(l) || /^\s+[|v↓]\s*$/.test(l)).length;
-  return arrows >= 2 && !/^\+[-=]/m.test(text);
+  return arrows >= 2 && !/^\+[-=]/m.test(raw);
+}
+
+/** Prompt + Codebase + Docs = Context style stacks. */
+export function looksLikePlusEqualsStack(text: string): boolean {
+  const lines = String(text || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 5) return false;
+  if (looksLikeSourceCode(text)) return false;
+  const ops = lines.filter((l) => /^[+=]$/.test(l)).length;
+  const labels = lines.filter(
+    (l) => !/^[+=|v↓]$/.test(l) && l.length <= 48 && l.split(/\s+/).length <= 6 && !/[.!?]$/.test(l),
+  );
+  return ops >= 2 && labels.length >= 3;
 }
 
 /** Chunking walkthrough prose with --- Chunk N --- markers. */
@@ -712,43 +739,6 @@ export function normalizeInlineHeadings(content: string): string {
     .replace(/([^\n#\s])\s+(#{1,6}\s+[A-Za-z][^\n]{4,100})/g, '$1\n\n$2');
 }
 
-function FlowStepsCard({ steps, title = 'Flow' }: { steps: string[]; title?: string }) {
-  const displaySteps = dedupeFlowSteps(steps);
-  if (displaySteps.length === 0) return null;
-  return (
-    <div className="my-4 rounded-2xl border border-zinc-200 bg-gradient-to-b from-zinc-50 to-white shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-100 bg-white/80">
-        <span className="text-[10px] uppercase font-bold tracking-wider text-brand">{title}</span>
-        <span className="text-[10px] text-zinc-400 font-medium">{displaySteps.length} steps</span>
-      </div>
-      <ol className="px-5 py-4 space-y-0">
-        {displaySteps.map((step, idx) => (
-          <li key={idx} className="flex flex-col items-center">
-            <div className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700 text-center shadow-sm font-medium leading-snug">
-              {step.split(' → ').map((part, pi, arr) => (
-                <span key={pi}>
-                  {parseInlineMarkdown(part.trim())}
-                  {pi < arr.length - 1 && (
-                    <span className="mx-2 text-brand font-bold" aria-hidden>
-                      →
-                    </span>
-                  )}
-                </span>
-              ))}
-            </div>
-            {idx < displaySteps.length - 1 && (
-              <div className="flex flex-col items-center py-1.5 text-brand/70" aria-hidden>
-                <span className="h-4 w-px bg-brand/30" />
-                <span className="text-base leading-none font-bold">↓</span>
-              </div>
-            )}
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
-}
-
 /** Repo / directory tree layouts should stay as-is, not vertical box stacks. */
 export function looksLikeDirectoryTreeDiagram(text: string): boolean {
   if (/(?:├──|└──|├─|└─)/.test(text)) return true;
@@ -832,6 +822,9 @@ export function looksLikeAsciiDiagram(text: string): boolean {
   if (looksLikeMarkdownTable(raw)) return false;
   if (looksLikePipeComparisonTable(raw)) return false;
   if (looksLikeBrokenAsciiDiagram(raw)) return false;
+  if (looksLikeSourceCode(raw)) return false;
+  if (looksLikeBracketFlowDiagram(raw)) return true;
+  if (looksLikeSimpleArrowFlow(raw) || looksLikePlusEqualsStack(raw)) return true;
   const proseLines = raw
     .split('\n')
     .map((l) => l.trim())
@@ -846,6 +839,10 @@ export function looksLikeAsciiDiagram(text: string): boolean {
   if (plusBoxes >= 1 && pipeRows >= 1) return true;
   if (artLineCount >= 4 && plusBoxes >= 1) return true;
   if (/PIPELINE|STEP\s+\d+/i.test(raw) && (plusBoxes >= 1 || pipeRows >= 2)) return true;
+  // Lone + / = / | / v must not become their own Diagram fence
+  if (proseLines.length > 0 && proseLines.every((l) => /^[+=|v↓]$/i.test(l))) {
+    return false;
+  }
   // Only treat as a multi-line diagram when every content line looks like art/flow
   if (
     proseLines.length >= 1 &&
@@ -908,12 +905,34 @@ export function looksLikeAsciiArtLine(line: string): boolean {
   if (/^\|[^|]+\|?$/.test(t) && (t.match(/\|/g) || []).length <= 2) return true;
   if (/^[|]+$/.test(t)) return true;
   if (/^v$/i.test(t)) return true;
+  if (/^[+=]$/.test(t)) return true;
   if (/^\|\s*v\s*$/i.test(t)) return true;
   if (/^(?:-->|==>|←|→|⇒)\s*$/.test(t)) return true;
   if (/^STEP\s+\d+/i.test(t)) return true;
   // [--- Slice 1 ---][--- Slice 2 ---] chunking diagrams
   if (looksLikeFlowLine(t)) return true;
   return false;
+}
+
+function isBareFlowConnector(line: string): boolean {
+  return /^[|v^↓]+$/i.test(String(line || '').trim());
+}
+
+function firstNonConnectorLine(lines: string[], start: number, step: number): string | null {
+  for (let j = start; j >= 0 && j < lines.length; j += step) {
+    const t = lines[j].trim();
+    if (!t || isBareFlowConnector(t)) continue;
+    return lines[j];
+  }
+  return null;
+}
+
+function hasNearbySourceLine(lines: string[], index: number): boolean {
+  const prev = firstNonConnectorLine(lines, index - 1, -1);
+  const next = firstNonConnectorLine(lines, index + 1, 1);
+  const isSrc = (line: string | null) =>
+    !!line && (looksLikeCodeLine(line) || looksLikeSourceCode(line.trim()));
+  return isSrc(prev) || isSrc(next);
 }
 
 /** True when a block is mostly CJK (non-English digests are English-only). */
@@ -937,9 +956,9 @@ export const TECH_CONTENT_SIGNAL = new RegExp(
 );
 
 const DIGEST_HEADING_TITLES =
-  /^(Daily Overview|Brief|Overview\s*\/\s*Summary|Code Snippet|Sources\s*&\s*Citations|Key Actionable)/i;
+  /^(Daily Overview|Briefing|Brief|Overview\s*\/\s*Summary|Summary|Code Snippet|Sources\s*&\s*Citations|Source and Citation|Key Actionable|Key Action)/i;
 
-const SOURCES_HEADING = /^sources\s*&\s*citations/i;
+const SOURCES_HEADING = /^(sources\s*&\s*citations|source and citation)$/i;
 
 /**
  * Remove YAML frontmatter scraped from Dev.to / static-site posts.
@@ -983,7 +1002,7 @@ export function stripBlogFrontmatter(content: string): string {
 }
 
 const CANONICAL_DIGEST_H2 =
-  /^(Daily Overview\s*\(TL;DR\)|Brief|Overview\s*\/\s*Summary|Code Snippet|Key Actionable Takeaways|Sources\s*&\s*Citations)$/i;
+  /^(Daily Overview(?:\s*\(TL;DR\))?|Briefing|Brief|Overview\s*\/\s*Summary|Summary|Code Snippet|Key Action(?:able Takeaways)?|Sources\s*&\s*Citations|Source and Citation)$/i;
 
 export function isCanonicalDigestHeading(title: string): boolean {
   return CANONICAL_DIGEST_H2.test(String(title || '').trim());
@@ -1088,9 +1107,19 @@ export function looksLikeOffTopicJunk(text: string): boolean {
 
 /** True when markdown looks like a morning digest (not a generic snippet). */
 export function looksLikeDigestDocument(content: string): boolean {
-  return /^##\s+(Daily Overview|Brief|Overview\s*\/\s*Summary|Code Snippet|Sources\s*&\s*Citations|Key Actionable)/im.test(
+  return /^##\s+(Daily Overview|Briefing|Brief|Overview\s*\/\s*Summary|Summary|Code Snippet|Sources\s*&\s*Citations|Source and Citation|Key Actionable|Key Action)/im.test(
     String(content || ''),
   );
+}
+
+function isShortDiagramLabel(text: string): boolean {
+  const t = String(text || '').trim();
+  if (!t || t.includes('\n')) return false;
+  if (/^[+=|v↓]$/i.test(t)) return true;
+  if (t.length > 80) return false;
+  if (t.split(/\s+/).length > 10) return false;
+  if (/[.!?]$/.test(t)) return false;
+  return /[A-Za-z]/.test(t);
 }
 
 /**
@@ -1107,7 +1136,7 @@ export function fenceLooseAsciiDiagrams(content: string): string {
     if (buf.length === 0) return;
     const block = buf.join('\n');
     const artLines = buf.filter((l) => looksLikeAsciiArtLine(l)).length;
-    if (looksLikeAsciiDiagram(block) || artLines >= 3) {
+    if (looksLikeAsciiDiagram(block) || looksLikePlusEqualsStack(block) || artLines >= 3) {
       out.push('```');
       out.push(...buf);
       out.push('```');
@@ -1117,7 +1146,8 @@ export function fenceLooseAsciiDiagrams(content: string): string {
     buf = [];
   };
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
     if (trimmed.startsWith('```')) {
       flushBuf();
@@ -1130,7 +1160,9 @@ export function fenceLooseAsciiDiagrams(content: string): string {
       continue;
     }
 
-    const art = looksLikeAsciiArtLine(line);
+    const art =
+      looksLikeAsciiArtLine(line) &&
+      !(isBareFlowConnector(line) && hasNearbySourceLine(lines, i));
     const isProseFollowOn =
       trimmed.split(/\s+/).length >= 5 && /[.!?]$/.test(trimmed) && !looksLikeFlowLine(trimmed);
     if (isProseFollowOn && buf.length > 0) {
@@ -1138,16 +1170,28 @@ export function fenceLooseAsciiDiagrams(content: string): string {
       out.push(line);
       continue;
     }
+    const lastBuf = (buf[buf.length - 1] || '').trim();
+    const plusStackStart =
+      buf.length === 0 &&
+      isShortDiagramLabel(trimmed) &&
+      i + 1 < lines.length &&
+      /^[+=]$/.test(lines[i + 1].trim());
+    const plusStackContinue =
+      buf.length > 0 &&
+      ((/^[+=]$/.test(lastBuf) && isShortDiagramLabel(trimmed)) ||
+        (isShortDiagramLabel(lastBuf) && /^[+=]$/.test(trimmed)));
     const continuing =
       buf.length > 0 &&
       !isProseFollowOn &&
       (art ||
+        plusStackContinue ||
         trimmed === '' ||
         /^\s*[-*]\s+/.test(line) ||
         /^STEP\s+\d+/i.test(trimmed) ||
-        looksLikeAsciiDiagram(`${buf.join('\n')}\n${line}`));
+        looksLikeAsciiDiagram(`${buf.join('\n')}\n${line}`) ||
+        looksLikePlusEqualsStack(`${buf.join('\n')}\n${line}`));
 
-    if (art || continuing) {
+    if (plusStackStart || art || continuing) {
       buf.push(line);
       continue;
     }
@@ -1169,7 +1213,7 @@ export function stripOffTopicBodyContent(content: string): string {
   // Only apply allowlist filtering to full digests — leave generic markdown alone
   if (!looksLikeDigestDocument(raw)) return raw;
 
-  const sourcesSplit = raw.split(/(?=^##\s+Sources\s*&\s*Citations\s*$)/im);
+  const sourcesSplit = raw.split(/(?=^##\s+(?:Sources\s*&\s*Citations|Source and Citation)\s*$)/im);
   const main = sourcesSplit[0] || '';
   const sourcesTail = sourcesSplit.slice(1).join('');
 
@@ -1180,10 +1224,19 @@ export function stripOffTopicBodyContent(content: string): string {
     if (!part.trim()) continue;
     const lines = part.split('\n');
     const heading = (lines[0] || '').trim();
-    const isMetaSection = /^##\s+(Daily Overview|Brief|Key Actionable)/i.test(heading);
+    const isMetaSection = /^##\s+(Daily Overview|Briefing|Brief|Key Action)/i.test(heading);
+    const isSourcesSection = /^##\s+(Sources\s*&\s*Citations|Source and Citation)/i.test(heading);
     const isCodeSection = /^##\s+Code Snippet/i.test(heading);
     const isCanonical =
-      isMetaSection || isCodeSection || /^##\s+(Overview)/i.test(heading);
+      isMetaSection ||
+      isSourcesSection ||
+      isCodeSection ||
+      /^##\s+(Overview|Summary|Source)/i.test(heading);
+
+    if (isSourcesSection) {
+      if (part.trim()) keptParts.push(part.trim());
+      continue;
+    }
 
     if (isCodeSection) {
       const cleaned = part
@@ -1240,7 +1293,7 @@ export function stripOffTopicBodyContent(content: string): string {
 export function sanitizeDigestSources(content: string): string {
   const raw = String(content || '');
   if (!raw) return raw;
-  const marker = /^##\s+Sources\s*&\s*Citations\s*$/im;
+  const marker = /^##\s+(Sources\s*&\s*Citations|Source and Citation)\s*$/im;
   const match = marker.exec(raw);
   if (!match || match.index === undefined) return raw;
 
@@ -1262,11 +1315,11 @@ export function sanitizeDigestSources(content: string): string {
   return `${before}\n${kept.join('\n').replace(/^\n+/, '\n')}${rest}`.replace(/\n{3,}/g, '\n\n');
 }
 
-/** Move / keep Sources & Citations as the final section of the digest. */
+/** Move / keep Source and Citation as the final section of the digest. */
 export function ensureSourcesAtEnd(content: string): string {
   const raw = String(content || '').trim();
   if (!raw) return raw;
-  const marker = /^##\s+Sources\s*&\s*Citations\s*$/im;
+  const marker = /^##\s+(Sources\s*&\s*Citations|Source and Citation)\s*$/im;
   const match = marker.exec(raw);
   if (!match || match.index === undefined) {
     return raw;
@@ -1274,7 +1327,7 @@ export function ensureSourcesAtEnd(content: string): string {
 
   const before = raw.slice(0, match.index).trimEnd();
   const fromSources = raw.slice(match.index);
-  const nextH2 = fromSources.search(/\n##\s+(?!Sources)/i);
+  const nextH2 = fromSources.search(/\n##\s+(?!Sources|Source)/i);
   let sourcesSection: string;
   let middle: string;
   if (nextH2 >= 0) {
@@ -1302,18 +1355,26 @@ export function looksLikeSourceCode(text: string): boolean {
     .filter((l) => l.trim().length > 0 && !isDecorativeSeparator(l));
   if (lines.length === 0) return false;
 
+  const piped = lines.filter((l) => /^\|.+\|$/.test(l.trim())).length;
+  if (piped >= 3 && piped >= Math.ceil(lines.length * 0.5)) return false;
+
   let hits = 0;
   for (const line of lines) {
     const t = line.trim();
+    if (/^[+=|v↓]$/i.test(t)) continue;
     if (REAL_COMMAND.test(t)) {
       hits += 2;
       continue;
     }
     if (
-      /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |async |try:|except |elif |else:|if __name__|for \w+ in |for .+ in |while |with |console\.|asyncio\.|npm |yarn |pnpm )/.test(
+      /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |async |try:|except |elif |else:|if __name__|for \w+ in |for .+ in |while |with |console\.|asyncio\.|npm |yarn |pnpm |final |late |void |typedef |extension |required |factory |@override)/.test(
         t,
       )
     ) {
+      hits += 2;
+      continue;
+    }
+    if (/^import ['"]package:/.test(t) || /^package:[a-z0-9_]+/.test(t)) {
       hits += 2;
       continue;
     }
@@ -1321,8 +1382,17 @@ export function looksLikeSourceCode(text: string): boolean {
       hits += 2;
       continue;
     }
-    // Indented continuation typical of code blocks
-    if (/^( {2,}|\t)/.test(line) && /[(){}[\]=.;:]/.test(t) && t.split(/\s+/).length <= 14) {
+    if (/\[[^\]]{0,40}:[^\]]{0,40}\]/.test(t)) {
+      hits += 2;
+      continue;
+    }
+    // Indented continuation typical of code blocks — not lone + / = diagram ops
+    if (
+      /^( {2,}|\t)/.test(line) &&
+      /[(){}[\]=.;:]/.test(t) &&
+      !/^[+=|v↓]$/i.test(t) &&
+      t.split(/\s+/).length <= 14
+    ) {
       hits += 1;
       continue;
     }
@@ -1359,9 +1429,11 @@ export function looksLikeProseMistakenlyFenced(text: string): boolean {
     return true;
   }
 
+  let codeish = 0;
   let proseSignals = 0;
   for (const line of lines) {
     const t = line.trim();
+    if (looksLikeCodeLine(line) || /[=\[\]{}();]/.test(t)) codeish += 1;
     if (/^#{1,6}\s+\S/.test(t)) proseSignals += 2;
     if (/^[-*]\s+\S/.test(t) && t.split(/\s+/).length >= 6) proseSignals += 1;
     if (/^\d+\.\s+\S/.test(t) && t.split(/\s+/).length >= 6) proseSignals += 1;
@@ -1369,7 +1441,8 @@ export function looksLikeProseMistakenlyFenced(text: string): boolean {
     if (t.split(/\s+/).length >= 40) proseSignals += 2; // long legal/teaching paragraph
   }
 
-  return proseSignals >= 1;
+  if (codeish >= 2 && codeish >= Math.ceil(lines.length * 0.4)) return false;
+  return proseSignals >= 3;
 }
 
 /** Only real code or ASCII diagrams may use the dark boxed UI. */
@@ -1377,6 +1450,9 @@ export function shouldRenderAsBoxedCode(text: string, label?: string, section?: 
   if (looksLikeOffTopicJunk(text)) return false;
   if (looksLikeNonEnglishJunk(text)) return false;
   if (looksLikeMarkdownTable(text) || looksLikePipeComparisonTable(text) || looksLikeBrokenAsciiDiagram(text)) return false;
+  if (looksLikeSourceCode(text)) {
+    return !looksLikeProseMistakenlyFenced(text);
+  }
   if (label === 'Diagram' || looksLikeAsciiDiagram(text) || looksLikeFlowLine(text)) return true;
   if (section === 'code' && !looksLikeProseMistakenlyFenced(text)) {
     return looksLikeSourceCode(text) || /[{};=]/.test(text);
@@ -1398,14 +1474,16 @@ function looksLikeRealHeading(text: string): boolean {
 function looksLikeCodeLine(line: string): boolean {
   const t = line.trim();
   if (!t) return false;
+  if (/^[+=|v↓]$/i.test(t)) return false;
   if (REAL_COMMAND.test(t)) return true;
   if (
-    /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |asyncio\.|console\.|for \w+ in |for .+ in |while |try:|except |elif |else:)/.test(
+    /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |asyncio\.|console\.|for \w+ in |for .+ in |while |try:|except |elif |else:|final |late |void |typedef |extension |required |factory |@override|bool |int |String )/.test(
       t,
     )
   ) {
     return true;
   }
+  if (/^import ['"]package:/.test(t)) return true;
   if (/^\w[\w.]*\([^)]*\)\s*:$/.test(t)) return true;
   if (/^( {4}|\t)/.test(line) && /[(){}[\]=.;:]/.test(t) && t.split(/\s+/).length <= 14) {
     return true;
@@ -1468,7 +1546,10 @@ export function splitMixedFencedContent(content: string): string[] {
     const t = line.trim();
     if (!t) return prev;
     if (BLOG_FRONTMATTER_KEY.test(t)) return 'prose';
-    if (looksLikeCodeLine(line) || /^(import |from |def |class |const |let |async def |@)/.test(t)) {
+    if (
+      looksLikeCodeLine(line) ||
+      /^(import |from |def |class |const |let |async def |final |late |void |typedef |extension |@)/.test(t)
+    ) {
       return 'code';
     }
     if (
@@ -1513,7 +1594,7 @@ export function stripDigestBodyChrome(content: string): string {
       .replace(/\n{3,}/g, '\n\n');
   }
 
-  const marker = /^##\s+Sources\s*&\s*Citations\s*$/im;
+  const marker = /^##\s+(Sources\s*&\s*Citations|Source and Citation)\s*$/im;
   const match = marker.exec(raw);
   const main = match && match.index !== undefined ? raw.slice(0, match.index) : raw;
   const sourcesTail = match && match.index !== undefined ? raw.slice(match.index) : '';
@@ -1544,6 +1625,15 @@ export function stripMidBlogSourceLines(content: string): string {
     .trim();
 }
 
+function isConnectorOnlyBlock(block: MdBlock): boolean {
+  if (block.type !== 'code') return false;
+  const lines = String(block.content || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return lines.length > 0 && lines.every((l) => isBareFlowConnector(l));
+}
+
 function isShortCodeAnnotation(block: MdBlock): boolean {
   if (!['h2', 'h3', 'p'].includes(block.type)) return false;
   const t = block.content.trim();
@@ -1554,10 +1644,22 @@ function isShortCodeAnnotation(block: MdBlock): boolean {
   return true;
 }
 
+/** Mid-code titles / step labels between split fences — fold into one snippet. */
+function isFoldableCodeAnnotation(block: MdBlock): boolean {
+  const t = block.content.trim();
+  if (!t) return false;
+  if (looksLikeCodeLine(t) || looksLikeSourceCode(t)) return false;
+  if (isShortCodeAnnotation(block)) return true;
+  if (looksLikeInstructionHeading(t)) return true;
+  if (/^#{1,6}\s+/.test(t) && t.length <= 160) return true;
+  return false;
+}
+
 function isCodeContinuation(text: string): boolean {
   const raw = String(text || '');
   const firstLine = raw.split('\n')[0] || '';
   const t = firstLine.trim();
+  if (/^[+=|v↓]$/i.test(t)) return false;
   if (/^( {2,}|\t)/.test(firstLine)) return true;
   if (
     /^(await |return |else:|elif |except |finally:|yield |pass$|break$|continue$|\)|:|,)/.test(t)
@@ -1589,31 +1691,44 @@ export function coalesceFragmentedCodeBlocks(blocks: MdBlock[]): MdBlock[] {
       const middles: MdBlock[] = [];
       while (
         k < blocks.length &&
-        isShortCodeAnnotation(blocks[k]) &&
+        isFoldableCodeAnnotation(blocks[k]) &&
         k + 1 < blocks.length
       ) {
         // Peek: only swallow annotation if a code block follows
         let peek = k + 1;
         while (peek < blocks.length && blocks[peek].type === 'empty') peek += 1;
-        if (peek >= blocks.length || blocks[peek].type !== 'code') break;
-        if (!isCodeContinuation(blocks[peek].content) && !looksLikeAsciiDiagram(blocks[peek].content)) {
+        if (peek >= blocks.length || (blocks[peek].type !== 'code' && blocks[peek].type !== 'flow')) break;
+        if (
+          !isCodeContinuation(blocks[peek].content) &&
+          !looksLikeAsciiDiagram(blocks[peek].content) &&
+          blocks[peek].type !== 'flow' &&
+          blocks[peek].label !== 'Diagram'
+        ) {
           break;
         }
         middles.push(blocks[k]);
         k = peek;
       }
 
-      if (k >= blocks.length || blocks[k].type !== 'code') break;
+      if (k >= blocks.length || (blocks[k].type !== 'code' && blocks[k].type !== 'flow')) break;
       const next = blocks[k];
 
+      const swallowConnectors =
+        next.type === 'code' &&
+        ((looksLikeSourceCode(merged.content) && isConnectorOnlyBlock(next)) ||
+          (isConnectorOnlyBlock(merged) && looksLikeSourceCode(next.content)));
       const mergedIsDiagram =
-        merged.label === 'Diagram' ||
-        (looksLikeAsciiDiagram(merged.content) && !looksLikeSourceCode(merged.content));
+        !swallowConnectors &&
+        (merged.type === 'flow' ||
+          merged.label === 'Diagram' ||
+          (looksLikeAsciiDiagram(merged.content) && !looksLikeSourceCode(merged.content)));
       const nextIsDiagram =
-        next.label === 'Diagram' ||
-        (looksLikeAsciiDiagram(next.content) && !looksLikeSourceCode(next.content));
-      if (mergedIsDiagram && nextIsDiagram === false) break;
-      if (mergedIsDiagram === false && nextIsDiagram) break;
+        !swallowConnectors &&
+        (next.type === 'flow' ||
+          next.label === 'Diagram' ||
+          (looksLikeAsciiDiagram(next.content) && !looksLikeSourceCode(next.content)));
+      if (!swallowConnectors && mergedIsDiagram && nextIsDiagram === false) break;
+      if (!swallowConnectors && mergedIsDiagram === false && nextIsDiagram) break;
       const bothDiagram = mergedIsDiagram && nextIsDiagram;
       const onlyEmptiesBetween = middles.length === 0;
       const continuation = isCodeContinuation(next.content);
@@ -1621,12 +1736,47 @@ export function coalesceFragmentedCodeBlocks(blocks: MdBlock[]): MdBlock[] {
       if (!bothDiagram && !onlyEmptiesBetween && !continuation) break;
       if (!bothDiagram && !onlyEmptiesBetween && middles.length > 0 && !continuation) break;
 
-      const commentLines = middles.map((m) => `# ${m.content.replace(/^#+\s*/, '').trim()}`);
-      const label = bothDiagram
-        ? 'Diagram'
-        : merged.label === 'Diagram' || next.label === 'Diagram'
+      if (bothDiagram) {
+        const extra = middles.map((m) => m.content.trim()).filter(Boolean);
+        const content = [merged.content, ...extra, next.content].filter((p) => p.length > 0).join('\n');
+        const steps = extractFlowSteps(content);
+        merged =
+          steps.length >= 2
+            ? { type: 'flow', content, flowSteps: steps, label: 'Diagram' }
+            : { type: 'code', content: normalizeDiagramContent(content), label: 'Diagram' };
+        j = k + 1;
+        continue;
+      }
+
+      const commentLines = middles
+        .filter((m) => {
+          const t = m.content.trim();
+          if (/^[+=|v↓]$/i.test(t)) return false;
+          if (looksLikeCodeLine(t) || looksLikeSourceCode(t)) return false;
+          if (isShortDiagramLabel(t) && !looksLikeInstructionHeading(t)) return false;
+          return true;
+        })
+        .map((m) => `# ${m.content.replace(/^#+\s*/, '').trim()}`);
+      const diagramMiddles = middles
+        .filter((m) => isShortDiagramLabel(m.content.trim()))
+        .map((m) => m.content.trim());
+      const label = swallowConnectors
+        ? 'Code Snippet'
+        : bothDiagram
           ? 'Diagram'
-          : merged.label || next.label || 'Code Snippet';
+          : merged.label === 'Diagram' || next.label === 'Diagram'
+            ? 'Diagram'
+            : merged.label || next.label || 'Code Snippet';
+      if (diagramMiddles.length > 0 && (bothDiagram || merged.label === 'Diagram' || next.label === 'Diagram')) {
+        const content = [merged.content, ...diagramMiddles, next.content].filter((p) => p.length > 0).join('\n');
+        const steps = extractFlowSteps(content);
+        merged =
+          steps.length >= 2
+            ? { type: 'flow', content, flowSteps: steps, label: 'Diagram' }
+            : { type: 'code', content: normalizeDiagramContent(content), label: 'Diagram' };
+        j = k + 1;
+        continue;
+      }
       merged = {
         type: 'code',
         label,
@@ -1638,6 +1788,144 @@ export function coalesceFragmentedCodeBlocks(blocks: MdBlock[]): MdBlock[] {
     out.push(merged);
     i = j > i ? j : i + 1;
   }
+  return out;
+}
+
+function pushVisualDiagram(content: string, blocks: MdBlock[]): void {
+  const raw = String(content || '').trim();
+  if (!raw) return;
+  if (looksLikeDirectoryTreeDiagram(raw)) {
+    blocks.push({ type: 'code', content: raw, label: 'Diagram' });
+    return;
+  }
+  const steps = extractFlowSteps(raw);
+  if (steps.length >= 2) {
+    blocks.push({ type: 'flow', content: raw, flowSteps: steps, label: 'Diagram' });
+    return;
+  }
+  blocks.push({
+    type: 'code',
+    content: normalizeDiagramContent(raw),
+    label: 'Diagram',
+  });
+}
+
+function coalesceScatteredDiagrams(blocks: MdBlock[]): MdBlock[] {
+  const out: MdBlock[] = [];
+  let i = 0;
+  while (i < blocks.length) {
+    const start = blocks[i];
+    const startText = (start.content || '').trim();
+    const canStart =
+      (start.type === 'p' && isShortDiagramLabel(startText)) ||
+      (start.type === 'p' && (looksLikeSimpleArrowFlow(startText) || looksLikePlusEqualsStack(startText)));
+    if (!canStart) {
+      out.push(start);
+      i += 1;
+      continue;
+    }
+
+    const window: MdBlock[] = [];
+    let j = i;
+    let connectors = 0;
+    while (j < blocks.length) {
+      const b = blocks[j];
+      const t = (b.content || '').trim();
+      if (b.type === 'empty') {
+        window.push(b);
+        j += 1;
+        continue;
+      }
+      if (b.type === 'p' && (/^[+=|v↓]$/i.test(t) || isShortDiagramLabel(t))) {
+        if (/^[+=|v↓]$/i.test(t)) connectors += 1;
+        window.push(b);
+        j += 1;
+        continue;
+      }
+      if (b.type === 'flow' || (b.type === 'code' && (b.label === 'Diagram' || /^[+=|v↓]$/i.test(t)))) {
+        connectors += 1;
+        window.push(b);
+        j += 1;
+        continue;
+      }
+      break;
+    }
+
+    const joined = window
+      .filter((b) => b.type !== 'empty')
+      .map((b) => b.content.trim())
+      .join('\n');
+    const steps = extractFlowSteps(joined);
+    if ((connectors >= 2 && steps.length >= 3) || (steps.length >= 3 && window.some((b) => b.type === 'flow'))) {
+      out.push({ type: 'flow', content: joined, flowSteps: steps, label: 'Diagram' });
+      i = j;
+      continue;
+    }
+    out.push(start);
+    i += 1;
+  }
+  return out;
+}
+
+function isDiagramishBlock(block: MdBlock): boolean {
+  if (looksLikeDirectoryTreeDiagram(block.content)) return false;
+  if (block.type === 'flow') return true;
+  if (block.type !== 'code') return false;
+  if (block.label === 'Diagram') return true;
+  return looksLikeAsciiDiagram(block.content) || looksLikeBrokenAsciiDiagram(block.content);
+}
+
+function mergeAdjacentFlows(blocks: MdBlock[]): MdBlock[] {
+  const out: MdBlock[] = [];
+  let pendingEmpty: MdBlock[] = [];
+  let pendingLabels: MdBlock[] = [];
+  const flushPending = () => {
+    out.push(...pendingEmpty, ...pendingLabels);
+    pendingEmpty = [];
+    pendingLabels = [];
+  };
+  for (const block of blocks) {
+    if (block.type === 'empty') {
+      pendingEmpty.push(block);
+      continue;
+    }
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      isDiagramishBlock(prev) &&
+      (block.type === 'p' || block.type === 'h2' || block.type === 'h3') &&
+      isShortDiagramLabel(block.content)
+    ) {
+      pendingLabels.push(block);
+      continue;
+    }
+    if (prev && isDiagramishBlock(prev) && isDiagramishBlock(block)) {
+      const extra = pendingLabels.map((l) => l.content.trim()).filter(Boolean);
+      pendingEmpty = [];
+      pendingLabels = [];
+      const content = [prev.content, ...extra, block.content].filter((p) => p.length > 0).join('\n');
+      const steps = dedupeFlowSteps([
+        ...(prev.flowSteps || extractFlowSteps(prev.content)),
+        ...extra,
+        ...(block.flowSteps || extractFlowSteps(block.content)),
+      ]);
+      if (steps.length >= 2) {
+        prev.type = 'flow';
+        prev.content = content;
+        prev.flowSteps = steps;
+        prev.label = 'Diagram';
+      } else {
+        prev.type = 'code';
+        prev.content = normalizeDiagramContent(content);
+        prev.label = 'Diagram';
+        delete prev.flowSteps;
+      }
+      continue;
+    }
+    flushPending();
+    out.push(block);
+  }
+  flushPending();
   return out;
 }
 
@@ -1660,7 +1948,7 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
       if (looksLikeChunkDemoText(joined)) {
         const steps = extractChunkDemoSteps(joined);
         if (steps.length >= 2) {
-          blocks.push({ type: 'flow', content: joined, flowSteps: steps, label: 'Architecture' });
+          blocks.push({ type: 'flow', content: joined, flowSteps: steps, label: 'Diagram' });
           return;
         }
       }
@@ -1678,20 +1966,21 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
       if (looksLikeBrokenAsciiDiagram(joined)) {
         const labels = salvageDiagramLabels(joined);
         if (labels.length >= 2) {
-          blocks.push({
-            type: 'code',
-            content: normalizeDiagramContent(joined),
-            label: 'Diagram',
-          });
+          pushVisualDiagram(joined, blocks);
         } else if (labels.length === 1) {
           blocks.push({ type: 'p', content: labels[0] });
         }
         return;
       }
-      if (looksLikeAsciiDiagram(joined) || looksLikeFlowLine(joined)) {
-        blocks.push({ type: 'code', content: normalizeDiagramContent(joined), label: 'Diagram' });
-      } else if (looksLikeSourceCode(joined)) {
+      if (looksLikeSourceCode(joined)) {
         blocks.push({ type: 'code', content: joined, label: 'Code Snippet' });
+      } else if (
+        looksLikeAsciiDiagram(joined) ||
+        looksLikeFlowLine(joined) ||
+        looksLikeSimpleArrowFlow(joined) ||
+        looksLikePlusEqualsStack(joined)
+      ) {
+        pushVisualDiagram(joined, blocks);
       } else {
         blocks.push({ type: 'p', content: joined });
       }
@@ -1703,15 +1992,18 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     const content = pendingCode.join('\n');
     pendingCode = [];
     if (tryPushTableBlock(content, blocks)) return;
+    if (looksLikeSourceCode(content)) {
+      blocks.push({ type: 'code', content, label: 'Code Snippet' });
+      return;
+    }
     if (looksLikeMarkdownTable(content) || looksLikeBrokenAsciiDiagram(content)) {
       if (looksLikeBrokenAsciiDiagram(content) && !looksLikeMarkdownTable(content)) {
-        const labels = salvageDiagramLabels(content);
+        let labels = salvageDiagramLabels(content);
+        if (labels.length < 2 && looksLikeBracketFlowDiagram(content)) {
+          labels = salvageBracketFlowSteps(content);
+        }
         if (labels.length >= 2) {
-          blocks.push({
-            type: 'code',
-            content: normalizeDiagramContent(content),
-            label: 'Diagram',
-          });
+          pushVisualDiagram(content, blocks);
           return;
         }
       }
@@ -1722,8 +2014,13 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
       }
       return;
     }
-    if (looksLikeAsciiDiagram(content)) {
-      blocks.push({ type: 'code', content: normalizeDiagramContent(content), label: 'Diagram' });
+    if (
+      looksLikeAsciiDiagram(content) ||
+      looksLikeSimpleArrowFlow(content) ||
+      looksLikePlusEqualsStack(content) ||
+      looksLikeBracketFlowDiagram(content)
+    ) {
+      pushVisualDiagram(content, blocks);
       return;
     }
     if (
@@ -1752,7 +2049,7 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     if (looksLikeChunkDemoText(content)) {
       const steps = extractChunkDemoSteps(content);
       if (steps.length >= 2) {
-        blocks.push({ type: 'flow', content, flowSteps: steps, label: 'Architecture' });
+        blocks.push({ type: 'flow', content, flowSteps: steps, label: 'Diagram' });
         return;
       }
     }
@@ -1760,7 +2057,8 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
       looksLikeSourceCode(content) &&
       !looksLikeBracketFlowDiagram(content) &&
       !looksLikeBrokenAsciiDiagram(content) &&
-      !looksLikeSimpleArrowFlow(content)
+      !looksLikeSimpleArrowFlow(content) &&
+      !looksLikePlusEqualsStack(content)
     ) {
       blocks.push({ type: 'code', content, label: 'Code Snippet' });
       return;
@@ -1783,13 +2081,12 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     if (tryPushTableBlock(content, blocks)) return;
     if (looksLikeMarkdownTable(content) || looksLikeBrokenAsciiDiagram(content)) {
       if (looksLikeBrokenAsciiDiagram(content) && !looksLikeMarkdownTable(content)) {
-        const labels = salvageDiagramLabels(content);
+        let labels = salvageDiagramLabels(content);
+        if (labels.length < 2 && looksLikeBracketFlowDiagram(content)) {
+          labels = salvageBracketFlowSteps(content);
+        }
         if (labels.length >= 2) {
-          blocks.push({
-            type: 'code',
-            content: normalizeDiagramContent(content),
-            label: 'Diagram',
-          });
+          pushVisualDiagram(content, blocks);
           return;
         }
       }
@@ -1800,8 +2097,13 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
       }
       return;
     }
-    if (looksLikeAsciiDiagram(content)) {
-      blocks.push({ type: 'code', content: normalizeDiagramContent(content), label: 'Diagram' });
+    if (
+      looksLikeAsciiDiagram(content) ||
+      looksLikeSimpleArrowFlow(content) ||
+      looksLikePlusEqualsStack(content) ||
+      looksLikeBracketFlowDiagram(content)
+    ) {
+      pushVisualDiagram(content, blocks);
       return;
     }
     if (
@@ -1856,7 +2158,10 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     if (
       looksLikeCodeLine(line) ||
       (pendingCode.length > 0 &&
-        (trimmed === '' || /^( {2,}|\t)/.test(line) || looksLikeCodeLine(line)))
+        (trimmed === '' ||
+          (/^( {2,}|\t)/.test(line) && !/^[+=|v↓]$/i.test(trimmed)) ||
+          looksLikeCodeLine(line) ||
+          (/^[\s|v^]+$/i.test(trimmed) && looksLikeSourceCode(pendingCode.join('\n')))))
     ) {
       if (pendingCode.length === 0) {
         flushParagraph();
@@ -1927,7 +2232,7 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
       blocks.push({ type: 'code', content: trimmed, label: 'Code Snippet' });
     } else if (looksLikeFlowLine(trimmed)) {
       flushParagraph();
-      blocks.push({ type: 'code', content: normalizeDiagramContent(trimmed), label: 'Diagram' });
+      pushVisualDiagram(trimmed, blocks);
     } else if (looksLikeAsciiArtLine(trimmed)) {
       currentParagraph.push(line);
     } else if (trimmed === '') {
@@ -1959,7 +2264,7 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     flushParagraph();
   }
 
-  return coalesceFragmentedCodeBlocks(blocks);
+  return mergeAdjacentFlows(coalesceScatteredDiagrams(coalesceFragmentedCodeBlocks(blocks)));
 }
 
 type RenderSection = 'body' | 'code' | 'sources';
@@ -2018,6 +2323,56 @@ function prepareRenderableBlocks(rawBlocks: MdBlock[], isDigest: boolean): MdBlo
     .filter((block): block is MdBlock => block != null);
 }
 
+function DiagramFlowCard({
+  steps,
+  copyText,
+  label,
+  index,
+}: {
+  steps: string[];
+  copyText: string;
+  label?: string;
+  index: number;
+}) {
+  return (
+    <div
+      data-testid="digest-diagram"
+      className="my-5 rounded-2xl border border-zinc-200 bg-zinc-50 p-5 shadow-sm"
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand">
+          {label || 'Diagram'}
+        </span>
+        <button
+          type="button"
+          id={`copy-diagram-${index}`}
+          onClick={() => navigator.clipboard.writeText(copyText)}
+          className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 hover:text-zinc-700 cursor-pointer"
+        >
+          Copy
+        </button>
+      </div>
+      <ol className="m-0 flex list-none flex-col p-0">
+        {steps.map((step, i) => (
+          <li key={`${index}-${i}`} className="flex flex-col items-center">
+            <div className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-[15px] font-medium leading-6 text-zinc-800 shadow-sm">
+              {step}
+            </div>
+            {i < steps.length - 1 ? (
+              <span
+                className="my-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-brand/10 text-xs font-bold text-brand"
+                aria-hidden
+              >
+                ↓
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 export function PremiumMarkdownRenderer({ content }: { content: string }) {
   const isDigest = looksLikeDigestDocument(content);
   const prepared = fenceLooseAsciiDiagrams(
@@ -2042,20 +2397,47 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
     <div className="space-y-5 text-zinc-700 leading-relaxed font-sans">
       {blocks.map((block, idx) => {
         switch (block.type) {
-          case 'flow':
+          case 'flow': {
+            const steps =
+              block.flowSteps && block.flowSteps.length >= 2
+                ? block.flowSteps
+                : extractFlowSteps(block.content);
+            if (steps.length >= 2) {
+              return (
+                <DiagramFlowCard
+                  key={idx}
+                  index={idx}
+                  steps={steps}
+                  copyText={steps.join('\n')}
+                  label={block.label || 'Diagram'}
+                />
+              );
+            }
             return (
-              <FlowStepsCard
+              <DiagramFlowCard
                 key={idx}
-                steps={block.flowSteps || extractChunkDemoSteps(block.content)}
-                title={block.label || 'Architecture'}
+                index={idx}
+                steps={[block.content]}
+                copyText={block.content}
+                label={block.label || 'Diagram'}
               />
             );
+          }
           case 'code': {
-            if (block.label === 'Diagram') {
-              const flowSteps = extractFlowSteps(block.content);
-              if (flowSteps.length >= 2) {
-                return <FlowStepsCard key={idx} steps={flowSteps} title="Diagram" />;
-              }
+            const diagramSteps =
+              block.label === 'Diagram' && !looksLikeDirectoryTreeDiagram(block.content)
+                ? extractFlowSteps(block.content)
+                : [];
+            if (diagramSteps.length >= 2) {
+              return (
+                <DiagramFlowCard
+                  key={idx}
+                  index={idx}
+                  steps={diagramSteps}
+                  copyText={diagramSteps.join('\n')}
+                  label="Diagram"
+                />
+              );
             }
             return (
               <div
@@ -2068,13 +2450,14 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
                   </span>
                   <button
                     type="button"
+                    id={`copy-code-${idx}`}
                     onClick={() => navigator.clipboard.writeText(block.content)}
                     className="hover:text-white transition-colors text-[10px] font-bold uppercase tracking-widest cursor-pointer"
                   >
                     Copy
                   </button>
                 </div>
-                <pre className="p-6 overflow-x-auto text-zinc-300 whitespace-pre font-mono text-[11px] leading-5 tabular-nums">
+                <pre className="p-6 overflow-x-auto text-zinc-300 whitespace-pre font-mono text-[11px] leading-6">
                   <code className="font-mono whitespace-pre">{block.content}</code>
                 </pre>
               </div>

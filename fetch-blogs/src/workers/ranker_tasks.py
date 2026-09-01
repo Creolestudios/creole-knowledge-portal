@@ -19,9 +19,8 @@ from src.extractors.topic_filter import is_non_learning, matches_any_term
 
 from src.ranker.llm_reranker import RerankCandidate, rerank_with_gemini
 from src.ranker.next_day import (
-    continuity_scrape_terms,
-    interest_scrape_terms,
-    profile_has_interests,
+    discovery_match_terms,
+    hay_is_off_yesterday_family,
     refresh_profile_embedding,
 )
 from src.ranker.scorer import score_articles_for_profile
@@ -112,9 +111,7 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
         if str(t or "").strip()
     }
 
-    tech_terms = interest_scrape_terms(profile)
-    has_interests = profile_has_interests(profile)
-    continuity_terms = continuity_scrape_terms(profile) if not has_interests else []
+    match_terms = discovery_match_terms(profile)
     preferred_hosts = {
         *(_TRENDING_HOSTS),
         *(
@@ -141,7 +138,7 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
         return False
 
     def _matches_user_interests(article: Article) -> bool:
-        """With interests: hard match. Without: yesterday theme OR trending site tech."""
+        """Interests if set; else tech-stack match; else configured-site learning only."""
         from src.extractors.topic_filter import has_tech_learning_signal
 
         hay = (
@@ -151,27 +148,22 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
             f"{str(getattr(article, 'body_text', '') or '')[:800]}"
         )
         title = str(getattr(article, "title", "") or "")
-        if has_interests:
-            if not tech_terms:
-                return False
-            return matches_any_term(hay, tech_terms)
+        if match_terms:
+            return matches_any_term(hay, match_terms)
         if not has_tech_learning_signal(title, hay[:1500]):
             return False
-        if continuity_terms and matches_any_term(hay, continuity_terms):
-            return True
         url = str(getattr(article, "url", "") or "")
         domain = str(getattr(article, "source_domain", "") or "").lower()
         host = ""
         if "://" in url:
             host = url.split("/")[2].lower()
-        site_ok = (
+        return (
             host in preferred_hosts
             or domain in preferred_hosts
             or host.endswith(".dev.to")
             or "dev.to" in host
             or "ycombinator" in host
         )
-        return site_ok
 
     def _accept(article: Article) -> bool:
         aid = _article_id(article)
@@ -180,6 +172,14 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
         if _title_blocked(str(getattr(article, "title", None) or "")):
             return False
         if not _matches_user_interests(article):
+            return False
+        hay = (
+            f"{getattr(article, 'title', '')} "
+            f"{getattr(article, 'summary', '')} "
+            f"{' '.join(getattr(article, 'topics', None) or [])} "
+            f"{str(getattr(article, 'body_text', '') or '')[:800]}"
+        )
+        if hay_is_off_yesterday_family(hay, profile):
             return False
         if is_non_learning(
             str(getattr(article, "title", None) or ""),

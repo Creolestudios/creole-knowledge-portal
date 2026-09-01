@@ -12,16 +12,13 @@ vi.mock('next/navigation', () => ({
 
 describe('DailyBlogTab', () => {
   const originalFetch = global.fetch;
-  const originalAlert = window.alert;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    window.alert = vi.fn();
   });
 
   afterEach(() => {
     global.fetch = originalFetch;
-    window.alert = originalAlert;
   });
 
   it('shows the loading state, then the "ready to synthesize" empty state', async () => {
@@ -119,7 +116,7 @@ describe('DailyBlogTab', () => {
     });
 
     fireEvent.click(screen.getByText('Synthesize Morning Briefing'));
-    expect(screen.getByText('AI Factory is Synthesizing...')).toBeInTheDocument();
+    expect(screen.getByText("Preparing today's briefing")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByText('Fresh Brief')).toBeInTheDocument();
@@ -132,7 +129,7 @@ describe('DailyBlogTab', () => {
     expect(JSON.parse(generateCall[1].body)).toEqual({ userId: 'u1' });
   });
 
-  it('alerts with the error message when generation fails', async () => {
+  it('shows an in-page error when generation fails, without a browser alert', async () => {
     global.fetch = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ success: false }) })
@@ -143,11 +140,13 @@ describe('DailyBlogTab', () => {
     fireEvent.click(screen.getByText('Synthesize Morning Briefing'));
 
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Gemini quota exceeded'));
+      expect(screen.getByText(/Gemini quota exceeded/i)).toBeInTheDocument();
     });
+    expect(screen.getByText('Synthesize Morning Briefing')).toBeInTheDocument();
+    expect(screen.getByText(/Today's briefing wasn't generated/i)).toBeInTheDocument();
   });
 
-  it('alerts on a network error during generation', async () => {
+  it('shows an in-page error on a network failure during generation', async () => {
     global.fetch = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ success: false }) })
@@ -158,8 +157,9 @@ describe('DailyBlogTab', () => {
     fireEvent.click(screen.getByText('Synthesize Morning Briefing'));
 
     await waitFor(() => {
-      expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('Network error'));
+      expect(screen.getByText(/Could not reach the briefing service: offline/i)).toBeInTheDocument();
     });
+    expect(screen.getByText('Synthesize Morning Briefing')).toBeInTheDocument();
   });
 
   it('redirects to the quiz page and posts reading activity when "Start Quiz" is clicked', async () => {
@@ -241,7 +241,7 @@ describe('DailyBlogTab', () => {
     expect((global.fetch as any).mock.calls.length).toBe(callsBefore);
   });
 
-  it('falls back to active_blog_id from sessionStorage if latest is not found', async () => {
+  it('does not show a past session blog when today has no digest', async () => {
     sessionStorage.setItem('active_blog_id', 'fallback-blog-id');
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -249,14 +249,20 @@ describe('DailyBlogTab', () => {
 
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/digests/latest')) {
-        return Promise.resolve({ ok: true, json: async () => ({ success: false, blog: null }) });
+        return Promise.resolve({ ok: true, json: async () => ({ success: true, blog: null }) });
       }
       if (url.includes('/api/digests/by-id')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
             success: true,
-            blog: { id: 'fallback-blog-id', title: 'Fallback Active Blog', content: 'Active', tags: [], digest_date: digestDate },
+            blog: {
+              id: 'fallback-blog-id',
+              title: 'Yesterday Next.js Brief',
+              content: 'Active',
+              tags: [],
+              digest_date: digestDate,
+            },
           }),
         });
       }
@@ -266,9 +272,105 @@ describe('DailyBlogTab', () => {
     render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
 
     await waitFor(() => {
-      expect(screen.getByText('Fallback Active Blog')).toBeInTheDocument();
+      expect(screen.getByText('Synthesize Morning Briefing')).toBeInTheDocument();
     });
-    
+    expect(screen.queryByText('Yesterday Next.js Brief')).not.toBeInTheDocument();
+
     sessionStorage.removeItem('active_blog_id');
+  });
+
+  it('restores the reading timer from the same briefing session', async () => {
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    sessionStorage.setItem(
+      'reading_timer:blog-1',
+      JSON.stringify({ startedAt: Date.now() - 90_000, stoppedAt: null }),
+    );
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/digests')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            blog: {
+              id: 'blog-1',
+              title: 'Timed Brief',
+              content: 'c',
+              tags: [],
+              digest_date: digestDate,
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
+    await waitFor(() => {
+      expect(screen.getByText('Timed Brief')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(screen.getByText('1m 30s')).toBeInTheDocument();
+    });
+    sessionStorage.removeItem('reading_timer:blog-1');
+  });
+
+  it('shows Synthesize instead of a Next.js filler briefing for today', async () => {
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        blog: {
+          id: 'fallback-1',
+          title: 'Architectural Deep-Dive: Next.js 15',
+          content: 'Filler',
+          tags: ['nextjs'],
+          digest_date: digestDate,
+          source: 'AI Resilient Synthesis Engine',
+          is_fallback: true,
+        },
+      }),
+    });
+
+    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
+    await waitFor(() => {
+      expect(screen.getByText('Synthesize Morning Briefing')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Architectural Deep-Dive: Next.js 15')).not.toBeInTheDocument();
+  });
+
+  it('keeps Synthesize when generate returns a filler briefing', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/api/digests/generate')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            blog: {
+              title: 'Architectural Deep-Dive: Next.js 15',
+              content: 'Filler',
+              tags: ['nextjs'],
+              source: 'AI Resilient Synthesis Engine',
+              is_fallback: true,
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ success: true, blog: null }) });
+    });
+
+    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
+    await waitFor(() => screen.getByText('Synthesize Morning Briefing'));
+    fireEvent.click(screen.getByText('Synthesize Morning Briefing'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(/Try Synthesize again/i);
+    });
+    expect(screen.getByText('Synthesize Morning Briefing')).toBeInTheDocument();
+    expect(screen.queryByText('Architectural Deep-Dive: Next.js 15')).not.toBeInTheDocument();
   });
 });

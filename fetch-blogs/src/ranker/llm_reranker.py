@@ -74,6 +74,13 @@ class _GeminiResultEnvelope(BaseModel):
 
 def build_rerank_prompt(profile: UserProfile, candidates: list[RerankCandidate]) -> str:
     """Build a compact JSON-only prompt for Gemini."""
+    from src.ranker.next_day import (
+        continuing_same_stack_run,
+        profile_has_yesterday,
+        quiz_focus_terms,
+    )
+
+    path = profile.learning_path
     profile_payload = {
         "years_of_experience": profile.years_of_experience,
         "content_depth": profile.content_depth.value,
@@ -81,12 +88,48 @@ def build_rerank_prompt(profile: UserProfile, candidates: list[RerankCandidate])
         "secondary_tech_stack": profile.secondary_tech_stack,
         "interests": profile.interests,
         "excluded_topics": profile.excluded_topics,
+        "yesterday_headline": path.last_digest_headline or "",
+        "yesterday_topics": path.last_topics or [],
+        "quiz_outcome": (
+            path.last_quiz_outcome.value if path.last_quiz_outcome else None
+        ),
+        "quiz_percentage": path.last_quiz_percentage,
+        "quiz_focus": quiz_focus_terms(profile),
     }
     candidate_payload = [candidate.model_dump() for candidate in candidates]
+    if profile.interests:
+        focus = (
+            "MUST rank only articles that match the user's interests. "
+            "Score anything off-interest near 0."
+        )
+    elif continuing_same_stack_run(profile):
+        focus = (
+            "Interests are empty and this is a returning user still on the same stack. "
+            "MUST continue yesterday's technical theme and the quiz_focus topics, "
+            "and stay in that stack family until its topics are covered. "
+            "Score unrelated stacks, Apple/Mac hardware, and product launches near 0."
+        )
+    elif profile_has_yesterday(profile):
+        focus = (
+            "Interests are empty and the previous stack run is finished. "
+            "MUST rank today's trending tutorials for the NEW active stack only. "
+            "Do not continue yesterday's other language. "
+            "Score Apple/Mac hardware, product launches, and off-stack topics near 0."
+        )
+    elif profile.primary_tech_stack or profile.secondary_tech_stack:
+        focus = (
+            "Interests are empty (first briefing). MUST rank only today's trending "
+            "tutorials for the user's primary/secondary tech stack. Score Apple/Mac "
+            "hardware, product launches, and off-stack topics near 0."
+        )
+    else:
+        focus = "No interests or stack. Prefer software-engineering tutorials only."
     return f"""
 You are ranking LEARNING articles for a personalized engineering study digest.
 Prefer tutorials, how-tos, deep technical posts (APIs, frameworks, databases, architecture, debugging).
+{focus}
 Score news, M&A, funding, earnings, layoffs, and market rumors near 0.
+Score articles whose title or body is not English (Portuguese, Spanish, French, German, Korean, …) near 0.
 Never prefer career advice, job hunting, LinkedIn/GitHub branding, portfolios, or soft skills.
 Return strict JSON only. Do not include markdown.
 

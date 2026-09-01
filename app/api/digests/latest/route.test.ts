@@ -143,4 +143,33 @@ describe('GET /api/digests/latest', () => {
     expect(body.blog.id).toBe('brief-1');
     expect(body.blog.digest_date).toBe(digestDate);
   });
+
+  it('hides a Next.js filler briefing when Mongo has no digest today', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true, blog: null }),
+    });
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    mockMaybeSingle.mockResolvedValue({
+      data: {
+        id: 'fallback-1',
+        title: 'Architectural Deep-Dive: Next.js 15',
+        url: `briefing:user-1:${today}`,
+        source: 'AI Resilient Synthesis Engine',
+        published_at: `${today}T08:00:00.000Z`,
+      },
+      error: null,
+    });
+
+    const res = await GET();
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.blog).toBeNull();
+  });
 });

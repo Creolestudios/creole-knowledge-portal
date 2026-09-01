@@ -691,7 +691,7 @@ def test_collect_payloads_trending_mode_uses_configured_sites_only(
 def test_collect_payloads_continuity_and_trending_when_no_interests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No interests: scrape yesterday theme tags AND today's trending posts."""
+    """Helper still supports continuity tags + untagged trending when asked."""
     from src.models.schemas import Article as LegacyArticle
 
     cont = LegacyArticle(

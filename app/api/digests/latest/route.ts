@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
+import { isInventedFallback } from '@/lib/digests/invented-fallback';
 
 /**
  * "Today" in IST (Asia/Kolkata) — must match the blog-service's own definition
@@ -56,11 +57,7 @@ function attachFallbackMeta(blog: Record<string, unknown> | null) {
   } else if (rawSummary && typeof rawSummary === 'object') {
     meta = rawSummary as typeof meta;
   }
-  const isFallback =
-    Boolean(meta.fallback) ||
-    blog.source === 'AI Resilient Synthesis Engine' ||
-    blog.is_fallback === true;
-  if (!isFallback) return blog;
+  if (!isInventedFallback(blog)) return blog;
   return {
     ...blog,
     is_fallback: true,
@@ -107,6 +104,9 @@ export async function GET() {
             return NextResponse.json({ success: true, blog: null, meta: null });
           }
           if (isTodayBlog(blog)) {
+            if (isInventedFallback(blog)) {
+              return NextResponse.json({ success: true, blog: null, meta: null });
+            }
             return NextResponse.json({
               ...payload,
               blog: attachFallbackMeta(blog),
@@ -133,6 +133,9 @@ export async function GET() {
     }
 
     if (legacyBrief && isTodayBlog(legacyBrief)) {
+      if (isInventedFallback(legacyBrief as Record<string, unknown>)) {
+        return NextResponse.json({ success: true, blog: null, meta: null });
+      }
       return NextResponse.json({
         success: true,
         blog: attachFallbackMeta({ ...legacyBrief, digest_date: today }),
@@ -155,6 +158,9 @@ export async function GET() {
 
     const candidate = recentBriefs?.[0] ?? null;
     if (candidate && isTodayBlog(candidate)) {
+      if (isInventedFallback(candidate as Record<string, unknown>)) {
+        return NextResponse.json({ success: true, blog: null, meta: null });
+      }
       return NextResponse.json({
         success: true,
         blog: attachFallbackMeta({ ...candidate, digest_date: today }),
