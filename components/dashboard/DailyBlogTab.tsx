@@ -198,12 +198,11 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         body: JSON.stringify({ userId: user.id }),
       });
 
-      clearInterval(stepInterval);
-
       if (res.ok) {
-        setGenerationStep('Finalizing your Morning Brief...');
-        const data = await res.json();
-        if (data.success && data.blog) {
+        const data = await res.json().catch(() => ({}));
+        if (data?.success && data?.blog) {
+          clearInterval(stepInterval);
+          setGenerationStep('Finalizing your Morning Brief...');
           setSynthError(null);
           await applyBrief({
             ...data.blog,
@@ -211,15 +210,78 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             fallback_reason: data.blog.fallback_reason ?? data.fallback_reason,
             fallback_kind: data.blog.fallback_kind ?? data.fallback_kind,
           });
-        } else {
-          const msg = 'Generation completed but briefing was not retrieved.';
-          setSynthError(msg);
-          alert(`Synthesis failed: ${msg}`);
+          return;
         }
+
+        // Background synthesis initiated (status: 'generating')
+        setGenerationStep('Writing your 20-25 minute briefing from your sources (almost ready)...');
+        let attempts = 0;
+        const maxAttempts = 25; // 25 * 3s = 75s polling
+        while (attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          attempts++;
+          try {
+            const pollRes = await fetch('/api/digests/latest', { cache: 'no-store' });
+            if (pollRes.ok) {
+              const pollData = await pollRes.json().catch(() => ({}));
+              if (pollData?.success && pollData?.blog) {
+                clearInterval(stepInterval);
+                setGenerationStep('Finalizing your Morning Brief...');
+                setSynthError(null);
+                await applyBrief({
+                  ...pollData.blog,
+                  is_fallback: pollData.blog.is_fallback ?? pollData.blog.fallback ?? false,
+                  fallback_reason: pollData.blog.fallback_reason,
+                  fallback_kind: pollData.blog.fallback_kind,
+                });
+                return;
+              }
+            }
+          } catch {
+            // ignore transient poll error
+          }
+        }
+        clearInterval(stepInterval);
+        const msg = 'Synthesis is completing in the background. Please refresh in a moment to view your new briefing.';
+        setSynthError(msg);
+        return;
+      } else if (res.status === 504) {
+        // Fallback for edge-case HTTP 504 Gateway Timeout
+        setGenerationStep('Writing your 20-25 minute briefing from your sources (almost ready)...');
+        let attempts = 0;
+        const maxAttempts = 20;
+        while (attempts < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          attempts++;
+          try {
+            const pollRes = await fetch('/api/digests/latest', { cache: 'no-store' });
+            if (pollRes.ok) {
+              const pollData = await pollRes.json().catch(() => ({}));
+              if (pollData?.success && pollData?.blog) {
+                clearInterval(stepInterval);
+                setGenerationStep('Finalizing your Morning Brief...');
+                setSynthError(null);
+                await applyBrief({
+                  ...pollData.blog,
+                  is_fallback: pollData.blog.is_fallback ?? pollData.blog.fallback ?? false,
+                  fallback_reason: pollData.blog.fallback_reason,
+                  fallback_kind: pollData.blog.fallback_kind,
+                });
+                return;
+              }
+            }
+          } catch {
+            // ignore transient poll error
+          }
+        }
+        clearInterval(stepInterval);
+        const msg = 'Synthesis is completing in the background. Please refresh in a moment to view your new briefing.';
+        setSynthError(msg);
       } else {
+        clearInterval(stepInterval);
         const errorData = await res.json().catch(() => ({}));
         const msg =
-          errorData.error ||
+          errorData?.error ||
           (res.status === 429
             ? 'Gemini API quota exceeded (429). Wait for reset, then retry.'
             : `Synthesis failed (HTTP ${res.status}).`);
@@ -228,6 +290,20 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
       }
     } catch (e: any) {
       clearInterval(stepInterval);
+      // Even if network dropped, check if briefing was saved
+      try {
+        const checkRes = await fetch('/api/digests/latest', { cache: 'no-store' });
+        if (checkRes.ok) {
+          const checkData = await checkRes.json().catch(() => ({}));
+          if (checkData?.success && checkData?.blog) {
+            setSynthError(null);
+            await applyBrief(checkData.blog);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
       const msg = e.message || String(e);
       setSynthError(`Network error: ${msg}`);
       alert(`Network error: ${msg}`);

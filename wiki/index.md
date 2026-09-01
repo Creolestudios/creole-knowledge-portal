@@ -13,6 +13,7 @@ Welcome to the wiki for the Creole Knowledge Portal project! This wiki serves as
 *   [[pages/architecture.md|Architecture]]
 *   [[pages/fetch-blogs-walkthrough.md|Fetch Blogs Microservice Walkthrough]]
 *   [[pages/setup-guide.md|Setup Guide]]
+*   [[pages/aws-pulumi-deployment.md|AWS ECS & Pulumi Deployment Guide]]
 *   [[pages/roadmap.md|Roadmap]]
 *   [[pages/notion-integration.md|Notion Task Integration]]
 *   [[pages/gatekeeper-plan.md|Gatekeeper Module Design]]

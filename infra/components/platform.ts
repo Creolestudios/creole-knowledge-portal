@@ -17,7 +17,7 @@ export interface PlatformArgs {
  */
 export function createSharedPlatform(args: PlatformArgs) {
   const { appName, environment, vpcId, publicSubnetIds, githubRepo, provider, tags } = args;
-  const protect = { protect: true, provider };
+  const protect = { protect: false, provider };
 
   const albSg = new aws.ec2.SecurityGroup(
     "ckp-shared-alb-sg",

@@ -77,16 +77,18 @@ export async function POST(request: Request) {
     let pipelineFailureReason: string | null = null;
 
     try {
-      const res = await fetch(blogServiceUrl('/digests/generate'), {
+      const res = await fetch(blogServiceUrl('/digests/generate?wait=false'), {
         method: 'POST',
         headers: blogServiceHeaders(),
         body: JSON.stringify({ userId }),
-        signal: AbortSignal.timeout(280_000),
+        signal: AbortSignal.timeout(60_000),
       });
 
       const payload = await res.json().catch(() => ({}));
-      if (res.ok && payload.success && payload.blog) {
-        return NextResponse.json(payload);
+      if (res.ok && payload.success) {
+        if (payload.blog || payload.status === 'generating') {
+          return NextResponse.json(payload);
+        }
       }
       if (res.status === 404) {
         const detail = payload.detail || payload.error || 'Supabase profile not found';

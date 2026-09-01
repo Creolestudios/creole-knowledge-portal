@@ -9,14 +9,14 @@ export async function GET(request: Request) {
   const errorCode = requestUrl.searchParams.get('error_code');
   const errorDescription = requestUrl.searchParams.get('error_description');
 
-  // Clean origin - remove internal ports like :3000 or :8080 for public access
-  // Standard robust detection: use protocol and hostname from request
-  // Robust origin detection: use protocol and hostname from request
-  const isLocalhost = requestUrl.hostname === 'localhost';
-  const basePath = requestUrl.pathname.includes('/creole-knowledge-portal') ? '/creole-knowledge-portal' : '';
-  const origin = isLocalhost
-    ? `${requestUrl.protocol}//${requestUrl.hostname}${requestUrl.port ? `:${requestUrl.port}` : ''}`
-    : `https://${requestUrl.hostname}${basePath}`;
+  // Dynamic origin detection supporting local, direct ALB HTTP, and HTTPS CloudFront domains
+  const proto = request.headers.get('x-forwarded-proto') || requestUrl.protocol.replace(':', '');
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || requestUrl.host;
+  const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+  const basePath = isLocalhost ? '' : '/creole-knowledge-portal';
+  const effectiveProto = isLocalhost ? proto : 'https';
+  const effectiveHost = host.includes('elb.amazonaws.com') ? 'dxad42dnfuckt.cloudfront.net' : host;
+  const origin = `${effectiveProto}://${effectiveHost}${basePath}`;
 
   const next = requestUrl.searchParams.get('next') ?? '/dashboard';
 
@@ -34,14 +34,19 @@ export async function GET(request: Request) {
 
   if (code) {
     try {
-      const supabase = await createClient();
+      // Default to /dashboard or /admin/dashboard
+      const targetPath = next.startsWith('/') ? next : `/${next}`;
+      const redirectUrl = `${origin}${targetPath}`;
+      const response = NextResponse.redirect(redirectUrl);
+
+      const supabase = await createClient(response);
+
       console.log('[Auth Callback] Exchanging code for session...');
 
       const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
       if (exchangeError) {
         console.error('[Auth Callback] Exchange error:', exchangeError.message);
-        // If it's an invalid flow state, it might be due to missing cookies
         const message = exchangeError.message === 'invalid flow state, no valid flow state found'
           ? 'Login session expired or context lost. Please try again from the direct URL.'
           : exchangeError.message;
@@ -59,7 +64,6 @@ export async function GET(request: Request) {
             .single();
           
           if (profileError || !profile) {
-            // Profile does not exist, let's create a default one using supabaseAdmin
             const userEmail = user.email || '';
             const isPriyaAdmin = userEmail.toLowerCase() === 'priya.dhanani@creolestudios.com';
             
@@ -89,12 +93,12 @@ export async function GET(request: Request) {
           console.error('[Auth Callback] error fetching profile role:', err);
         }
 
-        const finalRedirect = isAdmin ? '/admin/dashboard' : next;
+        if (isAdmin && !next.startsWith('/admin')) {
+          response.headers.set('Location', `${origin}/admin/dashboard`);
+        }
 
-        console.log(`[Auth Callback] Success! User: ${user.email}, Admin: ${isAdmin}, Redirecting to: ${finalRedirect}`);
-
-        const redirectUrl = new URL(finalRedirect, origin);
-        return NextResponse.redirect(redirectUrl.toString());
+        console.log(`[Auth Callback] Success! User: ${user.email}, Admin: ${isAdmin}, Set-Cookie headers attached`);
+        return response;
       }
 
       console.error('[Auth Callback] No user data after exchange');

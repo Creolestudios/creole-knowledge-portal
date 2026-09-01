@@ -5,7 +5,7 @@ const notFound = vi.fn(() => {
 });
 
 vi.mock('next/navigation', () => ({
-  notFound: (...args: unknown[]) => notFound(...args),
+  notFound: () => notFound(),
 }));
 
 describe('PreviewPage', () => {

@@ -3,18 +3,37 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { authCookieDefaults } from '@/lib/supabase/cookie-options';
 
 export async function middleware(request: NextRequest) {
+  const userAgent = request.headers.get('user-agent') || '';
+  const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || request.nextUrl.host;
+  const isViaCloudFront = !!request.headers.get('via')?.includes('cloudfront') ||
+    !!request.headers.get('x-amz-cf-id') ||
+    (request.headers.get('x-forwarded-host') || '').includes('cloudfront.net');
+
+  // Automatically redirect direct browser traffic on the ALB to CloudFront HTTPS
+  if (!isViaCloudFront && host.includes('.elb.amazonaws.com') && !userAgent.includes('ELB-HealthChecker')) {
+    const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+    const basePath = isLocalhost ? '' : '/creole-knowledge-portal';
+    const subPath = request.nextUrl.pathname === '/' ? '' : request.nextUrl.pathname;
+    const cfUrl = `https://dxad42dnfuckt.cloudfront.net${basePath}${subPath}${request.nextUrl.search}`;
+    return NextResponse.redirect(cfUrl);
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,
     },
   });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = rawUrl ? rawUrl.replace(/^["']|["']$/g, '').trim() : undefined;
+  const key = rawKey ? rawKey.replace(/^["']|["']$/g, '').trim() : undefined;
 
   if (!url || !key) {
     return response;
   }
+
+  const isHttps = isViaCloudFront || request.nextUrl.protocol === 'https:' || request.headers.get('x-forwarded-proto') === 'https';
 
   const supabase = createServerClient(
     url,
@@ -34,8 +53,10 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, {
               ...options,
-              ...authCookieDefaults(),
-            })
+              sameSite: isHttps ? 'none' : 'lax',
+              secure: isHttps,
+              path: '/',
+            } as any)
           );
         },
       },
@@ -81,15 +102,25 @@ export async function middleware(request: NextRequest) {
 
   console.log(`[Middleware] Path: ${request.nextUrl.pathname}, User: ${user?.email || 'none'}, Admin: ${isAdmin}`);
 
-  // Function to create a redirect response that preserves cookies
-  const redirect = (url: string) => {
-    const redirectResponse = NextResponse.redirect(new URL(url, request.url));
+  // Function to create a redirect response that preserves cookies and basePath
+  const redirect = (path: string) => {
+    const isLocalhost = request.nextUrl.hostname === 'localhost' || request.nextUrl.hostname === '127.0.0.1';
+    const basePath = isLocalhost ? '' : '/creole-knowledge-portal';
+    const proto = request.headers.get('x-forwarded-proto') || request.nextUrl.protocol.replace(':', '');
+    const effectiveProto = isLocalhost ? proto : 'https';
+    const effectiveHost = (isViaCloudFront || host.includes('elb.amazonaws.com')) ? 'dxad42dnfuckt.cloudfront.net' : host;
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    const targetUrl = new URL(`${basePath}${cleanPath}`, `${effectiveProto}://${effectiveHost}`);
+    const redirectResponse = NextResponse.redirect(targetUrl);
+    const isHttps = effectiveProto === 'https';
     // Copy cookies from the modified 'response' to the redirect response
     response.cookies.getAll().forEach((cookie) => {
       redirectResponse.cookies.set(cookie.name, cookie.value, {
         ...cookie,
-        ...authCookieDefaults(),
-      });
+        sameSite: isHttps ? 'none' : 'lax',
+        secure: isHttps,
+        path: '/',
+      } as any);
     });
     return redirectResponse;
   };

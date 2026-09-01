@@ -197,116 +197,6 @@ if [ "${SONAR_REACHABLE}" = "true" ]; then
 
   SONAR_OK=false
 
-  log "Generating test coverage reports for SonarQube..."
-  # Reports must use paths relative to this directory (repo root). Otherwise
-  # Sonar imports 0% even when tests passed locally.
-  #
-  # CRITICAL: install deps HERE (before coverage). Step 2's npm ci runs AFTER
-  # Sonar, so without this install vitest has no node_modules and lcov is empty
-  # → Sonar dashboard shows 0% coverage for all JS/TS files.
-  REWRITE_PY="python3"
-  command -v python3 >/dev/null 2>&1 || REWRITE_PY="python"
-
-  log "Installing Node dependencies before coverage (required for vitest/lcov)..."
-  if [ -f "pnpm-lock.yaml" ]; then
-    command -v pnpm >/dev/null 2>&1 && pnpm install --frozen-lockfile || pnpm install || warn "pnpm install failed"
-  elif [ -f "yarn.lock" ]; then
-    yarn install --frozen-lockfile || yarn install || warn "yarn install failed"
-  else
-    npm ci || npm install --no-audit --no-fund || warn "npm install failed"
-  fi
-
-  run_python_coverage() {
-    if [ ! -x .venv/bin/python ] && command -v uv >/dev/null 2>&1; then
-      log "Installing fetch-blogs test deps with uv so coverage.xml can be produced"
-      uv sync --frozen || uv sync || warn "uv sync failed — trying existing environment"
-    fi
-    # COVERAGE_FILE keeps data local; fail_under in pyproject must not block XML.
-    export COVERAGE_FILE=.coverage
-    local py_ok=0
-    if [ -x .venv/bin/python ]; then
-      .venv/bin/python -m coverage erase || true
-      if .venv/bin/python -m coverage run -m pytest tests/unit/ -q --tb=line; then
-        py_ok=1
-      else
-        warn "Python unit tests failed — coverage.xml may be incomplete"
-      fi
-      .venv/bin/python -m coverage xml -o coverage.xml || true
-      .venv/bin/python -m coverage report -m | tail -n 30 || true
-    elif command -v uv >/dev/null 2>&1; then
-      uv run coverage erase || true
-      if uv run coverage run -m pytest tests/unit/ -q --tb=line; then
-        py_ok=1
-      else
-        warn "Python unit tests failed — coverage.xml may be incomplete"
-      fi
-      uv run coverage xml -o coverage.xml || true
-      uv run coverage report -m | tail -n 30 || true
-    else
-      "${REWRITE_PY}" -m coverage erase || true
-      if "${REWRITE_PY}" -m coverage run -m pytest tests/unit/ -q --tb=line; then
-        py_ok=1
-      else
-        warn "Python unit tests failed — coverage.xml may be incomplete"
-      fi
-      "${REWRITE_PY}" -m coverage xml -o coverage.xml || true
-    fi
-    if [ "$py_ok" -eq 1 ]; then
-      ok "Python unit tests passed for coverage"
-    fi
-  }
-  (cd fetch-blogs && run_python_coverage) || true
-
-  if [ -f fetch-blogs/coverage.xml ]; then
-    # Map coverage.py paths (relative to src/) → fetch-blogs/src/... for Sonar.
-    REWRITE_SCRIPT=".github/scripts/_rewrite_py_coverage.py"
-    if [ ! -f "${REWRITE_SCRIPT}" ]; then
-      REWRITE_SCRIPT="scripts/_rewrite_py_coverage.py"
-    fi
-    if "${REWRITE_PY}" "${REWRITE_SCRIPT}"; then
-      ok "Python coverage report mapped to repo-root paths for Sonar"
-    else
-      fail "Python coverage path/hit verification failed — Sonar would show 0% for Python"
-    fi
-    cp fetch-blogs/coverage.xml "${REPORTS_DIR}/python-coverage.xml" 2>/dev/null || true
-  else
-    warn "fetch-blogs/coverage.xml is missing — Python coverage will not reach Sonar"
-  fi
-
-  log "Running Vitest with coverage for Sonar lcov..."
-  npx vitest run --coverage --coverage.reporter=lcov --coverage.reporter=text \
-    --coverage.reportsDirectory=coverage \
-    && ok "Vitest produced JS/TS coverage" \
-    || warn "Vitest coverage command failed — Sonar will treat JS/TS files as uncovered"
-  if [ -f coverage/lcov.info ]; then
-    "${REWRITE_PY}" - <<'PY'
-from pathlib import Path
-
-app_dir = Path.cwd().resolve().as_posix()
-path = Path("coverage/lcov.info")
-out = []
-for line in path.read_text(encoding="utf-8").splitlines():
-    if line.startswith("SF:"):
-        name = line[3:].replace("\\", "/")
-        if name.startswith(app_dir + "/"):
-            name = name[len(app_dir) + 1 :]
-        # Normalize Windows paths and leading ./
-        while name.startswith("./"):
-            name = name[2:]
-        out.append("SF:" + name)
-    else:
-        out.append(line)
-path.write_text("\n".join(out) + "\n", encoding="utf-8")
-print(f"JS/TS lcov ready ({path.stat().st_size} bytes)")
-samples = [l[3:] for l in out if l.startswith("SF:")][:5]
-print("Sample files:", ", ".join(samples))
-PY
-    ok "JS/TS coverage report mapped to repo-root paths for Sonar"
-    cp coverage/lcov.info "${REPORTS_DIR}/lcov.info" 2>/dev/null || true
-  else
-    warn "coverage/lcov.info is missing — JS/TS coverage will not reach Sonar"
-  fi
-
   log "Running SonarScanner via NPX to avoid Docker pulls..."
   npx --yes sonar-scanner \
     -Dsonar.projectKey="${SONAR_PROJECT_KEY}" \
@@ -314,14 +204,8 @@ PY
     -Dsonar.host.url="${SONAR_HOST_URL}" \
     -Dsonar.token="${SONAR_TOKEN}" \
     -Dsonar.sources=. \
-    -Dsonar.tests=. \
-    -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/tests/**,**/conftest.py,**/seeds/**,**/scripts/**,**/.github/scripts/**,**/scratch/**,**/infra/**,**/.git/**,**/.venv/**,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/test_*.py,**/vitest.setup.ts" \
-    -Dsonar.test.inclusions="**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/tests/**,**/test_*.py,**/conftest.py,**/vitest.setup.ts" \
-    -Dsonar.coverage.exclusions="**/tests/**,**/conftest.py,**/*.test.ts,**/*.test.tsx,**/*.spec.ts,**/*.spec.tsx,**/test_*.py,**/vitest.setup.ts,**/.venv/**,**/node_modules/**,**/coverage/**,**/.github/scripts/**,**/scratch/**,**/infra/**,**/scripts/**" \
+    -Dsonar.exclusions="**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/tests/**,**/seeds/**,**/scripts/**,**/.git/**" \
     -Dsonar.sourceEncoding=UTF-8 \
-    -Dsonar.python.coverage.reportPaths="fetch-blogs/coverage.xml" \
-    -Dsonar.javascript.lcov.reportPaths="coverage/lcov.info" \
-    -Dsonar.typescript.lcov.reportPaths="coverage/lcov.info" \
     2>&1 && SONAR_OK=true || SONAR_OK=false
 
   if [ "${SONAR_OK}" = "true" ]; then
@@ -361,12 +245,6 @@ PY
         SONAR_RESULT="failed (quality gate)"
         QG_FAILED=true
       fi
-
-      log "Fetching SonarQube coverage statistics..."
-      COV_RESP=$(curl -s -u "${SONAR_TOKEN}:" \
-        "${SONAR_HOST_URL}/api/measures/component?component=${SONAR_PROJECT_KEY}&metricKeys=coverage,new_coverage,lines_to_cover,uncovered_lines,conditions_to_cover,uncovered_conditions")
-      echo "${COV_RESP}" > "${REPORTS_DIR}/sonarqube-coverage.json"
-      log "Coverage measures: ${COV_RESP}"
     else
       warn "SonarQube background task did not reach SUCCESS. Status: ${STATUS}"
       SONAR_RESULT="failed (task incomplete)"

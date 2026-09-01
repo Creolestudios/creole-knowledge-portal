@@ -81,3 +81,5 @@ lib/data/db.json
 lib/data/db.json
 # Pulumi stack backups (may contain old-account secrets)
 *.old-account.bak
+
+pulumi-sandbox-template-main/*

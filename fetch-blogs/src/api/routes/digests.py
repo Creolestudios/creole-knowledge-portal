@@ -8,10 +8,10 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
 from src.api.routes.pipeline import run_celery_pipeline_and_wait
-from src.core.db import init_db
+from src.core.db import ensure_db, init_db
 from src.generator.synthesizer import synthesize_digest, _strip_blog_frontmatter
 from src.models.article import Article
-from src.api.routes.pipeline import execute_pipeline_for_user
+from src.api.routes.pipeline import execute_pipeline_for_user, build_pipeline_chain
 from src.models.digest import DailyDigest
 from src.models.job import PipelineJob
 from src.models.profile import UserProfile
@@ -474,7 +474,7 @@ async def _past_digest_docs(user_id: str, digest_date: date | None) -> list[dict
 async def get_past_digests(user_id: str, date: str | None = None, flat: bool = True):
     """Return stored Mongo digests for the Past Blogs tab."""
     try:
-        await init_db()
+        await ensure_db()
         await _backfill_orphan_digests(user_id)
         docs = await _past_digest_docs(user_id, _parse_digest_date(date))
         blogs = []
@@ -492,7 +492,7 @@ async def get_past_digests(user_id: str, date: str | None = None, flat: bool = T
 
 
 @router.post("/generate")
-async def generate_digest(payload: GenerateRequest, flat: bool = True):
+async def generate_digest(payload: GenerateRequest, flat: bool = True, wait: bool = True):
     """Sync profile, run the Celery scrape→publish chain, return the digest.
 
     Idempotent for the IST calendar day: if today's digest already exists,
@@ -502,6 +502,7 @@ async def generate_digest(payload: GenerateRequest, flat: bool = True):
         raise HTTPException(status_code=400, detail="userId is required")
 
     try:
+        await ensure_db()
         await upsert_mongo_profile(payload.userId)
 
         existing = await _todays_digest(payload.userId)
@@ -514,6 +515,15 @@ async def generate_digest(payload: GenerateRequest, flat: bool = True):
                     "cached": True,
                 }
             return {"success": True, "blog": digest_dict, "cached": True}
+
+        if not wait:
+            # Enqueue Celery pipeline asynchronously and return immediately to prevent CloudFront 504
+            build_pipeline_chain(payload.userId).apply_async()
+            return {
+                "success": True,
+                "status": "generating",
+                "message": "Synthesis pipeline initiated in the background.",
+            }
 
         digest_id = await execute_pipeline_for_user(payload.userId)
         digest = None
@@ -578,6 +588,7 @@ async def get_latest_digest(user_id: str, flat: bool = True, today_only: bool = 
     Set ``today_only=false`` to fall back to the newest prior digest.
     """
     try:
+        await ensure_db()
         digest = await (_todays_digest(user_id) if today_only else _latest_digest(user_id))
         if digest is None:
             return {"success": True, "blog": None}

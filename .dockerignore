@@ -2,6 +2,8 @@
 infra/
 .pulumi/
 *.pulumi.*
+pulumi-sandbox-template-main/
+scratch/
 
 # Python fetch-blogs service (separate image)
 fetch-blogs/

@@ -2,10 +2,12 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { authCookieDefaults } from './cookie-options';
 
-export async function createClient() {
+export async function createClient(response?: { cookies: { set: (name: string, value: string, options?: any) => any } }) {
   const cookieStore = await cookies();
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const url = rawUrl ? rawUrl.replace(/^["']|["']$/g, '').trim() : undefined;
+  const key = rawKey ? rawKey.replace(/^["']|["']$/g, '').trim() : undefined;
 
   if (!url || !key) {
     console.warn('Supabase URL or Anon Key is missing in server context.');
@@ -22,10 +24,18 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, {
+              const mergedOptions = {
                 ...options,
                 ...authCookieDefaults(),
-              });
+              };
+              cookieStore.set(name, value, mergedOptions);
+              if (response) {
+                try {
+                  response.cookies.set(name, value, mergedOptions);
+                } catch {
+                  // ignore if response cookies cannot be modified
+                }
+              }
             });
           } catch (error) {
             // Server Components cannot write cookies; middleware refreshes the

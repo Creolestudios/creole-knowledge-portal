@@ -71,12 +71,18 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     log.info("startup", env=cfg.ENVIRONMENT)
 
     # ── Startup ───────────────────────────────────────────────────────────
-    await init_db()
+    try:
+        await init_db()
+    except Exception as exc:
+        log.error("db: init failed on startup", error=str(exc))
 
     # Start APScheduler (cron → enqueues Celery task)
-    from src.core.scheduler import start_scheduler, stop_scheduler
+    try:
+        from src.core.scheduler import start_scheduler, stop_scheduler
 
-    start_scheduler()
+        start_scheduler()
+    except Exception as exc:
+        log.error("scheduler: start failed", error=str(exc))
 
     # ── App is running ────────────────────────────────────────────────────
     yield
@@ -113,11 +119,11 @@ def create_app() -> FastAPI:
     # to see every response (including errors raised by inner middleware).
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],  # Next.js dev server
+        allow_origin_regex=r"https?://.*",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-    )
+    application.include_router(api_router, prefix=f"/creole-knowledge-portal{cfg.API_V1_STR}")
     return application
 
 

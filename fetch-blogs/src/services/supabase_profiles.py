@@ -38,6 +38,9 @@ async def fetch_profile_row(user_id: str) -> dict[str, Any] | None:
 
 async def upsert_mongo_profile(user_id: str) -> UserProfile:
     """Copy Supabase preferences into Mongo without wiping learning_path."""
+    from src.core.db import ensure_db
+    await ensure_db()
+
     row = await fetch_profile_row(user_id)
     if row is None:
         raise ValueError(f"Supabase profile not found for {user_id}")

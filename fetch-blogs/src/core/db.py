@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import certifi
 import structlog
 from beanie import init_beanie
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -21,10 +22,28 @@ async def init_db() -> None:
     if _initialized and _client is not None:
         return
 
+    if _client is not None:
+        try:
+            _client.close()
+        except Exception:
+            pass
+        _client = None
+
     cfg = get_mongo_settings()
 
     log.info("db: connecting", db=cfg.DB_NAME)
-    _client = AsyncIOMotorClient(cfg.URI, serverSelectionTimeoutMS=20000)
+    client_kwargs: dict[str, object] = {
+        "serverSelectionTimeoutMS": 15000,
+        "connectTimeoutMS": 15000,
+        "socketTimeoutMS": 20000,
+    }
+    if "mongodb+srv://" in cfg.URI or "ssl=true" in cfg.URI.lower() or "tls=true" in cfg.URI.lower():
+        client_kwargs["tlsCAFile"] = certifi.where()
+
+    _client = AsyncIOMotorClient(
+        cfg.URI,
+        **client_kwargs,
+    )
 
     from src.models.article import Article
     from src.models.digest import DailyDigest
@@ -39,6 +58,13 @@ async def init_db() -> None:
     )
     _initialized = True
     log.info("db: ready")
+
+
+async def ensure_db() -> None:
+    """Ensure MongoDB and Beanie ODM are connected and initialized."""
+    global _client, _initialized
+    if not _initialized or _client is None:
+        await init_db()
 
 
 def close_db() -> None:

@@ -12,16 +12,19 @@ config:
   ckp:ecsMemory: "2048"
   ckp:githubRepo: Creolestudios/creole-knowledge-portal
   ckp:supabaseUrl:
-    secure: AAABAFKJf3Npc+BqolKnivnbUClTpBU2g49uRwuSFp0ft//kZLSyauIZI//gwnPPACOpYKprU7WbqoXukDCBrpqGNOV72Wre
+    secure: AAABAKxBrG0h6Cb53g6R44kk9hg+xgdXNLEU5AniJMGFRXqrWpfsonaVdDi0v8FO3bQFxH/bwZt61mg8YgTd3ntjlQz9dGm9
   ckp:supabaseAnonKey:
-    secure: AAABANB5wDCc2NJxIazCkE1sCC7iTLylXUrscHFJ8xlTvklAT+Y/2oiOBIpUWsic0O3N9lrgb/tKW9lkNWL77yp4K3dx1iQ/LLxPvi19qf1Lc/BXMhdQCKaclDO4nQSxvrsel6LB+X0RN8aI23rq9Cg74lPIdNizcdeDM3cam9YU/gQe6RSMS9fuG/sKLffMPpl8at8UDF0mtxy8PVWKNa9oNkSur6jfE4yBW/iANdneQ+lwz5h1qotPXEBsamLXSMXAUd/UD+8udjZ9mqFKTG2lJOEBehqa3+OGGmYzabQoJ7wKOLFqFDZIeJo6YO+X
+    secure: AAABACl4f9hyNnte2NJ/Ue3trcWcEXj8+KYI3an0ytYOPb0Es/7KYjDG+4dWRFdbQ+l432HhpKScNxYwQWbH5Z1R2r4sr4Nma4/AGNb8JQezdKvJ6m2JZg924DIKHHNylJECl9ZzbtpSNJ5PSOIL10RuTy8NTlurSBJPG7mfjzbtb8qte7ZLG/vXozhz1U7x9UkxpSRYsofj5oSy6AjZ7rKPNoCPlnt9InDRxQw+VSLl5LZXsQwF9JOEib0XoXtwxGWT4qOlqP9ZJCUS7+EJ0CH+ZKZ0SAvNrBRBiu6kzl40wzFmJQJVKIW/EA0qvRF3
   ckp:supabaseServiceRoleKey:
-    secure: AAABAFAZlqs4dhKWFJsi1bRmcPHpaOOrfihv+T8wLP54+BSXqYB6cIIGNBKl2fKVlVJXGP5t1g5hO5yKZq604SmfVv3big3eGioJTJF19j08oGTaL3pcYaspSB/BaLsJeXaoeG11d7MhVNABZsts6MiGqNpHD0JtpusfKfpW4vtp4jnF6kaeYoIgGAxngWLot7Ls/5NUxqLl3KyHjdL9LHG5qPxFcCGhZMa8MusGH46qLjF98mpcGBHNuQanbF/6Jjrv4rCvb2dNF3R/9cYZmenoqPs8Q/HuwV2p/fZZ4SPObTIgHCSEfdnDVEVjOB+n3hVO0NXj2mNr/dk=
+    secure: AAABAI39Qr09jT+iXu3YvBDsg4mIiA6aGXxUqAKpf7ba4Yf3ZcERBcLsZaGISixy+kMrdcFXTRc67F2I1uENHOW3lhUknuam2GoYoaFGUjvs1iDPtpxIuhAfKlelIyADXWkFcXvrhnC1bdUVSVv/HXuawGJRz5UiTKdojqSYcX+vwPFYtiGvb+9n2n9DIAkx3hc0SqfUvuhAnXqwMNkHpEyUzdyRRiP/o+3gsT65CeNDrYGNrgHisfPXjFX93PE3mE/j3Upl7b6FLf9L5R/mFz0aBRffl6ifctmZYJ/VTOOhx8yUwzzxiLeg5cChouGk4kydl9o/mFhtCFs=
   ckp:geminiApiKey:
-    secure: AAABAKHwBqSkx8Goa7EjVQqzlL+KfwzLaLgW4YiufjyQs0hI0RP+AJoMm9CH63imZhiT+NtrIt8S7wrAuid93SH3ZAOKVn2BIUSmg+1WZ5ZGDUfuMg==
+    secure: AAABAEkHNPhGJqcWZyW3ZgQvFQtem5qVCQC3I0X+5gGujExedkgGfwfkw1NEkKLlMy5JdwD47MAFJ5KvVw7gv8KowmU9DCI=
   ckp:llmGeminiApiKey:
-    secure: AAABAG4+hRM6DlJuja5FfOgeRSicpny+NqZxjAlt7lF9RujulTngwPuYmjiVJACPQATyTjC+vSnAjUxpZV6uy09p1+E+Q9NFADlDD9S5OPsv0Hx9xg==
+    secure: AAABAJos+UE/BMc8a0J2fdwDrkcmU4WYppzR4kjEvXW13xtWSa0PzjFNzF6T0+I0Mn9s7dk67WBJM6O/a9McGzG2t7vATGg=
   ckp:mongoUri:
-    secure: AAABAEOLd+en/21c6iema9I+HWmmyc4Ac2KQ5vNwD9IVDxw8Y3XAaqjD4WYgKf6jyeGWp9D0cd+4MEcytq/3GAS7EynOBS5PqP8VP3tuE+8if01FoJfCi6zuLqFU6/vlWVkHDTqhk0/WHjSveK2cOWMv1XqP3J7ayt8LeGCWdyG8DY4=
+    secure: AAABALFihS6HiZiLVDATIAPYJuXIMwRQNNRIBKKBwE4Gmxtn9zoDgu304hyW6bMFJNeiUYIUsPXMi9oUS7fXnXO6UjwkrYjudt1sdartkhxoqTC7RXenuHFKCAOaSeW7Q4CCCrENAiZYBl/3+v6KW7jTcnnOtMKUzZBbKh+81O0jY84=
   ckp:redisUrl:
-    secure: AAABABSiCQTbPEGXbDei42m0J7H6DWPOvJ5zu5lN66mwfkddaixTQv2XmHSSulV2C9Vjl/xEVXpPrljXBvy86AL7cBwzQnZiBLwCePUkPwJ+lJo1hJSFQox1ulNyq3kjhWWRZq5Rx663nWGkDH8sM7mbwDkHETf2tNSfTdDwRZss
+    secure: AAABAMrGsuZyvXIKpkSdwz51Vgm51o6VS+Rbw+HkMbe1hn6t5b3JIBqgWd1vvhj5HKMsDnm63QHHCxY3s9vJo5x/+yFhVEzFbmPA5FGxRAlyA2D7skWKnQpfIGmRofnxNM1zh9QKWW3S1ZyFuvb47dlh2O7Ir+Jif5IlnPDv/aIE
+  ckp:webImage: 642024554221.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-web:latest
+  ckp:apiImage: 642024554221.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-api:latest
+  ckp:workersImage: 642024554221.dkr.ecr.us-east-1.amazonaws.com/creole-knowledge-portal-workers:latest
