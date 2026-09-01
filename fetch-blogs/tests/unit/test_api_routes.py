@@ -142,7 +142,7 @@ def full_digest_doc() -> dict[str, Any]:
         "article": {
             "headline": "Morning Brief",
             "tldr": ["first point", "second point"],
-            "sections": [{"title": "Section A", "content": "Section A body"}],
+            "sections": [{"title": "Section A", "content": "Redis worker drain body"}],
             "key_takeaways": ["do this"],
             "sources": [
                 {
@@ -165,18 +165,18 @@ class TestFlatMapDigest:
         assert out["title"] == "Morning Brief"
         assert content.lstrip().startswith("## Daily Overview")
         assert "# Morning Brief" not in content
-        assert "## Daily Overview (TL;DR)" in content
+        assert "## Daily Overview\n" in content
         assert "- first point" in content
-        assert "## Overview / Summary" in content
-        assert "Section A body" in content
-        assert "## Key Actionable Takeaways" in content
-        assert "## Sources & Citations" in content
+        assert "## Briefing" in content
+        assert "Redis worker drain body" in content
+        assert "## Key Action" in content
+        assert "## Source and Citation" in content
         assert "Ada" in content
         assert "a.com · Ada" in content
         # Canonical display order
-        assert content.index("## Daily Overview") < content.index("## Overview / Summary")
-        assert content.index("## Overview / Summary") < content.index("## Key Actionable Takeaways")
-        assert content.index("## Key Actionable Takeaways") < content.index("## Sources & Citations")
+        assert content.index("## Daily Overview") < content.index("## Briefing")
+        assert content.index("## Briefing") < content.index("## Key Action")
+        assert content.index("## Key Action") < content.index("## Source and Citation")
 
     def test_appends_source_domains_to_the_tag_list(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(full_digest_doc())
@@ -191,8 +191,8 @@ class TestFlatMapDigest:
         assert out["title"] == "Bare"
         assert "# Bare" not in content
         assert "TL;DR" not in content
-        assert "Key Actionable Takeaways" not in content
-        assert "Sources & Citations" not in content
+        assert "Key Action" not in content
+        assert "Source and Citation" not in content
 
     def test_defaults_the_headline_when_the_article_is_missing(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard({})
@@ -213,15 +213,15 @@ class TestFlatMapDigest:
                     "sections": [
                         {
                             "title": "Redis queues",
-                            "content": "## Redis queues\n\nWorkers drain the broker.",
+                            "content": "## Redis queues\n\nWorkers drain the queue.",
                         }
                     ],
                 }
             }
         )
-        assert "## Overview / Summary" in out["content"]
+        assert "## Briefing" in out["content"]
         assert "## Redis queues" not in out["content"]
-        assert "Workers drain the broker." in out["content"]
+        assert "Workers drain the queue." in out["content"]
 
     def test_orders_brief_code_and_overview_sections(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(
@@ -230,9 +230,9 @@ class TestFlatMapDigest:
                     "headline": "Hooks Guide",
                     "tldr": ["point one"],
                     "sections": [
-                        {"title": "Overview / Summary", "content": "long summary body"},
+                        {"title": "Overview / Summary", "content": "long summary body about React hooks"},
                         {"title": "Code Snippet", "content": "```ts\nconst x = 1;\n```"},
-                        {"title": "Brief", "content": "short brief body"},
+                        {"title": "Brief", "content": "short brief body about React hooks"},
                     ],
                     "key_takeaways": ["ship it"],
                     "sources": [{"title": "A", "url": "https://a.com", "source_domain": "a.com"}],
@@ -240,11 +240,63 @@ class TestFlatMapDigest:
             }
         )
         content = out["content"]
-        assert content.index("## Daily Overview") < content.index("## Brief")
-        assert content.index("## Brief") < content.index("## Code Snippet")
-        assert content.index("## Code Snippet") < content.index("## Overview / Summary")
-        assert content.index("## Overview / Summary") < content.index("## Key Actionable Takeaways")
-        assert content.index("## Key Actionable Takeaways") < content.index("## Sources & Citations")
+        assert content.index("## Daily Overview") < content.index("## Briefing")
+        assert content.index("## Briefing") < content.index("## Key Action")
+        assert content.index("## Key Action") < content.index("## Summary")
+        assert content.index("## Summary") < content.index("## Source and Citation")
+        assert "## Code Snippet" not in content
+        assert "```ts" in content
+        assert "short brief body about React hooks" in content
+        assert "long summary body about React hooks" in content
+
+    def test_drops_dart_briefing_under_python_headline(self) -> None:
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {
+                "article": {
+                    "headline": "Python Text Chunking: Respecting Word Boundaries with Slices",
+                    "tldr": ["Keep python slices on word boundaries."],
+                    "sections": [
+                        {
+                            "title": "Briefing",
+                            "content": (
+                                "Flutter material_ui and cupertino_ui split packages. " * 40
+                            ),
+                        },
+                        {
+                            "title": "Briefing",
+                            "content": (
+                                "Python slicing respects word boundaries when chunking text. "
+                                * 20
+                            ),
+                        },
+                    ],
+                    "key_takeaways": [
+                        "## How to use dart-sdk-skills to migrate Flutter\n\nUnbundle material.",
+                        "Keep python chunks on word boundaries.",
+                    ],
+                    "sources": [
+                        {
+                            "title": "Python chunking",
+                            "url": "https://dev.to/chunk",
+                            "source_domain": "dev.to",
+                        }
+                    ],
+                }
+            }
+        )
+        content = out["content"]
+        assert out["title"].startswith("Python Text Chunking")
+        assert "material_ui" not in content
+        assert "dart-sdk" not in content.lower()
+        assert "flutter" not in content.lower()
+        assert "python" in content.lower()
+        assert "## Daily Overview" in content
+        assert "## Briefing" in content
+        assert "## Key Action" in content
+        assert "## Source and Citation" in content
+        assert content.index("## Daily Overview") < content.index("## Briefing")
+        assert content.index("## Briefing") < content.index("## Key Action")
+        assert content.index("## Key Action") < content.index("## Source and Citation")
 
     def test_maps_continuation_title_into_brief(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(
@@ -258,17 +310,17 @@ class TestFlatMapDigest:
                         },
                         {
                             "title": "Going deeper",
-                            "content": "Deps arrays control re-runs.",
+                            "content": "Deps arrays control React re-runs.",
                         },
                     ],
                 }
             }
         )
         content = out["content"]
-        assert "## Brief" in content
-        assert "## Overview / Summary" in content
-        assert content.index("## Brief") < content.index("## Overview / Summary")
+        assert "## Briefing" in content
+        assert "## Overview / Summary" not in content
         assert "We pick up from useEffect cleanup." in content
+        assert "Deps arrays control React re-runs." in content
         assert "Continuation from yesterday" not in content
 
     def test_sources_drop_lifestyle_and_render_clean_links(self) -> None:
@@ -308,7 +360,7 @@ class TestFlatMapDigest:
             }
         )
         content = out["content"]
-        assert "## Sources & Citations" in content
+        assert "## Source and Citation" in content
         assert "[React useEffect cleanup](https://dev.to/a)" in content
         assert "**[" not in content
         assert "Golf" not in content
@@ -544,7 +596,7 @@ class TestGetLatestDigestRoute:
                     "content": {
                         "headline": "Morning Brief",
                         "tldr": ["first point", "second point"],
-                        "sections": [{"title": "Section A", "content": "Section A body"}],
+                        "sections": [{"title": "Section A", "content": "Redis worker drain body"}],
                         "key_takeaways": ["do this"],
                         "sources": [
                             {

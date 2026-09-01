@@ -899,8 +899,44 @@ class TestTopicFilter:
             "How to debug funding-related Stripe webhooks",
             "A step-by-step debugging tutorial for webhook handlers.",
         )
+        from src.extractors.topic_filter import is_consumer_apple_mac_noise
+
+        assert is_consumer_apple_mac_noise(
+            "Apple and Mac: the new MacBook lineup",
+            "iPhone camera upgrades and MacBook Air colors.",
+        )
+        assert not is_consumer_apple_mac_noise(
+            "Build a SwiftUI macOS app with Xcode",
+            "A tutorial for SwiftUI windows and AppKit hosting.",
+        )
+        assert is_non_learning(
+            "Apple and Mac: the new MacBook lineup",
+            "iPhone camera upgrades and MacBook Air colors.",
+        )
         assert is_non_learning(
             "GitHub - SenteLabsAI/OpenExecutive: AI-powered virtual executive team",
             "openexecutive/ ├── packages/ ├── core/ └── agents/",
             url="https://github.com/SenteLabsAI/OpenExecutive",
+        )
+
+
+    def test_non_english_blogs_are_rejected(self) -> None:
+        from src.extractors.topic_filter import is_non_english_dominant, is_non_learning
+
+        portuguese_title = (
+            "TF-IDF: A matemática dos anos 70 que expõe a farsa do seu RAG de milhões"
+        )
+        portuguese_body = (
+            "Nos últimos artigos da série, cobrimos desde a geometria da busca "
+            "vetorial e os custos de um RAG de milhões."
+        )
+        assert is_non_english_dominant(portuguese_title)
+        assert is_non_english_dominant(portuguese_body)
+        assert is_non_learning(portuguese_title, portuguese_body)
+        assert not is_non_english_dominant(
+            "A Practical Guide to React Suspense and Lazy Loading"
+        )
+        assert not is_non_learning(
+            "A Practical Guide to React Suspense and Lazy Loading",
+            "How to implement Suspense boundaries step by step with code examples.",
         )

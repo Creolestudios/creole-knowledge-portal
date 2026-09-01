@@ -11,6 +11,7 @@ from typing import Any
 import structlog
 
 from src.core.config import get_llm_settings, get_scraping_settings
+from src.extractors.topic_filter import is_non_learning
 from src.models.article import Article
 from src.models.digest import (
     DailyDigest,
@@ -19,8 +20,14 @@ from src.models.digest import (
     DigestSection,
     DigestSource,
 )
-from src.models.profile import UserProfile, next_scrape_pace, pace_teaching_instructions, resolve_active_stack, scrape_focus_terms, topic_tokens_from_text
-from src.extractors.topic_filter import is_non_learning
+from src.models.profile import (
+    UserProfile,
+    next_scrape_pace,
+    pace_teaching_instructions,
+    resolve_active_stack,
+    scrape_focus_terms,
+    topic_tokens_from_text,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -66,28 +73,83 @@ def _section(
 
 
 _CANONICAL_H2 = re.compile(
-    r"^##\s+(Brief|Code Snippet|Overview\s*/\s*Summary|Overview|Summary|"
+    r"^##\s+(Daily Overview|Briefing|Brief|Code Snippet|Key Action|"
+    r"Overview\s*/\s*Summary|Overview|Summary|"
     r"Going deeper|Continuation from yesterday|Why this matters today|"
     r"Today's curated reading)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+_TITLE_STOP = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "of",
+        "with",
+        "for",
+        "and",
+        "to",
+        "in",
+        "on",
+        "by",
+        "from",
+        "into",
+        "your",
+        "this",
+        "that",
+        "using",
+        "use",
+        "how",
+        "what",
+        "why",
+        "when",
+        "over",
+        "about",
+        "after",
+        "before",
+        "between",
+        "without",
+        "within",
+        "text",
+        "word",
+        "data",
+        "code",
+        "file",
+        "type",
+        "into",
+        "that",
+        "this",
+    }
+)
+_FENCE_RE = re.compile(r"```[\w+-]*\n.*?```", flags=re.DOTALL)
+
+
+def _iter_markdown_chunks(content: str) -> list[str]:
+    """Yield prose and fenced blocks in document order (never split inside a fence)."""
+    text = content or ""
+    chunks: list[str] = []
+    cursor = 0
+    for match in _FENCE_RE.finditer(text):
+        before = text[cursor : match.start()].strip()
+        if before:
+            chunks.append(before)
+        chunks.append(match.group(0).strip())
+        cursor = match.end()
+    tail = text[cursor:].strip()
+    if tail:
+        chunks.append(tail)
+    return chunks
 
 
 def _extract_fenced_blocks(content: str) -> tuple[str, list[str]]:
     """Split markdown into prose vs ``` fenced blocks (code/diagrams)."""
-    text = content or ""
     fences: list[str] = []
     prose_parts: list[str] = []
-    cursor = 0
-    for match in re.finditer(r"```[\w+-]*\n.*?```", text, flags=re.DOTALL):
-        before = text[cursor : match.start()].strip()
-        if before:
-            prose_parts.append(before)
-        fences.append(match.group(0).strip())
-        cursor = match.end()
-    tail = text[cursor:].strip()
-    if tail:
-        prose_parts.append(tail)
+    for chunk in _iter_markdown_chunks(content):
+        if chunk.startswith("```"):
+            fences.append(chunk)
+        else:
+            prose_parts.append(chunk)
     return "\n\n".join(prose_parts).strip(), fences
 
 
@@ -112,9 +174,7 @@ def _split_by_canonical_h2(
     # Prose before the first canonical H2 keeps the outer section title
     preface = text[: matches[0].start()].strip()
     if preface:
-        parts.append(
-            {"title": title, "content": preface, "sources_cited": sources_cited}
-        )
+        parts.append({"title": title, "content": preface, "sources_cited": sources_cited})
     for i, match in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         body = text[match.end() : end].strip()
@@ -127,16 +187,251 @@ def _split_by_canonical_h2(
                 "sources_cited": sources_cited,
             }
         )
-    return parts or [
-        {"title": title, "content": text, "sources_cited": sources_cited}
+    return parts or [{"title": title, "content": text, "sources_cited": sources_cited}]
+
+
+def _title_keywords(title: str) -> set[str]:
+    """Significant words from an article title — used to detect topic drift."""
+    words = re.findall(r"[a-zA-Z]{4,}", (title or "").lower())
+    return {word for word in words if word not in _TITLE_STOP}
+
+
+def _tech_terms(text: str, extra: list[str] | None = None) -> set[str]:
+    """Tech tokens found in text — from the shared allowlist, not a hardcoded stack map."""
+    from src.extractors.topic_filter import infer_topics
+
+    return {
+        str(term).strip().lower()
+        for term in infer_topics(text or "", extra=extra)
+        if term and str(term).strip()
+    }
+
+
+def _terms_conflict(left: set[str], right: set[str]) -> bool:
+    """True when both sides named tech topics and they share none."""
+    return bool(left and right and left.isdisjoint(right))
+
+
+def _article_terms(article: Article) -> set[str]:
+    extra = [*(article.topics or []), *(article.tech_stack or [])]
+    hay = f"{article.title or ''} {article.summary or ''} {(article.body_text or '')[:2000]}"
+    return _tech_terms(hay, extra=extra)
+
+
+def _title_mentioned(title: str, blob: str) -> bool:
+    """True when the blob still talks about the headline's tech or title words."""
+    from src.extractors.topic_filter import term_matches
+
+    hay = (blob or "").lower()
+    if not hay.strip():
+        return False
+    title_terms = _tech_terms(title)
+    if any(term_matches(hay, term) for term in title_terms):
+        return True
+    keys = {word for word in _title_keywords(title) if len(word) >= 4}
+    if not keys:
+        return True
+    words = set(re.findall(r"[a-z]{4,}", hay))
+    for key in keys:
+        if key in hay:
+            return True
+        stem = key[:4]
+        if any(word.startswith(stem) or key.startswith(word[:4]) for word in words):
+            return True
+    return False
+
+
+def _title_body_consistent(article: Article) -> bool:
+    """False when the scraped body is a different tech topic than the title."""
+    title = article.title or ""
+    body = (article.body_text or article.summary or "")[:2500]
+    extra = [*(article.topics or []), *(article.tech_stack or [])]
+    if _terms_conflict(_tech_terms(title, extra=extra), _tech_terms(body, extra=extra)):
+        return _title_mentioned(title, body)
+    return True
+
+
+def text_matches_headline(text: str, headline: str) -> bool:
+    """True when a digest block stays on the headline's tech topics."""
+    blob = (text or "").strip()
+    title = (headline or "").strip()
+    if not blob or not title:
+        return True
+    extra: list[str] = []
+    if blob.startswith("```"):
+        lang = blob.split("\n", 1)[0].replace("`", "").strip().lower()
+        if lang and _tech_terms(lang):
+            extra.append(lang)
+    title_terms = _tech_terms(title)
+    blob_terms = _tech_terms(blob, extra=extra or None)
+    if _terms_conflict(title_terms, blob_terms):
+        return _title_mentioned(title, blob)
+    return True
+
+
+def _content_matches_source(content: str, article: Article) -> bool:
+    """False when generated prose is a different stack/topic than the source title."""
+    return text_matches_headline(content, article.title or "")
+
+
+def _keep_on_topic_text(text: str, headline: str) -> str:
+    """Drop paragraphs that drifted onto a different stack than the headline.
+
+    Fenced code/diagrams are kept whole — blank lines inside a fence must not
+    split it into prose fragments that then get dropped.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    kept: list[str] = []
+    for chunk in _iter_markdown_chunks(raw):
+        if chunk.startswith("```"):
+            if text_matches_headline(chunk, headline):
+                kept.append(chunk)
+            continue
+        for part in re.split(r"\n{2,}", chunk):
+            bit = part.strip()
+            if bit and text_matches_headline(bit, headline):
+                kept.append(bit)
+    return "\n\n".join(kept)
+
+
+def _select_lead_article(
+    articles: list[Article],
+    profile: UserProfile | None = None,
+) -> Article | None:
+    """Prefer a source whose body matches its title and the user's stack."""
+    from src.extractors.topic_filter import is_non_english_dominant, matches_any_term
+
+    def _english_enough(item: Article) -> bool:
+        hay = f"{item.title} {item.summary or ''} {(item.body_text or '')[:2000]}"
+        return not is_non_english_dominant(hay)
+
+    usable = [
+        item
+        for item in articles
+        if item.title
+        and not _is_junk_title(item.title)
+        and _title_body_consistent(item)
+        and _english_enough(item)
     ]
+    pool = usable or [
+        item
+        for item in articles
+        if item.title and not _is_junk_title(item.title) and _english_enough(item)
+    ]
+    terms: list[str] = []
+    if profile is not None:
+        from src.ranker.next_day import (
+            discovery_match_terms,
+            hay_is_off_yesterday_family,
+        )
+
+        terms = discovery_match_terms(profile)
+        pool = [
+            item
+            for item in pool
+            if not hay_is_off_yesterday_family(
+                f"{item.title} {item.summary or ''} {' '.join(item.topics)}",
+                profile,
+            )
+        ]
+    if terms:
+        stacked = [
+            item
+            for item in pool
+            if matches_any_term(
+                f"{item.title} {item.summary or ''} {' '.join(item.topics)} {' '.join(item.tech_stack)} {(item.body_text or '')[:800]}",
+                terms,
+            )
+        ]
+        if stacked:
+            return stacked[0]
+        return None
+    if pool:
+        return pool[0]
+    return articles[0] if articles else None
+
+
+def _related_cluster(
+    lead: Article | None,
+    articles: list[Article],
+    *,
+    limit: int = 8,
+) -> list[Article]:
+    """Same language/topic as the headline — used when one post is too thin."""
+    if lead is None:
+        return []
+
+    def matches(article: Article) -> bool:
+        if not article.title or _is_junk_title(article.title):
+            return False
+        if not _title_body_consistent(article):
+            return False
+        lead_terms = _article_terms(lead)
+        other_terms = _article_terms(article)
+        if lead_terms and other_terms:
+            return bool(lead_terms & other_terms)
+        lead_keys = _title_keywords(lead.title or "")
+        other_keys = _title_keywords(article.title or "")
+        return bool(lead_keys and other_keys and lead_keys & other_keys)
+
+    cluster: list[Article] = []
+    seen: set[str] = set()
+    for article in [lead, *articles]:
+        url = str(article.url or "").rstrip("/")
+        if url and url in seen:
+            continue
+        if url:
+            seen.add(url)
+        if not matches(article):
+            continue
+        cluster.append(article)
+        if len(cluster) >= limit:
+            break
+    return cluster or [lead]
+
+
+def _short_actions(items: list[Any], article: Article | None) -> list[str]:
+    """Key Action must stay as short bullets about THIS article — never a second essay."""
+    headline = article.title if article is not None else ""
+    out: list[str] = []
+    for item in _bullets_for_source(items, article):
+        text = re.sub(r"^#+\s+", "", str(item).strip())
+        if "\n## " in text or text.lower().startswith("how to use "):
+            text = text.split("\n", 1)[0]
+        text = _clip_to_words(text, 40)
+        if not text:
+            continue
+        if headline and not text_matches_headline(text, headline):
+            continue
+        out.append(text)
+        if len(out) >= 8:
+            break
+    return out
+
+
+def _yesterday_relates_to_article(profile: UserProfile, article: Article) -> bool:
+    """True when yesterday's digest is the same topic family as today's source."""
+    if not _has_previous_briefing(profile):
+        return False
+    yesterday = profile.learning_path.last_digest_headline or ""
+    today = article.title or ""
+    y_terms = _tech_terms(yesterday)
+    a_terms = _tech_terms(today)
+    if y_terms and a_terms:
+        return bool(y_terms & a_terms)
+    y_keys = _title_keywords(yesterday)
+    a_keys = _title_keywords(today)
+    return bool(y_keys and a_keys and y_keys & a_keys)
 
 
 def _normalize_digest_sections(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Force every digest into Brief → Code Snippet → Overview / Summary."""
-    brief_parts: list[str] = []
-    code_parts: list[str] = []
-    overview_parts: list[str] = []
+    """Force every digest into Briefing (prose + fenced code) → Summary."""
+    from src.extractors.topic_filter import is_non_english_dominant
+
+    briefing_parts: list[str] = []
+    summary_parts: list[str] = []
     cited: list[int] = []
 
     expanded: list[dict[str, Any]] = []
@@ -144,6 +439,8 @@ def _normalize_digest_sections(sections: list[dict[str, Any]]) -> list[dict[str,
         title = str(sec.get("title") or "").strip() or "Untitled"
         content = str(sec.get("content") or "").strip()
         if not content:
+            continue
+        if is_non_english_dominant(content):
             continue
         raw_cited = list(sec.get("sources_cited") or [])
         expanded.extend(_split_by_canonical_h2(title, content, raw_cited))
@@ -160,42 +457,26 @@ def _normalize_digest_sections(sections: list[dict[str, Any]]) -> list[dict[str,
                 continue
 
         lower = title.lower()
-        prose, fences = _extract_fenced_blocks(content)
-        code_parts.extend(fences)
-
-        if "code" in lower:
+        is_summary = "summary" in lower or lower.startswith("overview")
+        if is_summary:
+            prose, fences = _extract_fenced_blocks(content)
             if prose:
-                code_parts.append(prose)
+                summary_parts.append(prose)
+            if fences:
+                briefing_parts.extend(fences)
             continue
+        briefing_parts.append(content)
 
-        is_brief = lower in {
-            "brief",
-            "continuation from yesterday",
-            "why this matters today",
-        } or lower.startswith("brief")
-
-        if is_brief:
-            if prose:
-                brief_parts.append(prose)
-        elif prose:
-            overview_parts.append(prose)
-
-    # Always keep Brief present when we have any narrative
-    if not brief_parts and overview_parts:
-        brief_parts.append(overview_parts.pop(0))
+    if not briefing_parts and summary_parts:
+        briefing_parts.append(summary_parts.pop(0))
 
     sources_cited = list(dict.fromkeys(cited)) or [1]
     out: list[dict[str, Any]] = []
-    if brief_parts:
-        out.append(_section("Brief", "\n\n".join(brief_parts), sources_cited))
-    if code_parts:
-        out.append(_section("Code Snippet", "\n\n".join(code_parts), sources_cited))
-    if overview_parts:
-        out.append(
-            _section("Overview / Summary", "\n\n".join(overview_parts), sources_cited)
-        )
+    if briefing_parts:
+        out.append(_section("Briefing", "\n\n".join(briefing_parts), sources_cited))
+    if summary_parts:
+        out.append(_section("Summary", "\n\n".join(summary_parts), sources_cited))
     return out or sections
-
 
 
 def _clip_to_words(text: str, max_words: int) -> str:
@@ -216,7 +497,10 @@ def _clip_to_words(text: str, max_words: int) -> str:
             break
         parts.append(piece)
         count += 1
-    return "".join(parts).rstrip()
+    clipped = "".join(parts).rstrip()
+    if clipped.count("```") % 2 == 1:
+        clipped += "\n```"
+    return clipped
 
 
 _DEVTO_CHROME = (
@@ -313,13 +597,20 @@ def pick_daily_theme(profile: UserProfile, articles: list[Article]) -> str:
     path = profile.learning_path
     if path.last_digest_embedding:
         return ""
+    focus = scrape_focus_terms(profile)
     if path.last_digest_headline:
         tokens = topic_tokens_from_text(path.last_digest_headline)
+        if focus:
+            from src.extractors.topic_filter import term_matches
+
+            for token in tokens:
+                if any(term_matches(token, term) or term_matches(term, token) for term in focus):
+                    return token
+            return focus[0]
         if tokens:
             return tokens[0]
-    last = scrape_focus_terms(profile)
-    if last:
-        return last[0]
+    if focus:
+        return focus[0]
     blob = " ".join(
         f"{article.title} {' '.join(article.topics)} {' '.join(article.tech_stack)}"
         for article in articles
@@ -340,7 +631,8 @@ def focus_articles_on_theme(articles: list[Article], theme: str) -> list[Article
     matched = [
         article
         for article in articles
-        if needle in f"{article.title} {article.summary} {article.body_text[:1200]} {' '.join(article.topics)}".lower()
+        if needle
+        in f"{article.title} {article.summary} {article.body_text[:1200]} {' '.join(article.topics)}".lower()
     ]
     return matched or articles
 
@@ -365,6 +657,15 @@ def _fallback_payload() -> dict[str, Any]:
     }
 
 
+def _source_excerpt_for_teaching(article: Article, *, limit: int = 8000) -> str:
+    """Use the scraped body only when it matches the headline's language/stack."""
+    raw = (article.body_text or article.summary or "").strip()[:limit]
+    if _title_body_consistent(article):
+        return raw
+    kept = _keep_on_topic_text(raw, article.title or "")
+    return kept or (article.title or "")
+
+
 def _payload_from_articles(
     articles: list[Article],
     *,
@@ -373,7 +674,11 @@ def _payload_from_articles(
     article_limit: int = _ARTICLE_LIMIT,
 ) -> dict[str, Any]:
     """Build short technical excerpts from scraped bodies (no full-article dump)."""
-    from src.extractors.topic_filter import has_tech_learning_signal, is_off_topic_lifestyle
+    from src.extractors.topic_filter import (
+        has_tech_learning_signal,
+        is_non_english_dominant,
+        is_off_topic_lifestyle,
+    )
 
     sections: list[dict[str, Any]] = []
     tldr: list[str] = []
@@ -385,18 +690,21 @@ def _payload_from_articles(
     for index, article in enumerate(articles[:article_limit], start=1):
         title = article.title or ""
         body = (article.body_text or article.summary or "").strip()
+        if is_non_english_dominant(f"{title}\n{body[:2000]}"):
+            continue
         # Never dump lifestyle / off-interest article bodies into the digest
         if is_off_topic_lifestyle(title, body[:1500]) or not has_tech_learning_signal(
             title, body[:2000], [*article.topics, *article.tech_stack]
         ):
             continue
+        if body and not _title_body_consistent(article):
+            body = _keep_on_topic_text(body, title)
         if not body:
-            body = (
-                f"{article.title} was selected for your stack. "
-                f"Read the original: {article.url}"
-            )
+            body = f"{article.title} was selected for your stack. Read the original: {article.url}"
         tldr.append(article.title)
-        takeaways.append(f"Skim the source on {article.title} and apply one idea to your stack today.")
+        takeaways.append(
+            f"Skim the source on {article.title} and apply one idea to your stack today."
+        )
         further.append({"title": article.title, "url": str(article.url)})
         word_count = len(body.split())
         take_n = min(word_count, per_article, words_left) if words_left > 0 else 0
@@ -406,7 +714,7 @@ def _payload_from_articles(
         words_left -= take_n
         sections.append(
             _section(
-                "Overview / Summary",
+                "Briefing",
                 text,
                 [index],
             )
@@ -431,11 +739,11 @@ def _is_junk_title(title: str) -> bool:
         return True
     if re.search(r"\.(pdf|zip|exe|dmg|tar|gz|rar|7z)\b", text):
         return True
-    if text.startswith("next steps after:") and re.search(
-        r"\.(pdf|zip|exe|dmg)\b", text
-    ):
+    if text.startswith("next steps after:") and re.search(r"\.(pdf|zip|exe|dmg)\b", text):
         return True
-    return False
+    from src.extractors.topic_filter import is_non_english_dominant
+
+    return is_non_english_dominant(title)
 
 
 def _is_templated_headline(title: str) -> bool:
@@ -448,9 +756,7 @@ def _is_templated_headline(title: str) -> bool:
         "your morning technical briefing",
     }:
         return True
-    return "briefing" in lowered and (
-        lowered.startswith("your ") or lowered.startswith("morning ")
-    )
+    return "briefing" in lowered and (lowered.startswith("your ") or lowered.startswith("morning "))
 
 
 def _pick_technical_headline(
@@ -587,26 +893,38 @@ def _has_previous_briefing(profile: UserProfile) -> bool:
     return True
 
 
-def _previous_briefing_block(profile: UserProfile) -> str:
+def _previous_briefing_block(
+    profile: UserProfile,
+    article: Article | None = None,
+) -> str:
     """Format yesterday's digest so today can continue the series.
 
     New users (no prior digest) get a first-day briefing — never invent a fake yesterday.
+    Unrelated yesterday (e.g. Dart) must not leak into a different source article (e.g. Python).
     """
     path = profile.learning_path
     active = resolve_active_stack(profile)
     pace = next_scrape_pace(profile)
     lines = [
-        "ACTIVE STACK RUN (stay on this stack until its important coverage is done): "
-        f"{active or '(infer from themes)'}",
+        "SOURCE ARTICLE IS THE ONLY TOPIC. Do not rewrite it into another language/stack.",
         pace_teaching_instructions(pace),
     ]
+    if article is not None:
+        lines.append(f"Today's source title: {article.title}")
+        lines.append(f"Reader stack (context only, NOT the lesson topic): {active or '(none)'}")
+    else:
+        lines.append(
+            "ACTIVE STACK RUN (stay on this stack until its important coverage is done): "
+            f"{active or '(infer from themes)'}"
+        )
 
-    if not _has_previous_briefing(profile):
+    related = article is None or _yesterday_relates_to_article(profile, article)
+    if not _has_previous_briefing(profile) or not related:
         lines.extend(
             [
-                "FIRST BRIEFING for this reader — there is NO yesterday digest.",
+                "FIRST BRIEFING for this source article — do not continue an unrelated yesterday topic.",
                 "Do NOT mention yesterday, previous lessons, continuing a series, or prior takeaways.",
-                "Open with today's technical hook only — a fresh first lesson.",
+                "Open with today's technical hook only — a fresh first lesson on THIS article.",
             ]
         )
         return "\n".join(lines)
@@ -632,22 +950,23 @@ def _previous_briefing_block(profile: UserProfile) -> str:
         lines.append("Key takeaways to build on:")
         lines.extend(f"- {item}" for item in takeaways[:8])
     lines.append(
-        "Today: next technical step INSIDE the active stack (deeper API, edge case, "
-        "or clearer explanation) — never a random new stack."
+        "Today: next technical step on THIS SAME source-article topic "
+        "(deeper API, edge case, or clearer explanation) — never switch languages."
     )
     return "\n".join(lines)
 
 
 def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
+    lead = articles[0] if articles else None
     active = resolve_active_stack(profile)
     pace = next_scrape_pace(profile)
-    has_yesterday = _has_previous_briefing(profile)
+    has_yesterday = bool(lead) and _yesterday_relates_to_article(profile, lead)
     stack = (
         f"Role: {profile.current_role}\n"
         f"Experience: {profile.years_of_experience} years ({profile.content_depth.value})\n"
         f"Primary: {', '.join(profile.primary_tech_stack)}\n"
         f"Interests: {', '.join(profile.interests)}\n"
-        f"Active stack run: {active}\n"
+        f"Reader stack (context only): {active}\n"
         f"Quiz marks: {profile.learning_path.last_quiz_score}/"
         f"{profile.learning_path.last_quiz_total} "
         f"({profile.learning_path.last_quiz_percentage}%); "
@@ -656,26 +975,23 @@ def _build_prompt(profile: UserProfile, articles: list[Article]) -> str:
         f"Pace: {pace.value}\n"
         f"Excluded: {', '.join(profile.excluded_topics)}"
     )
-    # Keep source stubs short — long bodies with quotes/code break Gemini JSON
-    sources = []
-    for index, article in enumerate(articles[: min(4, _ARTICLE_LIMIT)], start=1):
-        sources.append(
-            f"[Source #{index}] {article.title} ({article.source_domain}) "
-            f"topics={', '.join((article.topics or [])[:5])}"
-        )
+    title = (lead.title if lead else "today's article").replace('"', "'")
+    source_line = (
+        f"[Source #1] {lead.title} ({lead.source_domain})" if lead else "[Source #1] (none)"
+    )
     if has_yesterday:
-        headline_hint = "short technical headline continuing yesterday when possible"
+        headline_hint = title
         brief_field = (
-            '"continuation": "one short sentence linking yesterday to today"'
+            '"continuation": "one short sentence linking yesterday to this same article topic"'
         )
     else:
-        headline_hint = "short technical headline for this FIRST briefing (no yesterday)"
+        headline_hint = title
         brief_field = (
-            '"continuation": "one short sentence introducing today\'s technical hook '
-            '(do NOT mention yesterday)"'
+            '"continuation": "one short sentence introducing this article '
+            '(do NOT mention yesterday or a different language/stack)"'
         )
     return f"""
-You write ONLY a tiny JSON metadata header for a learning briefing.
+You write ONLY a tiny JSON metadata header for ONE source article.
 Long teaching chapters are written separately in markdown — do NOT put code or long prose here.
 
 HARD RULES for JSON:
@@ -683,35 +999,37 @@ HARD RULES for JSON:
 - Use straight double quotes. Escape any quote inside a string as \\".
 - Every string value must be ONE short line (max ~120 characters).
 - Do NOT include code blocks, backticks, or multi-paragraph text.
+- headline MUST be the source article title (or a tight paraphrase of it).
+- tldr and key_takeaways MUST be about THIS article only — never another language/stack.
 
 LEARNING ONLY — no news, M&A, career advice.
 
-{_previous_briefing_block(profile)}
+{_previous_briefing_block(profile, lead)}
 
 Profile:
 {stack}
 
-Sources:
-{chr(10).join(sources)}
+Source article (the ONLY topic allowed):
+{source_line}
 
 Return exactly this shape (and nothing else):
 {{
   "headline": "{headline_hint}",
-  "tldr": ["short bullet 1", "short bullet 2", "short bullet 3"],
+  "tldr": ["short overview bullet about this article", "second bullet", "third bullet"],
   {brief_field},
-  "key_takeaways": ["short takeaway 1", "short takeaway 2"]
+  "key_takeaways": ["most learnable action from this article", "second action"]
 }}
 """.strip()
 
 
 def _overview_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
-    """Turn minimal Gemini metadata into the Brief section."""
+    """Turn minimal Gemini metadata into the opening of Briefing."""
     continuation = str(meta.get("continuation") or "").strip()
     if not continuation:
         return []
     return [
         {
-            "title": "Brief",
+            "title": "Briefing",
             "content": continuation,
             "sources_cited": [1],
             "estimated_read_minutes": 1.0,
@@ -720,55 +1038,53 @@ def _overview_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _teaching_prompt(profile: UserProfile, article: Article, word_target: int) -> str:
-    body = (article.body_text or article.summary or "")[:8000]
+    body = _source_excerpt_for_teaching(article)
     active = resolve_active_stack(profile) or (
         ", ".join(profile.primary_tech_stack) or "software engineering"
     )
     stack = ", ".join(profile.primary_tech_stack) or active
     interests = ", ".join(profile.interests) or stack
-    has_yesterday = _has_previous_briefing(profile)
-    if has_yesterday:
+    related = _yesterday_relates_to_article(profile, article)
+    if related:
         open_rule = (
-            "If yesterday's briefing exists, open with one short paragraph that continues that thread."
+            "Yesterday was the SAME topic family. Open with one short paragraph that continues "
+            "that thread, then teach THIS article."
         )
-        brief_line = (
-            "One short paragraph continuing yesterday, then the technical hook for today."
-        )
+        brief_line = "Teach the source article in depth. Put diagrams and code in fenced blocks inside Briefing."
     else:
         open_rule = (
-            "FIRST BRIEFING — do NOT mention yesterday, prior lessons, or continuing a series. "
-            "Open directly with today's technical hook."
+            "Do NOT mention yesterday, prior lessons, Dart/Flutter, or any stack that is not "
+            "this article's subject. Open directly with this article."
         )
-        brief_line = (
-            "One short paragraph introducing today's technical hook (no yesterday references)."
-        )
+        brief_line = "Teach THIS source article only. Put diagrams and code in fenced blocks inside Briefing."
     return f"""
 You are writing one LEARNING chapter of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute morning briefing.
 Write about {word_target} words of markdown. No JSON. Do not wrap the whole answer in a code fence.
-Stay strictly on the ACTIVE STACK ({active}) and the source article — do not switch stacks.
+The SOURCE ARTICLE is the only topic. Teach that article's language, APIs, and examples.
+Do NOT rewrite it into the reader's stack ({active}) if the article is about something else.
 Teach a technical skill — never report news or business deals.
 
-{_previous_briefing_block(profile)}
+{_previous_briefing_block(profile, article)}
 
 HARD RULES — do NOT write about:
 - news, acquisitions, funding rounds, earnings, valuations, layoffs, market rumors
 - career advice, interviews, portfolios, "what companies expect", soft skills
 - generic "learn JavaScript / HTML / CSS" motivational fluff
 - unrelated beginner roadmaps
-- a different tech stack than {active}
+- a different language or framework than this article (example: no Dart/Flutter when the article is Python)
 - legal contracts, business law, or non-engineering lifestyle topics
 
 LANGUAGE — critical:
-- Write the entire chapter in ENGLISH only.
-- Never include Korean, Japanese, Chinese, or other non-English body text.
-- If the source is non-English or off-topic, skip it and teach a related {active} pattern in English instead.
+- Write the entire chapter in ENGLISH only (overview, briefing, takeaways, labels).
+- Never paste Portuguese, Spanish, French, German, Korean, Japanese, Chinese, or any other non-English prose.
+- If the source article is not English, skip it — do not translate it and do not copy it.
 
 OUTPUT FORMAT — critical:
-- SINGLE TOPIC ONLY: the entire chapter covers THIS source article ({article.title}) — never introduce React, Kubernetes, Python, etc. unless that IS this article's subject.
+- SINGLE TOPIC ONLY: the entire chapter covers THIS source article ({article.title}).
 - NEVER paste or summarize a second unrelated article mid-chapter.
 - NEVER include YAML frontmatter or Dev.to metadata lines (title:, published:, description:, tags:, series:).
 - Do not repeat the article title as a markdown H1 — the dashboard already shows the title.
-- Start teaching content directly (Brief paragraph or ## Brief section).
+- Start teaching content directly under ## Briefing.
 
 MARKDOWN FENCES — critical for the reader UI:
 - Use ``` fences ONLY for real source code, shell commands, or ASCII/box diagrams.
@@ -776,6 +1092,7 @@ MARKDOWN FENCES — critical for the reader UI:
 - NEVER put explanations, bullet lists, markdown tables, or ### headings inside a fence.
 - Put teaching prose, bullets, headings, and comparison tables outside fences on normal markdown lines.
 - Unfenced paragraphs of prose that belong in a fence will break the UI — fence code tightly.
+- Code and diagrams MUST be fenced so they render inside a black box.
 
 ASCII DIAGRAMS — critical:
 - Prefer SIMPLE vertical arrow flows (not wide boxes). Use plain text labels with | and v only:
@@ -793,6 +1110,7 @@ Fragment > max_size --> Try split by "\\n"
 ```
 - Max width 48 characters per line. One step per line. Use --> only for a branch label on the same line.
 - Do NOT repeat the same decision tree twice. Do NOT use broken +---+ borders.
+- NEVER insert | or v between lines of source code — those markers are for diagrams only.
 - NEVER use Unicode box-drawing characters (┌ ─ ┐ │ └ ┘ ├ ┤).
 - NEVER put a markdown table inside a diagram fence.
 - Comparison tables must be OUTSIDE fences as GitHub-flavored markdown:
@@ -805,23 +1123,22 @@ Do not invent APIs, URLs, or library names that are not in the source.
 {open_rule}
 
 Reader: {profile.current_role or "developer"}, {profile.years_of_experience} years, stack: {stack} / interests: {interests}.
+The reader stack is CONTEXT ONLY — never switch the lesson to it.
 
 Title: {article.title}
 URL: {article.url}
-Source:
+Source (may be empty — if so, teach the Title topic only; never invent a different language):
 {body}
 
-Use this structure (prose outside fences; code ONLY inside ``` fences):
-## Brief
+Use this structure (prose outside fences; code AND diagrams ONLY inside ``` fences):
+## Briefing
 {brief_line}
-## Code Snippet
-One fenced code block with a language tag (typescript, python, bash, etc.).
-## Overview / Summary
-### Technical takeaway
-### How it works
-### Apply it on {active} today
-### Pitfalls
-Do not invent other top-level ## headings — only Brief, Code Snippet, and Overview / Summary.
+A 20-minute Briefing is teaching, not an essay. Alternate short explanation with fenced examples.
+Include at least 5 fenced code samples in THIS article's language (setup, naive/wrong, correct, edge case, full working snippet) and at least 2 fenced diagrams for the process.
+Do NOT fill the word count with prose only. Do NOT add a separate ## Code Snippet heading — keep fences inside Briefing.
+## Summary
+A tight recap of the overall knowledge from THIS article only (what to remember).
+Do not invent other top-level ## headings — only Briefing and Summary.
 End with one markdown link to the source URL.
 """.strip()
 
@@ -829,26 +1146,28 @@ End with one markdown link to the source URL.
 def _top_up_prompt(profile: UserProfile, articles: list[Article], needed: int, tail: str) -> str:
     lead = articles[0] if articles else None
     title_line = f"- {lead.title}" if lead else "- (primary source)"
-    stack = ", ".join(profile.primary_tech_stack) or "software engineering"
-    if _has_previous_briefing(profile):
+    related = bool(lead) and _yesterday_relates_to_article(profile, lead)
+    if related:
         add_line = (
             "Add: one worked example, one debugging checklist, one concrete next experiment "
-            "that advances yesterday's theme."
+            "that stays on this same article."
         )
     else:
         add_line = (
             "Add: one worked example, one debugging checklist, one concrete next experiment "
-            "for today's topic. Do NOT mention yesterday."
+            "for THIS article. Do NOT mention yesterday or a different language/stack."
         )
     return f"""
 Continue the same TECHNICAL morning briefing. Write {needed} more words of markdown.
 No JSON. Do not repeat prior chapters.
-No news/M&A/funding and no career advice — only learning: code, APIs, debugging, and architecture for {stack}.
-Stay on the SAME source article topic — do NOT introduce a second framework or unrelated tutorial.
+No news/M&A/funding and no career advice — only learning: code, APIs, debugging, and architecture
+from the source article below.
+Stay on the SAME source article topic and language — do NOT introduce a second framework.
 The full briefing MUST reach {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minutes of reading (~{_WORD_FLOOR}-{_WORD_CEILING} words).
 Use ``` fences ONLY for real code or simple arrow-flow diagrams — never for prose, bullets, or headings.
+Include at least 2 more fenced code examples and 1 fenced diagram. Do not pad with prose only.
 
-{_previous_briefing_block(profile)}
+{_previous_briefing_block(profile, lead)}
 
 {add_line}
 
@@ -861,14 +1180,24 @@ Last part already written:
 
 
 # Live models only — dead 2.x IDs 404 and flash-latest often hangs for minutes.
-_GEMINI_MODEL_FALLBACKS = (
-    "gemini-3.6-flash",
-)
-_GEMINI_REQUEST_TIMEOUT_SEC = 75
+_GEMINI_MODEL_FALLBACKS = ("gemini-3.6-flash",)
+_GEMINI_REQUEST_TIMEOUT_SEC = 45
+_GEMINI_MAX_OUTPUT_TOKENS = 4096
 
 
 class GeminiQuotaExceeded(RuntimeError):
     """Gemini API free-tier / billing quota exhausted (HTTP 429)."""
+
+
+def _is_gemini_timeout_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        "504" in msg
+        or "deadline expired" in msg
+        or "deadlineexceeded" in msg.replace(" ", "")
+        or "timed out" in msg
+        or "timeout" in msg
+    )
 
 
 def _is_gemini_quota_error(exc: BaseException) -> bool:
@@ -924,7 +1253,9 @@ def _call_gemini(
         for attempt in range(attempts):
             try:
                 model = genai.GenerativeModel(model_name)
-                config: dict[str, Any] = {"max_output_tokens": max_output_tokens}
+                config: dict[str, Any] = {
+                    "max_output_tokens": min(max_output_tokens, _GEMINI_MAX_OUTPUT_TOKENS)
+                }
                 if as_json:
                     config["response_mime_type"] = "application/json"
                 try:
@@ -967,7 +1298,8 @@ def _call_gemini(
                     attempt=attempt + 1,
                     error=str(exc),
                 )
-                # Timeout / 5xx — retry same model once, then next
+                if _is_gemini_timeout_error(exc):
+                    break
                 continue
 
     if last_error and _is_gemini_quota_error(last_error):
@@ -977,64 +1309,53 @@ def _call_gemini(
 
 
 def _continuity_opening(profile: UserProfile, articles: list[Article]) -> dict[str, Any]:
-    """Lightweight opening when Gemini JSON fails — still frames the lesson."""
+    """Lightweight opening when Gemini JSON fails — still frames THIS article."""
     path = profile.learning_path
-    active = resolve_active_stack(profile) or (
-        (profile.primary_tech_stack or ["software engineering"])[0]
-    )
-    has_yesterday = _has_previous_briefing(profile)
-    yesterday_raw = (path.last_digest_headline or "").strip()
-    yesterday = yesterday_raw if has_yesterday else ""
-    theme = pick_daily_theme(profile, articles) or (
-        topic_tokens_from_text(yesterday)[0]
-        if yesterday and topic_tokens_from_text(yesterday)
-        else active
-    )
     lead = next(
         (a for a in articles if a.title and not _is_junk_title(a.title)),
         articles[0] if articles else None,
     )
     headline = _pick_technical_headline(
         (lead.title if lead else "") or "",
-        articles,
-        fallback_theme=str(theme or active),
+        [lead] if lead else articles,
+        fallback_theme="software engineering",
     )
-    if yesterday:
+    related = bool(lead) and _yesterday_relates_to_article(profile, lead)
+    yesterday = (path.last_digest_headline or "").strip() if related else ""
+    if yesterday and lead:
         tldr = [
-            f"Continue {yesterday}",
-            f"Focus theme: {theme or active}",
-            "New technical angles from today's learning sources",
+            f"Overview of {headline}",
+            f"Continues yesterday's {yesterday}",
+            "Stay on this article's language and APIs",
         ]
         body = (
             f"Yesterday covered **{yesterday}**. "
-            f"Today advances the same learning path on **{theme or active}** "
-            f"using fresh technical sources — not a repeat of yesterday's briefing.\n\n"
+            f"Today stays on the same topic using **{headline}**.\n\n"
         )
     else:
         tldr = [
-            f"Start learning {theme or active}",
-            f"Focus theme: {theme or active}",
-            "Technical angles from today's learning sources",
+            f"Overview of {headline}",
+            "What this article teaches and why it matters",
+            "Code patterns and diagrams from the source",
         ]
-        body = (
-            f"Today's briefing introduces **{theme or active}** "
-            f"using fresh technical sources.\n\n"
-        )
+        body = f"Today's briefing covers **{headline}** from the source article.\n\n"
     if lead and not _is_junk_title(lead.title):
-        body += f"Supporting source for this step: **{lead.title}**.\n"
+        body += f"Source article: **{lead.title}**.\n"
     return {
         "headline": headline,
         "tldr": tldr[:6],
         "sections": [
             {
-                "title": "Brief",
+                "title": "Briefing",
                 "content": body,
                 "sources_cited": [1] if lead else [],
                 "estimated_read_minutes": 2.0,
             }
         ],
         "key_takeaways": [
-            f"Apply one new {active} pattern from today's sources",
+            f"Apply one concrete idea from {headline}"
+            if headline
+            else "Apply one idea from today's article",
         ],
         "further_reading": [],
     }
@@ -1062,7 +1383,7 @@ def _generate_teaching_sections(
             text, used = _call_gemini(
                 _teaching_prompt(profile, article, ask),
                 as_json=False,
-                max_output_tokens=min(8192, max(2048, ask * 3)),
+                max_output_tokens=min(_GEMINI_MAX_OUTPUT_TOKENS, max(2048, ask * 2)),
             )
             tokens += used
         except GeminiQuotaExceeded:
@@ -1073,7 +1394,13 @@ def _generate_teaching_sections(
         content = str(text or "").strip()
         if len(content.split()) < 80:
             continue
-        sections.append(_section("Overview / Summary", content, [index]))
+        if not _content_matches_source(content, article):
+            log.warning(
+                "generator: teaching drifted off source article",
+                title=article.title,
+            )
+            continue
+        sections.append(_section("Briefing", content, [index]))
 
     if _words_in(sections) < floor and sections:
         needed = min(_max_words() - _words_in(sections), floor - _words_in(sections))
@@ -1083,12 +1410,18 @@ def _generate_teaching_sections(
                 extra, used = _call_gemini(
                     _top_up_prompt(profile, chosen[:1], needed, tail),
                     as_json=False,
-                    max_output_tokens=min(8192, max(2048, needed * 3)),
+                    max_output_tokens=min(_GEMINI_MAX_OUTPUT_TOKENS, max(2048, needed * 2)),
                 )
                 tokens += used
                 extra_text = str(extra or "").strip()
-                if len(extra_text.split()) >= 80:
-                    sections.append(_section("Going deeper", extra_text, [1]))
+                lead = chosen[0]
+                if len(extra_text.split()) >= 80 and _content_matches_source(extra_text, lead):
+                    sections.append(_section("Briefing", extra_text, [1]))
+                elif extra_text and not _content_matches_source(extra_text, lead):
+                    log.warning(
+                        "generator: top-up drifted off source article",
+                        title=lead.title,
+                    )
             except GeminiQuotaExceeded:
                 raise
             except Exception as exc:
@@ -1101,13 +1434,13 @@ def _technical_articles(
     articles: list[Article],
     profile: UserProfile | None = None,
 ) -> list[Article]:
-    """Keep interest-related learning articles only — drop lifestyle / off-stack junk."""
+    """Keep interest articles, else stack articles — never an off-topic filler."""
     from src.extractors.topic_filter import has_tech_learning_signal, matches_any_term
+    from src.ranker.next_day import discovery_match_terms
 
-    # Interests field only — never invent day-relevance / stack / role terms here
-    terms: list[str] = []
+    match_terms: list[str] = []
     if profile is not None:
-        terms = [str(t).strip() for t in (profile.interests or []) if str(t).strip()]
+        match_terms = discovery_match_terms(profile)
 
     kept: list[Article] = []
     for article in articles:
@@ -1125,8 +1458,7 @@ def _technical_articles(
         if not has_tech_learning_signal(title, body[:2000], topics):
             continue
         hay = f"{title} {article.summary or ''} {' '.join(topics)} {body[:800]}"
-        # With interests: must match. Without: any tech learning article (already site-filtered upstream)
-        if terms and not matches_any_term(hay, terms):
+        if match_terms and not matches_any_term(hay, match_terms):
             continue
         kept.append(article)
     return kept
@@ -1148,7 +1480,7 @@ def _expand_from_articles(
             articles,
             max_total_words=ceiling,
             max_words_each=each,
-            article_limit=_ARTICLE_LIMIT,
+            article_limit=max(1, len(articles)),
         )
         result = _trim_sections([*result, *long_scrape["sections"]], ceiling)
     return result
@@ -1169,32 +1501,27 @@ def _pad_shortfall_from_articles(
     # Leave headroom up to the 25-minute ceiling
     room = max(0, ceiling - _words_in(result))
     need = min(max(shortfall + 50, shortfall), room or shortfall + 50)
-    chunks: list[str] = []
+    chunks: list[tuple[int, str]] = []
     taken = 0
-    primary = articles[:1]
-    for index, article in enumerate(primary, start=1):
+    for index, article in enumerate(articles, start=1):
         if taken >= need:
             break
-        body = _ensure_readable_markdown(
-            _clean_scraped_markdown((article.body_text or article.summary or "").strip())
+        body = _keep_on_topic_text(
+            _ensure_readable_markdown(
+                _clean_scraped_markdown((article.body_text or article.summary or "").strip())
+            ),
+            article.title or "",
         )
         if not body:
             continue
         already = " ".join(str(section.get("content") or "") for section in result)
-        # Prefer unseen tail of the article so we don't duplicate the short excerpt
-        words = body.split()
-        if not words:
-            continue
-        start = max(0, len(words) // 3)
-        slice_words = words[start : start + min(800, need - taken + 20)]
-        if len(slice_words) < 40:
-            slice_words = words[: min(800, need - taken + 20)]
-        piece = " ".join(slice_words)
+        piece = _clip_to_words(body, min(len(body.split()), need - taken + 20))
         if piece and piece not in already:
-            chunks.append(piece)
-            taken += len(slice_words)
+            chunks.append((index, piece))
+            taken += len(piece.split())
+    for index, piece in chunks:
+        result.append(_section("Briefing", piece, [index]))
     if chunks:
-        result.append(_section("Deep dive (source continuation)", "\n\n".join(chunks), [1]))
         result = _trim_sections(result, max(ceiling, floor + 100))
     return result
 
@@ -1208,6 +1535,8 @@ def _enforce_min_length(
     scraped_only: bool,
 ) -> tuple[list[dict[str, Any]], int]:
     """Keep expanding until the digest is at least 20 minutes of reading."""
+    if not articles:
+        return list(sections), tokens
     floor = _min_words()
     ceiling = _max_words()
     working = list(sections)
@@ -1215,9 +1544,7 @@ def _enforce_min_length(
     if scraped_only:
         working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
         if _words_in(working) < floor:
-            working = _pad_shortfall_from_articles(
-                articles, working, floor=floor, ceiling=ceiling
-            )
+            working = _pad_shortfall_from_articles(articles, working, floor=floor, ceiling=ceiling)
         if _words_in(working) < floor:
             raise RuntimeError(
                 f"Digest too short ({_words_in(working)} words); "
@@ -1227,14 +1554,12 @@ def _enforce_min_length(
         return working, tokens
 
     rounds = 0
-    while _words_in(working) < floor and rounds < 6:
+    while _words_in(working) < floor and rounds < 2:
         rounds += 1
         needed = min(ceiling - _words_in(working), floor - _words_in(working))
         # Small shortfalls (e.g. 4489/4500) — pad from sources instead of giving up
         if needed < 200:
-            working = _pad_shortfall_from_articles(
-                articles, working, floor=floor, ceiling=ceiling
-            )
+            working = _pad_shortfall_from_articles(articles, working, floor=floor, ceiling=ceiling)
             break
         try:
             extra, used = _call_gemini(
@@ -1245,12 +1570,15 @@ def _enforce_min_length(
                     working[-1]["content"] if working else "",
                 ),
                 as_json=False,
-                max_output_tokens=min(8192, max(2048, needed * 3)),
+                max_output_tokens=min(_GEMINI_MAX_OUTPUT_TOKENS, max(2048, needed * 2)),
             )
             tokens += used
             extra_text = str(extra or "").strip()
-            if len(extra_text.split()) >= 80:
-                working.append(_section("Overview / Summary", extra_text, [1]))
+            lead = articles[0] if articles else None
+            if len(extra_text.split()) >= 80 and (
+                lead is None or _content_matches_source(extra_text, lead)
+            ):
+                working.append(_section("Briefing", extra_text, [1]))
                 working = _trim_sections(working, ceiling)
                 continue
         except GeminiQuotaExceeded:
@@ -1263,6 +1591,8 @@ def _enforce_min_length(
             )
             if _is_gemini_quota_error(exc):
                 raise GeminiQuotaExceeded(_quota_error_message(exc)) from exc
+            working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
+            break
 
         # Gemini unavailable — expand technical source bodies (never career fluff).
         working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
@@ -1270,9 +1600,7 @@ def _enforce_min_length(
             break
 
     if _words_in(working) < floor:
-        working = _pad_shortfall_from_articles(
-            articles, working, floor=floor, ceiling=ceiling
-        )
+        working = _pad_shortfall_from_articles(articles, working, floor=floor, ceiling=ceiling)
 
     if _words_in(working) < floor:
         raise RuntimeError(
@@ -1281,6 +1609,21 @@ def _enforce_min_length(
             "Retry synthesize, or fill the user tech stack so Gemini can write longer chapters."
         )
     return working, tokens
+
+
+def _bullets_for_source(items: list[Any], article: Article | None) -> list[str]:
+    """Drop bullets that drifted onto a different language/stack than the source."""
+    out: list[str] = []
+    source_terms = _tech_terms(article.title or "") if article is not None else set()
+    for item in items:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        bullet_terms = _tech_terms(text)
+        if _terms_conflict(source_terms, bullet_terms):
+            continue
+        out.append(text)
+    return out
 
 
 def synthesize_digest(
@@ -1293,34 +1636,91 @@ def synthesize_digest(
     """Build a DailyDigest document from ranked articles. Does not insert."""
     started = time.monotonic()
     articles = _technical_articles(articles, profile)
+    if not articles:
+        payload = _fallback_payload()
+        saved_on = digest_date or date.today()
+        saved_at = datetime.now(UTC)
+        sections = [
+            DigestSection(
+                title=str(section.get("title") or "Untitled"),
+                content=str(section.get("content") or ""),
+                sources_cited=[],
+                estimated_read_minutes=float(
+                    section.get("estimated_read_minutes") or 1.0
+                ),
+            )
+            for section in payload["sections"]
+        ]
+        word_count = len(" ".join(section.content for section in sections).split())
+        return DailyDigest(
+            user_id=profile.user_id,
+            digest_date=saved_on,
+            article_ids=[],
+            reading_time_minutes=1.0,
+            word_count=word_count,
+            content=DigestContent(
+                headline=str(payload.get("headline") or "Your Morning Technical Briefing"),
+                tldr=[str(item) for item in payload.get("tldr") or []],
+                sections=sections,
+                key_takeaways=[str(item) for item in payload.get("key_takeaways") or []],
+                sources=[],
+                further_reading=[],
+            ),
+            metrics=DigestMetrics(
+                articles_evaluated=0,
+                articles_used=0,
+                llm_tokens_used=0,
+                generation_latency_seconds=round(time.monotonic() - started, 2),
+            ),
+            generated_at=saved_at,
+            updated_at=saved_at,
+        )
     theme = pick_daily_theme(profile, articles)
     articles = focus_articles_on_theme(articles, theme)
+    lead = _select_lead_article(articles, profile)
+    cluster = _related_cluster(lead, articles)
+    if lead is not None and len(cluster) > 1:
+        log.info(
+            "generator: continuing from related same-stack articles",
+            lead=(lead.title or "")[:80],
+            related=len(cluster),
+        )
+    lead_list = [lead] if lead is not None else []
     scraped = _payload_from_articles(
-        articles,
+        cluster[:1] or lead_list,
         max_total_words=_SCRAPE_EXCERPT_TOTAL,
         max_words_each=_SCRAPE_EXCERPT_WORDS,
-        article_limit=_SCRAPE_EXCERPT_ARTICLES,
+        article_limit=1,
     )
     payload = scraped
     tokens = 0
     overview_sections: list[dict[str, Any]] = []
-    if articles and not scraped_only:
+    if lead_list and not scraped_only:
         try:
             gemini_payload, tokens = _call_gemini(
-                _build_prompt(profile, articles),
+                _build_prompt(profile, lead_list),
                 max_output_tokens=1024,
             )
             overview_sections = _overview_from_meta(gemini_payload)
+            if lead is not None:
+                overview_sections = [
+                    sec
+                    for sec in overview_sections
+                    if _content_matches_source(str(sec.get("content") or ""), lead)
+                ]
+            tldr = _short_actions(list(gemini_payload.get("tldr") or []), lead)
+            takeaways = _short_actions(
+                list(gemini_payload.get("key_takeaways") or []), lead
+            )
             payload = {
                 "headline": _pick_technical_headline(
-                    str(gemini_payload.get("headline") or ""),
-                    articles,
-                    fallback_theme=theme or resolve_active_stack(profile) or "tech",
+                    lead.title if lead else "",
+                    lead_list,
+                    fallback_theme=theme or "tech",
                 ),
-                "tldr": gemini_payload.get("tldr") or scraped["tldr"],
+                "tldr": tldr or scraped["tldr"],
                 "sections": [*overview_sections, *scraped["sections"]],
-                "key_takeaways": gemini_payload.get("key_takeaways")
-                or scraped["key_takeaways"],
+                "key_takeaways": takeaways or scraped["key_takeaways"],
                 "further_reading": scraped["further_reading"],
             }
         except GeminiQuotaExceeded:
@@ -1333,9 +1733,7 @@ def synthesize_digest(
                 "generator: opening JSON failed; continuing with teaching chapters",
                 error=str(exc),
             )
-            # Do NOT dump raw scrapes as the whole briefing — keep continuity framing
-            # and rely on markdown teaching chapters (+ short source excerpts).
-            continuity = _continuity_opening(profile, articles)
+            continuity = _continuity_opening(profile, lead_list)
             overview_sections = list(continuity["sections"])
             payload = {
                 "headline": continuity["headline"],
@@ -1346,10 +1744,8 @@ def synthesize_digest(
             }
 
     teaching: list[dict[str, Any]] = []
-    # Always attempt teaching chapters unless explicitly scraped-only — this is the
-    # real "next step" content. Markdown path is more reliable than opening JSON.
-    if not scraped_only and articles:
-        teaching, teaching_tokens = _generate_teaching_sections(profile, articles)
+    if not scraped_only and cluster:
+        teaching, teaching_tokens = _generate_teaching_sections(profile, cluster)
         tokens += teaching_tokens
         if not teaching:
             log.warning(
@@ -1365,45 +1761,62 @@ def synthesize_digest(
         ],
         _max_words(),
     )
-    if articles:
-        merged, tokens = _enforce_min_length(
-            profile, articles, merged, tokens, scraped_only=scraped_only
+    merged, tokens = _enforce_min_length(
+        profile, cluster or lead_list, merged, tokens, scraped_only=scraped_only
+    )
+    normalized = _normalize_digest_sections(merged)
+    if not any(str(sec.get("title") or "") == "Summary" for sec in normalized):
+        takeaways = [
+            str(item).strip() for item in (payload.get("key_takeaways") or []) if str(item).strip()
+        ]
+        if takeaways:
+            normalized.append(
+                _section(
+                    "Summary",
+                    "Overall knowledge from this article:\n\n"
+                    + "\n".join(f"- {item}" for item in takeaways[:6]),
+                    [1],
+                )
+            )
+    payload["sections"] = _trim_sections(normalized, _max_words())
+    if lead is None and not (cluster or articles):
+        headline = str(payload.get("headline") or "Your Morning Technical Briefing")
+    else:
+        headline = _stored_headline(
+            {"headline": lead.title if lead is not None else str(payload.get("headline") or "")},
+            lead_list or articles,
         )
-    payload["sections"] = _normalize_digest_sections(merged)
-
-    cited_ids: set[int] = set()
-    for section in payload.get("sections") or []:
-        for item in section.get("sources_cited") or []:
-            try:
-                cited_ids.add(int(item))
-            except (TypeError, ValueError):
+    payload["headline"] = headline
+    filtered_sections: list[dict[str, Any]] = []
+    for sec in payload["sections"]:
+        kept = _keep_on_topic_text(str(sec.get("content") or ""), headline)
+        if not kept:
+            continue
+        filtered_sections.append({**sec, "content": kept})
+    payload["sections"] = filtered_sections
+    if _words_in(payload["sections"]) < _min_words() and (cluster or lead_list):
+        refill = _expand_from_articles(
+            cluster or lead_list,
+            payload["sections"],
+            floor=_min_words(),
+            ceiling=_max_words(),
+        )
+        refill = _pad_shortfall_from_articles(
+            cluster or lead_list,
+            refill,
+            floor=_min_words(),
+            ceiling=_max_words(),
+        )
+        refill = _normalize_digest_sections(refill)
+        kept_refill: list[dict[str, Any]] = []
+        for sec in refill:
+            kept = _keep_on_topic_text(str(sec.get("content") or ""), headline)
+            if not kept:
                 continue
-    # Always keep the teaching/lead articles that actually shaped the briefing.
-    if not cited_ids:
-        cited_ids = {1}
-    capped = articles[:_ARTICLE_LIMIT]
-    chosen = [
-        (index, article)
-        for index, article in enumerate(capped, start=1)
-        if index in cited_ids
-    ]
-    # If citations were sparse, still prefer interest-related tech articles only.
-    if len(chosen) < 2:
-        from src.extractors.topic_filter import has_tech_learning_signal
-
-        for index, article in enumerate(capped, start=1):
-            if index in {i for i, _ in chosen}:
-                continue
-            if has_tech_learning_signal(
-                article.title,
-                f"{article.summary or ''} {article.body_text or ''}"[:1500],
-                [*article.topics, *article.tech_stack],
-            ):
-                chosen.append((index, article))
-            if len(chosen) >= min(5, len(capped)):
-                break
-    if not chosen and capped:
-        chosen = [(1, capped[0])]
+            kept_refill.append({**sec, "content": kept})
+        payload["sections"] = _trim_sections(kept_refill, _max_words())
+    payload["tldr"] = _short_actions(list(payload.get("tldr") or []), lead)
+    payload["key_takeaways"] = _short_actions(list(payload.get("key_takeaways") or []), lead)
 
     sources = [
         DigestSource(
@@ -1414,13 +1827,13 @@ def synthesize_digest(
             source_domain=article.source_domain,
             published_at=article.published_at,
         )
-        for index, article in chosen
+        for index, article in enumerate(cluster or lead_list, start=1)
     ]
     sections = [
         DigestSection(
             title=str(section.get("title") or "Untitled"),
             content=str(section.get("content") or ""),
-            sources_cited=[int(item) for item in section.get("sources_cited") or []],
+            sources_cited=[1] if sources else [],
             estimated_read_minutes=float(section.get("estimated_read_minutes") or 1.0),
         )
         for section in payload.get("sections") or []
@@ -1446,11 +1859,11 @@ def synthesize_digest(
     return DailyDigest(
         user_id=profile.user_id,
         digest_date=saved_on,
-        article_ids=[str(article.id) for article in articles if article.id is not None],
+        article_ids=[str(article.id) for article in (cluster or lead_list) if article.id is not None],
         reading_time_minutes=reading,
         word_count=word_count,
         content=DigestContent(
-            headline=_stored_headline(payload, articles),
+            headline=str(payload.get("headline") or "Morning Briefing"),
             tldr=[str(item) for item in payload.get("tldr") or []],
             sections=sections,
             key_takeaways=[str(item) for item in payload.get("key_takeaways") or []],

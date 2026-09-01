@@ -46,9 +46,6 @@ class ScrapePace(StrEnum):
 # Pass bar aligned with student UI (3/5 ≈ 60%)
 _PASS_RATIO = 0.60
 _STRONG_PASS_RATIO = 0.80
-# Keep one stack in run until enough digests / covered angles exist
-_STACK_RUN_DIGEST_TARGET = 7
-_STACK_RUN_COVERED_MIN = 6
 
 
 class LearningPath(BaseModel):
@@ -113,7 +110,7 @@ class UserProfile(Document):
 
     @property
     def ranking_terms(self) -> list[str]:
-        """Interest field drives matching; empty interests → no forced topic terms."""
+        """Interests if set; otherwise primary/secondary tech stack."""
         interests = [
             term.strip().lower()
             for term in (self.interests or [])
@@ -121,7 +118,12 @@ class UserProfile(Document):
         ]
         if interests:
             return list(dict.fromkeys(interests))
-        return []
+        stacks = [
+            term.strip().lower()
+            for term in [*(self.primary_tech_stack or []), *(self.secondary_tech_stack or [])]
+            if term and str(term).strip()
+        ]
+        return list(dict.fromkeys(stacks))
 
     class Settings:
         """Beanie collection settings."""
@@ -165,6 +167,9 @@ _KNOWN_TOPICS = (
     "celery",
     "concurrency",
     "threading",
+    "chunk",
+    "chunks",
+    "chunking",
 )
 
 
@@ -200,23 +205,25 @@ def _normalize_term(term: str) -> str:
 
 def _stack_candidates(profile: UserProfile) -> list[str]:
     ordered = [
-        *profile.primary_tech_stack,
-        *profile.interests,
-        *profile.secondary_tech_stack,
+        *(getattr(profile, "primary_tech_stack", None) or []),
+        *(getattr(profile, "interests", None) or []),
+        *(getattr(profile, "secondary_tech_stack", None) or []),
     ]
     return list(dict.fromkeys(_normalize_term(t) for t in ordered if t and str(t).strip()))
 
 
 def resolve_active_stack(profile: UserProfile) -> str:
     """Return the stack currently in run, starting one from profile if needed."""
-    path = profile.learning_path
-    current = _normalize_term(path.active_stack or "")
+    path = getattr(profile, "learning_path", None)
+    if path is None:
+        return ""
+    current = _normalize_term(getattr(path, "active_stack", None) or "")
     candidates = _stack_candidates(profile)
     if current:
         if not candidates or current in candidates or any(current in c or c in current for c in candidates):
             return current
-    # Prefer a last-topic token that matches the user's stack list
-    for item in path.last_topics:
+    last_topics = getattr(path, "last_topics", None) or []
+    for item in last_topics:
         tokens = topic_tokens_from_text(item) or [_normalize_term(item)]
         for token in tokens:
             if token in candidates:
@@ -225,8 +232,7 @@ def resolve_active_stack(profile: UserProfile) -> str:
     if candidates:
         path.active_stack = candidates[0]
         return candidates[0]
-    # No declared stack — fall back to a theme token if any
-    for item in path.last_topics:
+    for item in last_topics:
         tokens = topic_tokens_from_text(item) or [_normalize_term(item)]
         if tokens:
             path.active_stack = tokens[0]
@@ -235,33 +241,62 @@ def resolve_active_stack(profile: UserProfile) -> str:
     return ""
 
 
-def stack_run_is_complete(path: LearningPath) -> bool:
-    """True when enough of the active stack has been covered for this user."""
-    if path.stack_run_digest_count >= _STACK_RUN_DIGEST_TARGET:
-        return True
-    covered = [t for t in path.stack_run_covered if t and t.strip()]
-    return len(covered) >= _STACK_RUN_COVERED_MIN
+def stack_run_is_complete(profile: UserProfile) -> bool:
+    """True when every topic in the active stack curriculum has been taught.
+
+    One briefing (or one passed quiz) is not enough — aliases like
+    chunk/chunks/chunking count as a single topic.
+    """
+    from src.ranker.next_day import canonicalize_topic, stack_curriculum_topics
+
+    curriculum = stack_curriculum_topics(profile)
+    if not curriculum:
+        return False
+    covered = {
+        canonicalize_topic(t)
+        for t in (profile.learning_path.stack_run_covered or [])
+        if t and str(t).strip()
+    }
+    return set(curriculum) <= covered
+
+
+def _next_stack_other_family(profile: UserProfile, active: str) -> str:
+    """Next profile stack in a different language/family (Python → React, not FastAPI)."""
+    from src.ranker.next_day import family_for_stack_name
+
+    active_fam = family_for_stack_name(active)
+    candidates = _stack_candidates(profile)
+    if not candidates:
+        return ""
+    try:
+        idx = next(
+            i
+            for i, c in enumerate(candidates)
+            if c == active or active in c or c in active
+        )
+    except StopIteration:
+        idx = -1
+    ordered = candidates[idx + 1 :] + candidates[: idx + 1]
+    for candidate in ordered:
+        if candidate == active:
+            continue
+        if family_for_stack_name(candidate) != active_fam:
+            return candidate
+    return ""
 
 
 def maybe_rotate_stack_run(profile: UserProfile) -> str:
-    """If the current stack run is done, move to the next primary stack item."""
+    """Move to the next stack family only after this stack's topics are all covered."""
     path = profile.learning_path
     active = resolve_active_stack(profile)
-    if not active or not stack_run_is_complete(path):
+    if not active or not stack_run_is_complete(profile):
         return active
-    candidates = _stack_candidates(profile)
-    if not candidates:
-        path.stack_run_covered = []
-        path.stack_run_digest_count = 0
-        return active
-    try:
-        idx = next(i for i, c in enumerate(candidates) if c == active or active in c or c in active)
-        nxt = candidates[(idx + 1) % len(candidates)]
-    except StopIteration:
-        nxt = candidates[0]
-    path.active_stack = nxt
+    nxt = _next_stack_other_family(profile, active)
     path.stack_run_covered = []
     path.stack_run_digest_count = 0
+    if not nxt:
+        return active
+    path.active_stack = nxt
     return nxt
 
 
@@ -382,6 +417,8 @@ def apply_quiz_result(
 
 def record_stack_run_progress(profile: UserProfile, theme_terms: list[str]) -> None:
     """After publish: count this digest toward the active stack run coverage."""
+    from src.ranker.next_day import canonicalize_topic
+
     resolve_active_stack(profile)
     path = profile.learning_path
     if not path.active_stack:
@@ -389,7 +426,7 @@ def record_stack_run_progress(profile: UserProfile, theme_terms: list[str]) -> N
     path.stack_run_digest_count = int(path.stack_run_digest_count or 0) + 1
     covered = list(path.stack_run_covered)
     for term in theme_terms:
-        t = _normalize_term(term)
+        t = canonicalize_topic(term)
         if t and t not in covered:
             covered.append(t)
     path.stack_run_covered = covered[:40]

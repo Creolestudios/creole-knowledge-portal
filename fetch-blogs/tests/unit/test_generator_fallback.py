@@ -17,4 +17,4 @@ async def test_synthesize_digest_fallback_on_empty_articles():
     assert digest.content.headline == "Your Morning Technical Briefing"
     assert len(digest.content.sections) == 1
     assert digest.content.sections[0].title == "Today's curated reading"
-    assert digest.content.sections[0].estimated_read_minutes == 1.0
+    assert digest.content.sections[0].estimated_read_minutes == 2.0

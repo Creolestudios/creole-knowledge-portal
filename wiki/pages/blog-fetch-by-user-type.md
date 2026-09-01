@@ -2,7 +2,7 @@
 title: Blog Fetch — How Digests Work for Every User Type
 tags: [fetch-blogs, personalization, learning-path, digests, next-day]
 created: 2026-08-27
-updated: 2026-08-27
+updated: 2026-09-01
 ---
 
 # Blog Fetch — How Digests Work for Every User Type
@@ -33,67 +33,67 @@ scrape → extract → rank → generate → publish
 
 **Learning-only rule:** news, M&A, career fluff, and bare GitHub README dumps are filtered out (`is_non_learning` in `fetch-blogs/src/extractors/topic_filter.py`).
 
+**English-only rule:** source blogs and the generated briefing (title, overview, body, takeaways) must be English. Portuguese/Spanish/French/German/CJK posts are dropped (`is_non_english_dominant`).
+
 ---
 
 ## User types at a glance
 
 | User type | How discovery works | How ranking/teaching works |
 |---|---|---|
-| **Has stacks / interests** | Tagged scrape (Dev.to tags, HN title match, matching RSS) | Personalized embedding + active stack theme |
-| **No stacks / interests (day 1)** | Untagged “today’s latest” Dev.to + HN tops + admin feeds | Generic engineering query; theme inferred from articles |
-| **No prefs, but has yesterday** | Continuity themes (`last_topics`, `active_stack`) steer tags | Embedding + prompts continue yesterday’s series |
-| **Any user after quiz** | Same discovery path; pace adds keywords (`basics` / `advanced`) | Teaching style follows quiz pace (simpler ↔ harder) |
+| **Has interests** | Tagged scrape for **those interests only** (stack is ignored) | Embed + Gemini re-rank **interests only**; off-interest posts dropped |
+| **No interests, newly joined (no yesterday)** | Tagged scrape for **primary/secondary stack** | Embed stack trending; first briefing on that stack |
+| **No interests, returning (day 2+)** | Yesterday + quiz + uncovered topics on the **active stack only** | Rank with yesterday's embedding until that stack's topics are all covered, then rotate to the next family |
+| **No interests and no stack** | Untagged latest learning posts from configured sites (last resort) | Generic engineering tutorial query |
+| **Any user after quiz** | Same discovery path as above | Fail → simpler teaching; pass → next step |
 
-“Has discovery prefs” is true when **any** of these exist:
+“Has discovery prefs” is true when **interests** or **primary/secondary tech stack** is filled. Yesterday’s headline is **not** used as a scrape tag (that used to lock in Mac/Apple).
 
-- `primary_tech_stack` / `secondary_tech_stack` / `interests`
-- **or** continuity: `learning_path.last_topics` / `active_stack`
-
-So a user who started empty can become “personalized” after day 1 without filling the gatekeeper form again.
-
-Code: `profile_has_discovery_prefs`, `interest_scrape_terms` in `fetch-blogs/src/ranker/next_day.py`.
+Code: `discovery_scrape_terms`, `discovery_match_terms` in `fetch-blogs/src/ranker/next_day.py`.
 
 ---
 
-## 1. User WITH interests / stacks
+## 1. User WITH interests
 
-Example: stacks `Node, React, Postgres` · interest `Want to learn about LLMs`.
+Example: stacks `Node, React, Postgres` · interest `LLMs`.
 
 ### Scrape
-- Build terms from stacks + interests (+ continuity + quiz pace hints), max 8.
-- **Dev.to** — fetch by those tags (not only untagged latest).
-- **HN** — prefer stories whose titles match terms, then fill with other tops.
-- **Admin feeds** (Admin → Sources) — always interleaved (news domains skipped).
-- **RSS registry** — only items that match terms.
+- Terms = **interests only** (never mix in stack or yesterday).
+- **Dev.to** — fetch by those tags.
+- **HN / admin feeds / RSS** — only items whose title matches the interests.
 - Skip URLs already in `learning_path.served_urls`.
-- Cap ~24 articles; if nothing new, fall back to recent unserved learning articles in Mongo.
 
 ### Rank
-- Refresh **profile embedding** from: role, stacks, interests, yesterday’s headline/TL;DR/themes, quiz marks, pace sentence.
-- Merge pipeline articles + embedded corpus; drop non-learning.
-- Vector similarity + TF-IDF/authority/recency score + Gemini re-rank → top ~10.
+- Profile embedding = interests query only.
+- Hard filter: article must match an interest term.
+- Vector similarity + TF-IDF + Gemini re-rank → top ~10.
 
 ### Generate
-- Prefer articles on the **active stack** theme.
-- Gemini opening + teaching chapters: tutorials, APIs, debugging, architecture — **not** news.
-- Prompt includes “continue yesterday’s briefing” when continuity exists.
-- Publish stores sources into `served_urls` and refreshes `last_digest_*` / `last_topics`.
+- Teach from interest-matching articles only.
+- Publish stores sources into `served_urls`.
 
 ---
 
-## 2. User WITHOUT interests / stacks
+## 2. User WITHOUT interests
 
-### Day 1 (cold start)
-- `interest_scrape_terms` returns **`[]` on purpose** — no invented default tags.
-- Scrape pulls **untagged latest** Dev.to + HN tops + admin/RSS (no title filter when terms are empty).
-- Embedding query falls back to a generic “software engineering technical morning briefing” string if there is nothing else.
-- Theme for teaching is inferred from whatever articles landed (or a generic `"tech"`).
-- Still **learning-only**: news/repo dumps are dropped.
+### Newly joined (no yesterday briefing)
+- Terms = `primary_tech_stack` + `secondary_tech_stack`.
+- Scrape **today’s trending tutorials for that stack**.
+- Rank/generate **hard-match the stack**. No generic hardware / Apple product posts.
 
-### Day 2+ (still empty prefs, but has a digest)
-- Publish from day 1 filled `last_topics`, `last_digest_headline`, etc.
-- `profile_has_discovery_prefs` becomes **true** via continuity.
-- Scrape/rank/generate behave like a personalized user, steered by **yesterday’s themes**, not by admin stacks.
+### Returning (day 2+ — has yesterday headline/topics/embedding)
+- **Must continue yesterday**, not start a new random stack topic.
+- Rank query = stored `learning_path.last_digest_embedding` (the briefing vector saved at publish).
+- Scrape tags = yesterday tech tokens (`last_topics`) + **quiz** (`weak_topics` on fail, `next_step_topics` on pass) + **uncovered topics in the active stack**. Other stack families are not scraped.
+- Off-family titles are dropped (e.g. yesterday Python chunking → React 19 is rejected while the Python run is still open).
+- Passing a quiz **does not** hop stacks. Rotation happens only after **every topic in that stack's curriculum is covered** (`stack_run_is_complete` → `maybe_rotate_stack_run`). One briefing that mentions chunk/chunks/chunking counts as a single topic.
+- After the Python curriculum is done, the run moves to the next **family** on the profile (React, not FastAPI). The next briefing is that new stack — it does not keep pretending to continue Python.
+- Gemini re-rank is told to continue yesterday’s theme while the run is open, then to start the new stack after rotation.
+- Teaching copy still uses quiz pace (remedial vs advance).
+- Raw headlines like “MacBook colors” are **not** used as scrape tags (only known tech tokens).
+
+### No interests and no stack
+- Last resort: untagged latest learning posts from configured sites.
 
 ---
 
@@ -104,13 +104,12 @@ What changes after the first successful publish:
 | Signal | Day 1 | Day 2+ |
 |---|---|---|
 | `served_urls` | empty | yesterday’s source URLs excluded |
-| Yesterday’s briefing | none | headline, TL;DR, takeaways, themes fed into embedding + Gemini |
-| Active stack run | starts from first stack (if any) | stays on one stack until ~7 digests / ~6 covered angles, then rotates |
-| Quiz | none → pace `continue` | fail → simpler teaching; pass → advance |
+| Yesterday’s briefing | none | stored on the profile (`last_digest_*` + embedding). **Returning users with no interests rank against that embedding.** |
+| Quiz | none → pace `continue` | fail → simpler teaching + scrape `weak_topics`; pass → advance + scrape `next_step_topics` |
 
-Active stack / rotation: `resolve_active_stack`, `maybe_rotate_stack_run` in `fetch-blogs/src/models/profile.py`.
+Active stack / rotation: `resolve_active_stack`, `maybe_rotate_stack_run`, `stack_run_is_complete` in `fetch-blogs/src/models/profile.py`. Rotate only when every curriculum topic for the current family is in `stack_run_covered` (aliases collapsed). The next stack must be a **different family** (Python → React, not Python → FastAPI).
 
-Weak/next-step topic lists may be stored from quizzes but are **not** used to drive the next scrape.
+Weak/next-step topic lists from quizzes **do** steer the next scrape for returning users with empty interests (`quiz_focus_terms`). Users who filled interests still scrape interests only.
 
 ---
 
@@ -161,14 +160,16 @@ If FastAPI times out or Gemini models 404, Next.js may show a **local fallback**
 ## 7. Mental model
 
 ```text
-                    ┌─ has stacks/interests ─► tagged discovery
+                    ┌─ has interests ─────────► scrape/rank/generate those interests only
                     │
-   Generate ────────┼─ empty prefs, day 1 ───► untagged latest (learning only)
+   Generate ────────┼─ no interests, new join ► today's trending tutorials for that stack
                     │
-                    └─ empty prefs, day 2+ ──► continuity from yesterday
+                    ├─ no interests, returning ► yesterday + quiz + uncovered topics on the active stack; rotate family only when that stack is fully covered
+                    │
+                    └─ no interests, no stack ► last-resort learning posts
 
    Then for everyone:
-     rank (embeddings + scores) → learning briefing → save → update learning_path
+     rank (embeddings + scores + Gemini) → learning briefing → save embedding for tomorrow
 ```
 
-**In one sentence:** digests are personalized learning briefings — tagged when prefs exist, “today’s best learning posts” when they don’t, and always continued from yesterday once a digest exists.
+**In one sentence:** interests win when they exist; otherwise the briefing is today’s trending tutorials for the user’s tech stack — never a random hardware topic.

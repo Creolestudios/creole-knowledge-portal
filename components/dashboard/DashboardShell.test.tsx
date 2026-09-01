@@ -88,11 +88,11 @@ describe('DashboardShell', () => {
     );
   });
 
-  it('renders Past Blogs when the dashboard tab query is past', () => {
+  it('renders Past Blogs while keeping Daily Blog mounted so the reading timer continues', () => {
     nav.tab = 'past';
     render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
     expect(screen.getByTestId('past-tab')).toBeInTheDocument();
-    expect(screen.queryByTestId('daily-tab')).not.toBeInTheDocument();
+    expect(screen.getByTestId('daily-tab')).toBeInTheDocument();
   });
 
   it('renders Activity Tracker when the dashboard tab query is activity', () => {

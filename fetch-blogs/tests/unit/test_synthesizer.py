@@ -34,7 +34,7 @@ def test_payload_from_articles_keeps_title_when_body_is_empty() -> None:
     article = _article("HN story about Python asyncio", "")
     payload = synthesizer._payload_from_articles([article])
 
-    assert payload["sections"][0]["title"] == "Overview / Summary"
+    assert payload["sections"][0]["title"] == "Briefing"
     assert "Python asyncio" in payload["sections"][0]["content"]
     assert "Personalized articles were ranked" not in str(payload)
 
@@ -87,7 +87,7 @@ def test_synthesize_digest_uses_continuity_when_gemini_json_fails(
 
     digest = synthesizer.synthesize_digest(profile, [article])
 
-    assert digest.content.sections[0].title == "Brief"
+    assert digest.content.sections[0].title == "Briefing"
     assert any("change streams" in s.content.lower() for s in digest.content.sections)
     assert str(digest.content.sources[0].url).rstrip("/") == "https://dev.to/change-streams"
 
@@ -123,12 +123,12 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
 
     digest = synthesizer.synthesize_digest(profile, [article])
 
-    assert digest.content.headline == "Queues for your stack"
+    assert digest.content.headline == "Redis queues"
     assert digest.content.tldr == ["Celery plus Redis"]
-    assert digest.content.sections[0].title == "Brief"
+    assert digest.content.sections[0].title == "Briefing"
     assert "Celery workers today" in digest.content.sections[0].content
-    overview = next(s for s in digest.content.sections if s.title == "Overview / Summary")
-    assert "Celery workers drain Redis" in overview.content
+    briefing = next(s for s in digest.content.sections if s.title == "Briefing")
+    assert "Celery workers drain Redis" in briefing.content
 
 
 def test_call_gemini_raises_clear_quota_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -155,6 +155,34 @@ def test_call_gemini_raises_clear_quota_error(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(synthesizer.GeminiQuotaExceeded, match="quota exceeded \\(429\\)"):
         synthesizer._call_gemini("hello", as_json=False)
+
+
+def test_call_gemini_does_not_retry_504_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"n": 0}
+
+    class _Boom:
+        def generate_content(self, *_a, **_k):
+            calls["n"] += 1
+            raise RuntimeError("504 Deadline expired before operation could complete.")
+
+    monkeypatch.setattr(
+        synthesizer,
+        "get_llm_settings",
+        lambda: type("S", (), {"GEMINI_API_KEY": "k", "GEMINI_MODEL": "gemini-3.6-flash"})(),
+    )
+
+    import sys
+    import types
+
+    fake_genai = types.ModuleType("google.generativeai")
+    fake_genai.configure = lambda **_: None
+    fake_genai.GenerativeModel = lambda *_a, **_k: _Boom()
+    monkeypatch.setitem(sys.modules, "google.generativeai", fake_genai)
+    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+
+    with pytest.raises(RuntimeError, match="504 Deadline expired"):
+        synthesizer._call_gemini("hello", as_json=False)
+    assert calls["n"] == 1
 
 
 def test_junk_pdf_headline_is_replaced_with_article_title(
@@ -300,8 +328,8 @@ def test_teaching_still_runs_when_scraped_bodies_are_long(
 
     digest = synthesizer.synthesize_digest(profile, [article])
     assert calls["teaching"] == 1
-    # Canonical normalize maps teaching into Brief / Code / Overview
-    assert any(s.title in {"Brief", "Deep dive", "Overview / Summary"} for s in digest.content.sections)
+    # Canonical normalize maps teaching into Briefing / Summary
+    assert any(s.title in {"Briefing", "Summary"} for s in digest.content.sections)
     assert digest.word_count >= synthesizer._WORD_FLOOR
     assert digest.word_count <= synthesizer._WORD_CEILING
 
@@ -321,6 +349,9 @@ def test_pick_daily_theme_keeps_yesterday_python() -> None:
 def test_clip_to_words_and_markdown_helpers() -> None:
     assert synthesizer._clip_to_words("one two three", 0) == ""
     assert synthesizer._clip_to_words("one two three", 2) == "one two"
+    fenced = "```python\none two three four five six\n```"
+    clipped_fence = synthesizer._clip_to_words(fenced, 3)
+    assert clipped_fence.count("```") % 2 == 0
 
     cleaned = synthesizer._clean_scraped_markdown(
         "Intro {% include foo %} \nenter fullscreen mode\nBody"
@@ -486,8 +517,8 @@ def test_generate_teaching_sections_stops_when_floor_is_reached(
 ) -> None:
     profile = UserProfile(user_id="u1")
     articles = [
-        _article("First", "body"),
-        _article("Second", "body"),
+        _article("First python lesson", "body"),
+        _article("Second python lesson", "body"),
     ]
 
     def fake_call(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
@@ -504,7 +535,7 @@ def test_generate_teaching_top_up_failure_is_logged_not_fatal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     profile = UserProfile(user_id="u1")
-    article = _article("Chapter", "body")
+    article = _article("Python chapter", "body")
 
     def fake_call(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
         if "Continue the same TECHNICAL morning briefing" in prompt:
@@ -537,7 +568,7 @@ def test_synthesize_digest_with_scraped_only_and_custom_date(
     )
 
     assert digest.digest_date == date(2026, 1, 2)
-    assert digest.content.sections[0].title == "Brief"
+    assert digest.content.sections[0].title == "Briefing"
     assert digest.metrics.llm_tokens_used == 0
 
 
@@ -812,10 +843,303 @@ def test_normalize_digest_sections_enforces_canonical_titles() -> None:
     ]
     out = synthesizer._normalize_digest_sections(messy)
     titles = [s["title"] for s in out]
-    assert titles == ["Brief", "Code Snippet", "Overview / Summary"]
-    assert "useEffect" in out[1]["content"]
-    assert "```" in out[1]["content"]
-    assert "Yesterday we covered hooks" in out[0]["content"]
-    assert "Effects run after paint" in out[2]["content"]
-    assert "Cleanup functions" in out[2]["content"]
+    assert titles == ["Briefing", "Summary"]
+    briefing = out[0]["content"]
+    summary = out[1]["content"]
+    assert "useEffect" in briefing
+    assert "```" in briefing
+    assert "Yesterday we covered hooks" in briefing
+    assert "Cleanup functions" in briefing
+    assert "Effects run after paint" in summary
+
+
+def test_content_matches_source_rejects_dart_for_python_article() -> None:
+    article = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Split python strings on word boundaries. " * 20,
+    )
+    dart = "Flutter widgets rebuild when setState is called in Dart. " * 30
+    python = "Python text chunking respects word boundaries when slicing strings. " * 20
+    assert synthesizer._content_matches_source(dart, article) is False
+    assert synthesizer._content_matches_source(python, article) is True
+
+
+def test_previous_briefing_ignores_unrelated_yesterday_stack() -> None:
+    from src.models.profile import LearningPath
+
+    profile = UserProfile(
+        user_id="u1",
+        primary_tech_stack=["dart", "python"],
+        learning_path=LearningPath(
+            last_digest_headline="Flutter widget rebuilds",
+            last_digest_tldr=["Use setState carefully"],
+            active_stack="dart",
+        ),
+    )
+    article = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Use python slices so chunks stay on word boundaries.",
+    )
+    block = synthesizer._previous_briefing_block(profile, article)
+    assert "FIRST BRIEFING" in block
+    assert "YESTERDAY'S BRIEFING" not in block
+    assert "Flutter" not in block
+
+
+def test_off_topic_teaching_is_discarded_for_source_article(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = UserProfile(user_id="u1", name="Dev", primary_tech_stack=["dart"])
+    article = _article(
+        "Dart isolates and Flutter rebuilds",
+        "Dart isolates let Flutter widgets rebuild off the UI thread. " * 80,
+        url="https://dev.to/dart-isolates",
+    )
+
+    def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
+        if as_json:
+            return (
+                {
+                    "headline": "Python text chunking",
+                    "tldr": ["Slice python strings"],
+                    "continuation": "Yesterday's Python lesson continues.",
+                    "key_takeaways": ["Use python slices"],
+                },
+                12,
+            )
+        return ("Python slicing keeps word boundaries intact when chunking text. " * 40, 40)
+
+    monkeypatch.setattr(synthesizer, "_call_gemini", fake)
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 40)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
+
+    digest = synthesizer.synthesize_digest(profile, [article])
+    body = " ".join(section.content for section in digest.content.sections).lower()
+    assert "dart" in digest.content.headline.lower() or "flutter" in digest.content.headline.lower()
+    assert "python text chunking" not in digest.content.headline.lower()
+    assert "python slicing" not in body
+    assert "dart" in body or "flutter" in body
+    assert str(digest.content.sources[0].url).rstrip("/") == "https://dev.to/dart-isolates"
+
+
+def test_payload_from_articles_drops_mismatched_stack_body() -> None:
+    article = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "import 'package:material_ui/material_ui.dart'; class Card extends StatelessWidget {} "
+        * 30,
+    )
+    payload = synthesizer._payload_from_articles([article])
+    body = payload["sections"][0]["content"].lower()
+    assert "material_ui" not in body
+    assert "statelesswidget" not in body
+    assert "python" in body or "chunking" in body
+
+
+def test_select_lead_skips_title_body_stack_mismatch() -> None:
+    wrong = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Flutter material_ui CupertinoButton widgets. " * 40,
+    )
+    right = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Use python slices so chunks stay on word boundaries. " * 20,
+        url="https://dev.to/python-chunking",
+    )
+    assert synthesizer._select_lead_article([wrong, right]) is right
+
+
+def test_select_lead_prefers_user_stack_over_apple_mac() -> None:
+    apple = _article(
+        "Apple and Mac hardware roundup",
+        "MacBook Air and iPhone camera rumors. " * 20,
+        url="https://news.example/apple",
+    )
+    python = _article(
+        "Python asyncio task groups",
+        "Python asyncio task groups let you wait on child tasks. " * 20,
+        url="https://dev.to/asyncio",
+    )
+    profile = UserProfile(user_id="u1", primary_tech_stack=["python"])
+    assert synthesizer._select_lead_article([apple, python], profile) is python
+
+
+def test_select_lead_rejects_react_when_yesterday_was_python() -> None:
+    from src.models.profile import LearningPath
+
+    react = _article(
+        "React 19 Actions: I Explained 3 Hooks Without Ever Explaining What an Action Is",
+        "useActionState useFormStatus useOptimistic React 19 forms. " * 20,
+        url="https://dev.to/react-19-actions",
+    )
+    python = _article(
+        "Python chunking: overlapping windows for RAG",
+        "Python slice overlap math for text chunks. " * 20,
+        url="https://dev.to/python-chunks",
+    )
+    profile = UserProfile(
+        user_id="u-py",
+        primary_tech_stack=["python", "react"],
+        learning_path=LearningPath(
+            last_digest_headline="Python Text Chunking: Overlapping Slices",
+            last_topics=["python", "chunks"],
+            last_digest_embedding=[0.1] * 8,
+        ),
+    )
+    assert synthesizer._select_lead_article([react, python], profile) is python
+    assert synthesizer._select_lead_article([react], profile) is None
+
+
+def test_select_lead_rejects_portuguese_article() -> None:
+    portuguese = _article(
+        "TF-IDF: A matemática dos anos 70 que expõe a farsa do seu RAG de milhões",
+        "Nos últimos artigos da série, cobrimos desde a geometria da busca vetorial. " * 20,
+        url="https://dev.to/tfidf-pt",
+    )
+    english = _article(
+        "TF-IDF for RAG pipelines in Python",
+        "Use TF-IDF as a cheap first-stage retriever before embeddings. " * 20,
+        url="https://dev.to/tfidf-en",
+    )
+    profile = UserProfile(user_id="u1", primary_tech_stack=["python"])
+    assert synthesizer._select_lead_article([portuguese, english], profile) is english
+    assert synthesizer._select_lead_article([portuguese], profile) is None
+    payload = synthesizer._payload_from_articles([portuguese])
+    body = str(payload["sections"][0]["content"]).lower()
+    assert "cobrimos" not in body
+    assert "geometria" not in body
+
+
+def test_technical_articles_keep_only_user_stack() -> None:
+    rust = _article(
+        "Rust ownership and borrowing",
+        "Rust ownership moves values and borrowing lets you share them. " * 20,
+        url="https://dev.to/rust",
+    )
+    python = _article(
+        "Python type hints for FastAPI",
+        "FastAPI uses Python type hints to validate requests. " * 20,
+        url="https://dev.to/fastapi",
+    )
+    profile = UserProfile(user_id="u1", primary_tech_stack=["python"])
+    kept = synthesizer._technical_articles([rust, python], profile)
+    assert python in kept
+    assert rust not in kept
+
+
+def test_technical_articles_drop_apple_mac_for_python_user() -> None:
+    apple = _article(
+        "Apple and Mac: what to buy this week",
+        "MacBook Pro and iPhone lineup. " * 20,
+        url="https://news.example/mac",
+    )
+    python = _article(
+        "Python type hints for FastAPI",
+        "FastAPI uses Python type hints to validate requests. " * 20,
+        url="https://dev.to/fastapi",
+    )
+    profile = UserProfile(user_id="u1", primary_tech_stack=["python"])
+    kept = synthesizer._technical_articles([apple, python], profile)
+    assert python in kept
+    assert apple not in kept
+
+
+def test_related_cluster_keeps_same_stack_and_drops_other_language() -> None:
+    lead = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Use python slices so chunks stay on word boundaries. " * 10,
+        url="https://dev.to/chunk",
+    )
+    related = _article(
+        "Python asyncio chunked stream reads",
+        "Python asyncio reads chunked streams without splitting words. " * 40,
+        url="https://dev.to/asyncio-chunks",
+    )
+    dart = _article(
+        "Flutter material_ui migration",
+        "Flutter widgets and cupertino_ui ThemeData. " * 40,
+        url="https://dev.to/flutter",
+    )
+    cluster = synthesizer._related_cluster(lead, [lead, dart, related])
+    assert related in cluster
+    assert dart not in cluster
+    assert cluster[0] is lead
+
+
+def test_short_lead_is_filled_from_related_python_article(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = UserProfile(user_id="u1", name="Dev", primary_tech_stack=["python"])
+    lead = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Python slicing intro only. " * 8,
+        url="https://dev.to/chunk",
+    )
+    related = _article(
+        "Python word-boundary chunking with slices",
+        "Python slicing keeps chunks on word boundaries when reading streams. " * 120,
+        url="https://dev.to/more-chunking",
+    )
+    dart = _article(
+        "Flutter material_ui split packages",
+        "Flutter cupertino_ui widgets rebuild the tree. " * 120,
+        url="https://dev.to/flutter",
+    )
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 80)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
+
+    digest = synthesizer.synthesize_digest(
+        profile, [lead, dart, related], scraped_only=True
+    )
+    body = " ".join(section.content for section in digest.content.sections).lower()
+    assert digest.word_count >= 80
+    assert "python" in body
+    assert "flutter" not in body
+    assert "material_ui" not in body
+    urls = [str(source.url) for source in digest.content.sources]
+    assert any("more-chunking" in url for url in urls)
+
+
+def test_keep_on_topic_preserves_fenced_code_with_blank_lines() -> None:
+    headline = "Python Text Chunking: Respecting Word Boundaries with Slices"
+    body = (
+        "Python slicing keeps chunks on word boundaries.\n\n"
+        "```python\n"
+        "text = 'hello world'\n"
+        "\n"
+        "chunk = text[0:5]\n"
+        "```\n\n"
+        "That slice stops on a word boundary.\n"
+    )
+    kept = synthesizer._keep_on_topic_text(body, headline)
+    assert "```python" in kept
+    assert "chunk = text[0:5]" in kept
+    assert kept.count("```") == 2
+
+
+def test_pad_shortfall_does_not_flatten_code_fences() -> None:
+    article = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Python slicing intro. " * 20
+        + "\n\n```python\ntext = 'hello world'\nchunk = text[0:5]\n```\n\n"
+        + "More python slicing explanation. " * 80,
+    )
+    padded = synthesizer._pad_shortfall_from_articles(
+        [article],
+        [],
+        floor=50,
+        ceiling=4000,
+    )
+    joined = "\n".join(str(sec.get("content") or "") for sec in padded)
+    assert "```python" in joined
+    assert "chunk = text[0:5]" in joined
+
+
+def test_source_excerpt_ignores_dart_body_for_python_title() -> None:
+    article = _article(
+        "Python Text Chunking: Respecting Word Boundaries with Slices",
+        "Flutter widgets rebuild with material_ui ThemeData. " * 40,
+    )
+    excerpt = synthesizer._source_excerpt_for_teaching(article)
+    assert "material_ui" not in excerpt.lower()
+    assert "python" in excerpt.lower() or "chunking" in excerpt.lower()
 

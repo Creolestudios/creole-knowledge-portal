@@ -9,7 +9,12 @@ from pydantic import BaseModel
 
 from src.api.routes.pipeline import run_celery_pipeline_and_wait
 from src.core.db import init_db
-from src.generator.synthesizer import synthesize_digest, _strip_blog_frontmatter
+from src.generator.synthesizer import (
+    _keep_on_topic_text,
+    _strip_blog_frontmatter,
+    synthesize_digest,
+    text_matches_headline,
+)
 from src.models.article import Article
 from src.api.routes.pipeline import execute_pipeline_for_user
 from src.models.digest import DailyDigest
@@ -100,9 +105,12 @@ def _display_title(headline: str, article: dict) -> str:
             "today's curated reading",
             "untitled",
             "brief",
+            "briefing",
             "code snippet",
             "overview / summary",
             "overview/summary",
+            "summary",
+            "key action",
             "continuation from yesterday",
         }:
             first_section = ""
@@ -116,26 +124,31 @@ def _display_title(headline: str, article: dict) -> str:
 
 
 def _section_bucket(title: str) -> str:
-    """Map a section title into the dashboard display order buckets."""
+    """Map a section title into Briefing, Key Action, or Summary."""
     text = title.strip().lower()
-    if "code" in text:
-        return "code"
-    if text in {
-        "brief",
-        "why this matters today",
-        "continuation from yesterday",
-    } or text.startswith("brief"):
-        return "brief"
-    if "overview" in text or "summary" in text or text == "going deeper":
-        return "overview"
-    return "overview"
+    if "key action" in text:
+        return "key_action"
+    if "summary" in text or text.startswith("overview"):
+        return "summary"
+    return "briefing"
 
 
-def _ordered_section_markdown(sections: list) -> list[str]:
-    """Emit Brief → Code Snippet → Overview/Summary in that order."""
+def _clip_action_line(text: str) -> str:
+    """Keep Key Action as one short bullet, not a pasted article."""
+    raw = re.sub(r"^#+\s+", "", str(text or "").strip())
+    if "\n## " in raw:
+        raw = raw.split("\n", 1)[0]
+    words = raw.split()
+    if len(words) > 40:
+        raw = " ".join(words[:40]).rstrip(".,;") + "."
+    return raw
+
+
+def _section_bodies(sections: list, headline: str = "") -> dict[str, list[str]]:
+    """Collect Briefing (article + code/diagrams) and Summary bodies."""
     from src.extractors.topic_filter import is_off_topic_lifestyle
 
-    buckets: dict[str, list[str]] = {"brief": [], "code": [], "overview": []}
+    buckets: dict[str, list[str]] = {"briefing": [], "summary": [], "key_action": []}
     for sec in sections:
         if not isinstance(sec, dict):
             sec = getattr(sec, "model_dump", lambda: {})()
@@ -145,107 +158,108 @@ def _ordered_section_markdown(sections: list) -> list[str]:
         )
         if not body:
             continue
-        # Never surface lifestyle how-tos (screenshots, golf, etc.) in the digest body
-        if is_off_topic_lifestyle(title, body[:1500]):
+        if headline:
+            body = _keep_on_topic_text(body, headline)
+            if not body:
+                continue
+        if "```" not in body and is_off_topic_lifestyle(title, body[:1500]):
             continue
         buckets[_section_bucket(title)].append(body)
-
-    parts: list[str] = []
-    if buckets["brief"]:
-        parts.append("## Brief\n")
-        parts.append("\n\n".join(buckets["brief"]))
-        parts.append("")
-    if buckets["code"]:
-        parts.append("## Code Snippet\n")
-        parts.append("\n\n".join(buckets["code"]))
-        parts.append("")
-    if buckets["overview"]:
-        parts.append("## Overview / Summary\n")
-        parts.append("\n\n".join(buckets["overview"]))
-        parts.append("")
-    return parts
+    return buckets
 
 
 def flat_map_digest_for_dashboard(doc: dict) -> dict:
     """Flatten a digest document into the dashboard blog shape.
 
     Display order (title is separate in the UI):
-    Daily Overview → Brief → Code Snippet → Overview/Summary →
-    Key Actionables → Sources & Citations.
+    Daily Overview → Briefing → Key Action → Summary → Source and Citation.
 
     Accepts both the legacy hybrid shape (``article``) and Beanie DailyDigest
     (``content``).
     """
     article = doc.get("content") or doc.get("article") or {}
     headline = article.get("headline", "Morning Briefing")
+    display_title = _display_title(str(headline or ""), article)
 
     # Title is rendered by the dashboard heading — do not repeat it as markdown H1.
     markdown_parts: list[str] = []
 
     tldr = article.get("tldr", [])
     if tldr:
-        markdown_parts.append("## Daily Overview (TL;DR)\n")
-        for item in tldr:
+        overview_bits = [
+            str(item).strip()
+            for item in tldr
+            if str(item).strip()
+            and (not display_title or text_matches_headline(str(item), display_title))
+        ]
+        if overview_bits:
+            markdown_parts.append("## Daily Overview\n")
+            for item in overview_bits:
+                markdown_parts.append(f"- {_clip_action_line(item)}")
+            markdown_parts.append("")
+
+    buckets = _section_bodies(article.get("sections") or [], display_title)
+    if buckets["briefing"]:
+        markdown_parts.append("## Briefing\n")
+        markdown_parts.append("\n\n".join(buckets["briefing"]))
+        markdown_parts.append("")
+
+    takeaways = [
+        _clip_action_line(str(item))
+        for item in (article.get("key_takeaways") or [])
+        if str(item).strip()
+        and (not display_title or text_matches_headline(str(item), display_title))
+    ]
+    takeaways = [item for item in takeaways if item]
+    if buckets["key_action"]:
+        for extra in buckets["key_action"]:
+            line = _clip_action_line(extra)
+            if (
+                line
+                and line not in takeaways
+                and (not display_title or text_matches_headline(line, display_title))
+            ):
+                takeaways.append(line)
+    if takeaways:
+        markdown_parts.append("## Key Action\n")
+        for item in takeaways[:8]:
             markdown_parts.append(f"- {item}")
         markdown_parts.append("")
 
-    markdown_parts.extend(_ordered_section_markdown(article.get("sections") or []))
-
-    takeaways = article.get("key_takeaways", [])
-    if takeaways:
-        markdown_parts.append("## Key Actionable Takeaways\n")
-        for item in takeaways:
-            markdown_parts.append(f"- {item}")
+    if buckets["summary"]:
+        markdown_parts.append("## Summary\n")
+        markdown_parts.append("\n\n".join(buckets["summary"]))
         markdown_parts.append("")
 
     sources_raw = article.get("sources", []) or []
-    sections_for_cite = article.get("sections") or []
-    cited_ids: set[int] = set()
-    for sec in sections_for_cite:
-        if not isinstance(sec, dict):
-            sec = getattr(sec, "model_dump", lambda: {})()
-        for item in sec.get("sources_cited") or []:
-            try:
-                cited_ids.add(int(item))
-            except (TypeError, ValueError):
-                continue
-
     from src.extractors.topic_filter import is_source_title_junk
+
+    def _source_url(src: dict) -> str:
+        return str(src.get("url") or "").strip()
 
     def _source_ok(src: dict) -> bool:
         title = str(src.get("title") or "").strip()
-        url = str(src.get("url") or "").strip()
+        url = _source_url(src)
         if not title or not url or url == "#":
             return False
         if is_source_title_junk(title):
             return False
-        # Keep cited sources even when the title lacks an obvious tech keyword
-        return True
+        return url.startswith("http://") or url.startswith("https://")
 
     sources: list = []
+    seen_urls: set[str] = set()
     for src in sources_raw:
         if not isinstance(src, dict):
             src = getattr(src, "model_dump", lambda: {})()
         if not _source_ok(src):
             continue
-        src_id = src.get("id")
-        if cited_ids and src_id is not None:
-            try:
-                if int(src_id) not in cited_ids:
-                    continue
-            except (TypeError, ValueError):
-                pass
+        url = _source_url(src).rstrip("/")
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
         sources.append(src)
 
-    # If citation filtering emptied the list, keep tech-filtered sources only
-    if not sources:
-        for src in sources_raw:
-            if not isinstance(src, dict):
-                src = getattr(src, "model_dump", lambda: {})()
-            if _source_ok(src):
-                sources.append(src)
-
-    # Last resort: further_reading links (still interest-filtered)
+    # Last resort: further_reading links
     if not sources:
         for item in article.get("further_reading") or []:
             if not isinstance(item, dict):
@@ -265,14 +279,14 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
                 }
             )
 
-    # Always end the digest with Sources & Citations when we have real links
+    # Always end the digest with Source and Citation when we have real links
     if sources:
-        markdown_parts.append("## Sources & Citations\n")
+        markdown_parts.append("## Source and Citation\n")
         for src in sources:
             if not isinstance(src, dict):
                 src = getattr(src, "model_dump", lambda: {})()
             title = str(src.get("title") or "").strip() or "Source"
-            url = str(src.get("url") or "").strip()
+            url = _source_url(src)
             domain = str(src.get("source_domain") or "").strip()
             author = str(src.get("author") or "").strip()
             if not url or url == "#":
@@ -301,11 +315,9 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
     if reading is None:
         reading = max(1.0, (word_count or derived_words) / 225.0)
 
-    title = _display_title(str(headline or ""), article)
-
     return {
         "id": doc.get("id"),
-        "title": title,
+        "title": display_title,
         "content": content,
         "published_at": generated_at,
         "digest_date": digest_date,

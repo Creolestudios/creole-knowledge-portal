@@ -5,6 +5,7 @@ import { Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, Calendar
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 import { useRouter } from 'next/navigation';
+import { isInventedFallback } from '@/lib/digests/invented-fallback';
 
 /**
  * "Today" in IST (Asia/Kolkata) — must match the server's definition of
@@ -41,6 +42,17 @@ function isTodaysBrief(blog: {
   return key === localDateKey(new Date());
 }
 
+function isDisplayableTodayBrief(blog: {
+  digest_date?: string | null;
+  published_at?: string | null;
+  generated_at?: string | null;
+  is_fallback?: boolean;
+  fallback?: boolean;
+  source?: string | null;
+} | null): boolean {
+  return isTodaysBrief(blog) && !isInventedFallback(blog);
+}
+
 function formatFetchedLabel(value?: string | null): string {
   const dateKey = toDateKey(value) || localDateKey(new Date());
   const today = localDateKey(new Date());
@@ -62,6 +74,38 @@ function shouldRunReadingTimer(quizStatus: any | null | undefined): boolean {
   return true;
 }
 
+function readingTimerKey(blogId: string): string {
+  return `reading_timer:${blogId}`;
+}
+
+function readTimerState(blogId: string): { startedAt: number; stoppedAt: number | null } | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(readingTimerKey(blogId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { startedAt?: number; stoppedAt?: number | null };
+    const startedAt = Number(parsed?.startedAt);
+    if (!startedAt) return null;
+    const stoppedRaw = parsed?.stoppedAt;
+    return {
+      startedAt,
+      stoppedAt: stoppedRaw ? Number(stoppedRaw) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeTimerState(blogId: string, state: { startedAt: number; stoppedAt: number | null }) {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(readingTimerKey(blogId), JSON.stringify(state));
+}
+
+function elapsedSeconds(state: { startedAt: number; stoppedAt: number | null }): number {
+  const end = state.stoppedAt ?? Date.now();
+  return Math.max(0, Math.floor((end - state.startedAt) / 1000));
+}
+
 export default function DailyBlogTab({ user, profile }: { user?: any; profile?: any }) {
   const router = useRouter();
   const [brief, setBrief] = useState<any>(null);
@@ -79,14 +123,16 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const [quizLoading, setQuizLoading] = useState(false);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (timerActive) {
-      interval = setInterval(() => {
-        setReadSeconds((prev) => prev + 1);
-      }, 1000);
-    }
+    if (!timerActive || !brief?.id) return undefined;
+    const tick = () => {
+      const state = readTimerState(brief.id);
+      if (!state) return;
+      setReadSeconds(elapsedSeconds(state));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [timerActive]);
+  }, [timerActive, brief?.id]);
 
   const applyBrief = useCallback(async (blog: any) => {
     setBrief(blog);
@@ -106,7 +152,22 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     } catch (e) {
       console.error('Error loading quiz status:', e);
     }
-    setTimerActive(shouldRunReadingTimer(nextQuizStatus));
+
+    if (blog?.id) {
+      const running = shouldRunReadingTimer(nextQuizStatus);
+      let state = readTimerState(blog.id);
+      if (!state) {
+        state = { startedAt: Date.now(), stoppedAt: running ? null : Date.now() };
+        writeTimerState(blog.id, state);
+      } else if (!running && !state.stoppedAt) {
+        state = { ...state, stoppedAt: Date.now() };
+        writeTimerState(blog.id, state);
+      }
+      setReadSeconds(elapsedSeconds(state));
+      setTimerActive(running);
+    } else {
+      setTimerActive(false);
+    }
   }, []);
 
   const fetchLatestBrief = useCallback(async () => {
@@ -122,17 +183,21 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
 
       let fetchedBlog = null;
 
-      if (data?.success && data.blog && isTodaysBrief(data.blog)) {
+      if (data?.success && data.blog && isDisplayableTodayBrief(data.blog)) {
         fetchedBlog = data.blog;
       } else {
-        // 2. If no valid digest for today, check if the user is actively reading a past blog
+        // 2. If no valid digest for today, only restore a session blog that is also today's real digest.
         const activeBlogId = typeof window !== 'undefined' ? sessionStorage.getItem('active_blog_id') : null;
         if (activeBlogId) {
           try {
             const fallbackRes = await fetch(`/api/digests/by-id?id=${activeBlogId}`, { cache: 'no-store' });
             if (fallbackRes.ok) {
               const fallbackData = await fallbackRes.json();
-              if (fallbackData?.success && fallbackData.blog) {
+              if (
+                fallbackData?.success &&
+                fallbackData.blog &&
+                isDisplayableTodayBrief(fallbackData.blog)
+              ) {
                 fetchedBlog = fallbackData.blog;
               }
             }
@@ -203,40 +268,38 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
       if (res.ok) {
         setGenerationStep('Finalizing your Morning Brief...');
         const data = await res.json();
-        if (data.success && data.blog) {
+        if (data.success && data.blog && isDisplayableTodayBrief(data.blog)) {
           setSynthError(null);
-          await applyBrief({
-            ...data.blog,
-            is_fallback: data.blog.is_fallback ?? data.fallback ?? false,
-            fallback_reason: data.blog.fallback_reason ?? data.fallback_reason,
-            fallback_kind: data.blog.fallback_kind ?? data.fallback_kind,
-          });
+          await applyBrief(data.blog);
+        } else if (data.success && data.blog && isInventedFallback(data.blog)) {
+          setSynthError("Today's briefing was not generated. Try Synthesize again.");
         } else {
-          const msg = 'Generation completed but briefing was not retrieved.';
-          setSynthError(msg);
-          alert(`Synthesis failed: ${msg}`);
+          setSynthError('Generation completed but the briefing was not retrieved. Try Synthesize again.');
         }
       } else {
         const errorData = await res.json().catch(() => ({}));
-        const msg =
+        setSynthError(
           errorData.error ||
-          (res.status === 429
-            ? 'Gemini API quota exceeded (429). Wait for reset, then retry.'
-            : `Synthesis failed (HTTP ${res.status}).`);
-        setSynthError(msg);
-        alert(`Synthesis failed: ${msg}`);
+            (res.status === 429
+              ? 'Gemini API quota exceeded. Wait for the daily limit to reset, then try Synthesize again.'
+              : res.status === 503
+                ? "Today's briefing is still being written. Wait a minute, then try Synthesize again."
+                : `Today's briefing was not generated (HTTP ${res.status}). Try Synthesize again.`),
+        );
       }
     } catch (e: any) {
       clearInterval(stepInterval);
-      const msg = e.message || String(e);
-      setSynthError(`Network error: ${msg}`);
-      alert(`Network error: ${msg}`);
+      setSynthError(
+        e?.message
+          ? `Could not reach the briefing service: ${e.message}. Try Synthesize again.`
+          : 'Could not reach the briefing service. Try Synthesize again.',
+      );
     } finally {
       setGenerating(false);
     }
   };
 
-  const hasBrief = !!brief;
+  const hasBrief = isDisplayableTodayBrief(brief);
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
@@ -312,14 +375,17 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 <Sparkles size={40} />
               </div>
               <div className="space-y-3">
-                <h2 className="text-3xl font-black tracking-tight">AI Factory is Synthesizing...</h2>
+                <h2 className="text-3xl font-black tracking-tight">Preparing today&apos;s briefing</h2>
+                <p className="text-zinc-400 text-sm font-medium">
+                  Scraping, ranking, and writing your personalized article. This can take a few minutes.
+                </p>
               </div>
               <div className="w-full bg-zinc-800 h-2.5 rounded-full overflow-hidden relative shadow-inner">
                 <div className="absolute top-0 left-0 h-full bg-brand rounded-full animate-progress-loading w-[85%] shadow-brand" />
               </div>
               <div className="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5 inline-block min-w-[320px]">
                 <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-extrabold block mb-2">
-                  Current Pipeline Process
+                  Current step
                 </span>
                 <p className="text-brand font-mono text-xs font-bold animate-pulse">{generationStep}</p>
               </div>
@@ -367,22 +433,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 </h1>
               </div>
               <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card overflow-hidden">
-                {(brief.is_fallback || brief.fallback) && (
-                  <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-                    <p className="text-xs font-black uppercase tracking-widest text-amber-900">
-                      Fallback article
-                    </p>
-                    <p className="mt-1 text-sm text-amber-900/90">
-                      The normal scrape and synthesize pipeline could not produce today&apos;s
-                      briefing, so this Next.js fallback was shown instead.
-                    </p>
-                    {brief.fallback_reason && (
-                      <p className="mt-2 text-xs font-mono text-amber-800 break-words whitespace-pre-wrap">
-                        Error: {String(brief.fallback_reason)}
-                      </p>
-                    )}
-                  </div>
-                )}
                 <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
                   {brief.title}
                 </h2>
@@ -558,10 +608,14 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
               </div>
               <div className="space-y-4">
                 <h2 className="text-4xl font-black tracking-tight leading-none">
-                  Your Daily Tech Briefing is Ready.
+                  {synthError
+                    ? "Today's briefing wasn't generated."
+                    : 'Your Daily Tech Briefing is Ready.'}
                 </h2>
                 <p className="text-zinc-400 text-sm font-medium">
-                  No briefing for today yet. Synthesize once to generate this morning&apos;s article.
+                  {synthError
+                    ? 'The pipeline did not produce an article for today. Try Synthesize again.'
+                    : "No briefing for today yet. Synthesize once to generate this morning's article."}
                 </p>
               </div>
               <button

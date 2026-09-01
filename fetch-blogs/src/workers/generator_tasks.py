@@ -80,18 +80,16 @@ async def _hydrate_previous_briefing(profile: UserProfile) -> None:
 
 
 async def _fallback_articles(profile: UserProfile, limit: int = 10) -> list[Article]:
-    """Corpus fallback: interest-matched, or tech from configured sites when interests empty."""
+    """Corpus fallback: interest match, else stack match, else configured-site learning."""
     from src.extractors.topic_filter import (
         has_tech_learning_signal,
         is_non_learning,
         matches_any_term,
     )
-    from src.ranker.next_day import continuity_scrape_terms, interest_scrape_terms, profile_has_interests
+    from src.ranker.next_day import discovery_match_terms
 
     served = {str(url).rstrip("/") for url in profile.learning_path.served_urls}
-    terms = interest_scrape_terms(profile)
-    has_interests = profile_has_interests(profile)
-    continuity = continuity_scrape_terms(profile) if not has_interests else []
+    match_terms = discovery_match_terms(profile)
     site_hosts = {
         "dev.to",
         "www.dev.to",
@@ -117,15 +115,14 @@ async def _fallback_articles(profile: UserProfile, limit: int = 10) -> list[Arti
         ):
             continue
         hay = f"{title} {body} {' '.join(article.topics or [])}"
-        if has_interests:
-            if not terms or not matches_any_term(hay, terms):
+        if match_terms:
+            if not matches_any_term(hay, match_terms):
                 continue
         else:
             host = url.split("/")[2].lower() if "://" in url else ""
             domain = str(article.source_domain or "").lower()
             site_ok = host in site_hosts or domain in site_hosts
-            theme_ok = continuity and matches_any_term(hay, continuity)
-            if not site_ok and not theme_ok:
+            if not site_ok:
                 continue
             if not has_tech_learning_signal(title, body):
                 continue

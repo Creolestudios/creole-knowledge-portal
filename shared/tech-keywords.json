@@ -78,7 +78,9 @@
     "qwen",
     "gpt",
     "rust",
-    "java"
+    "java",
+    "dart",
+    "flutter"
   ],
   "shortTokens": ["go", "ai", "r", "c", "js", "ts", "ui", "ux", "db", "api", "css", "html", "sql", "node", "java", "rust"],
   "sourceJunkMarkers": [

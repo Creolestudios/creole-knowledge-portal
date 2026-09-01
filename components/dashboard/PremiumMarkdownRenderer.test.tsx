@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
+import { PremiumMarkdownRenderer, looksLikeAsciiDiagram, looksLikeSourceCode } from './PremiumMarkdownRenderer';
 
 describe('PremiumMarkdownRenderer', () => {
   it('renders headings h1-h3', () => {
@@ -104,7 +104,7 @@ describe('PremiumMarkdownRenderer', () => {
     ].join('\n');
     const { container } = render(<PremiumMarkdownRenderer content={diagram} />);
     expect(screen.getByText(/Diagram/i)).toBeInTheDocument();
-    expect(container.querySelector('ol')).toBeTruthy();
+    expect(screen.getByTestId('digest-diagram')).toBeTruthy();
     expect(container.textContent).toMatch(/RAG INGESTION PIPELINE/);
   });
 
@@ -168,6 +168,21 @@ describe('PremiumMarkdownRenderer', () => {
     const { container } = render(<PremiumMarkdownRenderer content={md} />);
     expect(screen.getByText(/Diagram/i)).toBeInTheDocument();
     expect(screen.getByText(/Slice 1/i)).toBeInTheDocument();
+  });
+
+  it('keeps Source and Citation links at the end', () => {
+    const md = `## Briefing
+React hooks lesson.
+
+## Source and Citation
+- [React hooks guide](https://dev.to/hooks) — dev.to
+`;
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByRole('link', { name: /React hooks/i })).toHaveAttribute(
+      'href',
+      'https://dev.to/hooks',
+    );
+    expect(screen.getByText(/Source and Citation/i)).toBeInTheDocument();
   });
 
   it('keeps Sources & Citations at the end with links', () => {
@@ -257,7 +272,7 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
 
     const { container } = render(<PremiumMarkdownRenderer content={diagram} />);
     expect(screen.getByText('Diagram')).toBeInTheDocument();
-    expect(container.querySelector('ol')).toBeTruthy();
+    expect(screen.getByTestId('digest-diagram')).toBeTruthy();
     expect(container.textContent).toMatch(/Dense Retrieval/);
     expect(container.textContent).toMatch(/Rank Fusion/);
   });
@@ -550,7 +565,7 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
 
     const { container } = render(<PremiumMarkdownRenderer content={broken} />);
     expect(screen.getByText('Diagram')).toBeInTheDocument();
-    expect(container.querySelector('ol')).toBeTruthy();
+    expect(screen.getByTestId('digest-diagram')).toBeTruthy();
   });
 
   it('restores bare python/text language labels into proper fenced blocks', () => {
@@ -655,7 +670,7 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
     const { container } = render(<PremiumMarkdownRenderer content={md} />);
     expect(screen.getByText(/Fragment <= max_size/i)).toBeInTheDocument();
     expect(screen.getByText(/Try split by/i)).toBeInTheDocument();
-    expect(container.querySelector('ol')).toBeTruthy();
+    expect(screen.getByTestId('digest-diagram')).toBeTruthy();
   });
 
   it('renders chunk demo markers as architecture flow cards', () => {
@@ -670,7 +685,7 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
     render(<PremiumMarkdownRenderer content={md} />);
     expect(screen.getByText(/Chunk 1:/i)).toBeInTheDocument();
     expect(screen.getByText(/Chunk 2:/i)).toBeInTheDocument();
-    expect(screen.getByText(/Architecture/i)).toBeInTheDocument();
+    expect(screen.getByText(/Diagram/i)).toBeInTheDocument();
   });
 
   it('coalesces split chunk-demo paragraphs and hides raw marker lines', () => {
@@ -690,6 +705,50 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
     expect(screen.getByText(/Chunk 1:/i)).toBeInTheDocument();
     expect(screen.getByText(/Chunk 2:/i)).toBeInTheDocument();
     expect(screen.queryByText(/--- Chunk 1 \(114 chars\) ---/)).not.toBeInTheDocument();
+  });
+
+  it('boxes fenced python slice examples as Code Snippet', () => {
+    const md = [
+      '```python',
+      "text = 'hello world'",
+      'chunk = text[0:5]',
+      '```',
+    ].join('\n');
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByText('Code Snippet')).toBeInTheDocument();
+    expect(screen.getByText(/chunk = text\[0:5\]/)).toBeInTheDocument();
+  });
+
+  it('renders Dart class members as Code Snippet, not Diagram', () => {
+    const md = [
+      "import 'package:material_ui/material_ui.dart';",
+      '',
+      'class DashboardCard extends StatelessWidget {',
+      '  final String title;',
+      '  const DashboardCard({required this.title});',
+      '}',
+    ].join('\n');
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByText('Code Snippet')).toBeInTheDocument();
+    expect(screen.queryByText('Diagram')).not.toBeInTheDocument();
+  });
+
+  it('does not treat Dart fields separated by pipe-v as a diagram', () => {
+    const md = [
+      'class MigrationAstVisitor extends RecursiveAstVisitor {',
+      '        |',
+      '        v',
+      'final List obsoleteImports = [];',
+      '        |',
+      '        v',
+      'bool hasMaterialSymbols = false;',
+      '}',
+    ].join('\n');
+    expect(looksLikeSourceCode(md)).toBe(true);
+    expect(looksLikeAsciiDiagram(md)).toBe(false);
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getAllByText('Code Snippet').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^Diagram$/)).not.toBeInTheDocument();
   });
 
   it('renders bare javascript import as code snippet not diagram', () => {
@@ -730,5 +789,57 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
       expect(pre.textContent).toMatch(/\+/);
       expect(pre.textContent).not.toMatch(/┌/);
     }
+  });
+
+  it('renders | v arrow flows as diagram cards, not plain text or CODE SNIPPET', () => {
+    const md = [
+      'User Question',
+      '        |',
+      '        v',
+      'LLM Tool Call Request ("search_ops_notes")',
+      '        |',
+      '        v',
+      'Search Tool Embeds Query & Calculates Cosine',
+      '        |',
+      '        v',
+      'Top Matching Chunk Returned to LLM Context',
+    ].join('\n');
+
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByText('Diagram')).toBeInTheDocument();
+    expect(screen.queryByText('Code Snippet')).not.toBeInTheDocument();
+    expect(screen.getByTestId('digest-diagram')).toBeInTheDocument();
+    expect(screen.getByText('User Question')).toBeInTheDocument();
+    expect(screen.getByText(/Top Matching Chunk Returned/)).toBeInTheDocument();
+  });
+
+  it('renders Prompt + Codebase stacks as diagram cards', () => {
+    const md = [
+      'Prompt',
+      '  +',
+      'Codebase',
+      '  +',
+      'Documentation',
+      '  +',
+      'Tests',
+      '  =',
+      'AI Context',
+    ].join('\n');
+
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByText('Diagram')).toBeInTheDocument();
+    expect(screen.getByTestId('digest-diagram')).toBeInTheDocument();
+    expect(screen.getByText('AI Context')).toBeInTheDocument();
+    expect(screen.getByText('Codebase')).toBeInTheDocument();
+  });
+
+  it('keeps real python fences as Code Snippet', () => {
+    render(
+      <PremiumMarkdownRenderer
+        content={'```python\npacked_chunks = []\nfor chunk in target_chunks:\n    packed_chunks.append(chunk)\n```'}
+      />,
+    );
+    expect(screen.getByText('Code Snippet')).toBeInTheDocument();
+    expect(screen.getByText(/packed_chunks = \[\]/)).toBeInTheDocument();
   });
 });
