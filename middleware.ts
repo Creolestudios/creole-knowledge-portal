@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import { authCookieDefaults } from '@/lib/supabase/cookie-options';
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -33,10 +34,8 @@ export async function middleware(request: NextRequest) {
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, {
               ...options,
-              sameSite: 'none',
-              secure: true,
-              path: '/',
-            } as any)
+              ...authCookieDefaults(),
+            })
           );
         },
       },
@@ -55,6 +54,14 @@ export async function middleware(request: NextRequest) {
   const isDashboard = request.nextUrl.pathname.startsWith('/dashboard');
   const isAdminDashboard = request.nextUrl.pathname.startsWith('/admin');
   const isLoginPage = request.nextUrl.pathname === '/';
+  const isApi = request.nextUrl.pathname.startsWith('/api');
+
+  // API routes are matched purely so the Supabase session gets refreshed and the
+  // rotated auth cookie is written back. They must never be redirected -- each
+  // route handler returns its own JSON 401 -- and they don't need the role lookup.
+  if (isApi) {
+    return response;
+  }
 
   let isAdmin = false;
   if (user) {
@@ -81,10 +88,8 @@ export async function middleware(request: NextRequest) {
     response.cookies.getAll().forEach((cookie) => {
       redirectResponse.cookies.set(cookie.name, cookie.value, {
         ...cookie,
-        sameSite: 'none',
-        secure: true,
-        path: '/',
-      } as any);
+        ...authCookieDefaults(),
+      });
     });
     return redirectResponse;
   };
@@ -110,5 +115,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/dashboard/:path*', '/admin/:path*'],
+  matcher: ['/', '/dashboard/:path*', '/admin/:path*', '/api/:path*'],
 };

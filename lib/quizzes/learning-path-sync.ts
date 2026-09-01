@@ -61,7 +61,7 @@ const QUESTION_STOPWORDS = new Set([
 export function keywordPhrasesFromQuestion(text: string, limit = 4): string[] {
   const words = String(text || '')
     .toLowerCase()
-    .replace(/[^a-z0-9+#.\s-]/g, ' ')
+    .replaceAll(/[^a-z0-9+#.\s-]/g, ' ')
     .split(/\s+/)
     .filter((w) => w.length >= 4 && !QUESTION_STOPWORDS.has(w));
   return uniqueTopics(words).slice(0, limit);
@@ -74,7 +74,7 @@ export function buildTopicVocabulary(profileTerms: string[] = []): string[] {
     const term = String(raw || '').trim().toLowerCase();
     if (!term) continue;
     expanded.push(term);
-    const compact = term.replace(/[^a-z0-9+#.]/g, '');
+    const compact = term.replaceAll(/[^a-z0-9+#.]/g, '');
     if (compact && compact !== term) expanded.push(compact);
     // "next.js" <-> "nextjs"
     if (term.includes('.')) expanded.push(term.replaceAll('.', ''));

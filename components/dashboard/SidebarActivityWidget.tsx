@@ -5,7 +5,8 @@ import type { WeeklyStats } from '@/types/contracts';
 
 /**
  * Compact weekly activity summary styled for the dark sidebar. Shows days read,
- * quizzes submitted, and the correct/wrong split for the trailing 7 days.
+ * quizzes submitted, and the correct/wrong split for the briefing days (Mon-Fri)
+ * in the trailing week.
  */
 export default function SidebarActivityWidget({ stats }: { stats: WeeklyStats | null }) {
   return (
@@ -26,7 +27,7 @@ export default function SidebarActivityWidget({ stats }: { stats: WeeklyStats | 
               </div>
               <p className="text-xl font-black text-white tabular-nums leading-none">
                 {stats.daysRead}
-                <span className="text-zinc-600 text-sm font-bold">/7</span>
+                <span className="text-zinc-600 text-sm font-bold">/{stats.briefingDays}</span>
               </p>
             </div>
             <div className="rounded-xl bg-zinc-800/40 border border-zinc-800 p-3">

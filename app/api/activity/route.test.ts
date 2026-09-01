@@ -225,18 +225,18 @@ describe('GET /api/activity', () => {
     expect(body.streak).toBe(1);
   });
 
-  it('sorts records newest-first and stops the streak at a gap', async () => {
+  it('sorts records newest-first and stops the streak at a weekday gap', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    const today = new Date();
-    today.setHours(12, 0, 0, 0);
-    const threeDaysAgo = new Date(today);
-    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    // Pinned to Thursday 3 Sep 2026 so the gap below (Wed 2nd) is a weekday and
+    // the assertion does not drift with the real calendar.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:00Z'));
 
     responseQueue = [
       {
         data: [
-          { created_at: threeDaysAgo.toISOString(), metadata: { read_seconds: 50 } },
-          { created_at: today.toISOString(), metadata: { read_seconds: 50 } },
+          { created_at: '2026-09-01T12:00:00Z', metadata: { read_seconds: 50 } },
+          { created_at: '2026-09-03T12:00:00Z', metadata: { read_seconds: 50 } },
         ],
         error: null,
       },
@@ -248,6 +248,108 @@ describe('GET /api/activity', () => {
     expect(body.records).toHaveLength(2);
     expect(new Date(body.records[0].date).getTime()).toBeGreaterThan(new Date(body.records[1].date).getTime());
     expect(body.streak).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('carries the streak across a weekend, when no briefing is generated', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    // Monday 7 Sep 2026. The previous briefing was Friday the 4th; Sat/Sun had
+    // nothing to read and must not break the streak.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-07T12:00:00Z'));
+
+    responseQueue = [
+      {
+        data: [
+          { created_at: '2026-09-07T09:00:00Z', metadata: { read_seconds: 120 } },
+          { created_at: '2026-09-04T09:00:00Z', metadata: { read_seconds: 120 } },
+          { created_at: '2026-09-03T09:00:00Z', metadata: { read_seconds: 120 } },
+        ],
+        error: null,
+      },
+      { data: [], error: null },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.streak).toBe(3);
+    vi.useRealTimers();
+  });
+
+  it('lists each quiz attempt separately with its own status and score', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:00Z'));
+
+    const answer = (correct: boolean, minute: number) => ({
+      is_correct: correct,
+      created_at: `2026-09-03T10:${String(minute).padStart(2, '0')}:00Z`,
+    });
+
+    responseQueue = [
+      { data: [], error: null },
+      {
+        data: [
+          {
+            started_at: '2026-09-03T10:00:00Z',
+            completed_at: '2026-09-03T11:00:00Z',
+            status: 'completed',
+            score: 9,
+            total_questions: 15,
+            attempt_number: 1,
+            quiz_answers: [
+              answer(true, 1), answer(false, 2), answer(false, 3), answer(false, 4), answer(false, 5),
+              answer(true, 6), answer(true, 7), answer(true, 8), answer(false, 9), answer(false, 10),
+            ],
+          },
+        ],
+        error: null,
+      },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    const day = body.records.find((r: any) => r.date === '2026-09-03');
+
+    expect(day.attempts).toHaveLength(2);
+    expect(day.attempts[0]).toMatchObject({
+      attempt_number: 1,
+      correct_answers: 1,
+      total_questions: 5,
+      passed: false,
+    });
+    expect(day.attempts[1]).toMatchObject({
+      attempt_number: 2,
+      correct_answers: 3,
+      total_questions: 5,
+      passed: true,
+    });
+    vi.useRealTimers();
+  });
+
+  it('counts a day where the user only started a quiz', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-03T12:00:00Z'));
+
+    responseQueue = [
+      { data: [], error: null },
+      {
+        data: [
+          // Started today, never finished: the day still counts.
+          { started_at: '2026-09-03T10:00:00Z', completed_at: null, status: 'in_progress' },
+          { started_at: '2026-09-02T10:00:00Z', completed_at: '2026-09-02T10:10:00Z', status: 'completed', score: 4, total_questions: 5 },
+        ],
+        error: null,
+      },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.streak).toBe(2);
+    expect(body.records.find((r: any) => r.date === '2026-09-03')?.quiz_started).toBe(true);
+    expect(body.records.find((r: any) => r.date === '2026-09-03')?.quiz_taken).toBe(false);
+    vi.useRealTimers();
   });
 
   it('sums multiple reading logs recorded on the same day', async () => {

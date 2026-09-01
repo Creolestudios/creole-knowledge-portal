@@ -104,6 +104,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    application.include_router(api_router, prefix=cfg.API_V1_STR)
+    if cfg.ROOT_PATH:
+        application.add_middleware(StripRootPathMiddleware, root_path=cfg.ROOT_PATH)
+
+    # CORSMiddleware must be added last so it is the outermost middleware —
+    # Starlette applies middleware in reverse registration order, and CORS has
+    # to see every response (including errors raised by inner middleware).
     application.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000"],  # Next.js dev server
@@ -111,10 +118,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    application.include_router(api_router, prefix=cfg.API_V1_STR)
-    if cfg.ROOT_PATH:
-        application.add_middleware(StripRootPathMiddleware, root_path=cfg.ROOT_PATH)
     return application
 
 

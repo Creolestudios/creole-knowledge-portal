@@ -11,6 +11,7 @@
  * The pure aggregation (`computeWeeklyStats`) stays unchanged.
  */
 import type { ActivityRecord, WeeklyStats } from '@/types/contracts';
+import { isBriefingDay, localDateKey } from '@/lib/data/streak';
 import seed from '@/lib/mock/activity.json';
 
 const STORAGE_KEY = 'ckp.activity.v1';
@@ -106,19 +107,32 @@ export async function logActivity(
 }
 
 /**
- * Pure aggregation over the trailing 7 days from `referenceDate` (inclusive).
+ * Pure aggregation over the trailing 7 days from `referenceDate` (inclusive),
+ * counting **briefing days only**. Nothing is generated at the weekend, so
+ * Saturday and Sunday are excluded from both the numerator and the denominator
+ * -- otherwise a perfect week could never score better than 5/7.
+ *
  * Exported separately so it can be unit-tested without the DOM.
  */
 export function computeWeeklyStats(
   records: ActivityRecord[],
   referenceDate: Date = new Date()
 ): WeeklyStats {
-  const cutoff = new Date(referenceDate);
-  cutoff.setDate(cutoff.getDate() - 6);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const refStr = referenceDate.toISOString().slice(0, 10);
+  // Local date keys: this runs in the browser, so the window must line up with
+  // the user's own calendar rather than UTC's.
+  const windowKeys = new Set<string>();
+  const cursor = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate()
+  );
+  for (let i = 0; i < 7; i += 1) {
+    if (isBriefingDay(cursor)) windowKeys.add(localDateKey(cursor));
+    cursor.setDate(cursor.getDate() - 1);
+  }
 
-  const week = records.filter((r) => r.date >= cutoffStr && r.date <= refStr);
+  const briefingDays = windowKeys.size;
+  const week = records.filter((r) => windowKeys.has(r.date.slice(0, 10)));
 
   const daysRead = week.filter((r) => r.readSeconds > 0).length;
   const quizzes = week.filter((r) => r.quizTaken);
@@ -130,7 +144,7 @@ export function computeWeeklyStats(
   const correctPct = totalQuestions === 0 ? 0 : Math.round((totalCorrect / totalQuestions) * 100);
   const wrongPct = totalQuestions === 0 ? 0 : 100 - correctPct;
 
-  return { daysRead, quizzesSubmitted, correctPct, wrongPct };
+  return { daysRead, briefingDays, quizzesSubmitted, correctPct, wrongPct };
 }
 
 /** Weekly stats over all current activity. */

@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DashboardShell from './DashboardShell';
-import { computeStreak } from '@/lib/data/streak';
 
 const nav = vi.hoisted(() => ({
   push: vi.fn(),
@@ -41,11 +40,7 @@ vi.mock('next/link', () => ({
 
 vi.mock('@/lib/data/activity', () => ({
   getActivity: vi.fn().mockResolvedValue([]),
-  computeWeeklyStats: vi.fn().mockReturnValue({ daysRead: 3, quizzesSubmitted: 2, correctPct: 80, wrongPct: 20 }),
-}));
-
-vi.mock('@/lib/data/streak', () => ({
-  computeStreak: vi.fn().mockReturnValue(5),
+  computeWeeklyStats: vi.fn().mockReturnValue({ daysRead: 3, briefingDays: 5, quizzesSubmitted: 2, correctPct: 80, wrongPct: 20 }),
 }));
 
 vi.mock('./DailyBlogTab', () => ({ default: () => (<div data-testid="daily-tab" />) }));
@@ -59,7 +54,6 @@ describe('DashboardShell', () => {
     nav.pathname = '/dashboard';
     nav.tab = null;
     nav.date = null;
-    vi.mocked(computeStreak).mockReturnValue(5);
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ success: true, records: [], streak: 5 }),
@@ -122,7 +116,7 @@ describe('DashboardShell', () => {
     );
   });
 
-  it('loads and displays the reading streak from computeStreak', async () => {
+  it('displays the reading streak returned by /api/activity', async () => {
     render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
     await waitFor(() => {
       expect(screen.getByText('5 days')).toBeInTheDocument();

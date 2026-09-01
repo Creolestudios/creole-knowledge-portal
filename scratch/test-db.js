@@ -1,31 +1,34 @@
 import { createClient } from '@supabase/supabase-js';
-import * as dotenv from 'dotenv';
-import path from 'path';
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 
-const supabaseAdmin = createClient(
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 async function run() {
-  const { data, error } = await supabaseAdmin
-    .from('blogs')
-    .insert({
-      title: "test",
-      url: "test-url-" + Date.now(),
-      content: "test",
-      source: "test",
-      author: "test",
-      summary: "test",
-      tags: "tech, architecture", // passing string instead of array
-      published_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    })
-    .select('*')
-    .single();
+  const { data: users } = await supabase.auth.admin.listUsers();
+  if (users.users.length === 0) {
+    console.log("No users found");
+    return;
+  }
+  const user = users.users[0];
+  console.log("User:", user.email);
   
-  console.log("Error:", JSON.stringify(error, null, 2));
+  const { data: logs, error } = await supabase
+    .from('user_activity_logs')
+    .select('*')
+    .eq('user_id', user.id);
+    
+  console.log("Logs error:", error);
+  console.log("Logs:", logs);
+  
+  const { data: quizAttempts } = await supabase
+    .from('quiz_attempts')
+    .select('*')
+    .eq('user_id', user.id);
+    
+  console.log("Quiz attempts:", quizAttempts);
 }
-
 run();

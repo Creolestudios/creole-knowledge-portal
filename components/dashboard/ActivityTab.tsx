@@ -86,7 +86,7 @@ export default function ActivityTab({ user }: { user?: any }) {
                 <th className="text-left px-5 py-3">Date</th>
                 <th className="text-left px-5 py-3">Read time</th>
                 <th className="text-left px-5 py-3">Quiz</th>
-                <th className="text-right px-5 py-3">Score</th>
+                <th className="text-right px-5 py-3">Correct</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -94,32 +94,68 @@ export default function ActivityTab({ user }: { user?: any }) {
                 <tr>
                   <td colSpan={4} className="px-5 py-8 text-center text-zinc-500 font-medium">No activity recorded yet.</td>
                 </tr>
-              ) : records.slice(0, displayLimit).map((r, idx) => (
-                <tr key={idx} className="hover:bg-zinc-50/60 transition-colors">
-                  <td className="px-5 py-4 font-bold text-zinc-900">{formatDay(r.date)}</td>
-                  <td className="px-5 py-4 text-zinc-600 font-semibold tabular-nums">
-                    {r.read_seconds ? formatDuration(r.read_seconds) : '—'}
-                  </td>
-                  <td className="px-5 py-4">
-                    {!r.quiz_taken ? (
-                      <span className="inline-flex items-center gap-1.5 text-zinc-400 font-semibold text-xs">
-                        <MinusCircle size={14} /> Skipped
-                      </span>
-                    ) : r.quiz_score === r.quiz_total ? (
-                      <span className="inline-flex items-center gap-1.5 text-green-600 font-semibold text-xs">
-                        <CheckCircle size={14} /> Perfect
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-amber-600 font-semibold text-xs">
-                        <XCircle size={14} /> Partial
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-5 py-4 text-right font-black text-zinc-900 tabular-nums">
-                    {r.quiz_taken ? `${r.quiz_score}/${r.quiz_total}` : '—'}
-                  </td>
-                </tr>
-              ))}
+              ) : records.slice(0, displayLimit).flatMap((r, idx) => {
+                const attempts = (r.attempts || []) as any[];
+
+                // A day with no attempt still gets a single row.
+                if (attempts.length === 0) {
+                  return [(
+                    <tr key={`${r.date}-none`} className="hover:bg-zinc-50/60 transition-colors">
+                      <td className="px-5 py-4 font-bold text-zinc-900">{formatDay(r.date)}</td>
+                      <td className="px-5 py-4 text-zinc-600 font-semibold tabular-nums">
+                        {r.read_seconds ? formatDuration(r.read_seconds) : '—'}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="inline-flex items-center gap-1.5 text-zinc-400 font-semibold text-xs">
+                          <MinusCircle size={14} /> Skipped
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-right font-black text-zinc-900 tabular-nums">—</td>
+                    </tr>
+                  )];
+                }
+
+                // One row per attempt, so attempt 1/2/3 each show their own
+                // status and score instead of a single merged total.
+                return attempts.map((a, aIdx) => (
+                  <tr
+                    key={`${r.date}-${a.attempt_number}-${aIdx}`}
+                    className={`hover:bg-zinc-50/60 transition-colors ${aIdx > 0 ? 'bg-zinc-50/30' : ''}`}
+                  >
+                    <td className="px-5 py-4 font-bold text-zinc-900">
+                      {aIdx === 0 ? formatDay(r.date) : (
+                        <span className="text-zinc-300 font-semibold">↳</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 text-zinc-600 font-semibold tabular-nums">
+                      {aIdx === 0 ? (r.read_seconds ? formatDuration(r.read_seconds) : '—') : ''}
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-zinc-400 bg-zinc-100 rounded px-1.5 py-0.5 shrink-0">
+                          Try {a.attempt_number}
+                        </span>
+                        {a.in_progress ? (
+                          <span className="inline-flex items-center gap-1.5 text-zinc-400 font-semibold text-xs">
+                            <MinusCircle size={14} /> In progress
+                          </span>
+                        ) : a.passed ? (
+                          <span className="inline-flex items-center gap-1.5 text-green-600 font-semibold text-xs">
+                            <CheckCircle size={14} /> Passed
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold text-xs">
+                            <XCircle size={14} /> Failed
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-right font-black text-zinc-900 tabular-nums">
+                      {a.in_progress ? '—' : `${a.correct_answers}/${a.total_questions}`}
+                    </td>
+                  </tr>
+                ));
+              })}
             </tbody>
           </table>
         </div>

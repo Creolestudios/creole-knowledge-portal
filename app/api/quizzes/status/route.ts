@@ -3,6 +3,11 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { buildQuizReviewData } from '@/lib/quizzes/review';
 import { toValidUUID } from '@/lib/quizzes/review';
+import {
+  QUIZ_TIME_LIMIT_SECONDS,
+  elapsedSecondsSince,
+  resolveTimeTakenSeconds,
+} from '@/lib/quizzes/timing';
 
 export async function GET(request: Request) {
   try {
@@ -158,8 +163,8 @@ export async function GET(request: Request) {
 
       if (questions.length > 0) {
         // Calculate remaining time for 20-min (1200s) idle window based on wall-clock
-        const elapsedSeconds = Math.floor((Date.now() - new Date(activeAttempt.started_at).getTime()) / 1000);
-        const timeLeft = Math.max(0, 1200 - elapsedSeconds);
+        const elapsedSeconds = elapsedSecondsSince(activeAttempt.started_at) ?? 0;
+        const timeLeft = Math.max(0, QUIZ_TIME_LIMIT_SECONDS - elapsedSeconds);
 
         if (timeLeft <= 0) {
           // Time expired, auto-submit the quiz
@@ -170,12 +175,16 @@ export async function GET(request: Request) {
           const passed = percentage >= 60 || correctAnswersCount >= 3;
           const updatedAttemptsCount = finishedAttemptsCount + 1;
 
+          // One value for both the stored row and the response -- these used to
+          // disagree (1200 written, 600 returned) for the same attempt.
+          const autoSubmitTimeTaken = resolveTimeTakenSeconds(activeAttempt.started_at);
+
           const autoSubmitPayload: any = {
             status: 'completed',
             completed_at: new Date().toISOString(),
             score: totalScore,
             percentage: percentage,
-            time_taken_seconds: 1200,
+            time_taken_seconds: autoSubmitTimeTaken,
             passed: passed
           };
 
@@ -201,7 +210,7 @@ export async function GET(request: Request) {
             result: {
               score: totalScore,
               percentage: percentage,
-              timeTaken: 600,
+              timeTaken: autoSubmitTimeTaken,
               total: maxPossibleScore,
               correctAnswers: correctAnswersCount,
               totalQuestions,

@@ -7,7 +7,6 @@ import { motion } from 'motion/react';
 import { User, Newspaper, History, BarChart3, Menu, X, Flame, Sparkles, Trophy } from 'lucide-react';
 import type { WeeklyStats, ISODate } from '@/types/contracts';
 import { computeWeeklyStats } from '@/lib/data/activity';
-import { computeStreak } from '@/lib/data/streak';
 import DailyBlogTab from './DailyBlogTab';
 import PastBlogsTab from './PastBlogsTab';
 import ActivityTab from './ActivityTab';
@@ -96,6 +95,8 @@ export default function DashboardShell({
             quizTotal: r.quiz_total || 0,
           }));
           setStats(computeWeeklyStats(records));
+          // The streak is computed server-side (lib/data/streak.ts) so every
+          // surface shows the same number.
           setStreak(data.streak || 0);
         }
       } catch (e) {
