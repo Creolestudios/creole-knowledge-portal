@@ -35,6 +35,7 @@ lib/data/db.json
 **/.tools/
 **/.husky/
 **/scripts/
+!scripts/deploy-aws.sh
 !.github/scripts/
 !.github/scripts/**
 **/.gitleaksignore

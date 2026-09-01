@@ -87,6 +87,13 @@ Every push must be preceded by a report in this format:
 - Respect `robots.txt` when scraping blogs.
 - Store results in local database or cache.
 
+### AWS Deployment & Sandbox Accounts
+- Automated deployment: `./scripts/deploy-aws.sh <AWS_PROFILE>`
+- Agent Runbook: `AGENT-DEPLOYMENT-RUNBOOK.md`
+- Skill: `.agents/skills/aws-sandbox-deployment/`
+- Infrastructure: `infra/` (Pulumi ECS Fargate, CloudFront, ALB)
+
+
 ---
 
 ## 🚨 Rules That Cannot Be Broken
