@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './route';
+import { MAX_QUIZ_TIME_SECONDS } from '@/lib/quizzes/timing';
 
 const mockGetUser = vi.fn();
 const mockSelect = vi.fn();
@@ -149,7 +150,9 @@ describe('GET /api/quizzes/status', () => {
     const data = await response.json();
 
     expect(data.completed).toBe(true);
-    expect(data.result.timeTaken).toBe(600);
+    // Attempt ran past the limit, so it is capped at limit + grace. This used to
+    // return a hard-coded 600 while writing 1200 to the row for the same attempt.
+    expect(data.result.timeTaken).toBe(MAX_QUIZ_TIME_SECONDS);
     expect(data.result.score).toBe(2);
   });
 

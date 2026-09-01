@@ -6,6 +6,18 @@ import PastBlogsTab from './PastBlogsTab';
 describe('PastBlogsTab', () => {
   const originalFetch = global.fetch;
 
+  /**
+   * First day cell the user can actually select. Weekends carry no briefing and
+   * are inert, so tests must not assume the 1st of the month is clickable.
+   */
+  const firstSelectableDayCell = () => {
+    const cell = screen
+      .getAllByRole('button')
+      .find((el) => el.className.includes('aspect-square'));
+    if (!cell) throw new Error('no selectable day cell rendered');
+    return cell;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn().mockResolvedValue({
@@ -85,6 +97,53 @@ describe('PastBlogsTab', () => {
     expect(cellFor('15')?.className).toContain('bg-zinc-50');
   });
 
+  it('greys out past weekends and excludes them from selection', async () => {
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return { ok: true, json: async () => ({ records: [] }) };
+      }
+      if (String(url).includes('date=')) {
+        return { ok: true, json: async () => ({ blog: null }) };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          blogs: [{ title: 'Saturday backfill', digest_date: '2026-07-18' }],
+        }),
+      };
+    }) as any;
+
+    render(<PastBlogsTab />);
+
+    const prev = screen.getByText('<');
+    for (let i = 0; i < 24; i++) {
+      if (screen.queryByText('July 2026')) break;
+      fireEvent.click(prev);
+    }
+
+    const cell = (day: string) =>
+      screen.getAllByText(day).find((el) => el.className.includes('aspect-square'));
+
+    // 4 Jul 2026 is a Saturday and 5 Jul a Sunday: no briefing is generated, so
+    // they must read as inert grey rather than the red "missed" state.
+    await waitFor(() => {
+      expect(cell('4')?.className).toContain('bg-zinc-100');
+    });
+    expect(cell('5')?.className).toContain('bg-zinc-100');
+    expect(cell('4')?.className).not.toContain('bg-red-500');
+    expect(cell('4')).not.toHaveAttribute('role', 'button');
+    expect(cell('4')).toHaveAttribute('title', 'No briefing on weekends');
+
+    // A weekday with no briefing keeps its existing neutral, selectable state.
+    expect(cell('3')?.getAttribute('role')).toBe('button');
+
+    // A weekend that genuinely has a backfilled briefing stays selectable.
+    expect(cell('18')?.getAttribute('role')).toBe('button');
+    expect(cell('18')?.className).toContain('bg-red-500');
+
+    expect(screen.getByText('Weekend (No Briefing)')).toBeInTheDocument();
+  });
+
   it('shows the blog title above the fetched date in the reader', async () => {
     global.fetch = vi.fn(async (url: string) => {
       if (String(url).includes('date=')) {
@@ -103,7 +162,7 @@ describe('PastBlogsTab', () => {
     }) as any;
 
     render(<PastBlogsTab />);
-    fireEvent.click(screen.getAllByText('1')[0]);
+    fireEvent.click(firstSelectableDayCell());
 
     const heading = await screen.findByText('Redis queues');
     const dateLine = screen.getByText(/Fetched /);
@@ -141,12 +200,8 @@ describe('PastBlogsTab', () => {
 
     render(<PastBlogsTab />);
 
-    // Click on day "1" of the currently displayed month (always in the past
-    // relative to "today" unless today is the 1st — acceptable given fixed
-    // test date context is unnecessary here since day 1 is always <= today
-    // for the current month render).
-    const dayCells = screen.getAllByText('1');
-    fireEvent.click(dayCells[0]);
+    // First selectable (past, non-weekend) day of the displayed month.
+    fireEvent.click(firstSelectableDayCell());
 
     await waitFor(() => {
       expect(screen.getByText('Old Post')).toBeInTheDocument();
@@ -158,8 +213,7 @@ describe('PastBlogsTab', () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false });
     render(<PastBlogsTab />);
 
-    const dayCells = screen.getAllByText('1');
-    fireEvent.click(dayCells[0]);
+    fireEvent.click(firstSelectableDayCell());
 
     await waitFor(() => {
       expect(screen.getByText(/Pick a highlighted date/)).toBeInTheDocument();
@@ -170,8 +224,7 @@ describe('PastBlogsTab', () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
     render(<PastBlogsTab />);
 
-    const dayCells = screen.getAllByText('1');
-    fireEvent.click(dayCells[0]);
+    fireEvent.click(firstSelectableDayCell());
 
     await waitFor(() => {
       expect(screen.getByText(/Pick a highlighted date/)).toBeInTheDocument();
@@ -191,8 +244,7 @@ describe('PastBlogsTab', () => {
 
     render(<PastBlogsTab />);
 
-    const dayCells = screen.getAllByText('1');
-    fireEvent.keyDown(dayCells[0], { key: 'Enter' });
+    fireEvent.keyDown(firstSelectableDayCell(), { key: 'Enter' });
 
     await waitFor(() => {
       expect(screen.getByText('Keyboard Post')).toBeInTheDocument();
@@ -218,8 +270,7 @@ describe('PastBlogsTab', () => {
     render(<PastBlogsTab />);
     fetchMock.mockClear();
 
-    const dayCells = screen.getAllByText('1');
-    fireEvent.keyDown(dayCells[0], { key: 'Tab' });
+    fireEvent.keyDown(firstSelectableDayCell(), { key: 'Tab' });
 
     expect(fetchMock).not.toHaveBeenCalled();
   });

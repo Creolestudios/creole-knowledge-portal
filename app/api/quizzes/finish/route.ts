@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { buildQuizReviewData } from '@/lib/quizzes/review';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 import { buildLearningPathQuizPayload } from '@/lib/quizzes/learning-path-sync';
+import { resolveTimeTakenSeconds } from '@/lib/quizzes/timing';
+import { QUIZ_QUESTIONS_PER_ATTEMPT, hasPassedQuiz } from '@/lib/quizzes/scoring';
 
 async function syncQuizLearningPathToMongo(
   userId: string,
@@ -84,7 +86,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { attemptId, timeLeft } = await request.json();
+    const { attemptId, clientElapsedSeconds } = await request.json();
 
     if (!attemptId) {
       return NextResponse.json({ error: 'Attempt ID is required' }, { status: 400 });
@@ -106,16 +108,20 @@ export async function POST(request: Request) {
     const sortedAnswers = [...rawAnswers].sort(
       (a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
     );
-    const answers = sortedAnswers.slice(-5);
+    const answers = sortedAnswers.slice(-QUIZ_QUESTIONS_PER_ATTEMPT);
     const totalScore = answers.reduce((sum: number, ans: any) => sum + (ans.points_awarded || 0), 0);
     const correctAnswersCount = answers.filter((ans: any) => ans.is_correct).length;
-    const passed = correctAnswersCount >= 3;
+    const passed = hasPassedQuiz(correctAnswersCount);
 
     const completedAt = new Date();
     
-    // Determine time taken based on wall-clock
-    const elapsedSeconds = Math.floor((Date.now() - new Date(attempt.started_at).getTime()) / 1000);
-    const timeTakenSeconds = Math.min(600, Math.max(0, elapsedSeconds));
+    // Server wall-clock is authoritative; the client value may only lower it
+    // (correcting a resumed attempt, whose started_at is never reset).
+    const timeTakenSeconds = resolveTimeTakenSeconds(
+      attempt.started_at,
+      clientElapsedSeconds,
+      completedAt.getTime(),
+    );
 
     // Update attempt
     const updatePayload: any = {

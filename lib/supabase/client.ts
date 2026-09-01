@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr';
+import { authCookieDefaults } from './cookie-options';
 
 export function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,11 +14,7 @@ export function createClient() {
     url || 'https://placeholder.supabase.co',
     key || 'placeholder-key',
     {
-      cookieOptions: {
-        sameSite: 'none',
-        secure: true,
-        path: '/',
-      } as any,
+      cookieOptions: authCookieDefaults(),
     }
   );
 }

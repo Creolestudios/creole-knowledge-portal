@@ -9,14 +9,14 @@ export function restoreArticleMarkdown(content: string): string {
 
   // Convert common HTML tags to markdown if HTML tags are detected
   if (/<[a-z][^>]*>/i.test(text)) {
-    text = text.replace(/<h[1-6][^>]*>(.*?)<\/h[1-6]>/gi, '\n\n## $1\n\n');
-    text = text.replace(/<p[^>]*>(.*?)<\/p>/gi, '\n\n$1\n\n');
-    text = text.replace(/<li[^>]*>(.*?)<\/li>/gi, '\n- $1');
-    text = text.replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`');
-    text = text.replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**');
-    text = text.replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**');
-    text = text.replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*');
-    text = text.replace(/<br\s*\/?>/gi, '\n');
+    text = text.replaceAll(/<h[1-6][^>]*>([\s\S]{0,1000}?)<\/h[1-6]>/gi, '\n\n## $1\n\n');
+    text = text.replaceAll(/<p[^>]*>([\s\S]{0,1000}?)<\/p>/gi, '\n\n$1\n\n');
+    text = text.replaceAll(/<li[^>]*>([\s\S]{0,1000}?)<\/li>/gi, '\n- $1');
+    text = text.replaceAll(/<code[^>]*>([\s\S]{0,1000}?)<\/code>/gi, '`$1`');
+    text = text.replaceAll(/<strong[^>]*>([\s\S]{0,1000}?)<\/strong>/gi, '**$1**');
+    text = text.replaceAll(/<b[^>]*>([\s\S]{0,1000}?)<\/b>/gi, '**$1**');
+    text = text.replaceAll(/<em[^>]*>([\s\S]{0,1000}?)<\/em>/gi, '*$1*');
+    text = text.replaceAll(/<br\s*\/?>/gi, '\n');
     let clean = '';
     let inTag = false;
     for (let i = 0; i < text.length; i++) {
@@ -36,27 +36,27 @@ export function restoreArticleMarkdown(content: string): string {
 
   const newlineCount = (text.match(/\n/g) || []).length;
   if (newlineCount >= 3) {
-    return text.replace(/\n{3,}/g, '\n\n');
+    return text.replaceAll(/\n{3,}/g, '\n\n');
   }
 
   text = text.replaceAll(' #', '\n\n#');
   text = text.replaceAll(' ```', '\n\n```');
-  text = text.replace(/ Step (\d+:)/gi, '\n\nStep $1');
+  text = text.replaceAll(/ Step (\d+:)/gi, '\n\n### Step $1');
   // Real CLI only — never fence mid-prose words like "learn python asyncio".
-  text = text.replace(
+  text = text.replaceAll(
     /(^|[\s.])(curl -[A-Za-z0-9][^\n]{8,})/gi,
     '$1\n\n```bash\n$2\n```\n\n',
   );
-  text = text.replace(
-    /(^|\n)\s*(uv |npm |npx |pipx |pip install |git clone |git commit |docker (?:run|build|compose) |python3? -\w)([^\n]+)/gi,
+  text = text.replaceAll(
+    /(^|\n)[ \t]*(uv |npm |npx |pipx |pip install |git clone |git commit |docker (?:run|build|compose) |python3? -\w)([^\n]+)/gi,
     '$1\n\n```bash\n$2$3\n```\n\n',
   );
-  text = text.replace(/ (\d+\. )/g, '\n$1');
-  text = text.replace(/ ([-*] )/g, '\n$1');
+  text = text.replaceAll(/ (\d+\. )/g, '\n$1');
+  text = text.replaceAll(/ ([-*] )/g, '\n$1');
   if (!text.includes('\n\n') && text.length > 280) {
-    text = text.replace(/([.!?])\s+(?=[A-Z#])/g, '$1\n\n');
+    text = text.replaceAll(/([.!?])\s+(?=[A-Z#])/g, '$1\n\n');
   }
-  return text.replace(/\n{3,}/g, '\n\n').trim();
+  return text.replaceAll(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Turn one-line "dir/ ├── a/ | └── b/" dumps into a vertical tree diagram. */
@@ -65,8 +65,10 @@ export function restoreFlattenedTreeDiagram(content: string): string {
   if (!raw) return raw;
 
   // Caption → folder rows from mangled README maps (not ASCII +--+ boxes)
+  // Each segment starts with a character the previous one cannot match, so the
+  // engine never has to backtrack across the caption (linear, not super-linear).
   const mapLine =
-    /^(#{1,6}\s+)?\*{0,2}(.+?)\*{0,2}\s+(?:\|\s*){1,6}(?:——|—|├──|└──|├─|└─)\s*([A-Za-z0-9_.@/-]+\/?)\s*$/;
+    /^\*{0,2}([^*|\n]+)(?:\*{1,2}[ \t]*)?(?:\|[ \t]*){1,6}(?:—{1,2}|├─{1,2}|└─{1,2})[ \t]*([\w.@/-]+)$/;
 
   const lines = raw.split('\n');
   const out: string[] = [];
@@ -86,8 +88,8 @@ export function restoreFlattenedTreeDiagram(content: string): string {
     const mapMatch = line.trim().match(mapLine);
 
     if (mapMatch) {
-      const caption = mapMatch[2].replace(/\*\*/g, '').trim();
-      const folder = mapMatch[3].trim();
+      const caption = mapMatch[1].replaceAll('**', '').replace(/^#{1,6}\s+/, '').trim();
+      const folder = mapMatch[2].trim();
       diagramBuf.push(caption);
       diagramBuf.push(`  └── ${folder}`);
       continue;
@@ -95,18 +97,17 @@ export function restoreFlattenedTreeDiagram(content: string): string {
 
     // Only unicode tree branches — never ASCII +---+ box borders
     if (markers >= 2 || (markers >= 1 && pipeRuns >= 1)) {
-      let working = line.replace(/\*\*/g, '');
-      working = working.replace(
-        /([^\n])(\s*)(\|[\s|]*)?(├──|└──|├─|└─)\s*/g,
-        (_m, before: string, _sp: string, pipes: string | undefined, branch: string) => {
-          const indent = pipes ? pipes.replace(/[^\|]/g, '').length : 0;
+      let working = line.replaceAll('**', '');
+      working = working.replaceAll(
+        /([^\n \t|])([ \t|]*)(├─{1,2}|└─{1,2})[ \t]*/g,
+        (_m, before: string, spacesAndPipes: string, branch: string) => {
+          const indent = spacesAndPipes.replaceAll(/[^\|]/g, '').length;
           const pad = '  '.repeat(Math.min(indent, 6));
           return `${before}\n${pad}${branch} `;
         },
       );
-      working = working.replace(/([/\w.-]+\/)\s+(?=├──|└──|├─|└─)/g, '$1\n');
-      working = working.replace(/\s+\|\s+\|\s+\|\s+/g, '\n');
-      working = working.replace(/\s+\|\s+\|\s+/g, '\n');
+      working = working.replaceAll(/\/[ \t]+(?=[├└]─)/g, '/\n');
+      working = working.replaceAll(/\|([ \t]*\|)+/g, '\n');
       for (const part of working.split('\n')) {
         if (part.trim()) diagramBuf.push(part.trimEnd());
       }
@@ -230,7 +231,7 @@ function alphaDensityOk(raw: string): boolean {
 export function looksLikeMarkdownTableRow(line: string): boolean {
   const t = String(line || '').trim();
   if (!t) return false;
-  if (/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(t)) return true;
+  if (/^\|?[ \t]*:?-{3,}:?(?:[ \t]*\|[ \t]*:?-{3,}:?)+[ \t]*\|?$/.test(t)) return true;
   if (!t.includes('|')) return false;
   const cells = t
     .replace(/^\|/, '')
@@ -441,8 +442,14 @@ export function looksLikeBrokenAsciiDiagram(text: string): boolean {
 function cleanDiagramLabel(raw: string): string | null {
   let label = String(raw || '')
     .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/^\*+|\*+$/g, '');
+    .replace(/\s+/g, ' ');
+  // Trim leading/trailing '*' with string ops — a `/^\*+|\*+$/` regex backtracks
+  // super-linearly on long runs of asterisks.
+  let start = 0;
+  let end = label.length;
+  while (start < end && label[start] === '*') start += 1;
+  while (end > start && label[end - 1] === '*') end -= 1;
+  label = label.slice(start, end);
   if (label.length < 3 || label.length > 58) return null;
   if (!/[A-Za-z]{2,}/.test(label)) return null;
   if (/^:?-{3,}:?$/.test(label)) return null;
@@ -460,7 +467,7 @@ export function salvageDiagramLabels(text: string): string[] {
     if (/^\+[-=]+\+/.test(t)) continue;
     if (/^[\|v^<>\-=\s]{2,}$/.test(t)) continue;
 
-    for (const m of t.matchAll(/\|\s*([^|]{2,58}?)\s*\|/g)) {
+    for (const m of t.matchAll(/\|([^|]{2,60})\|/g)) {
       const label = cleanDiagramLabel(m[1]);
       if (label && !labels.includes(label)) labels.push(label);
     }
@@ -510,7 +517,8 @@ export function salvageBracketFlowSteps(text: string): string[] {
   const steps: string[] = [];
   const seen = new Set<string>();
   const push = (raw: string) => {
-    const label = cleanDiagramLabel(String(raw || '').replace(/^#\s*/, '').replace(/\s*-->\s*/g, ' → '));
+    // cleanDiagramLabel collapses whitespace, so a plain string swap is enough.
+    const label = cleanDiagramLabel(String(raw || '').replace(/^#\s*/, '').replaceAll('-->', ' → '));
     if (!label) return;
     const key = label.toLowerCase();
     if (seen.has(key)) return;
@@ -582,7 +590,7 @@ export function extractFlowSteps(text: string): string[] {
           !/^\s+[|v↓]\s*$/.test(l) &&
           !looksLikeMarkdownTableRow(l),
       )
-      .map((l) => l.replace(/\s*-->\s*/g, ' → '));
+      .map((l) => l.replaceAll('-->', ' → ').replace(/\s+/g, ' ').trim());
   }
   return dedupeFlowSteps(steps).slice(0, 12);
 }
@@ -701,7 +709,7 @@ export function coalesceChunkDemoSections(content: string): string {
 export function normalizeInlineHeadings(content: string): string {
   return String(content || '')
     .replace(/([.!?:])\s+(#{1,6}\s+[A-Za-z])/g, '$1\n\n$2')
-    .replace(/([^\n#])\s+(#{1,6}\s+[A-Za-z][^\n]{4,100})/g, '$1\n\n$2');
+    .replace(/([^\n#\s])\s+(#{1,6}\s+[A-Za-z][^\n]{4,100})/g, '$1\n\n$2');
 }
 
 function FlowStepsCard({ steps, title = 'Flow' }: { steps: string[]; title?: string }) {
@@ -861,6 +869,7 @@ export function looksLikeAsciiDiagram(text: string): boolean {
 
   if (looksLikeFlowLine(raw)) return true;
 
+
   if (treeBranches >= 2) return true;
 
   const lines = proseLines;
@@ -875,7 +884,7 @@ export function looksLikeAsciiDiagram(text: string): boolean {
   const indentedBoxes = lines.filter(
     (l) => /^\s{2,}/.test(l) && /[|+]/.test(l),
   ).length;
-  const treeLines = lines.filter((l) => /(?:├──|└──|├─|└─)/.test(l)).length;
+  const treeLines = lines.filter((l) => /(?:├─{1,2}|└─{1,2})/.test(l)).length;
 
   // Prefer classic ASCII +---+ diagrams over sparse Unicode shells
   if (boxDrawing >= 8 && plusBoxes >= 1) return true;
@@ -896,7 +905,7 @@ export function looksLikeAsciiArtLine(line: string): boolean {
   if (/^\+[-=─━+]+\+?$/.test(t)) return true;
   if (/\+[-=─━]{2,}\+/.test(t)) return true;
   // Single-cell ASCII boxes only (not multi-column markdown tables)
-  if (/^\|\s*[^|]+?\s*\|?\s*$/.test(t) && (t.match(/\|/g) || []).length <= 2) return true;
+  if (/^\|[^|]+\|?$/.test(t) && (t.match(/\|/g) || []).length <= 2) return true;
   if (/^[|]+$/.test(t)) return true;
   if (/^v$/i.test(t)) return true;
   if (/^\|\s*v\s*$/i.test(t)) return true;
@@ -1012,7 +1021,7 @@ export function demoteInstructionHeadings(content: string): string {
       out.push(line);
       continue;
     }
-    const headingMatch = trimmed.match(/^#{1,6}\s+(.+)$/);
+    const headingMatch = trimmed.match(/^#{1,6}\s+(\S.*)$/);
     if (headingMatch) {
       const title = headingMatch[1].replace(/^\*\*|\*\*$/g, '').trim();
       if (isCanonicalDigestHeading(title)) {
@@ -1037,7 +1046,7 @@ export function normalizeDigestFormatting(content: string): string {
           normalizeInlineHeadings(
             String(content || '')
               .replace(/([.!?])\s+(#{1,6}\s+)/g, '$1\n\n$2')
-              .replace(/^\+[-=+\s|]{6,}\+?\s*$/gm, ''),
+              .replace(/^\+[-=+|\t ]{6,}$/gm, ''),
           ),
         )
           .replace(/\*\*(Step\s+\d+[^*]{0,120})\*\*/gi, '$1')
@@ -1244,8 +1253,8 @@ export function sanitizeDigestSources(content: string): string {
   const kept = sectionBody.split('\n').filter((line) => {
     const t = line.trim();
     if (!t.startsWith('- ') && !t.startsWith('* ')) return true;
-    if (!/\[[^\]]+\]\(https?:\/\/[^)]+\)/.test(t)) return false;
-    const titleMatch = t.match(/\[([^\]]+)\]\(/);
+    if (!/\[[^\][]+\]\(https?:\/\/[^()]+\)/.test(t)) return false;
+    const titleMatch = t.match(/\[([^\][]+)\]\(/);
     const title = titleMatch?.[1] || '';
     return !isSourceTitleJunk(title);
   });
@@ -1277,7 +1286,7 @@ export function ensureSourcesAtEnd(content: string): string {
   }
 
   // Drop empty Sources headings with no links
-  const hasLink = /\[[^\]]+\]\(https?:\/\/[^)]+\)/.test(sourcesSection);
+  const hasLink = /\[[^\][]+\]\(https?:\/\/[^()]+\)/.test(sourcesSection);
   if (!hasLink) {
     return [before, middle].filter(Boolean).join('\n\n').trim();
   }
@@ -1529,9 +1538,9 @@ export function stripDigestBodyChrome(content: string): string {
 /** Drop mid-blog "From [title](url):" attribution lines (sources belong at the end). */
 export function stripMidBlogSourceLines(content: string): string {
   return String(content || '')
-    .replace(/^[ \t]*\*\*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:\*\*[ \t\r]*$/gim, '')
-    .replace(/^[ \t]*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:[ \t\r]*$/gim, '')
-    .replace(/\n{3,}/g, '\n\n')
+    .replaceAll(/^[ \t]*\*\*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:\*\*[ \t\r]*$/gim, '')
+    .replaceAll(/^[ \t]*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:[ \t\r]*$/gim, '')
+    .replaceAll(/\n{3,}/g, '\n\n')
     .trim();
 }
 

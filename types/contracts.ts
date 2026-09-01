@@ -114,7 +114,10 @@ export interface QuizResult {
 export interface ActivityRecord {
   date: ISODate;
   readSeconds: number;
+  /** A quiz attempt that reached completion. */
   quizTaken: boolean;
+  /** A quiz attempt that was started, whether or not it was finished. */
+  quizStarted?: boolean;
   quizScore: number;
   quizTotal: number;
 }
@@ -122,6 +125,11 @@ export interface ActivityRecord {
 /** Aggregated weekly stats for the Activity tab widget. */
 export interface WeeklyStats {
   daysRead: number;
+  /**
+   * Days in the window that actually had a briefing (Mon-Fri). The denominator
+   * for `daysRead` -- weekends are excluded because nothing is generated then.
+   */
+  briefingDays: number;
   quizzesSubmitted: number;
   correctPct: number;
   wrongPct: number;

@@ -293,13 +293,15 @@ def _ensure_readable_markdown(text: str) -> str:
     if cleaned.count("├──") + cleaned.count("└──") + cleaned.count("+--") >= 2:
         cleaned = re.sub(r"\*\*", "", cleaned)
         cleaned = re.sub(
-            r"([^\n])(\s*)((?:\|[\s|]*)?)(├──|└──|├─|└─|\+--|\|--)\s*",
-            lambda m: f"{m.group(1)}\n{'  ' * min(m.group(3).count('|'), 6)}{m.group(4)} ",
+            r"([^\n])([ \t|]*)(├─{1,2}|└─{1,2}|\+--|\|--)[ \t]*",
+            lambda m: f"{m.group(1)}\n{'  ' * min(str(m.group(2)).count('|'), 6)}{m.group(3)} ",
             cleaned,
         )
-        cleaned = re.sub(r"([/\w.-]+/)\s+(?=├──|└──|├─|└─|\+--|\|--)", r"\1\n", cleaned)
-        cleaned = re.sub(r"\s+\|\s+\|\s+\|\s+", "\n", cleaned)
-        cleaned = re.sub(r"\s+\|\s+\|\s+", "\n", cleaned)
+        # Match only the trailing "/" + spaces: capturing the whole path token
+        # (e.g. r"(\S*/)") makes the engine backtrack super-linearly, since "/"
+        # is itself part of \S.
+        cleaned = re.sub(r"/[ \t]+(?=[├└]─|\+--|\|--)", "/\n", cleaned)
+        cleaned = re.sub(r"\|([ \t]*\|)+", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     if cleaned.count("\n\n") < 2 and cleaned.count("\n") >= 2:
         cleaned = re.sub(r"\n+", "\n\n", cleaned)
@@ -918,7 +920,7 @@ def _call_gemini(
     tokens = len(prompt.split()) * 2
 
     for model_name in models:
-        attempts = 2 if as_json else 2
+        attempts = 2
         for attempt in range(attempts):
             try:
                 model = genai.GenerativeModel(model_name)
@@ -1363,9 +1365,10 @@ def synthesize_digest(
         ],
         _max_words(),
     )
-    merged, tokens = _enforce_min_length(
-        profile, articles, merged, tokens, scraped_only=scraped_only
-    )
+    if articles:
+        merged, tokens = _enforce_min_length(
+            profile, articles, merged, tokens, scraped_only=scraped_only
+        )
     payload["sections"] = _normalize_digest_sections(merged)
 
     cited_ids: set[int] = set()
@@ -1425,7 +1428,7 @@ def synthesize_digest(
     word_count = len(" ".join(section.content for section in sections).split())
     reading = round(max(1.0, word_count / _WPM), 1)
     floor = _min_words()
-    if word_count < floor:
+    if articles and word_count < floor:
         raise RuntimeError(
             f"Digest too short for the {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute target "
             f"({word_count} words; need at least {floor})."

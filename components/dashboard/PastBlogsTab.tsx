@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { CalendarSearch, Loader2, Calendar, CalendarDays } from 'lucide-react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
+import { isBriefingDay, localDateKey } from '@/lib/data/streak';
 
 type PastBlog = {
   title?: string;
@@ -11,13 +12,6 @@ type PastBlog = {
   published_at?: string;
   estimated_read_minutes?: number;
 };
-
-function localDateKey(d: Date): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
 
 function toDateKey(value?: string | null): string {
   if (!value) return '';
@@ -181,7 +175,7 @@ export default function PastBlogsTab({
           </div>
 
           <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-2">
-            <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+            <span className="text-zinc-300">S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span className="text-zinc-300">S</span>
           </div>
 
           <div className="grid grid-cols-7 gap-1">
@@ -199,6 +193,10 @@ export default function PastBlogsTab({
 
                 if (cellDate > today) {
                   bgClass = 'bg-zinc-50 text-zinc-300 border border-zinc-100';
+                } else if (!isBriefingDay(cellDate) && !hasBlog) {
+                  // No briefing is generated on weekends -- show it as inert grey
+                  // instead of the red "missed" state used for weekdays.
+                  bgClass = 'bg-zinc-100 text-zinc-400 cursor-not-allowed';
                 } else {
                   isClickable = true;
                   if (hasBlog) {
@@ -228,6 +226,11 @@ export default function PastBlogsTab({
                 <div
                   key={idx}
                   role={isClickable ? 'button' : undefined}
+                  title={
+                    day !== null && !isBriefingDay(new Date(year, month, day)) && !isClickable
+                      ? 'No briefing on weekends'
+                      : undefined
+                  }
                   tabIndex={isClickable ? 0 : undefined}
                   onClick={() => isClickable && day && handleSelectDate(day)}
                   onKeyDown={(e) => {
@@ -258,6 +261,10 @@ export default function PastBlogsTab({
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded bg-red-500 flex-shrink-0 shadow-sm"></div>
             <span className="text-xs font-bold text-zinc-700">Unread (Missed)</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-4 h-4 rounded bg-zinc-100 border border-zinc-200 flex-shrink-0"></div>
+            <span className="text-xs font-bold text-zinc-700">Weekend (No Briefing)</span>
           </div>
         </div>
       </div>

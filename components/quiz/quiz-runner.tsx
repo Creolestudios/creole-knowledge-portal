@@ -4,6 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { Timer, Send, ArrowRight, ArrowLeft, CheckCircle2, Target, AlertCircle, Clock } from 'lucide-react';
+import { fetchWithAuthRetry } from '@/lib/api/fetch-with-auth';
+import {
+  QUIZ_TIME_LIMIT_SECONDS,
+  QUIZ_IDLE_GRACE_SECONDS,
+  formatDuration,
+} from '@/lib/quizzes/timing';
 
 interface QuizRunnerProps {
   blogId: number | string;
@@ -26,8 +32,13 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showIdleModal, setShowIdleModal] = useState(false);
   const [idleCountdown, setIdleCountdown] = useState(60);
+  const [saving, setSaving] = useState(false);
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Absolute start instant. The timer derives elapsed time from this rather than
+  // counting interval ticks, which browsers throttle in a background tab and
+  // drop entirely while the machine sleeps.
+  const startedAtMsRef = useRef<number>(0);
   const idleTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Result State
@@ -39,7 +50,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     setError('');
     setWarning('');
     try {
-      const res = await fetch('/api/quizzes/start', {
+      const res = await fetchWithAuthRetry('/api/quizzes/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ blogId })
@@ -50,9 +61,9 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
         setAttemptId(data.attemptId);
         setQuestions(data.questions);
         if (data.warning) setWarning(data.warning);
-        setElapsedSeconds(0);
+        const startedAtMs = data.startedAt ? new Date(data.startedAt).getTime() : Number.NaN;
         setShowIdleModal(false);
-        startTimer();
+        startTimer(startedAtMs);
       } else {
         setError(data.error || 'Failed to start quiz. You may have already taken it.');
       }
@@ -63,19 +74,32 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     }
   };
 
-  const startTimer = () => {
+  /**
+   * @param startedAtMs absolute instant the attempt began. On resume this is the
+   *   server's `started_at`, so the displayed timer matches the time the server
+   *   will ultimately record instead of restarting from zero.
+   */
+  const startTimer = (startedAtMs?: number) => {
     if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds(prev => {
-        const next = prev + 1;
-        // At 20 minutes (1200s) of continuous elapsed time, trigger the Idle Check Modal
-        if (next === 1200) {
-          setIdleCountdown(60);
-          setShowIdleModal(true);
-        }
-        return next;
-      });
-    }, 1000);
+    startedAtMsRef.current =
+      typeof startedAtMs === 'number' && Number.isFinite(startedAtMs)
+        ? startedAtMs
+        : Date.now();
+
+    const tick = () => {
+      const next = Math.max(0, Math.floor((Date.now() - startedAtMsRef.current) / 1000));
+      setElapsedSeconds(next);
+      // At 20 minutes of elapsed time, trigger the Idle Check Modal.
+      if (next >= QUIZ_TIME_LIMIT_SECONDS) {
+        setShowIdleModal(prev => {
+          if (!prev) setIdleCountdown(QUIZ_IDLE_GRACE_SECONDS);
+          return true;
+        });
+      }
+    };
+
+    tick();
+    timerRef.current = setInterval(tick, 1000);
   };
 
   // Autosave when moving to next question
@@ -84,7 +108,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     const ans = answers[qId];
     if (ans && attemptId) {
       try {
-        await fetch('/api/quizzes/evaluate', {
+        const res = await fetchWithAuthRetry('/api/quizzes/evaluate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -93,10 +117,24 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             userAnswer: ans
           })
         });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          console.error('Autosave evaluation failed:', res.status, data?.error);
+          setError(
+            res.status === 401
+              ? 'Your session expired. Please refresh the page and sign in again to save your answer.'
+              : 'Could not save your answer. Please try again.'
+          );
+          return false;
+        }
+        setError('');
       } catch (err) {
         console.error('Autosave evaluation error:', err);
+        setError('Could not save your answer. Please check your connection and try again.');
+        return false;
       }
     }
+    return true;
   };
 
   const handleSubmitQuiz = async () => {
@@ -107,10 +145,15 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     await saveCurrentAnswer();
 
     try {
-      const res = await fetch('/api/quizzes/finish', {
+      const res = await fetchWithAuthRetry('/api/quizzes/finish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attemptId })
+        body: JSON.stringify({
+          attemptId,
+          clientElapsedSeconds: startedAtMsRef.current
+            ? Math.max(0, Math.floor((Date.now() - startedAtMsRef.current) / 1000))
+            : undefined,
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -175,19 +218,21 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             setError('Your previous active attempt timed out. Submitting saved progress...');
             setQuestions(statusData.questions || []);
             setAnswers(statusData.answers || {});
-            setElapsedSeconds(1200);
-            startTimer();
+            startTimer(Date.now() - QUIZ_TIME_LIMIT_SECONDS * 1000);
           } else {
             // Resume normally
             setQuestions(statusData.questions || []);
             setAnswers(statusData.answers || {});
-            setElapsedSeconds(Math.max(0, 1200 - (statusData.timeLeft || 1200)));
-            startTimer();
+            const resumedElapsed = Math.max(
+              0,
+              QUIZ_TIME_LIMIT_SECONDS - (statusData.timeLeft ?? QUIZ_TIME_LIMIT_SECONDS)
+            );
+            startTimer(Date.now() - resumedElapsed * 1000);
           }
           setInitializing(false);
         } else {
           // Auto-start the quiz since they haven't taken it
-          const res = await fetch('/api/quizzes/start', {
+          const res = await fetchWithAuthRetry('/api/quizzes/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ blogId })
@@ -200,8 +245,8 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             setAttemptId(data.attemptId);
             setQuestions(data.questions);
             if (data.warning) setWarning(data.warning);
-            setElapsedSeconds(0);
-            startTimer();
+            const startedAtMs = data.startedAt ? new Date(data.startedAt).getTime() : Number.NaN;
+            startTimer(startedAtMs);
           } else {
             setError(data.error || 'Failed to start quiz.');
           }
@@ -246,10 +291,17 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     setAnswers(prev => ({ ...prev, [qId]: text }));
   };
 
-  const handleNext = () => {
-    saveCurrentAnswer();
-    if (currentIndex < questions.length - 1) {
-      setCurrentIndex(prev => prev + 1);
+  const handleNext = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const saved = await saveCurrentAnswer();
+      if (!saved) return;
+      if (currentIndex < questions.length - 1) {
+        setCurrentIndex(prev => prev + 1);
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -303,7 +355,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             </div>
             <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800">
               <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Time Taken</div>
-              <div className="text-2xl font-black text-white">{Math.floor((result.timeTaken || elapsedSeconds) / 60)}:{((result.timeTaken || elapsedSeconds) % 60).toString().padStart(2, '0')}</div>
+              <div className="text-2xl font-black text-white">{formatDuration(result.timeTaken ?? elapsedSeconds)}</div>
             </div>
           </div>
 
@@ -504,7 +556,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
         </div>
         <div className="flex items-center gap-2 font-mono text-sm font-bold text-brand bg-brand/10 border border-brand/20 px-3 py-1.5 rounded-lg">
           <Clock size={16} />
-          Time Elapsed: {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')}
+          Time Elapsed: {formatDuration(elapsedSeconds)}
         </div>
       </div>
 
@@ -610,9 +662,10 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
         ) : (
           <button 
             onClick={handleNext}
-            className="flex items-center gap-2 bg-white text-black hover:bg-zinc-200 transition-colors px-6 py-2.5 rounded-lg text-sm font-bold"
+            disabled={saving}
+            className="flex items-center gap-2 bg-white text-black hover:bg-zinc-200 transition-colors px-6 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Next <ArrowRight size={16} />
+            {saving ? 'Saving...' : 'Next'} <ArrowRight size={16} />
           </button>
         )}
       </div>

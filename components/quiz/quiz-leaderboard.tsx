@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Trophy, Clock, Target, ArrowLeft } from 'lucide-react';
+import { formatDuration } from '@/lib/quizzes/timing';
 
 interface LeaderboardProps {
   blogId?: number | string;
@@ -124,7 +125,7 @@ export function QuizLeaderboard({ blogId, onClose, onRetake }: LeaderboardProps)
                     <Clock size={12} /> Time
                   </div>
                   <div className="font-mono text-sm font-semibold text-zinc-300">
-                    {Math.floor((entry.timeTaken || 0) / 60)}:{((entry.timeTaken || 0) % 60).toString().padStart(2, '0')}
+                    {formatDuration(entry.timeTaken)}
                   </div>
                 </div>
                 <div className="text-right w-16">

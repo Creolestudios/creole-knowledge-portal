@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
+import { computeStreak } from '@/lib/data/streak';
+import { summarizeAttemptRow } from '@/lib/quizzes/scoring';
 
 /**
  * True when a Supabase error means "this table does not exist".
@@ -55,12 +57,12 @@ export async function GET(request: Request) {
       throw readError;
     }
 
-    // 2. Fetch quiz attempts
+    // 2. Fetch quiz attempts. Started attempts count towards the streak too, so
+    // this is not filtered to `status = 'completed'`.
     const { data: quizAttempts, error: quizError } = await supabaseAdmin
       .from('quiz_attempts')
-      .select('completed_at, score, total_questions')
-      .eq('user_id', user.id)
-      .eq('status', 'completed');
+      .select('*, quiz_answers(is_correct, created_at)')
+      .eq('user_id', user.id);
 
     if (quizError && !isMissingTableError(quizError)) {
       throw quizError;
@@ -74,7 +76,7 @@ export async function GET(request: Request) {
       for (const log of readLogs) {
         const dateObj = new Date(log.created_at);
         const dateStr = dateObj.toISOString().split('T')[0];
-        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_score: 0, quiz_total: 0 };
+        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_started: false, quiz_score: 0, quiz_total: 0, attempts: [] };
         
         const readSeconds = log.metadata?.read_seconds || 0;
         dailyMap[dateStr].read_seconds += readSeconds;
@@ -84,11 +86,31 @@ export async function GET(request: Request) {
     // Process quiz attempts
     if (quizAttempts) {
       for (const attempt of quizAttempts) {
-        if (!attempt.completed_at) continue;
-        const dateObj = new Date(attempt.completed_at);
+        // An attempt the user started but has not finished still marks the day
+        // as engaged, so bucket on started_at when there is no completion.
+        const stamp = attempt.completed_at || attempt.started_at;
+        if (!stamp) continue;
+        const dateObj = new Date(stamp);
         const dateStr = dateObj.toISOString().split('T')[0];
-        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_score: 0, quiz_total: 0 };
-        
+        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_started: false, quiz_score: 0, quiz_total: 0, attempts: [] };
+
+        dailyMap[dateStr].quiz_started = true;
+
+        // Each attempt is listed on its own rather than merged into one total,
+        // so the activity log can show attempt 1/2/3 separately.
+        for (const summary of summarizeAttemptRow(attempt)) {
+          dailyMap[dateStr].attempts.push({
+            attempt_number: summary.attemptNumber,
+            correct_answers: summary.correctAnswers,
+            total_questions: summary.totalQuestions,
+            passed: summary.passed,
+            in_progress: summary.inProgress,
+            completed_at: summary.completedAt,
+          });
+        }
+
+        if (!attempt.completed_at) continue;
+
         dailyMap[dateStr].quiz_taken = true;
         // Keep the highest score of the day
         if (attempt.score > dailyMap[dateStr].quiz_score) {
@@ -100,34 +122,28 @@ export async function GET(request: Request) {
            dailyMap[dateStr].quiz_total = attempt.total_questions || 5;
         }
       }
+
+      // Stable order: attempt 1 first within each day.
+      for (const day of Object.values(dailyMap)) {
+        day.attempts.sort((a: any, b: any) => a.attempt_number - b.attempt_number);
+      }
     }
 
     const records = Object.values(dailyMap).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    // Calculate basic streak
-    let streak = 0;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    let currentDate = new Date(today);
-
-    for (const r of records) {
-      const rDate = new Date((r as any).date);
-      rDate.setHours(0, 0, 0, 0);
-
-      // If it's today or yesterday and read_seconds > 0 or quiz taken, we can start counting
-      if (rDate.getTime() === currentDate.getTime() || rDate.getTime() === currentDate.getTime() - 86400000) {
-        if ((r as any).read_seconds > 0 || (r as any).quiz_taken) {
-          streak++;
-          currentDate = rDate;
-          currentDate.setDate(currentDate.getDate() - 1);
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
+    // Streak rules live in lib/data/streak.ts so the API and the UI agree:
+    // weekends never break it (no briefing is generated), and a weekday counts
+    // when there is reading time or a quiz the user started.
+    const streak = computeStreak(
+      (records as any[]).map((r) => ({
+        date: r.date,
+        readSeconds: r.read_seconds || 0,
+        quizTaken: !!r.quiz_taken,
+        quizStarted: !!r.quiz_started,
+        quizScore: r.quiz_score || 0,
+        quizTotal: r.quiz_total || 0,
+      })),
+    );
 
     return NextResponse.json({
       success: true,
