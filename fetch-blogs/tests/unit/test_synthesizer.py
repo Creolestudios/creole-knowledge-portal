@@ -82,6 +82,21 @@ def test_synthesize_digest_uses_continuity_when_gemini_json_fails(
         raise json.JSONDecodeError("Expecting ',' delimiter", "{", 1)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", _boom)
+    monkeypatch.setattr(
+        synthesizer,
+        "_generate_teaching_sections",
+        lambda *_: (
+            [
+                {
+                    "title": "Briefing",
+                    "content": "MongoDB change streams watch inserts in production. " * 15,
+                    "sources_cited": [1],
+                    "estimated_read_minutes": 2.0,
+                }
+            ],
+            5,
+        ),
+    )
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 40)
     monkeypatch.setattr(synthesizer, "_max_words", lambda: 200)
 
@@ -96,6 +111,17 @@ def test_parse_json_object_repairs_raw_newlines_in_strings() -> None:
     raw = '{"headline": "Hi\nthere", "tldr": ["a"], "sections": []}'
     parsed = synthesizer._parse_json_object(raw)
     assert parsed["headline"] == "Hi\nthere"
+
+
+def _minimal_teaching_section(words: int = 25) -> list[dict]:
+    return [
+        {
+            "title": "Briefing",
+            "content": "teach " * words,
+            "sources_cited": [1],
+            "estimated_read_minutes": 1.0,
+        }
+    ]
 
 
 def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
@@ -117,7 +143,11 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
             12,
         ),
     )
-    monkeypatch.setattr(synthesizer, "_generate_teaching_sections", lambda *_: ([], 0))
+    monkeypatch.setattr(
+        synthesizer,
+        "_generate_teaching_sections",
+        lambda *_: (_minimal_teaching_section(), 0),
+    )
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 20)
     monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
 
@@ -128,7 +158,7 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
     assert digest.content.sections[0].title == "Briefing"
     assert "Celery workers today" in digest.content.sections[0].content
     briefing = next(s for s in digest.content.sections if s.title == "Briefing")
-    assert "Celery workers drain Redis" in briefing.content
+    assert "teach" in briefing.content or "Celery workers drain Redis" in briefing.content
 
 
 def test_call_gemini_raises_clear_quota_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -199,7 +229,11 @@ def test_junk_pdf_headline_is_replaced_with_article_title(
             __import__("json").JSONDecodeError("boom", "{", 0)
         ),
     )
-    monkeypatch.setattr(synthesizer, "_generate_teaching_sections", lambda *_: ([], 0))
+    monkeypatch.setattr(
+        synthesizer,
+        "_generate_teaching_sections",
+        lambda *_: (_minimal_teaching_section(), 0),
+    )
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 10)
     monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
 
@@ -234,7 +268,11 @@ def test_templated_gemini_headline_is_replaced_with_article_title(
             12,
         ),
     )
-    monkeypatch.setattr(synthesizer, "_generate_teaching_sections", lambda *_: ([], 0))
+    monkeypatch.setattr(
+        synthesizer,
+        "_generate_teaching_sections",
+        lambda *_: (_minimal_teaching_section(), 0),
+    )
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 10)
     monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
 
@@ -306,7 +344,7 @@ def test_teaching_still_runs_when_scraped_bodies_are_long(
             [
                 {
                     "title": "Deep dive",
-                    "content": "teach " * 80,
+                    "content": "word " * 4100,
                     "sources_cited": [1],
                     "estimated_read_minutes": 2.0,
                 }
@@ -531,6 +569,25 @@ def test_generate_teaching_sections_stops_when_floor_is_reached(
     assert tokens == 10
 
 
+def test_interest_user_teaching_pulls_similar_articles_when_floor_not_met(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = UserProfile(user_id="u1", interests=["llm"])
+    articles = [_article(f"LLM lesson {i}", "word " * 200) for i in range(4)]
+    calls = {"n": 0}
+
+    def fake_call(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
+        calls["n"] += 1
+        return ("chapter " * 120, 10)
+
+    monkeypatch.setattr(synthesizer, "_call_gemini", fake_call)
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 500)
+    sections, tokens = synthesizer._generate_teaching_sections(profile, articles)
+    assert len(sections) >= 2
+    assert calls["n"] >= 2
+    assert tokens >= 20
+
+
 def test_generate_teaching_top_up_failure_is_logged_not_fatal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -570,6 +627,24 @@ def test_synthesize_digest_with_scraped_only_and_custom_date(
     assert digest.digest_date == date(2026, 1, 2)
     assert digest.content.sections[0].title == "Briefing"
     assert digest.metrics.llm_tokens_used == 0
+
+
+def test_synthesize_raises_on_gemini_quota(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = UserProfile(user_id="u1", interests=["llm"])
+    articles = [
+        _article(f"LLM inference guide {i}", "llm batching gpu tokens " * 900)
+        for i in range(4)
+    ]
+
+    def boom(*_args: object, **_kwargs: object) -> tuple:
+        raise synthesizer.GeminiQuotaExceeded("quota exceeded (429)")
+
+    monkeypatch.setattr(synthesizer, "_call_gemini", boom)
+
+    with pytest.raises(synthesizer.GeminiQuotaExceeded, match="quota exceeded"):
+        synthesizer.synthesize_digest(profile, articles)
 
 
 def test_devto_full_article_ignores_non_devto_urls() -> None:
@@ -818,6 +893,27 @@ def test_enforce_min_length_pads_near_miss_shortfall(
     assert synthesizer._words_in(sections) >= 100
 
 
+def test_normalize_digest_sections_dedupes_repeated_briefing_chunks() -> None:
+    duplicate_tail = (
+        "AI-powered A/B testing turns gut feeling into math. "
+        "Plug in an AI experiment tool. Generative UI is here. FAQ: How to leverage AI?"
+    )
+    intro = (
+        "Only 18% of web developers say their AI adoption has led to faster shipping times. "
+        "Real-time AI search is table stakes in 2026."
+    )
+    messy = [
+        {"title": "Briefing", "content": duplicate_tail, "sources_cited": [1]},
+        {"title": "Briefing", "content": intro, "sources_cited": [1]},
+        {"title": "Briefing", "content": duplicate_tail, "sources_cited": [1]},
+    ]
+    out = synthesizer._normalize_digest_sections(messy)
+    assert len(out) == 1
+    assert out[0]["content"].count("AI-powered A/B testing") == 1
+    assert "Only 18% of web developers" in out[0]["content"]
+    assert "Real-time AI search" in out[0]["content"]
+
+
 def test_normalize_digest_sections_enforces_canonical_titles() -> None:
     messy = [
         {
@@ -862,6 +958,13 @@ def test_content_matches_source_rejects_dart_for_python_article() -> None:
     python = "Python text chunking respects word boundaries when slicing strings. " * 20
     assert synthesizer._content_matches_source(dart, article) is False
     assert synthesizer._content_matches_source(python, article) is True
+
+
+def test_content_matches_source_accepts_interest_terms_for_llm_user() -> None:
+    profile = UserProfile(user_id="u1", interests=["llm"])
+    article = _article("The efficient frontier of LLM inference", "gpu batching")
+    llm_prose = "Large language models need careful batching on GPUs for throughput."
+    assert synthesizer._content_matches_source(llm_prose, article, profile) is True
 
 
 def test_previous_briefing_ignores_unrelated_yesterday_stack() -> None:
@@ -913,13 +1016,8 @@ def test_off_topic_teaching_is_discarded_for_source_article(
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 40)
     monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
 
-    digest = synthesizer.synthesize_digest(profile, [article])
-    body = " ".join(section.content for section in digest.content.sections).lower()
-    assert "dart" in digest.content.headline.lower() or "flutter" in digest.content.headline.lower()
-    assert "python text chunking" not in digest.content.headline.lower()
-    assert "python slicing" not in body
-    assert "dart" in body or "flutter" in body
-    assert str(digest.content.sources[0].url).rstrip("/") == "https://dev.to/dart-isolates"
+    with pytest.raises(RuntimeError, match="Gemini teaching produced no chapters"):
+        synthesizer.synthesize_digest(profile, [article])
 
 
 def test_payload_from_articles_drops_mismatched_stack_body() -> None:

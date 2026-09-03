@@ -5,9 +5,11 @@ from __future__ import annotations
 from src.models.profile import LearningPath, QuizOutcome, UserProfile
 from src.ranker.next_day import (
     build_next_day_query_text,
+    continuing_interest_run,
     continuity_scrape_terms,
     discovery_match_terms,
     discovery_scrape_terms,
+    hay_is_off_interest_continuity,
     interest_scrape_terms,
     profile_has_discovery_prefs,
     profile_has_interests,
@@ -18,7 +20,18 @@ from src.ranker.next_day import (
 )
 
 
-def test_build_query_uses_interests_only_not_yesterday() -> None:
+def test_build_query_interest_day_one_uses_interests_only() -> None:
+    profile = UserProfile(
+        user_id="u-new-int",
+        interests=["LLMs", "RAG"],
+    )
+    text = build_next_day_query_text(profile)
+    assert "llm" in text.lower() or "rag" in text.lower()
+    assert "Yesterday" not in text
+    assert "trending" not in text.lower()
+
+
+def test_build_query_interest_returning_includes_yesterday_and_quiz() -> None:
     profile = UserProfile(
         user_id="u1",
         primary_tech_stack=["python"],
@@ -31,15 +44,17 @@ def test_build_query_uses_interests_only_not_yesterday() -> None:
             last_quiz_attempt_number=1,
             last_quiz_score=3,
             last_quiz_total=8,
+            weak_topics=["asyncio"],
         ),
     )
+    assert continuing_interest_run(profile) is True
     text = build_next_day_query_text(profile)
     assert "asyncio" in text.lower()
     assert "redis" in text.lower()
-    assert "Yesterday" not in text
-    assert "Event loops" not in text
-    assert "Continue the same" not in text
-    assert "tech stack" not in text.lower()
+    assert "yesterday" in text.lower()
+    assert "quiz" in text.lower()
+    assert "interests only" in text.lower()
+    assert "trending" not in text.lower()
 
 
 def test_build_query_stack_trending_for_new_join_without_interests() -> None:
@@ -100,35 +115,86 @@ def test_continuity_scrape_terms_from_yesterday_not_stack() -> None:
     assert "apple" not in terms
 
 
-def test_continuity_scrape_terms_empty_when_interests_filled() -> None:
+def test_continuity_scrape_terms_from_yesterday_for_interest_user() -> None:
     profile = UserProfile(
         user_id="u1",
-        interests=["redis"],
-        learning_path=LearningPath(last_topics=["python"]),
+        interests=["rag", "llm"],
+        learning_path=LearningPath(
+            last_digest_headline="RAG chunking in Python",
+            last_topics=["rag", "chunking"],
+        ),
     )
-    assert continuity_scrape_terms(profile) == []
+    terms = continuity_scrape_terms(profile)
+    assert "rag" in terms or "chunking" in terms or "chunk" in terms
+    assert "docker" not in terms
 
 
-def test_interest_scrape_terms_only_from_interests_field() -> None:
+def test_interest_returning_discovery_uses_yesterday_and_quiz() -> None:
+    profile = UserProfile(
+        user_id="u-int-ret",
+        interests=["rag", "llm"],
+        learning_path=LearningPath(
+            last_digest_headline="RAG chunking strategies",
+            last_topics=["rag", "chunking"],
+            last_digest_embedding=[0.1] * 8,
+            last_quiz_outcome=QuizOutcome.FAILED,
+            last_quiz_percentage=35,
+            last_quiz_attempt_number=1,
+            weak_topics=["embeddings"],
+        ),
+    )
+    assert continuing_interest_run(profile) is True
+    scrape = discovery_scrape_terms(profile)
+    # Same shape as non-interest returning: yesterday + quiz (not a fresh interest dump).
+    assert "rag" in scrape or "chunking" in scrape or "chunk" in scrape
+    quiz = quiz_focus_terms(profile)
+    assert quiz
+    assert any(t in scrape for t in quiz) or "embedding" in " ".join(scrape)
+    match = [t.lower() for t in discovery_match_terms(profile)]
+    assert "rag" in match or "chunk" in match or "chunking" in match
+    assert "flutter" not in match
+    assert hay_is_off_interest_continuity("Beautiful Flutter UI animations", profile) is True
+    assert hay_is_off_interest_continuity("RAG chunking with overlapping windows", profile) is False
+
+
+def test_interest_day_one_scrape_terms_only_from_interests_field() -> None:
+    """Day 1 interest users: interests only — no yesterday continuity yet."""
     profile = UserProfile(
         user_id="u1",
         primary_tech_stack=["python"],
         interests=["redis"],
-        learning_path=LearningPath(
-            active_stack="python",
-            last_quiz_outcome=QuizOutcome.PASSED,
-            last_quiz_percentage=90,
-            last_quiz_attempt_number=1,
-            last_digest_embedding=[0.1, 0.2],
-        ),
     )
     terms = interest_scrape_terms(profile)
     assert terms == ["redis"]
     assert profile_has_interests(profile) is True
+    assert profile_has_yesterday(profile) is False
+    assert continuing_interest_run(profile) is False
     assert profile_has_discovery_prefs(profile) is True
     assert discovery_scrape_terms(profile) == ["redis"]
     assert discovery_match_terms(profile) == ["redis"]
     assert stack_scrape_terms(profile) == []
+
+
+def test_sentence_interest_matches_llm_articles_not_raw_phrase() -> None:
+    """Natural-language interests must expand to tech tokens for title matching."""
+    from src.extractors.topic_filter import matches_any_term
+
+    profile = UserProfile(
+        user_id="u-llm",
+        interests=["Want to learn about LLMs."],
+    )
+    match = [t.lower() for t in discovery_match_terms(profile)]
+    assert "llm" in match
+    assert "llms" in match
+    assert not any("want" in t for t in match)
+    assert matches_any_term(
+        "LLM fine-tuning 101: a practical guide for developers",
+        discovery_match_terms(profile),
+    )
+    assert matches_any_term(
+        "Building with LLMs and RAG pipelines",
+        discovery_match_terms(profile),
+    )
 
 
 def test_stack_terms_used_when_interests_empty_new_join() -> None:
@@ -194,6 +260,33 @@ def test_returning_python_theme_excludes_flutter_stack() -> None:
 
     assert matches_any_term("Chunking documents in Python for RAG", match) is True
     assert matches_any_term("Beautiful Flutter UI animations", match) is False
+
+
+def test_returning_match_uses_continuity_not_whole_stack_family() -> None:
+    profile = UserProfile(
+        user_id="u-cont",
+        primary_tech_stack=["python"],
+        learning_path=LearningPath(
+            last_digest_headline="Python chunking for RAG pipelines",
+            last_topics=["python", "chunks", "rag"],
+            last_digest_embedding=[0.2] * 8,
+            active_stack="python",
+        ),
+    )
+    match = [t.lower() for t in discovery_match_terms(profile)]
+    assert "rag" in match or "chunks" in match or "chunk" in match
+    assert "pytorch" not in match
+    assert "pandas" not in match
+    from src.extractors.topic_filter import matches_any_term
+
+    assert matches_any_term("Python chunking: overlapping windows for RAG", match) is True
+    assert (
+        matches_any_term(
+            "Three Gemma 4 Deployments on One T4G for Under $3: What the Runtime Changes",
+            match,
+        )
+        is False
+    )
 
 
 def test_python_yesterday_rejects_react_family() -> None:
@@ -286,16 +379,28 @@ def test_covering_all_python_topics_rotates_to_react() -> None:
     )
 
 
-def test_refresh_embeds_interests_not_yesterday(monkeypatch) -> None:
+def test_refresh_reuses_yesterday_embedding_for_returning_interest_user(monkeypatch) -> None:
+    stored = [0.9, 0.8, 0.7]
     profile = UserProfile(
         user_id="u1",
-        interests=["python"],
+        interests=["rag", "llm"],
         learning_path=LearningPath(
             last_digest_headline="RAG basics",
-            last_digest_embedding=[0.9, 0.8, 0.7],
+            last_digest_embedding=stored,
             last_quiz_outcome=QuizOutcome.PASSED,
             last_quiz_percentage=80,
         ),
+    )
+    monkeypatch.setattr("src.ranker.next_day.embed_query", lambda _text: [0.4, 0.5])
+    vector = refresh_profile_embedding(profile)
+    assert vector == stored
+    assert profile.profile_embedding == stored
+
+
+def test_refresh_embeds_interests_on_interest_day_one(monkeypatch) -> None:
+    profile = UserProfile(
+        user_id="u1",
+        interests=["python"],
     )
     seen: list[str] = []
 
@@ -307,7 +412,7 @@ def test_refresh_embeds_interests_not_yesterday(monkeypatch) -> None:
     vector = refresh_profile_embedding(profile)
     assert vector == [0.1, 0.2, 0.3]
     assert "python" in seen[0].lower()
-    assert "RAG basics" not in seen[0]
+    assert "Yesterday" not in seen[0]
 
 
 def test_refresh_reuses_yesterday_embedding_for_returning_no_interest(monkeypatch) -> None:

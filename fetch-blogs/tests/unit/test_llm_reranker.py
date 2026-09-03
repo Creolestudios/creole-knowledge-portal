@@ -114,11 +114,15 @@ def test_from_article_clamps_scores_and_truncates_lists() -> None:
 
 
 def test_rerank_configures_gemini_when_no_model_is_passed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.core.config import Environment
     from src.ranker import llm_reranker
 
     class MockSettings:
         GEMINI_API_KEY = "test-key"
         GEMINI_MODEL = "gemini-test"
+
+    class MockApp:
+        ENVIRONMENT = Environment.STAGING
 
     configured: dict[str, str] = {}
 
@@ -131,6 +135,17 @@ def test_rerank_configures_gemini_when_no_model_is_passed(monkeypatch: pytest.Mo
             return _Response(text='{"results":[{"article_id":"a","score":0.9,"reason":"fit"}]}')
 
     monkeypatch.setattr(llm_reranker, "get_llm_settings", lambda: MockSettings())
+    monkeypatch.setattr("src.core.config.get_app_settings", lambda: MockApp())
+    # Also patch the import site used inside the function after from-import
+    monkeypatch.setattr(
+        "src.ranker.llm_reranker.get_app_settings",
+        lambda: MockApp(),
+        raising=False,
+    )
+    # get_app_settings is imported inside the function from src.core.config
+    import src.core.config as core_config
+
+    monkeypatch.setattr(core_config, "get_app_settings", lambda: MockApp())
     monkeypatch.setattr(
         llm_reranker.genai,
         "configure",
@@ -141,6 +156,34 @@ def test_rerank_configures_gemini_when_no_model_is_passed(monkeypatch: pytest.Mo
     results = rerank_with_gemini(_profile(), _candidates(), limit=1, model=None)
     assert configured == {"api_key": "test-key", "model": "gemini-test"}
     assert results[0].article_id == "a"
+
+
+def test_rerank_skips_gemini_in_local_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.core.config import Environment
+    import src.core.config as core_config
+
+    class MockApp:
+        ENVIRONMENT = Environment.LOCAL
+
+    called = {"gemini": False}
+
+    class FakeModel:
+        def __init__(self, name: str) -> None:
+            called["gemini"] = True
+
+        def generate_content(self, prompt: str) -> _Response:
+            called["gemini"] = True
+            return _Response(text='{"results":[]}')
+
+    monkeypatch.setattr(core_config, "get_app_settings", lambda: MockApp())
+    monkeypatch.setattr(
+        "src.ranker.llm_reranker.genai.GenerativeModel",
+        FakeModel,
+    )
+    results = rerank_with_gemini(_profile(), _candidates(), limit=2, model=None)
+    assert called["gemini"] is False
+    assert [r.article_id for r in results] == ["a", "b"]
+    assert "fallback" in results[0].reason.lower() or results[0].reason
 
 
 def test_rerank_with_gemini_edge_cases_and_missing_api_key(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -48,9 +48,11 @@ describe('PremiumMarkdownRenderer', () => {
     expect(screen.getByText('bold')).toBeInTheDocument();
   });
 
-  it('renders blank-line spacers between blocks', () => {
+  it('does not render blank-line spacer elements between blocks', () => {
     const { container } = render(<PremiumMarkdownRenderer content={'Para one\n\nPara two'} />);
-    expect(container.querySelectorAll('.h-2')).toHaveLength(1);
+    expect(container.querySelectorAll('.h-2')).toHaveLength(0);
+    expect(screen.getByText('Para one')).toBeInTheDocument();
+    expect(screen.getByText('Para two')).toBeInTheDocument();
   });
 
   it('does not wrap mid-prose python/git words as Code Snippet', () => {
@@ -258,6 +260,28 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
     expect(screen.getByText(/Next sentence starts here/)).toBeInTheDocument();
   });
 
+  it('tightens spacing between digest subsections with excess blank lines', () => {
+    const md = `## Briefing
+### Initialization Mechanics
+
+
+
+### QLoRA (Quantized Low-Rank Adaptation)
+
+
+
+### Tokenization Dynamics
+Body about tokenization in LLM fine-tuning pipelines and structural masking.
+`;
+    const { container } = render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByRole('heading', { level: 3, name: /Initialization Mechanics/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: /QLoRA/i })).toBeInTheDocument();
+    expect(container.querySelectorAll('[class*="h-2"]').length).toBe(0);
+    const h3s = container.querySelectorAll('h3');
+    expect(h3s.length).toBeGreaterThanOrEqual(3);
+    expect(h3s[1]?.className).toMatch(/mt-2/);
+  });
+
   it('renders unfenced ASCII diagrams as vertical flow cards', () => {
     const diagram = [
       '  +------------------+',
@@ -293,6 +317,40 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
     expect(screen.getByText(/Queue Sizing/i)).toBeInTheDocument();
     expect(screen.getByText(/Prefer ThreadPoolExecutor/i)).toBeInTheDocument();
     expect(container.querySelector('pre')).toBeNull();
+  });
+
+  it('unfences business-prose lists with while-sentences and renders real bullets', () => {
+    const md = [
+      '## Briefing',
+      'Local inference cost models for enterprise AI agents.',
+      '```',
+      'Your business could potentially charge for:',
+      '* Software',
+      '* Enterprise features',
+      '* Governance',
+      '* Management',
+      '* Updates',
+      '* Integrations',
+      '* Security controls',
+      '* Support',
+      'while shifting a significant portion of inference compute to the endpoint.',
+      "This doesn't eliminate your infrastructure costs, but it can change the cost structure substantially.",
+      '# 14. There is also a hybrid model',
+      "You don't necessarily have to choose between local and cloud AI.",
+      'A more practical enterprise architecture may be:',
+      '```',
+      '',
+      'A more practical enterprise architecture may be: local plus cloud hybrid.',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.queryByText('Code Snippet')).not.toBeInTheDocument();
+    expect(container.querySelector('pre')).toBeNull();
+    expect(screen.getByText('Software')).toBeInTheDocument();
+    expect(container.querySelectorAll('li').length).toBeGreaterThanOrEqual(4);
+    // Repeated closing line should appear once
+    const matches = (container.textContent || '').match(/A more practical enterprise architecture may be/g) || [];
+    expect(matches.length).toBe(1);
   });
 
   it('puts unfenced Python in a black code box and keeps nearby prose outside', () => {
@@ -652,6 +710,113 @@ React useEffect cleanup runs after unmount and prevents memory leaks.
     expect(screen.getByText('Diagram')).toBeInTheDocument();
     expect(screen.getAllByText(/Fragment <= max_size/i)).toHaveLength(1);
     expect(screen.getAllByText(/Try split by/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('drops near-duplicate architecture diagrams emitted twice', () => {
+    const md = [
+      '## Briefing',
+      'Local browser agent stack for LLM fine-tuning.',
+      '```',
+      'Browser',
+      '        |',
+      '        v',
+      '| Local Agent |',
+      '        |',
+      '        v',
+      'WebLLM',
+      '        |',
+      '        v',
+      'WebGPU',
+      '        |',
+      '        v',
+      'Local Model',
+      '```',
+      '',
+      'Same architecture again:',
+      '```',
+      'Browser',
+      '        |',
+      '        v',
+      'Local Agent',
+      '        |',
+      '        v',
+      'WebLLM',
+      '        |',
+      '        v',
+      'WebGPU',
+      '        |',
+      '        v',
+      'Local Model',
+      '```',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={md} />);
+    expect(container.querySelectorAll('[data-testid="digest-diagram"]').length).toBe(1);
+  });
+
+  it('does not treat For example narration as architecture steps', () => {
+    const md = [
+      '## Briefing',
+      'Agent runtime architecture for local inference.',
+      '```',
+      'User',
+      '        |',
+      '        v',
+      'AI Agent',
+      '        |',
+      '        v',
+      'Local LLM',
+      '        |',
+      '        v',
+      'Tools',
+      '        |',
+      '        v',
+      'Actions',
+      'For example:',
+      '        |',
+      '        v',
+      'Security Analyst',
+      '        |',
+      '        v',
+      'Browser-based AI Agent',
+      '```',
+    ].join('\n');
+
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByText('User')).toBeInTheDocument();
+    expect(screen.getByText('Actions')).toBeInTheDocument();
+    expect(screen.queryByText(/For example/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Security Analyst/i)).not.toBeInTheDocument();
+  });
+
+  it('rebuilds branched browser-agent trees into a clean vertical spine', () => {
+    const md = [
+      '## Briefing',
+      'Browser-hosted agent architecture for local models.',
+      '```',
+      'Browser',
+      '   |',
+      '   └─┬─┘',
+      '| Local Agent |',
+      '   |',
+      'WebLLM',
+      '   |',
+      'WebGPU',
+      '   |',
+      'Local Model',
+      '   |',
+      '───┬───┬───',
+      '   v   v   v',
+      'Files Browser Approved',
+      'Tools APIs Tools',
+      '```',
+    ].join('\n');
+
+    const { container } = render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByTestId('digest-diagram')).toBeTruthy();
+    expect(container.textContent).toMatch(/Local Agent/);
+    expect(container.textContent).toMatch(/WebLLM/);
+    expect(container.textContent).not.toMatch(/└─┬─┘/);
   });
 
   it('renders bracket decision trees as vertical flow cards', () => {

@@ -31,31 +31,82 @@ from src.models.profile import (
 
 log = structlog.get_logger(__name__)
 
-_WPM = 225
-_MIN_READ_MINUTES = 18  # ~4000 words
-_MAX_READ_MINUTES = 20  # ~4500 words
-_WORD_FLOOR = 4000
-_WORD_CEILING = 4500
+# Fewer words, same 18–20 min estimate (3200/180≈18, 3600/180=20).
+_WPM = 180
+_MIN_READ_MINUTES = 18
+_MAX_READ_MINUTES = 20
+_WORD_FLOOR = 3200
+_WORD_CEILING = 3600
 _ARTICLE_LIMIT = 10
 _TEACHING_ARTICLE_LIMIT = 1
+_INTEREST_TEACHING_ARTICLE_LIMIT = 4
+_INTEREST_THIN_SOURCE_WORDS = 1800
 # Never paste entire source blogs into the digest — short technical excerpts only.
 _SCRAPE_EXCERPT_WORDS = 140
 _SCRAPE_EXCERPT_TOTAL = 700
 _SCRAPE_EXCERPT_ARTICLES = 1
+_INTEREST_SCRAPE_EXCERPT_TOTAL = 1600
+_INTEREST_SCRAPE_EXCERPT_WORDS = 220
 
 
 def _min_words() -> int:
-    """Lower bound: config target, floored at 4000 (~18 min)."""
+    """Lower bound: config target, floored at 3200 (~18 min at _WPM)."""
     return max(get_scraping_settings().DIGEST_WORD_TARGET, _WORD_FLOOR)
 
 
 def _max_words() -> int:
-    """Upper bound: keep digests in the 4000–4500 band."""
+    """Upper bound: keep digests in the 3200–3600 band."""
     return _WORD_CEILING
 
 
 def _words_in(sections: list[dict[str, Any]]) -> int:
     return len(" ".join(str(section.get("content") or "") for section in sections).split())
+
+
+def _article_body_word_count(article: Article) -> int:
+    body = (article.body_text or article.summary or "").strip()
+    return len(body.split())
+
+
+def _cluster_source_words(articles: list[Article]) -> int:
+    return sum(_article_body_word_count(article) for article in articles)
+
+
+def _teaching_article_limit(profile: UserProfile) -> int:
+    """Interest learners may teach from several similar posts when one source is thin."""
+    from src.ranker.next_day import profile_has_interests
+
+    if profile_has_interests(profile):
+        return _INTEREST_TEACHING_ARTICLE_LIMIT
+    return _TEACHING_ARTICLE_LIMIT
+
+
+def _interest_needs_similar_sources(profile: UserProfile, cluster: list[Article]) -> bool:
+    from src.ranker.next_day import profile_has_interests
+
+    if not profile_has_interests(profile) or not cluster:
+        return False
+    return _cluster_source_words(cluster[:1]) < _INTEREST_THIN_SOURCE_WORDS
+
+
+def _scrape_excerpt_limits(
+    profile: UserProfile,
+    cluster: list[Article],
+    *,
+    teaching_failed: bool = False,
+) -> tuple[int, int, int]:
+    """Return (total_words, per_article_words, article_count) for opening excerpts."""
+    from src.ranker.next_day import profile_has_interests
+
+    if profile_has_interests(profile) and cluster:
+        if _interest_needs_similar_sources(profile, cluster) or teaching_failed or len(cluster) >= 2:
+            return (
+                _INTEREST_SCRAPE_EXCERPT_TOTAL,
+                _INTEREST_SCRAPE_EXCERPT_WORDS,
+                min(len(cluster), _INTEREST_TEACHING_ARTICLE_LIMIT),
+            )
+        return (_SCRAPE_EXCERPT_TOTAL, _SCRAPE_EXCERPT_WORDS, min(len(cluster), 2))
+    return (_SCRAPE_EXCERPT_TOTAL, _SCRAPE_EXCERPT_WORDS, _SCRAPE_EXCERPT_ARTICLES)
 
 
 def _section(
@@ -151,6 +202,39 @@ def _extract_fenced_blocks(content: str) -> tuple[str, list[str]]:
         else:
             prose_parts.append(chunk)
     return "\n\n".join(prose_parts).strip(), fences
+
+
+def _normalize_block_text(text: str) -> str:
+    """Collapse whitespace for overlap checks."""
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _blocks_substantially_overlap(left: str, right: str, *, min_chars: int = 160) -> bool:
+    """True when two bodies repeat the same passage (exact, substring, or long prefix)."""
+    a = _normalize_block_text(left)
+    b = _normalize_block_text(right)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    if len(shorter) >= min_chars and shorter in longer:
+        return True
+    probe = min(len(a), len(b), 400)
+    return probe >= min_chars and a[:probe] == b[:probe]
+
+
+def dedupe_content_blocks(blocks: list[str]) -> list[str]:
+    """Drop briefing chunks that repeat text already kept."""
+    kept: list[str] = []
+    for raw in blocks:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        if any(_blocks_substantially_overlap(text, prior) for prior in kept):
+            continue
+        kept.append(text)
+    return kept
 
 
 def _split_by_canonical_h2(
@@ -269,8 +353,36 @@ def text_matches_headline(text: str, headline: str) -> bool:
     return True
 
 
-def _content_matches_source(content: str, article: Article) -> bool:
+def _digest_topic_headline(
+    profile: UserProfile | None,
+    lead: Article | None,
+    *,
+    fallback: str = "",
+) -> str:
+    """Headline used for on-topic filters — widen with interest terms when needed."""
+    from src.ranker.next_day import discovery_match_terms, profile_has_interests
+
+    base = (lead.title if lead is not None else "") or fallback or "Morning Briefing"
+    if profile is not None and profile_has_interests(profile):
+        terms = discovery_match_terms(profile)
+        if terms:
+            return f"{base} {' '.join(terms[:8])}"
+    return base
+
+
+def _content_matches_source(
+    content: str,
+    article: Article,
+    profile: UserProfile | None = None,
+) -> bool:
     """False when generated prose is a different stack/topic than the source title."""
+    from src.extractors.topic_filter import matches_any_term
+    from src.ranker.next_day import discovery_match_terms, profile_has_interests
+
+    if profile is not None and profile_has_interests(profile):
+        terms = discovery_match_terms(profile)
+        if terms and matches_any_term(content, terms):
+            return True
     return text_matches_headline(content, article.title or "")
 
 
@@ -473,8 +585,10 @@ def _normalize_digest_sections(sections: list[dict[str, Any]]) -> list[dict[str,
     sources_cited = list(dict.fromkeys(cited)) or [1]
     out: list[dict[str, Any]] = []
     if briefing_parts:
+        briefing_parts = dedupe_content_blocks(briefing_parts)
         out.append(_section("Briefing", "\n\n".join(briefing_parts), sources_cited))
     if summary_parts:
+        summary_parts = dedupe_content_blocks(summary_parts)
         out.append(_section("Summary", "\n\n".join(summary_parts), sources_cited))
     return out or sections
 
@@ -1090,9 +1204,11 @@ MARKDOWN FENCES — critical for the reader UI:
 - Use ``` fences ONLY for real source code, shell commands, or ASCII/box diagrams.
 - NEVER write a bare language label on its own line (e.g. `python` or `text`) — always use proper ```python / ```text fences.
 - NEVER put explanations, bullet lists, markdown tables, or ### headings inside a fence.
+- NEVER fence ordinary teaching prose (even if it mentions while/for/if in English sentences).
 - Put teaching prose, bullets, headings, and comparison tables outside fences on normal markdown lines.
 - Unfenced paragraphs of prose that belong in a fence will break the UI — fence code tightly.
 - Code and diagrams MUST be fenced so they render inside a black box.
+- Do not repeat the same paragraph, bullet list, or section twice in Briefing or Summary.
 
 ASCII DIAGRAMS — critical:
 - Prefer SIMPLE vertical arrow flows (not wide boxes). Use plain text labels with | and v only:
@@ -1109,7 +1225,10 @@ Fragment <= max_size --> Keep Fragment
 Fragment > max_size --> Try split by "\\n"
 ```
 - Max width 48 characters per line. One step per line. Use --> only for a branch label on the same line.
-- Do NOT repeat the same decision tree twice. Do NOT use broken +---+ borders.
+- Do NOT repeat the same diagram twice (no tree + arrow copy of the same architecture).
+- Do NOT put "For example:" or use-case narration inside a diagram fence — put examples in prose outside fences.
+- For architecture: one vertical spine only (User → Agent → LLM → Tools). List sibling tools on ONE line with commas, never as a wide multi-column fan-out.
+- Do NOT use broken +---+ borders or floating orphan connectors.
 - NEVER insert | or v between lines of source code — those markers are for diagrams only.
 - NEVER use Unicode box-drawing characters (┌ ─ ┐ │ └ ┘ ├ ┤).
 - NEVER put a markdown table inside a diagram fence.
@@ -1369,9 +1488,17 @@ def _generate_teaching_sections(
     sections: list[dict[str, Any]] = []
     tokens = 0
     floor = _min_words()
-    chosen = articles[:_TEACHING_ARTICLE_LIMIT]
+    chosen = articles[: _teaching_article_limit(profile)]
     if not chosen:
         return sections, tokens
+    if _interest_needs_similar_sources(profile, articles) and len(chosen) > 1:
+        log.info(
+            "generator: thin interest source; teaching from similar articles",
+            user_id=profile.user_id,
+            lead=(chosen[0].title or "")[:80],
+            similar=len(chosen),
+            lead_words=_article_body_word_count(chosen[0]),
+        )
     per_chapter = max(650, min(850, floor // max(1, len(chosen))))
 
     for index, article in enumerate(chosen, start=1):
@@ -1393,8 +1520,13 @@ def _generate_teaching_sections(
             continue
         content = str(text or "").strip()
         if len(content.split()) < 80:
+            log.warning(
+                "generator: teaching chapter too short",
+                title=article.title,
+                words=len(content.split()),
+            )
             continue
-        if not _content_matches_source(content, article):
+        if not _content_matches_source(content, article, profile):
             log.warning(
                 "generator: teaching drifted off source article",
                 title=article.title,
@@ -1415,9 +1547,9 @@ def _generate_teaching_sections(
                 tokens += used
                 extra_text = str(extra or "").strip()
                 lead = chosen[0]
-                if len(extra_text.split()) >= 80 and _content_matches_source(extra_text, lead):
+                if len(extra_text.split()) >= 80 and _content_matches_source(extra_text, lead, profile):
                     sections.append(_section("Briefing", extra_text, [1]))
-                elif extra_text and not _content_matches_source(extra_text, lead):
+                elif extra_text and not _content_matches_source(extra_text, lead, profile):
                     log.warning(
                         "generator: top-up drifted off source article",
                         title=lead.title,
@@ -1482,7 +1614,18 @@ def _expand_from_articles(
             max_words_each=each,
             article_limit=max(1, len(articles)),
         )
-        result = _trim_sections([*result, *long_scrape["sections"]], ceiling)
+        existing = [str(section.get("content") or "") for section in result]
+        fresh_sections: list[dict[str, Any]] = []
+        for section in long_scrape["sections"]:
+            content = str(section.get("content") or "")
+            if not content:
+                continue
+            if any(_blocks_substantially_overlap(content, prior) for prior in existing):
+                continue
+            fresh_sections.append(section)
+            existing.append(content)
+        if fresh_sections:
+            result = _trim_sections([*result, *fresh_sections], ceiling)
     return result
 
 
@@ -1492,6 +1635,8 @@ def _pad_shortfall_from_articles(
     *,
     floor: int,
     ceiling: int,
+    profile: UserProfile | None = None,
+    topic_headline: str = "",
 ) -> list[dict[str, Any]]:
     """Append leftover source body until we clear a small shortfall under the floor."""
     result = list(working)
@@ -1506,18 +1651,20 @@ def _pad_shortfall_from_articles(
     for index, article in enumerate(articles, start=1):
         if taken >= need:
             break
+        filter_headline = topic_headline or _digest_topic_headline(profile, article)
         body = _keep_on_topic_text(
             _ensure_readable_markdown(
                 _clean_scraped_markdown((article.body_text or article.summary or "").strip())
             ),
-            article.title or "",
+            filter_headline,
         )
         if not body:
             continue
-        already = " ".join(str(section.get("content") or "") for section in result)
+        existing = [str(section.get("content") or "") for section in result]
         piece = _clip_to_words(body, min(len(body.split()), need - taken + 20))
-        if piece and piece not in already:
+        if piece and not any(_blocks_substantially_overlap(piece, prior) for prior in existing):
             chunks.append((index, piece))
+            existing.append(piece)
             taken += len(piece.split())
     for index, piece in chunks:
         result.append(_section("Briefing", piece, [index]))
@@ -1544,7 +1691,13 @@ def _enforce_min_length(
     if scraped_only:
         working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
         if _words_in(working) < floor:
-            working = _pad_shortfall_from_articles(articles, working, floor=floor, ceiling=ceiling)
+            working = _pad_shortfall_from_articles(
+                articles,
+                working,
+                floor=floor,
+                ceiling=ceiling,
+                profile=profile,
+            )
         if _words_in(working) < floor:
             raise RuntimeError(
                 f"Digest too short ({_words_in(working)} words); "
@@ -1576,7 +1729,7 @@ def _enforce_min_length(
             extra_text = str(extra or "").strip()
             lead = articles[0] if articles else None
             if len(extra_text.split()) >= 80 and (
-                lead is None or _content_matches_source(extra_text, lead)
+                lead is None or _content_matches_source(extra_text, lead, profile)
             ):
                 working.append(_section("Briefing", extra_text, [1]))
                 working = _trim_sections(working, ceiling)
@@ -1600,13 +1753,27 @@ def _enforce_min_length(
             break
 
     if _words_in(working) < floor:
-        working = _pad_shortfall_from_articles(articles, working, floor=floor, ceiling=ceiling)
+        working = _pad_shortfall_from_articles(
+            articles,
+            working,
+            floor=floor,
+            ceiling=ceiling,
+            profile=profile,
+        )
 
     if _words_in(working) < floor:
+        from src.ranker.next_day import profile_has_interests
+
+        hint = (
+            "Retry synthesize — the pipeline will pull similar interest-matched articles when "
+            "the lead post is too thin."
+            if profile_has_interests(profile)
+            else "Retry synthesize, or fill the user tech stack so Gemini can write longer chapters."
+        )
         raise RuntimeError(
             f"Digest too short ({_words_in(working)} words); "
             f"need at least {floor} words (~{_MIN_READ_MINUTES} min). "
-            "Retry synthesize, or fill the user tech stack so Gemini can write longer chapters."
+            f"{hint}"
         )
     return working, tokens
 
@@ -1686,11 +1853,12 @@ def synthesize_digest(
             related=len(cluster),
         )
     lead_list = [lead] if lead is not None else []
+    excerpt_total, excerpt_each, excerpt_count = _scrape_excerpt_limits(profile, cluster)
     scraped = _payload_from_articles(
-        cluster[:1] or lead_list,
-        max_total_words=_SCRAPE_EXCERPT_TOTAL,
-        max_words_each=_SCRAPE_EXCERPT_WORDS,
-        article_limit=1,
+        cluster[:excerpt_count] or lead_list,
+        max_total_words=excerpt_total,
+        max_words_each=excerpt_each,
+        article_limit=excerpt_count,
     )
     payload = scraped
     tokens = 0
@@ -1706,7 +1874,7 @@ def synthesize_digest(
                 overview_sections = [
                     sec
                     for sec in overview_sections
-                    if _content_matches_source(str(sec.get("content") or ""), lead)
+                    if _content_matches_source(str(sec.get("content") or ""), lead, profile)
                 ]
             tldr = _short_actions(list(gemini_payload.get("tldr") or []), lead)
             takeaways = _short_actions(
@@ -1748,9 +1916,9 @@ def synthesize_digest(
         teaching, teaching_tokens = _generate_teaching_sections(profile, cluster)
         tokens += teaching_tokens
         if not teaching:
-            log.warning(
-                "generator: teaching chapters empty; digest may be short",
-                user_id=profile.user_id,
+            raise RuntimeError(
+                "Gemini teaching produced no chapters. "
+                "Retry synthesize when the Gemini API quota is available."
             )
 
     merged = _trim_sections(
@@ -1787,9 +1955,10 @@ def synthesize_digest(
             lead_list or articles,
         )
     payload["headline"] = headline
+    filter_headline = _digest_topic_headline(profile, lead, fallback=headline)
     filtered_sections: list[dict[str, Any]] = []
     for sec in payload["sections"]:
-        kept = _keep_on_topic_text(str(sec.get("content") or ""), headline)
+        kept = _keep_on_topic_text(str(sec.get("content") or ""), filter_headline)
         if not kept:
             continue
         filtered_sections.append({**sec, "content": kept})
@@ -1806,6 +1975,8 @@ def synthesize_digest(
             refill,
             floor=_min_words(),
             ceiling=_max_words(),
+            profile=profile,
+            topic_headline=filter_headline,
         )
         refill = _normalize_digest_sections(refill)
         kept_refill: list[dict[str, Any]] = []

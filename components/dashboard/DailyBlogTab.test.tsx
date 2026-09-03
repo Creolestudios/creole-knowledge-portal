@@ -32,7 +32,7 @@ describe('DailyBlogTab', () => {
     });
   });
 
-  it('renders the fetched brief with its title, content, and tags', async () => {
+  it('renders the fetched brief with its title, content, tags, and source links', async () => {
     const today = new Date();
     const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
@@ -46,6 +46,9 @@ describe('DailyBlogTab', () => {
           tags: ['react', 'ai'],
           digest_date: digestDate,
           estimated_read_minutes: 20,
+          sources: [
+            { title: 'React Server Components Guide', url: 'https://dev.to/rsc', source_domain: 'dev.to' },
+          ],
         },
       }),
     });
@@ -58,8 +61,14 @@ describe('DailyBlogTab', () => {
     expect(screen.getByText(/Fetched Today/i)).toBeInTheDocument();
     expect(screen.getByText(/20 min read/i)).toBeInTheDocument();
     expect(screen.getByText('react')).toBeInTheDocument();
+    expect(screen.getByText('React Server Components Guide')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /React Server Components Guide/i })).toHaveAttribute(
+      'href',
+      'https://dev.to/rsc',
+    );
     expect(screen.getByText(/Start Quiz/)).toBeInTheDocument();
     expect(screen.queryByText('Regenerate Briefing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dev.to API')).not.toBeInTheDocument();
   });
 
   it('shows synthesize when the latest digest is from a prior day', async () => {
@@ -313,6 +322,47 @@ describe('DailyBlogTab', () => {
     await waitFor(() => {
       expect(screen.getByText('1m 30s')).toBeInTheDocument();
     });
+    sessionStorage.removeItem('reading_timer:blog-1');
+  });
+
+  it('auto-opens the quiz when the reading timer reaches 40 minutes', async () => {
+    const today = new Date();
+    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    sessionStorage.setItem(
+      'reading_timer:blog-1',
+      JSON.stringify({ startedAt: Date.now() - 40 * 60 * 1000, stoppedAt: null }),
+    );
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/digests')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            blog: {
+              id: 'blog-1',
+              title: 'Long Read Brief',
+              content: 'c',
+              tags: [],
+              digest_date: digestDate,
+            },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
+    await waitFor(() => {
+      expect(screen.getByText('Long Read Brief')).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/dashboard/quiz/blog-1');
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/activity',
+      expect.objectContaining({ method: 'POST' }),
+    );
     sessionStorage.removeItem('reading_timer:blog-1');
   });
 

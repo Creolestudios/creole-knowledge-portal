@@ -30,7 +30,7 @@ describe('PastBlogsTab', () => {
     global.fetch = originalFetch;
   });
 
-  it('marks every dated briefing on the calendar and renders the activity legend', async () => {
+  it('hides today without quiz; shows prior missed-quiz days in red', async () => {
     global.fetch = vi.fn(async (url: string) => {
       if (String(url).includes('/api/activity')) {
         return {
@@ -69,12 +69,10 @@ describe('PastBlogsTab', () => {
 
     render(<PastBlogsTab />);
 
-    // Legend is always visible
     expect(screen.getByText('Mastered (Passed Quiz)')).toBeInTheDocument();
-    expect(screen.getByText('Read (Needs Practice)')).toBeInTheDocument();
-    expect(screen.getByText('Unread (Missed)')).toBeInTheDocument();
+    expect(screen.getByText('Missed quiz')).toBeInTheDocument();
+    expect(screen.queryByText(/locked/i)).not.toBeInTheDocument();
 
-    // Walk the calendar back to July 2026, where the stored briefings live.
     const prev = screen.getByText('<');
     for (let i = 0; i < 24; i++) {
       if (screen.queryByText('July 2026')) break;
@@ -86,21 +84,32 @@ describe('PastBlogsTab', () => {
       screen.getAllByText(day).find((el) => el.getAttribute('role') === 'button');
 
     await waitFor(() => {
-      // Passed the quiz → green
       expect(cellFor('18')?.className).toContain('bg-green-500');
     });
-    // Read but no passing quiz → blue
-    expect(cellFor('17')?.className).toContain('bg-blue-500');
-    // Briefing exists but never opened → red
+    // Prior days, quiz not completed → red and still available
+    expect(cellFor('17')?.className).toContain('bg-red-500');
     expect(cellFor('16')?.className).toContain('bg-red-500');
-    // No briefing stored for that day → neutral
     expect(cellFor('15')?.className).toContain('bg-zinc-50');
   });
 
   it('greys out past weekends and excludes them from selection', async () => {
     global.fetch = vi.fn(async (url: string) => {
       if (String(url).includes('/api/activity')) {
-        return { ok: true, json: async () => ({ records: [] }) };
+        // Unlock only the weekend backfill so it can stay selectable.
+        return {
+          ok: true,
+          json: async () => ({
+            records: [
+              {
+                date: '2026-07-18',
+                quiz_taken: true,
+                quiz_score: 2,
+                quiz_total: 5,
+                read_seconds: 10,
+              },
+            ],
+          }),
+        };
       }
       if (String(url).includes('date=')) {
         return { ok: true, json: async () => ({ blog: null }) };
@@ -124,8 +133,6 @@ describe('PastBlogsTab', () => {
     const cell = (day: string) =>
       screen.getAllByText(day).find((el) => el.className.includes('aspect-square'));
 
-    // 4 Jul 2026 is a Saturday and 5 Jul a Sunday: no briefing is generated, so
-    // they must read as inert grey rather than the red "missed" state.
     await waitFor(() => {
       expect(cell('4')?.className).toContain('bg-zinc-100');
     });
@@ -134,18 +141,32 @@ describe('PastBlogsTab', () => {
     expect(cell('4')).not.toHaveAttribute('role', 'button');
     expect(cell('4')).toHaveAttribute('title', 'No briefing on weekends');
 
-    // A weekday with no briefing keeps its existing neutral, selectable state.
     expect(cell('3')?.getAttribute('role')).toBe('button');
 
-    // A weekend that genuinely has a backfilled briefing stays selectable.
-    expect(cell('18')?.getAttribute('role')).toBe('button');
-    expect(cell('18')?.className).toContain('bg-red-500');
+    // Weekend with unlocked (quiz-completed) backfill stays selectable.
+    await waitFor(() => {
+      expect(cell('18')?.getAttribute('role')).toBe('button');
+    });
+    expect(cell('18')?.className).toContain('bg-blue-500');
 
     expect(screen.getByText('Weekend (No Briefing)')).toBeInTheDocument();
   });
 
   it('shows the blog title above the fetched date in the reader', async () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const records = Array.from({ length: 28 }, (_, i) => ({
+      date: `${year}-${month}-${String(i + 1).padStart(2, '0')}`,
+      quiz_taken: true,
+      quiz_score: 4,
+      quiz_total: 5,
+    }));
+
     global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return { ok: true, json: async () => ({ records }) };
+      }
       if (String(url).includes('date=')) {
         return {
           ok: true,
@@ -162,6 +183,7 @@ describe('PastBlogsTab', () => {
     }) as any;
 
     render(<PastBlogsTab />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/activity'));
     fireEvent.click(firstSelectableDayCell());
 
     const heading = await screen.findByText('Redis queues');
@@ -187,8 +209,25 @@ describe('PastBlogsTab', () => {
     expect(monthLabel()).toBe(initial);
   });
 
-  it('fetches and displays a blog when a past date is clicked', async () => {
+  it('fetches and displays a blog when a past date with completed quiz is clicked', async () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const records = Array.from({ length: 28 }, (_, i) => {
+      const day = String(i + 1).padStart(2, '0');
+      return {
+        date: `${year}-${month}-${day}`,
+        quiz_taken: true,
+        quiz_score: 4,
+        quiz_total: 5,
+        read_seconds: 60,
+      };
+    });
+
     global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return { ok: true, json: async () => ({ records }) };
+      }
       if (String(url).includes('date=')) {
         return {
           ok: true,
@@ -200,7 +239,10 @@ describe('PastBlogsTab', () => {
 
     render(<PastBlogsTab />);
 
-    // First selectable (past, non-weekend) day of the displayed month.
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith('/api/activity');
+    });
+
     fireEvent.click(firstSelectableDayCell());
 
     await waitFor(() => {
@@ -209,10 +251,91 @@ describe('PastBlogsTab', () => {
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/digests/past?date='));
   });
 
+  it('does not show today in Past Blogs when that day\'s quiz is not completed', async () => {
+    const todayKey = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return { ok: true, json: async () => ({ records: [] }) };
+      }
+      if (String(url).includes('date=')) {
+        return {
+          ok: true,
+          json: async () => ({ blog: { title: 'Should Not Show', content: 'x', digest_date: todayKey } }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ blogs: [{ title: 'Should Not Show', digest_date: todayKey }] }),
+      };
+    }) as any;
+
+    render(<PastBlogsTab selected={todayKey} />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/activity'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Should Not Show')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText(/Pick a highlighted date/i)).toBeInTheDocument();
+  });
+
+  it('opens a prior missed-quiz day from Past Blogs with red availability', async () => {
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return {
+          ok: true,
+          json: async () => ({
+            records: [{ date: '2026-07-16', quiz_taken: false, read_seconds: 0 }],
+          }),
+        };
+      }
+      if (String(url).includes('date=2026-07-16')) {
+        return {
+          ok: true,
+          json: async () => ({
+            blog: { title: 'Missed Day Brief', content: 'x', digest_date: '2026-07-16' },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          blogs: [{ title: 'Missed Day Brief', digest_date: '2026-07-16' }],
+        }),
+      };
+    }) as any;
+
+    render(<PastBlogsTab selected="2026-07-16" />);
+    await waitFor(() => {
+      expect(screen.getByText('Missed Day Brief')).toBeInTheDocument();
+    });
+  });
+
   it('shows the empty state again when the fetch response is not ok', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: false });
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const records = Array.from({ length: 28 }, (_, i) => ({
+      date: `${year}-${month}-${String(i + 1).padStart(2, '0')}`,
+      quiz_taken: true,
+      quiz_score: 3,
+      quiz_total: 5,
+    }));
+
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return { ok: true, json: async () => ({ records }) };
+      }
+      return { ok: false };
+    }) as any;
     render(<PastBlogsTab />);
 
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/activity'));
     fireEvent.click(firstSelectableDayCell());
 
     await waitFor(() => {
@@ -221,9 +344,28 @@ describe('PastBlogsTab', () => {
   });
 
   it('handles a network error gracefully', async () => {
-    global.fetch = vi.fn().mockRejectedValue(new Error('network down'));
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const records = Array.from({ length: 28 }, (_, i) => ({
+      date: `${year}-${month}-${String(i + 1).padStart(2, '0')}`,
+      quiz_taken: true,
+      quiz_score: 3,
+      quiz_total: 5,
+    }));
+
+    global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return { ok: true, json: async () => ({ records }) };
+      }
+      if (String(url).includes('date=')) {
+        return Promise.reject(new Error('network down'));
+      }
+      return { ok: true, json: async () => ({ blogs: [] }) };
+    }) as any;
     render(<PastBlogsTab />);
 
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/activity'));
     fireEvent.click(firstSelectableDayCell());
 
     await waitFor(() => {
@@ -232,7 +374,20 @@ describe('PastBlogsTab', () => {
   });
 
   it('selects a day via keyboard (Enter key)', async () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const records = Array.from({ length: 28 }, (_, i) => ({
+      date: `${year}-${month}-${String(i + 1).padStart(2, '0')}`,
+      quiz_taken: true,
+      quiz_score: 4,
+      quiz_total: 5,
+    }));
+
     global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return { ok: true, json: async () => ({ records }) };
+      }
       if (String(url).includes('date=')) {
         return {
           ok: true,
@@ -244,6 +399,7 @@ describe('PastBlogsTab', () => {
 
     render(<PastBlogsTab />);
 
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/api/activity'));
     fireEvent.keyDown(firstSelectableDayCell(), { key: 'Enter' });
 
     await waitFor(() => {
@@ -277,6 +433,22 @@ describe('PastBlogsTab', () => {
 
   it('auto-fetches and calls onSelect when a `selected` date prop is provided', async () => {
     global.fetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/api/activity')) {
+        return {
+          ok: true,
+          json: async () => ({
+            records: [
+              {
+                date: '2026-07-01',
+                quiz_taken: true,
+                quiz_score: 4,
+                quiz_total: 5,
+                read_seconds: 60,
+              },
+            ],
+          }),
+        };
+      }
       if (String(url).includes('date=')) {
         return {
           ok: true,

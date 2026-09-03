@@ -139,7 +139,7 @@ class ScrapingSettings(BaseSettings):
 
     CONCURRENCY: int = Field(default=8, ge=1, le=32)
     CONTENT_FRESHNESS_DAYS: int = Field(default=30, ge=1)
-    DIGEST_WORD_TARGET: int = Field(default=4000, ge=1000)
+    DIGEST_WORD_TARGET: int = Field(default=3200, ge=1000)
     CRON_SCHEDULE: str = "30 2 * * *"  # 08:00 IST = 02:30 UTC — daily scrape + 20–25 min briefing
     ROBOTS_CACHE_TTL_SECONDS: int = 3600
 

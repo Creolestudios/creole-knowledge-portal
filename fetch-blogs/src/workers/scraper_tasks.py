@@ -19,6 +19,7 @@ from src.ranker.next_day import (
     continuity_scrape_terms,
     discovery_match_terms,
     discovery_scrape_terms,
+    hay_is_off_interest_continuity,
     hay_is_off_yesterday_family,
     profile_has_interests,
     profile_has_yesterday,
@@ -31,7 +32,7 @@ from src.workers.runtime import ensure_db, mark_stage, run_async
 
 log = structlog.get_logger(__name__)
 
-_MAX_ARTICLES = 24
+_MAX_ARTICLES = 10
 _DEVTO_PER_TAG = 4
 _DEVTO_TRENDING_LIMIT = 12
 _HN_LIMIT = 16
@@ -275,10 +276,11 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         return []
 
     has_interests = profile_has_interests(profile)
-    returning = (not has_interests) and profile_has_yesterday(profile)
+    has_yesterday = profile_has_yesterday(profile)
+    returning_stack = (not has_interests) and has_yesterday
     scrape_terms = discovery_scrape_terms(profile)
     match_terms = discovery_match_terms(profile)
-    continuity_terms = continuity_scrape_terms(profile) if returning else None
+    continuity_terms = continuity_scrape_terms(profile) if has_yesterday else None
     refresh_profile_embedding(profile)
     profile.updated_at = datetime.now(UTC)
     await profile.save()
@@ -293,9 +295,11 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         trending_mode=not match_terms,
         continuity_terms=continuity_terms,
     )
-    if has_interests:
+    if has_interests and has_yesterday:
+        mode = "interest_continuity"
+    elif has_interests:
         mode = "interests"
-    elif returning:
+    elif returning_stack:
         mode = "continuity"
     elif match_terms:
         mode = "stack_trending"
@@ -326,6 +330,8 @@ async def _scrape_for_user(user_id: str) -> list[str]:
         if is_non_learning(title, summary, source_domain=domain, url=url):
             continue
         if not has_interests and hay_is_off_yesterday_family(f"{title} {summary}", profile):
+            continue
+        if has_interests and hay_is_off_interest_continuity(f"{title} {summary}", profile):
             continue
         if match_terms:
             if not _matches_terms(f"{title} {summary}", match_terms):
@@ -368,6 +374,8 @@ async def _scrape_for_user(user_id: str) -> list[str]:
             ):
                 continue
             if not has_interests and hay_is_off_yesterday_family(f"{title} {summary}", profile):
+                continue
+            if has_interests and hay_is_off_interest_continuity(f"{title} {summary}", profile):
                 continue
             if match_terms:
                 if not _matches_terms(f"{title} {summary}", match_terms):

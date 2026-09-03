@@ -12,6 +12,7 @@ from src.core.db import init_db
 from src.generator.synthesizer import (
     _keep_on_topic_text,
     _strip_blog_frontmatter,
+    dedupe_content_blocks,
     synthesize_digest,
     text_matches_headline,
 )
@@ -19,7 +20,7 @@ from src.models.article import Article
 from src.api.routes.pipeline import execute_pipeline_for_user
 from src.models.digest import DailyDigest
 from src.models.job import PipelineJob
-from src.models.profile import UserProfile
+from src.models.profile import UserProfile, topic_tokens_from_text
 from src.publisher.mongo_publisher import upsert_digest
 from src.services.supabase_profiles import upsert_mongo_profile
 from src.storage.mongodb import get_db
@@ -165,7 +166,59 @@ def _section_bodies(sections: list, headline: str = "") -> dict[str, list[str]]:
         if "```" not in body and is_off_topic_lifestyle(title, body[:1500]):
             continue
         buckets[_section_bucket(title)].append(body)
+    buckets["briefing"] = dedupe_content_blocks(buckets["briefing"])
+    buckets["summary"] = dedupe_content_blocks(buckets["summary"])
     return buckets
+
+
+def _curation_focus_tags(
+    *,
+    display_title: str,
+    article: dict,
+    sources: list,
+    sections: list,
+) -> list[str]:
+    """Keywords for the Curation Focus box — from this day's briefing, not hardcodes."""
+    blobs: list[str] = [str(display_title or "")]
+    for item in article.get("tldr") or []:
+        blobs.append(str(item))
+    for item in article.get("key_takeaways") or []:
+        blobs.append(str(item))
+    for section in sections:
+        if not isinstance(section, dict):
+            section = getattr(section, "model_dump", lambda: {})()
+        blobs.append(str(section.get("title") or ""))
+        # Short body sample is enough for known-topic matching.
+        blobs.append(str(section.get("content") or "")[:1200])
+    for src in sources:
+        if not isinstance(src, dict):
+            src = getattr(src, "model_dump", lambda: {})()
+        blobs.append(str(src.get("title") or ""))
+
+    skip = {
+        "morning",
+        "briefing",
+        "morning-briefing",
+        "synthesis",
+        "digest",
+        "blog",
+        "overview",
+        "summary",
+        "article",
+        "tutorial",
+    }
+    ordered: list[str] = []
+    for blob in blobs:
+        for token in topic_tokens_from_text(blob):
+            term = str(token or "").strip().lower()
+            if not term or term in skip or term in ordered:
+                continue
+            if len(term) > 32:
+                continue
+            ordered.append(term)
+        if len(ordered) >= 8:
+            break
+    return ordered[:8]
 
 
 def flat_map_digest_for_dashboard(doc: dict) -> dict:
@@ -296,11 +349,12 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
             markdown_parts.append(f"- [{title}]({url}){meta}")
         markdown_parts.append("")
 
-    flat_tags = ["morning-briefing", "mongodb", "synthesis"]
-    for src in sources:
-        domain = src.get("source_domain", "") if isinstance(src, dict) else ""
-        if domain and domain not in flat_tags:
-            flat_tags.append(domain)
+    flat_tags = _curation_focus_tags(
+        display_title=display_title,
+        article=article,
+        sources=sources,
+        sections=article.get("sections") or [],
+    )
 
     generated_at = doc.get("generated_at")
     if isinstance(generated_at, datetime):
@@ -322,6 +376,22 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
         "published_at": generated_at,
         "digest_date": digest_date,
         "tags": flat_tags,
+        "sources": [
+            {
+                "title": str(
+                    (src.get("title") if isinstance(src, dict) else "") or "Source"
+                ).strip()
+                or "Source",
+                "url": str((src.get("url") if isinstance(src, dict) else "") or "").strip(),
+                "source_domain": str(
+                    (src.get("source_domain") if isinstance(src, dict) else "") or ""
+                ).strip(),
+            }
+            for src in sources
+            if str((src.get("url") if isinstance(src, dict) else "") or "").strip().startswith(
+                ("http://", "https://")
+            )
+        ],
         "word_count": word_count,
         "estimated_read_minutes": max(1, round(float(reading))),
     }
@@ -445,22 +515,32 @@ async def _backfill_orphan_digests(user_id: str) -> int:
         if not articles:
             continue
 
-        digest = synthesize_digest(
-            profile,
-            articles,
-            digest_date=date.fromisoformat(day),
-            scraped_only=True,
-        )
+        try:
+            digest = synthesize_digest(
+                profile,
+                articles,
+                digest_date=date.fromisoformat(day),
+                scraped_only=True,
+            )
+        except Exception as exc:
+            logger.warning(
+                "backfill: skipped orphan digest (synthesis failed) user_id=%s digest_date=%s articles=%s error=%s",
+                user_id,
+                day,
+                len(articles),
+                exc,
+            )
+            continue
         digest.generated_at = job.created_at
         digest.updated_at = job.created_at
         await upsert_digest(digest)
         existing_days.add(day)
         saved += 1
         logger.info(
-            "backfill: stored orphan digest",
-            user_id=user_id,
-            digest_date=day,
-            articles=len(articles),
+            "backfill: stored orphan digest user_id=%s digest_date=%s articles=%s",
+            user_id,
+            day,
+            len(articles),
         )
     return saved
 

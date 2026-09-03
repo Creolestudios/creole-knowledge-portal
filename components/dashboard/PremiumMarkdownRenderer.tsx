@@ -564,10 +564,38 @@ export function dedupeFlowSteps(steps: string[]): string[] {
   return out;
 }
 
+/** Prose / example chrome that must never become architecture flow steps. */
+export function isFlowStepJunk(label: string): boolean {
+  const t = String(label || '')
+    .trim()
+    .replace(/\*+/g, '')
+    .replace(/\s+/g, ' ');
+  if (!t) return true;
+  if (/^(for example|e\.g\.?|eg|example|note|notes|tip|warning|see also|namely|i\.e\.?)[:.]?$/i.test(t)) {
+    return true;
+  }
+  if (/^(for example|example|note|tip)\b/i.test(t) && t.length <= 24) return true;
+  if (/^[:\-–—|v↓]+$/i.test(t)) return true;
+  return false;
+}
+
+/** Cut flow text at example / use-case boundaries so architecture stays separate. */
+export function truncateFlowAtExampleBoundary(text: string): string {
+  const lines = String(text || '').split('\n');
+  const cut = lines.findIndex((line) => {
+    const t = line.trim().replace(/^\*+|\*+$/g, '').replace(/^\[|\]$/g, '').trim();
+    return /^(for example|e\.g\.?|example|use case|scenario)\b/i.test(t);
+  });
+  if (cut <= 0) return String(text || '');
+  return lines.slice(0, cut).join('\n').trim();
+}
+
 /** Best-effort step list for arrow / line flow cards. */
 export function extractFlowSteps(text: string): string[] {
-  const raw = String(text || '').trim();
+  const raw = truncateFlowAtExampleBoundary(String(text || '').trim());
   if (!raw || looksLikeDirectoryTreeDiagram(raw)) return [];
+  // Branched trees / multi-column fan-outs are not a single linear pipeline
+  if (looksLikeBranchedArchitectureDiagram(raw)) return [];
 
   const isProseLine = (line: string) => {
     const t = line.trim();
@@ -602,7 +630,7 @@ export function extractFlowSteps(text: string): string[] {
       )
       .map((l) => l.replaceAll('-->', ' → ').replace(/\s+/g, ' ').trim());
   }
-  return dedupeFlowSteps(steps).slice(0, 12);
+  return dedupeFlowSteps(steps.filter((s) => !isFlowStepJunk(s))).slice(0, 12);
 }
 
 /** Compact vertical flow — labels with | and v only (no broken boxes). */
@@ -747,6 +775,116 @@ export function looksLikeDirectoryTreeDiagram(text: string): boolean {
   return false;
 }
 
+/**
+ * Multi-column / fan-out architecture (siblings under one parent).
+ * These must not be crushed into a false linear pipeline by naive line splits.
+ */
+export function looksLikeBranchedArchitectureDiagram(text: string): boolean {
+  const raw = String(text || '');
+  if (!raw.trim()) return false;
+  const pathish = (raw.match(/[\w.-]+\//g) || []).length;
+  // Folder maps (even with captions mentioning agents/RAG) stay as directory trees
+  if (looksLikeDirectoryTreeDiagram(raw) && pathish >= 2) return false;
+
+  const lines = raw.split('\n');
+  // One line with several downward arrows / branch tips
+  if (lines.some((l) => ((l.match(/(?:^|\s)[vV↓](?:\s+|$)/g) || []).length >= 2))) return true;
+  // Horizontal bar then several child labels
+  const branchBars = lines.filter((l) => /[─\-]{3,}/.test(l) && !/\+[-=]+\+/.test(l.trim())).length;
+  const treeTips = (raw.match(/[├└┌┐┬┴┼]|└─|├─/g) || []).length;
+  if (branchBars >= 1 && treeTips >= 2) return true;
+  // Pipe-framed local-agent style trees with a fan-out footer
+  if (/\|[^|\n]{2,40}\|/.test(raw) && treeTips >= 2) return true;
+  // Architecture words + tree markers (no folder paths)
+  if (
+    treeTips >= 2 &&
+    pathish === 0 &&
+    /\b(agent|browser|model|llm|gpu|api|tool|pipeline)\b/i.test(raw)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Strip orphan connector fragments from tree ASCII (floating └─┬─┘ shards). */
+export function cleanAsciiTreeDiagram(text: string): string {
+  const lines = String(text || '').split('\n');
+  const cleaned = lines.filter((line) => {
+    const t = line.trim();
+    if (!t) return false;
+    if (/[A-Za-z0-9]/.test(t)) return true;
+    if (/^[|│\s]*[├└┌┐┬┴┼─━\-]+[|│\s]*$/.test(t) && t.length >= 3) return true;
+    return false;
+  });
+
+  const out: string[] = [];
+  for (let i = 0; i < cleaned.length; i++) {
+    const t = cleaned[i].trim();
+    const hasLabel = /[A-Za-z0-9]/.test(t);
+    if (hasLabel) {
+      out.push(cleaned[i]);
+      continue;
+    }
+    const prev = cleaned[i - 1];
+    const next = cleaned[i + 1];
+    const prevLabel = prev ? /[A-Za-z0-9]/.test(prev) : false;
+    const nextLabel = next ? /[A-Za-z0-9]/.test(next) : false;
+    if (prevLabel && nextLabel) {
+      const last = out[out.length - 1]?.trim() || '';
+      if (last && !/[A-Za-z0-9]/.test(last)) continue;
+      out.push(cleaned[i]);
+    }
+  }
+  return out.join('\n').trim();
+}
+
+/**
+ * Prefer a clean vertical spine for branched architecture when labels are recoverable.
+ * Falls back to cleaned ASCII when the fan-out cannot be expressed linearly.
+ */
+export function rebuildBranchedArchitectureDiagram(text: string): {
+  mode: 'flow' | 'code';
+  content: string;
+  steps?: string[];
+} {
+  const cleaned = cleanAsciiTreeDiagram(text);
+  const truncated = truncateFlowAtExampleBoundary(cleaned || text);
+
+  // Pure directory maps: keep cleaned ASCII only
+  if (looksLikeDirectoryTreeDiagram(truncated) && !looksLikeBranchedArchitectureDiagram(truncated)) {
+    return { mode: 'code', content: cleaned || truncated };
+  }
+
+  const labels = dedupeFlowSteps(
+    salvageDiagramLabels(truncated).filter((s) => !isFlowStepJunk(s)),
+  );
+  const merged: string[] = [];
+  for (let i = 0; i < labels.length; i++) {
+    const a = labels[i];
+    const b = labels[i + 1];
+    if (
+      b &&
+      a.split(/\s+/).length === 1 &&
+      b.split(/\s+/).length === 1 &&
+      a.length <= 12 &&
+      b.length <= 12 &&
+      /^[A-Z]/.test(a) &&
+      /^[A-Z]/.test(b) &&
+      /(tools|apis|model|agent|llm)/i.test(`${a} ${b}`)
+    ) {
+      merged.push(`${a} ${b}`);
+      i += 1;
+      continue;
+    }
+    merged.push(a);
+  }
+  const steps = dedupeFlowSteps(merged).slice(0, 10);
+  if (steps.length >= 3 && steps.length <= 10) {
+    return { mode: 'flow', content: rebuildArrowFlowDiagram(steps), steps };
+  }
+  return { mode: 'code', content: cleaned || truncated || String(text || '').trim() };
+}
+
 /** Already a tidy vertical +---+ stack with labels inside pipes. */
 export function looksLikeCleanVerticalAsciiDiagram(text: string): boolean {
   const lines = String(text || '')
@@ -771,7 +909,10 @@ export function looksLikeCleanVerticalAsciiDiagram(text: string): boolean {
 export function normalizeDiagramContent(text: string): string {
   const raw = String(text || '').trim();
   if (!raw) return raw;
-  if (looksLikeDirectoryTreeDiagram(raw)) return raw;
+  if (looksLikeBranchedArchitectureDiagram(raw) || looksLikeDirectoryTreeDiagram(raw)) {
+    const rebuilt = rebuildBranchedArchitectureDiagram(raw);
+    return rebuilt.content;
+  }
 
   const flowSteps = extractFlowSteps(raw);
   if (flowSteps.length >= 2) {
@@ -781,7 +922,7 @@ export function normalizeDiagramContent(text: string): string {
   if (looksLikeCleanVerticalAsciiDiagram(raw)) return raw;
   if (!looksLikeBrokenAsciiDiagram(raw)) return raw;
 
-  const labels = salvageDiagramLabels(raw);
+  const labels = salvageDiagramLabels(raw).filter((s) => !isFlowStepJunk(s));
   if (labels.length >= 2) {
     return rebuildArrowFlowDiagram(dedupeFlowSteps(labels));
   }
@@ -1258,8 +1399,8 @@ export function stripOffTopicBodyContent(content: string): string {
       const p = para.trim();
       if (!p) return false;
       if (looksLikeNonEnglishJunk(p)) return false;
-      // Keep section headings
-      if (/^##\s+/.test(p) && p.split('\n').length === 1) return true;
+      // Keep section headings (any markdown level)
+      if (/^#{1,6}\s+/.test(p) && p.split('\n').length === 1) return true;
       // Meta sections (Brief / TL;DR / Takeaways): keep concise lines
       if (isMetaSection) return true;
       // Fenced blocks: allowlist the body (lang tag alone is not enough)
@@ -1366,8 +1507,18 @@ export function looksLikeSourceCode(text: string): boolean {
       hits += 2;
       continue;
     }
+    // Strong language keywords — avoid English prose ("while shifting…", "for example…")
     if (
-      /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |async |try:|except |elif |else:|if __name__|for \w+ in |for .+ in |while |with |console\.|asyncio\.|npm |yarn |pnpm |final |late |void |typedef |extension |required |factory |@override)/.test(
+      /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |async |try:|except |elif |else:|if __name__|console\.|asyncio\.|npm |yarn |pnpm |final |late |void |typedef |extension |required |factory |@override)/.test(
+        t,
+      )
+    ) {
+      hits += 2;
+      continue;
+    }
+    // Control-flow only when it looks like code, not English
+    if (
+      /^(for\s+\w+\s+in\s+|for\s*\(|while\s*\(|while\s+\w+\s*[:({]|with\s+\w+|if\s*\(|if\s+\w+\s*[:({])/.test(
         t,
       )
     ) {
@@ -1403,11 +1554,17 @@ export function looksLikeSourceCode(text: string): boolean {
 
   const wordyProse = lines.filter((l) => {
     const words = l.trim().split(/\s+/);
-    return words.length >= 14 && /[.!?]$/.test(l.trim());
+    return words.length >= 12 && /[.!?:]$/.test(l.trim());
+  }).length;
+  const mdChrome = lines.filter((l) => {
+    const t = l.trim();
+    return /^#{1,6}\s+\S/.test(t) || /^[-*]\s+\S/.test(t) || /^\d+\.\s+\S/.test(t);
   }).length;
 
+  // Bullet / heading teaching blocks are never source code
+  if (mdChrome >= 3 && hits < 4) return false;
   if (wordyProse >= 2 && hits < 3) return false;
-  return hits >= 2 || (lines.length <= 8 && hits >= 1 && wordyProse === 0);
+  return hits >= 2 || (lines.length <= 8 && hits >= 1 && wordyProse === 0 && mdChrome === 0);
 }
 
 /**
@@ -1431,18 +1588,23 @@ export function looksLikeProseMistakenlyFenced(text: string): boolean {
 
   let codeish = 0;
   let proseSignals = 0;
+  let shortBullets = 0;
   for (const line of lines) {
     const t = line.trim();
-    if (looksLikeCodeLine(line) || /[=\[\]{}();]/.test(t)) codeish += 1;
+    if (looksLikeCodeLine(line) || (/[=\[\]{}();]/.test(t) && !/^[-*#]/.test(t))) codeish += 1;
     if (/^#{1,6}\s+\S/.test(t)) proseSignals += 2;
-    if (/^[-*]\s+\S/.test(t) && t.split(/\s+/).length >= 6) proseSignals += 1;
-    if (/^\d+\.\s+\S/.test(t) && t.split(/\s+/).length >= 6) proseSignals += 1;
-    if (t.split(/\s+/).length >= 16 && /[.!?]/.test(t)) proseSignals += 1;
+    if (/^[-*]\s+\S/.test(t)) {
+      shortBullets += 1;
+      proseSignals += t.split(/\s+/).length >= 6 ? 1 : 0.5;
+    }
+    if (/^\d+\.\s+\S/.test(t)) proseSignals += t.split(/\s+/).length >= 4 ? 1 : 0.5;
+    if (t.split(/\s+/).length >= 12 && /[.!?]/.test(t)) proseSignals += 1;
     if (t.split(/\s+/).length >= 40) proseSignals += 2; // long legal/teaching paragraph
   }
 
+  if (shortBullets >= 3) proseSignals += 2;
   if (codeish >= 2 && codeish >= Math.ceil(lines.length * 0.4)) return false;
-  return proseSignals >= 3;
+  return proseSignals >= 2;
 }
 
 /** Only real code or ASCII diagrams may use the dark boxed UI. */
@@ -1477,7 +1639,14 @@ function looksLikeCodeLine(line: string): boolean {
   if (/^[+=|v↓]$/i.test(t)) return false;
   if (REAL_COMMAND.test(t)) return true;
   if (
-    /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |asyncio\.|console\.|for \w+ in |for .+ in |while |try:|except |elif |else:|final |late |void |typedef |extension |required |factory |@override|bool |int |String )/.test(
+    /^(def |async def |class |import |from \w+ import |const |let |var |function |export |return |await |asyncio\.|console\.|try:|except |elif |else:|final |late |void |typedef |extension |required |factory |@override|bool |int |String )/.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /^(for\s+\w+\s+in\s+|for\s*\(|while\s*\(|while\s+\w+\s*[:({]|with\s+\w+|if\s*\(|if\s+\w+\s*[:({])/.test(
       t,
     )
   ) {
@@ -1794,8 +1963,26 @@ export function coalesceFragmentedCodeBlocks(blocks: MdBlock[]): MdBlock[] {
 function pushVisualDiagram(content: string, blocks: MdBlock[]): void {
   const raw = String(content || '').trim();
   if (!raw) return;
-  if (looksLikeDirectoryTreeDiagram(raw)) {
-    blocks.push({ type: 'code', content: raw, label: 'Diagram' });
+  if (looksLikeDirectoryTreeDiagram(raw) && !looksLikeBranchedArchitectureDiagram(raw)) {
+    blocks.push({
+      type: 'code',
+      content: cleanAsciiTreeDiagram(raw) || raw,
+      label: 'Diagram',
+    });
+    return;
+  }
+  if (looksLikeBranchedArchitectureDiagram(raw)) {
+    const rebuilt = rebuildBranchedArchitectureDiagram(raw);
+    if (rebuilt.mode === 'flow' && rebuilt.steps && rebuilt.steps.length >= 2) {
+      blocks.push({
+        type: 'flow',
+        content: rebuilt.content,
+        flowSteps: rebuilt.steps,
+        label: 'Diagram',
+      });
+      return;
+    }
+    blocks.push({ type: 'code', content: rebuilt.content, label: 'Diagram' });
     return;
   }
   const steps = extractFlowSteps(raw);
@@ -1868,11 +2055,68 @@ function coalesceScatteredDiagrams(blocks: MdBlock[]): MdBlock[] {
 }
 
 function isDiagramishBlock(block: MdBlock): boolean {
-  if (looksLikeDirectoryTreeDiagram(block.content)) return false;
   if (block.type === 'flow') return true;
   if (block.type !== 'code') return false;
   if (block.label === 'Diagram') return true;
   return looksLikeAsciiDiagram(block.content) || looksLikeBrokenAsciiDiagram(block.content);
+}
+
+function diagramStepFingerprint(block: MdBlock): string[] {
+  if (block.flowSteps && block.flowSteps.length >= 2) {
+    return dedupeFlowSteps(block.flowSteps.filter((s) => !isFlowStepJunk(s))).map((s) =>
+      s.toLowerCase().replace(/\s+/g, ' ').trim(),
+    );
+  }
+  if (looksLikeBranchedArchitectureDiagram(block.content)) {
+    const rebuilt = rebuildBranchedArchitectureDiagram(block.content);
+    if (rebuilt.steps && rebuilt.steps.length >= 2) {
+      return rebuilt.steps.map((s) => s.toLowerCase().replace(/\s+/g, ' ').trim());
+    }
+  }
+  return extractFlowSteps(block.content).map((s) => s.toLowerCase().replace(/\s+/g, ' ').trim());
+}
+
+/** Jaccard overlap of two step fingerprints (0–1). */
+export function diagramStepOverlap(a: string[], b: string[]): number {
+  if (a.length === 0 || b.length === 0) return 0;
+  const setB = new Set(b);
+  let shared = 0;
+  for (const step of a) {
+    if (setB.has(step)) shared += 1;
+  }
+  const union = new Set([...a, ...b]).size;
+  return union === 0 ? 0 : shared / union;
+}
+
+/**
+ * Drop near-duplicate Diagram / flow blocks (Gemini often emits the same
+ * architecture twice — once as a tree, once as arrows).
+ */
+export function dedupeSimilarDiagramBlocks(blocks: MdBlock[]): MdBlock[] {
+  const out: MdBlock[] = [];
+  const seen: string[][] = [];
+  for (const block of blocks) {
+    if (!isDiagramishBlock(block)) {
+      out.push(block);
+      continue;
+    }
+    const fp = diagramStepFingerprint(block);
+    if (fp.length >= 2) {
+      const dupIdx = seen.findIndex((prev) => diagramStepOverlap(prev, fp) >= 0.55);
+      if (dupIdx >= 0) {
+        // Prefer the longer / already-flow version already kept
+        continue;
+      }
+      seen.push(fp);
+    } else {
+      // Content-hash fallback for unlabeled trees
+      const key = block.content.replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 240);
+      if (seen.some((prev) => prev.length === 1 && prev[0] === `raw:${key}`)) continue;
+      seen.push([`raw:${key}`]);
+    }
+    out.push(block);
+  }
+  return out;
 }
 
 function mergeAdjacentFlows(blocks: MdBlock[]): MdBlock[] {
@@ -1894,13 +2138,32 @@ function mergeAdjacentFlows(blocks: MdBlock[]): MdBlock[] {
       prev &&
       isDiagramishBlock(prev) &&
       (block.type === 'p' || block.type === 'h2' || block.type === 'h3') &&
-      isShortDiagramLabel(block.content)
+      isShortDiagramLabel(block.content) &&
+      !isFlowStepJunk(block.content)
     ) {
       pendingLabels.push(block);
       continue;
     }
     if (prev && isDiagramishBlock(prev) && isDiagramishBlock(block)) {
-      const extra = pendingLabels.map((l) => l.content.trim()).filter(Boolean);
+      const prevFp = diagramStepFingerprint(prev);
+      const nextFp = diagramStepFingerprint(block);
+      // Same architecture emitted twice → keep the first, drop the duplicate
+      if (prevFp.length >= 2 && nextFp.length >= 2 && diagramStepOverlap(prevFp, nextFp) >= 0.55) {
+        pendingEmpty = [];
+        pendingLabels = [];
+        continue;
+      }
+      // Do not glue an architecture tree onto a different example flow
+      if (
+        /^(for example|example|use case)\b/i.test(String(block.content || '').trim()) ||
+        looksLikeBranchedArchitectureDiagram(prev.content) !==
+          looksLikeBranchedArchitectureDiagram(block.content)
+      ) {
+        flushPending();
+        out.push(block);
+        continue;
+      }
+      const extra = pendingLabels.map((l) => l.content.trim()).filter((t) => t && !isFlowStepJunk(t));
       pendingEmpty = [];
       pendingLabels = [];
       const content = [prev.content, ...extra, block.content].filter((p) => p.length > 0).join('\n');
@@ -1908,7 +2171,7 @@ function mergeAdjacentFlows(blocks: MdBlock[]): MdBlock[] {
         ...(prev.flowSteps || extractFlowSteps(prev.content)),
         ...extra,
         ...(block.flowSteps || extractFlowSteps(block.content)),
-      ]);
+      ]).filter((s) => !isFlowStepJunk(s));
       if (steps.length >= 2) {
         prev.type = 'flow';
         prev.content = content;
@@ -2264,63 +2527,193 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     flushParagraph();
   }
 
-  return mergeAdjacentFlows(coalesceScatteredDiagrams(coalesceFragmentedCodeBlocks(blocks)));
+  return dedupeSimilarDiagramBlocks(
+    mergeAdjacentFlows(coalesceScatteredDiagrams(coalesceFragmentedCodeBlocks(blocks))),
+  );
 }
 
 type RenderSection = 'body' | 'code' | 'sources';
 
+const DIGEST_SUBHEADING_CLASS =
+  'text-base font-extrabold text-zinc-900 mt-4 mb-2 tracking-tight';
+const DIGEST_SUBHEADING_STACKED_CLASS =
+  'text-base font-extrabold text-zinc-900 mt-2 mb-2 tracking-tight';
+
+function looksLikeBoldSubheading(content: string): boolean {
+  return /^\*\*[^*\n]{3,120}\*\*$/.test(String(content || '').trim());
+}
+
+function isDigestSubheadingBlock(block: MdBlock, isDigest: boolean): boolean {
+  if (!isDigest) return false;
+  if (block.type === 'h3') return true;
+  if (block.type === 'h2') return !isCanonicalDigestHeading(block.content);
+  if (block.type === 'p') return looksLikeBoldSubheading(block.content);
+  return false;
+}
+
+function previousContentBlock(blocks: MdBlock[], idx: number): MdBlock | null {
+  for (let i = idx - 1; i >= 0; i--) {
+    const candidate = blocks[i];
+    if (candidate.type === 'empty') continue;
+    return candidate;
+  }
+  return null;
+}
+
+/** Collapse runs of blank-line blocks so digest subsections do not stack huge gaps. */
+export function collapseConsecutiveEmptyBlocks(blocks: MdBlock[]): MdBlock[] {
+  const out: MdBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === 'empty') {
+      if (out.length === 0 || out[out.length - 1].type === 'empty') continue;
+    }
+    out.push(block);
+  }
+  while (out.length > 0 && out[0].type === 'empty') out.shift();
+  while (out.length > 0 && out[out.length - 1].type === 'empty') out.pop();
+  return out;
+}
+
 /** Apply digest section context and normalize blocks before React render. */
 function prepareRenderableBlocks(rawBlocks: MdBlock[], isDigest: boolean): MdBlock[] {
   let renderSection: RenderSection = 'body';
-  return rawBlocks
-    .map((block) => {
-      if (block.type === 'h2') {
-        if (/^code snippet/i.test(block.content)) renderSection = 'code';
-        else if (SOURCES_HEADING.test(block.content)) renderSection = 'sources';
-        else renderSection = 'body';
-      }
-      if (looksLikeNonEnglishJunk(block.content)) {
-        return null;
-      }
-      if (block.type === 'p' && CHUNK_DEMO_MARKER.test(block.content.trim())) {
-        return null;
-      }
-      if (block.type === 'code' && block.label === 'Diagram') {
-        if (
-          looksLikeSourceCode(block.content) &&
-          !looksLikeBracketFlowDiagram(block.content) &&
-          !looksLikeSimpleArrowFlow(block.content)
-        ) {
-          return { ...block, label: 'Code Snippet' };
-        }
-        const tableRows = parseComparisonTableRows(block.content);
-        if (tableRows && tableRows.length >= 2) {
-          return { type: 'table', content: block.content, rows: tableRows };
-        }
-        return { ...block, content: normalizeDiagramContent(block.content) };
-      }
+  const mapped: MdBlock[] = [];
+  for (const block of rawBlocks) {
+    if (block.type === 'h2') {
+      if (/^code snippet/i.test(block.content)) renderSection = 'code';
+      else if (SOURCES_HEADING.test(block.content)) renderSection = 'sources';
+      else renderSection = 'body';
+    }
+    if (looksLikeNonEnglishJunk(block.content)) {
+      continue;
+    }
+    if (block.type === 'p' && CHUNK_DEMO_MARKER.test(block.content.trim())) {
+      continue;
+    }
+    if (block.type === 'code' && block.label === 'Diagram') {
       if (
-        isDigest &&
-        renderSection !== 'sources' &&
-        renderSection !== 'code' &&
-        block.type !== 'h1' &&
-        block.type !== 'h2' &&
-        block.type !== 'h3' &&
-        block.type !== 'empty' &&
-        block.type !== 'table' &&
-        looksLikeOffTopicJunk(block.content)
+        looksLikeSourceCode(block.content) &&
+        !looksLikeBracketFlowDiagram(block.content) &&
+        !looksLikeSimpleArrowFlow(block.content)
       ) {
-        return null;
+        mapped.push({ ...block, label: 'Code Snippet' });
+        continue;
       }
-      if (block.type === 'code' && !shouldRenderAsBoxedCode(block.content, block.label, renderSection)) {
-        return { type: 'p', content: block.content } as typeof block;
+      const tableRows = parseComparisonTableRows(block.content);
+      if (tableRows && tableRows.length >= 2) {
+        mapped.push({ type: 'table', content: block.content, rows: tableRows });
+        continue;
       }
-      if (block.type === 'blockquote') {
-        return { type: 'p', content: block.content } as typeof block;
+      mapped.push({ ...block, content: normalizeDiagramContent(block.content) });
+      continue;
+    }
+    if (
+      isDigest &&
+      renderSection !== 'sources' &&
+      renderSection !== 'code' &&
+      block.type !== 'h1' &&
+      block.type !== 'h2' &&
+      block.type !== 'h3' &&
+      block.type !== 'li' &&
+      block.type !== 'empty' &&
+      block.type !== 'table' &&
+      looksLikeOffTopicJunk(block.content)
+    ) {
+      continue;
+    }
+    if (block.type === 'code' && !shouldRenderAsBoxedCode(block.content, block.label, renderSection)) {
+      // Unfence mistaken prose and re-parse so bullets/headings render correctly
+      if (looksLikeProseMistakenlyFenced(block.content) || !looksLikeSourceCode(block.content)) {
+        const reparsed = parseMarkdownBlocks(block.content.split('\n'));
+        for (const child of reparsed) {
+          if (child.type === 'code' && !shouldRenderAsBoxedCode(child.content, child.label, renderSection)) {
+            mapped.push({ type: 'p', content: child.content });
+          } else {
+            mapped.push(child);
+          }
+        }
+        continue;
       }
-      return block;
-    })
-    .filter((block): block is MdBlock => block != null);
+      mapped.push({ type: 'p', content: block.content });
+      continue;
+    }
+    if (block.type === 'blockquote') {
+      mapped.push({ type: 'p', content: block.content });
+      continue;
+    }
+    mapped.push(block);
+  }
+  return dedupeRepeatedProseBlocks(mapped);
+}
+
+/** Drop near-duplicate teaching paragraphs / lists Gemini often repeats. */
+export function dedupeRepeatedProseBlocks(blocks: MdBlock[]): MdBlock[] {
+  const out: MdBlock[] = [];
+  const seen = new Set<string>();
+  const seenSentences = new Set<string>();
+  const norm = (text: string) =>
+    String(text || '')
+      .toLowerCase()
+      .replace(/[#*_`>\-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const sentencesOf = (text: string): string[] =>
+    norm(text)
+      .split(/(?<=[.!?:])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 40);
+
+  for (const block of blocks) {
+    if (block.type === 'empty' || block.type === 'code' || block.type === 'flow' || block.type === 'table') {
+      out.push(block);
+      continue;
+    }
+    if (block.type === 'h1' || block.type === 'h2' || block.type === 'h3') {
+      const key = `h:${norm(block.content).slice(0, 280)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(block);
+      continue;
+    }
+
+    const key = norm(block.content).slice(0, 280);
+    const sentences = sentencesOf(block.content);
+
+    if (key.length >= 40) {
+      let dup = false;
+      for (const prior of seen) {
+        if (prior.length < 40) continue;
+        if (key === prior || key.includes(prior) || prior.includes(key)) {
+          dup = true;
+          break;
+        }
+        const probe = Math.min(key.length, prior.length, 120);
+        if (probe >= 60 && key.slice(0, probe) === prior.slice(0, probe)) {
+          dup = true;
+          break;
+        }
+      }
+      // Sentence-level: drop blocks whose content was already said
+      if (!dup && sentences.length > 0) {
+        const already = sentences.filter((s) => {
+          if (seenSentences.has(s)) return true;
+          for (const prior of seenSentences) {
+            if (s.includes(prior) || prior.includes(s)) return true;
+          }
+          return false;
+        });
+        if (already.length >= Math.ceil(sentences.length * 0.6)) {
+          dup = true;
+        }
+      }
+      if (dup) continue;
+      seen.add(key);
+      for (const s of sentences) seenSentences.add(s);
+    }
+    out.push(block);
+  }
+  return out;
 }
 
 function DiagramFlowCard({
@@ -2388,14 +2781,25 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
       ),
     ),
   );
-  const blocks = prepareRenderableBlocks(
-    parseMarkdownBlocks(restoreArticleMarkdown(prepared).split('\n')),
-    isDigest,
+  const blocks = collapseConsecutiveEmptyBlocks(
+    prepareRenderableBlocks(
+      parseMarkdownBlocks(restoreArticleMarkdown(prepared).split('\n')),
+      isDigest,
+    ),
   );
 
   return (
-    <div className="space-y-5 text-zinc-700 leading-relaxed font-sans">
+    <div
+      className={`${isDigest ? 'space-y-3' : 'space-y-5'} text-zinc-700 leading-relaxed font-sans`}
+    >
       {blocks.map((block, idx) => {
+        const prev = previousContentBlock(blocks, idx);
+        const stackedSubheading =
+          isDigest &&
+          isDigestSubheadingBlock(block, isDigest) &&
+          prev != null &&
+          isDigestSubheadingBlock(prev, isDigest);
+
         switch (block.type) {
           case 'flow': {
             const steps =
@@ -2424,10 +2828,48 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
             );
           }
           case 'code': {
+            const isTree =
+              looksLikeDirectoryTreeDiagram(block.content) ||
+              looksLikeBranchedArchitectureDiagram(block.content);
+            if (block.label === 'Diagram' && isTree) {
+              const rebuilt = rebuildBranchedArchitectureDiagram(block.content);
+              if (rebuilt.mode === 'flow' && rebuilt.steps && rebuilt.steps.length >= 2) {
+                return (
+                  <DiagramFlowCard
+                    key={idx}
+                    index={idx}
+                    steps={rebuilt.steps}
+                    copyText={rebuilt.steps.join('\n')}
+                    label="Diagram"
+                  />
+                );
+              }
+              return (
+                <div
+                  key={idx}
+                  className="relative group rounded-2xl overflow-hidden border border-zinc-800 bg-[#0f0f11] my-4 font-mono text-xs shadow-lg max-w-full"
+                >
+                  <div className="flex items-center justify-between px-6 py-3 bg-[#16161a] border-b border-zinc-800 text-zinc-400">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-brand">
+                      Diagram
+                    </span>
+                    <button
+                      type="button"
+                      id={`copy-code-${idx}`}
+                      onClick={() => navigator.clipboard.writeText(rebuilt.content)}
+                      className="hover:text-white transition-colors text-[10px] font-bold uppercase tracking-widest cursor-pointer"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <pre className="p-6 overflow-x-auto text-zinc-300 whitespace-pre font-mono text-[11px] leading-6">
+                    <code className="font-mono whitespace-pre">{rebuilt.content}</code>
+                  </pre>
+                </div>
+              );
+            }
             const diagramSteps =
-              block.label === 'Diagram' && !looksLikeDirectoryTreeDiagram(block.content)
-                ? extractFlowSteps(block.content)
-                : [];
+              block.label === 'Diagram' && !isTree ? extractFlowSteps(block.content) : [];
             if (diagramSteps.length >= 2) {
               return (
                 <DiagramFlowCard
@@ -2499,9 +2941,12 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
             const canonical = !isDigest || isCanonicalDigestHeading(block.content);
             if (!canonical) {
               return (
-                <p key={idx} className="text-zinc-700 text-[15px] leading-7 font-medium mt-3 mb-1">
+                <h3
+                  key={idx}
+                  className={stackedSubheading ? DIGEST_SUBHEADING_STACKED_CLASS : DIGEST_SUBHEADING_CLASS}
+                >
                   {parseInlineMarkdown(block.content)}
-                </p>
+                </h3>
               );
             }
             return (
@@ -2516,7 +2961,16 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
           }
           case 'h3':
             return (
-              <h3 key={idx} className="text-lg font-extrabold text-zinc-900 mt-6 mb-3 tracking-tight">
+              <h3
+                key={idx}
+                className={
+                  isDigest
+                    ? stackedSubheading
+                      ? DIGEST_SUBHEADING_STACKED_CLASS
+                      : DIGEST_SUBHEADING_CLASS
+                    : 'text-lg font-extrabold text-zinc-900 mt-6 mb-3 tracking-tight'
+                }
+              >
                 {block.content}
               </h3>
             );
@@ -2527,8 +2981,20 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
               </li>
             );
           case 'empty':
-            return <div key={idx} className="h-2" />;
+            return null;
           case 'p':
+            if (isDigest && looksLikeBoldSubheading(block.content)) {
+              return (
+                <h3
+                  key={idx}
+                  className={
+                    stackedSubheading ? DIGEST_SUBHEADING_STACKED_CLASS : DIGEST_SUBHEADING_CLASS
+                  }
+                >
+                  {parseInlineMarkdown(block.content)}
+                </h3>
+              );
+            }
             return (
               <p key={idx} className="text-zinc-600 text-[15px] leading-7 whitespace-pre-wrap">
                 {parseInlineMarkdown(block.content)}

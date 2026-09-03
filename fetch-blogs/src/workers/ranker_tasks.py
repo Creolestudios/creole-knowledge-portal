@@ -20,7 +20,9 @@ from src.extractors.topic_filter import is_non_learning, matches_any_term
 from src.ranker.llm_reranker import RerankCandidate, rerank_with_gemini
 from src.ranker.next_day import (
     discovery_match_terms,
+    hay_is_off_interest_continuity,
     hay_is_off_yesterday_family,
+    profile_has_interests,
     refresh_profile_embedding,
 )
 from src.ranker.scorer import score_articles_for_profile
@@ -179,7 +181,9 @@ async def _rank_articles_for_user(article_ids: list[str], user_id: str, limit: i
             f"{' '.join(getattr(article, 'topics', None) or [])} "
             f"{str(getattr(article, 'body_text', '') or '')[:800]}"
         )
-        if hay_is_off_yesterday_family(hay, profile):
+        if not profile_has_interests(profile) and hay_is_off_yesterday_family(hay, profile):
+            return False
+        if profile_has_interests(profile) and hay_is_off_interest_continuity(hay, profile):
             return False
         if is_non_learning(
             str(getattr(article, "title", None) or ""),

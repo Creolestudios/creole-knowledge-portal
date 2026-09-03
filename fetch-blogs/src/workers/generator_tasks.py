@@ -184,7 +184,6 @@ async def _generate_digest(article_ids: list[str], user_id: str) -> str:
 )
 def generate_digest(article_ids: list[str], user_id: str) -> str:
     """Create a DailyDigest for the user from ranked article IDs."""
+    # Empty ranked pool still runs — _generate_digest uses corpus fallback.
     ids = [aid for aid in (article_ids or []) if aid]
-    if not ids:
-        return ""
     return run_async(_generate_digest(ids, user_id))
