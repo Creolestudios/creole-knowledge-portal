@@ -1,4 +1,4 @@
-"""Article selection: interests first; else day-1 stack trending; else yesterday + quiz."""
+"""Article selection: interests (with continuity when returning); else stack curriculum."""
 
 from __future__ import annotations
 
@@ -83,16 +83,102 @@ def quiz_focus_terms(profile: UserProfile) -> list[str]:
     return _devto_tags_from_values(values)
 
 
+def continuing_interest_run(profile: UserProfile) -> bool:
+    """Returning learner with an interest list — same continuity idea as stack runs."""
+    return profile_has_interests(profile) and profile_has_yesterday(profile)
+
+
+def interest_base_tokens(profile: UserProfile) -> list[str]:
+    """Compact interest tokens used for hard matching (never generic trending)."""
+    interests = _normalized_interests(profile)
+    if not interests:
+        return []
+    tags = interest_scrape_terms(profile)
+    tokens: list[str] = []
+    for item in interests:
+        lower_item = str(item).lower()
+        for tok in topic_tokens_from_text(item):
+            tokens.append(tok)
+            plural = f"{tok}s"
+            if plural in lower_item or plural in lower_item.replace(".", ""):
+                tokens.append(plural)
+    short = [
+        str(item).strip()
+        for item in interests
+        if 0 < len(str(item).split()) <= 3 and len(str(item).strip()) <= 40
+    ]
+    ordered = list(dict.fromkeys([*tags, *tokens, *short]))
+    compact: list[str] = []
+    for term in ordered:
+        raw_term = str(term).strip().lower()
+        parts = raw_term.replace("-", " ").split()
+        if len(parts) >= 5:
+            continue
+        if any(
+            w in {"want", "learn", "about", "how", "to", "the", "a", "an"}
+            for w in parts
+        ) and len(parts) >= 3:
+            continue
+        if any(
+            glue in raw_term
+            for glue in ("wantto", "learnto", "howto", "learnabout", "want-to", "learn-about")
+        ):
+            continue
+        compact.append(term)
+    return (compact or ordered or interests)[:12]
+
+
+def uncovered_interest_topics(profile: UserProfile) -> list[str]:
+    """Interest subtopics not yet recorded on the current interest run."""
+    if not profile_has_interests(profile):
+        return []
+    covered = {
+        canonicalize_topic(item)
+        for item in (getattr(profile.learning_path, "stack_run_covered", None) or [])
+        if item and str(item).strip()
+    }
+    return [
+        topic
+        for topic in interest_base_tokens(profile)
+        if canonicalize_topic(topic) not in covered
+    ][:4]
+
+
 def build_next_day_query_text(profile: UserProfile) -> str:
     """Text embedded for ranking when we cannot reuse yesterday's digest vector.
 
-    Interests set → those interests only.
+    Interests + returning → continue yesterday inside the interest list + quiz.
+    Interests + new → those interests only (never generic trending).
     No interests + returning on the same stack → continue yesterday, steered by quiz.
     No interests + stack just rotated → trending tutorials for the new stack.
     No interests + new join → today's trending tutorials for the active stack.
     """
     interests = _normalized_interests(profile)
     if interests:
+        if continuing_interest_run(profile):
+            path = profile.learning_path
+            parts = [
+                "Continue yesterday's learning briefing for a returning user.",
+                "Stay inside these interests only (reject off-interest posts): "
+                + ", ".join(interests[:12]),
+            ]
+            headline = str(path.last_digest_headline or "").strip()
+            if headline:
+                parts.append(f"Yesterday headline: {headline}")
+            topics = [str(t).strip() for t in (path.last_topics or []) if str(t).strip()]
+            if topics:
+                parts.append("Yesterday themes: " + ", ".join(topics[:8]))
+            from src.models.profile import next_scrape_pace
+
+            pace = next_scrape_pace(profile)
+            parts.append(f"Quiz pace: {pace.value}")
+            quiz_terms = quiz_focus_terms(profile)
+            if quiz_terms:
+                parts.append("Quiz focus topics: " + ", ".join(quiz_terms[:8]))
+            uncovered = uncovered_interest_topics(profile)
+            if uncovered:
+                parts.append("Still uncovered in these interests: " + ", ".join(uncovered[:8]))
+            return " ".join(parts)
         return (
             "User learning interests (match articles to these topics only): "
             + ", ".join(interests[:12])
@@ -191,16 +277,15 @@ def embed_and_store_digest(
 def refresh_profile_embedding(profile: UserProfile) -> list[float]:
     """Rank query embedding.
 
-    Interests → embed interests.
-    No interests + same stack run → reuse yesterday's digest embedding (continuity).
-    No interests + new join or just rotated → embed tech-stack trending.
+    Returning interest or stack run → reuse yesterday's digest embedding.
+    New interest join → embed interests only.
+    New stack join or rotation → embed tech-stack trending.
     """
     previous = list(getattr(profile.learning_path, "last_digest_embedding", None) or [])
-    if (
-        not profile_has_interests(profile)
-        and continuing_same_stack_run(profile)
-        and previous
-    ):
+    if continuing_interest_run(profile) and previous:
+        profile.profile_embedding = previous
+        return previous
+    if continuing_same_stack_run(profile) and previous:
         profile.profile_embedding = previous
         return previous
 
@@ -232,7 +317,7 @@ def profile_has_discovery_prefs(profile: UserProfile) -> bool:
 
 
 def interest_scrape_terms(profile: UserProfile) -> list[str]:
-    """Dev.to / match tags = user interests field only (never stack / pace / yesterday)."""
+    """Dev.to tags from the interests field only."""
     return _devto_tags_from_values(_normalized_interests(profile))
 
 
@@ -248,14 +333,8 @@ def stack_scrape_terms(profile: UserProfile) -> list[str]:
     return _devto_tags_from_values(values)
 
 
-def continuity_match_terms(profile: UserProfile) -> list[str]:
-    """Hard filter for returning users: yesterday's theme + quiz, not the whole stack.
-
-    Stops a Python-chunking learner from getting Flutter (or any other stack)
-    just because Flutter is listed on the profile.
-    """
-    if profile_has_interests(profile) or not profile_has_yesterday(profile):
-        return []
+def _continuity_raw_terms(profile: UserProfile) -> list[str]:
+    """Yesterday headline/topics/TLDR + quiz focus — shared by stack and interest runs."""
     path = profile.learning_path
     raw: list[str] = []
     raw.extend(str(t).strip() for t in (path.last_topics or []) if str(t).strip())
@@ -268,7 +347,25 @@ def continuity_match_terms(profile: UserProfile) -> list[str]:
         raw.extend(topic_tokens_from_text(str(item)))
     for item in path.last_digest_takeaways or []:
         raw.extend(topic_tokens_from_text(str(item)))
-    # Keep tokens that look like tech (known list, quiz tags, last_topics)
+    return raw
+
+
+def continuity_match_terms(profile: UserProfile) -> list[str]:
+    """Hard filter for returning users: yesterday's theme + quiz, not the whole profile.
+
+    Interest users: same continuity signal, but terms must stay inside the interest list.
+    """
+    if not profile_has_yesterday(profile):
+        return []
+
+    path = profile.learning_path
+    raw = _continuity_raw_terms(profile)
+    interest_allowed = (
+        {t.lower() for t in interest_base_tokens(profile)}
+        if profile_has_interests(profile)
+        else set()
+    )
+
     ordered: list[str] = []
     for item in raw:
         term = str(item or "").strip()
@@ -277,21 +374,66 @@ def continuity_match_terms(profile: UserProfile) -> list[str]:
         lower = term.lower()
         if lower in ordered:
             continue
+        if profile_has_interests(profile):
+            term_tokens = {t.lower() for t in topic_tokens_from_text(term)} | {lower}
+            yesterday_tokens = set(yesterday_theme_tokens(profile))
+            quiz_tokens = {t.lower() for t in quiz_focus_terms(profile)}
+            if not (
+                term_tokens & interest_allowed
+                or term_tokens & yesterday_tokens
+                or lower in quiz_tokens
+            ):
+                continue
         if topic_tokens_from_text(term) or lower in {t.lower() for t in (path.last_topics or [])}:
             ordered.append(term)
         elif _is_devto_safe_tag(lower) and lower in {
             *(quiz_focus_terms(profile)),
-            *continuity_scrape_terms(profile),
+            *(_yesterday_scrape_tokens(profile)),
         }:
             ordered.append(term)
-    # Prefer specific tokens; drop ultra-generic "ai" if anything else exists
     specific = [t for t in ordered if t.lower() not in {"ai", "api"}]
     return (specific or ordered)[:12]
 
 
+def _yesterday_scrape_tokens(profile: UserProfile) -> list[str]:
+    """Dev.to-safe tags extracted from yesterday's briefing (no stack filter)."""
+    path = profile.learning_path
+    candidates: list[str] = []
+    for topic in getattr(path, "last_topics", None) or []:
+        text = str(topic or "").strip()
+        if text:
+            candidates.extend(topic_tokens_from_text(text))
+            candidates.append(text)
+    headline = str(getattr(path, "last_digest_headline", "") or "").strip()
+    if headline:
+        candidates.extend(topic_tokens_from_text(headline))
+    for item in getattr(path, "last_digest_tldr", None) or []:
+        text = str(item or "").strip()
+        if text:
+            candidates.extend(topic_tokens_from_text(text))
+    ordered: list[str] = []
+    for item in candidates:
+        term = str(item or "").strip().lower()
+        if _is_devto_safe_tag(term):
+            ordered.append(term)
+    return list(dict.fromkeys(ordered))[:6]
+
+
 def discovery_scrape_terms(profile: UserProfile) -> list[str]:
-    """Tags to fetch: interests; else same-stack yesterday+quiz+uncovered; else active stack."""
+    """Tags to fetch: interest-only (day 1) or yesterday+quiz (same shape as stack); else stack."""
     if profile_has_interests(profile):
+        if continuing_interest_run(profile):
+            # Same order as non-interest returning: yesterday → quiz → uncovered.
+            # Interests remain the hard lane via discovery_match_terms / off-interest filter.
+            ordered = [
+                *continuity_scrape_terms(profile),
+                *quiz_focus_terms(profile),
+                *uncovered_interest_topics(profile),
+            ]
+            unique = list(dict.fromkeys(t for t in ordered if t))
+            if unique:
+                return unique[:8]
+            return interest_scrape_terms(profile)
         return interest_scrape_terms(profile)
     if continuing_same_stack_run(profile):
         ordered = [
@@ -306,10 +448,25 @@ def discovery_scrape_terms(profile: UserProfile) -> list[str]:
 
 
 def discovery_match_terms(profile: UserProfile) -> list[str]:
-    """Hard filter: interests; else the active stack family (not other languages)."""
-    interests = _normalized_interests(profile)
-    if interests:
-        return interests
+    """Hard filter: interests day 1; returning = yesterday+quiz (same as stack), inside interests."""
+    if profile_has_interests(profile):
+        base = interest_base_tokens(profile)
+        if continuing_interest_run(profile):
+            focused = continuity_match_terms(profile)
+            next_topics = uncovered_interest_topics(profile)[:4]
+            ordered = list(dict.fromkeys([*focused, *next_topics]))
+            if ordered:
+                return ordered[:12]
+            return base[:12]
+        return base[:12]
+
+    if continuing_same_stack_run(profile):
+        focused = continuity_match_terms(profile)
+        next_topics = uncovered_stack_topics(profile)[:4]
+        ordered = list(dict.fromkeys([*focused, *next_topics]))
+        if ordered:
+            return ordered[:12]
+
     from src.models.profile import resolve_active_stack
 
     active = resolve_active_stack(profile)
@@ -318,20 +475,15 @@ def discovery_match_terms(profile: UserProfile) -> list[str]:
     )
     if fam:
         return list(fam)
-    if continuing_same_stack_run(profile):
-        focused = continuity_match_terms(profile)
-        if focused:
-            return focused
     return _normalized_stacks(profile)
 
 
 def continuity_scrape_terms(profile: UserProfile) -> list[str]:
-    """Yesterday's *tech* themes for returning users with no interest list.
-
-    Only known tech tokens / profile stacks — not raw headlines (avoids Mac/Apple lock-in).
-    """
-    if profile_has_interests(profile):
+    """Yesterday's tech themes for returning users (interest-scoped when interests are set)."""
+    if not profile_has_yesterday(profile):
         return []
+    if profile_has_interests(profile):
+        return _yesterday_scrape_tokens(profile)
 
     path = profile.learning_path
     allowed = set(_normalized_stacks(profile))
@@ -363,6 +515,15 @@ def continuity_scrape_terms(profile: UserProfile) -> list[str]:
         if _is_devto_safe_tag(term):
             ordered.append(term)
     return list(dict.fromkeys(ordered))[:6]
+
+
+def hay_is_off_interest_continuity(haystack: str, profile: UserProfile) -> bool:
+    """True when text is outside the user's interest list (never generic/off-interest)."""
+    if not profile_has_interests(profile):
+        return False
+    from src.extractors.topic_filter import matches_any_term
+
+    return not matches_any_term(haystack, interest_base_tokens(profile))
 
 
 _STACK_FAMILIES: tuple[frozenset[str], ...] = (

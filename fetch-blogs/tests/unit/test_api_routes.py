@@ -177,12 +177,45 @@ class TestFlatMapDigest:
         assert content.index("## Daily Overview") < content.index("## Briefing")
         assert content.index("## Briefing") < content.index("## Key Action")
         assert content.index("## Key Action") < content.index("## Source and Citation")
+        assert out["sources"]
+        assert out["sources"][0]["url"] == "https://a.com/x"
+        assert out["sources"][0]["title"] == "Src One"
 
-    def test_appends_source_domains_to_the_tag_list(self) -> None:
+    def test_curation_tags_come_from_briefing_topics_not_hardcodes(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(full_digest_doc())
-        assert "morning-briefing" in out["tags"]
-        assert "a.com" in out["tags"]
-        assert "b.com" in out["tags"]
+        assert "redis" in [t.lower() for t in out["tags"]]
+        assert "morning-briefing" not in out["tags"]
+        assert "mongodb" not in out["tags"]
+        assert "synthesis" not in out["tags"]
+        assert "a.com" not in out["tags"]
+        assert "b.com" not in out["tags"]
+
+    def test_curation_tags_prefer_headline_and_source_topics(self) -> None:
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {
+                "article": {
+                    "headline": "RAG chunking with embeddings in Python",
+                    "tldr": ["Use overlapping windows for RAG retrieval"],
+                    "sections": [
+                        {
+                            "title": "Chunking",
+                            "content": "Python chunking and embeddings for RAG pipelines.",
+                        }
+                    ],
+                    "sources": [
+                        {
+                            "title": "Practical LangChain RAG tips",
+                            "url": "https://dev.to/x",
+                            "source_domain": "dev.to",
+                        }
+                    ],
+                }
+            }
+        )
+        tags = [t.lower() for t in out["tags"]]
+        assert "rag" in tags or "python" in tags or "embeddings" in tags or "chunking" in tags
+        assert "dev.to" not in tags
+        assert "morning-briefing" not in tags
 
     def test_omits_optional_blocks_when_they_are_empty(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard({"article": {"headline": "Bare"}})
@@ -297,6 +330,28 @@ class TestFlatMapDigest:
         assert content.index("## Daily Overview") < content.index("## Briefing")
         assert content.index("## Briefing") < content.index("## Key Action")
         assert content.index("## Key Action") < content.index("## Source and Citation")
+
+    def test_flat_map_dedupes_repeated_briefing_sections(self) -> None:
+        repeated = (
+            "AI-powered A/B testing turns gut feeling into math. "
+            "Generative UI is here. FAQ: How to leverage AI?"
+        )
+        unique = "Only 18% of web developers say their AI adoption has led to faster shipping."
+        out = digests_mod.flat_map_digest_for_dashboard(
+            {
+                "article": {
+                    "headline": "AI in web frameworks",
+                    "sections": [
+                        {"title": "Briefing", "content": repeated},
+                        {"title": "Briefing", "content": unique},
+                        {"title": "Briefing", "content": repeated},
+                    ],
+                }
+            }
+        )
+        content = out["content"]
+        assert content.count("AI-powered A/B testing") == 1
+        assert "Only 18% of web developers" in content
 
     def test_maps_continuation_title_into_brief(self) -> None:
         out = digests_mod.flat_map_digest_for_dashboard(

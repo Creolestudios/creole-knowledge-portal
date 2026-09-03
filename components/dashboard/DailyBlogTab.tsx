@@ -1,11 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 import { useRouter } from 'next/navigation';
 import { isInventedFallback } from '@/lib/digests/invented-fallback';
+
+/** After this reading time, open the quiz (dashboard only — quiz module untouched). */
+const READING_TIMER_LIMIT_SECONDS = 40 * 60;
 
 /**
  * "Today" in IST (Asia/Kolkata) — must match the server's definition of
@@ -106,6 +109,10 @@ function elapsedSeconds(state: { startedAt: number; stoppedAt: number | null }):
   return Math.max(0, Math.floor((end - state.startedAt) / 1000));
 }
 
+function cappedReadSeconds(seconds: number): number {
+  return Math.min(Math.max(0, seconds), READING_TIMER_LIMIT_SECONDS);
+}
+
 export default function DailyBlogTab({ user, profile }: { user?: any; profile?: any }) {
   const router = useRouter();
   const [brief, setBrief] = useState<any>(null);
@@ -121,21 +128,65 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
 
   // Quiz State
   const [quizLoading, setQuizLoading] = useState(false);
+  const autoQuizStartedRef = useRef(false);
+
+  const saveActivityAndOpenQuiz = useCallback(async () => {
+    if (quizLoading || !brief?.id) return;
+    setQuizLoading(true);
+    setTimerActive(false);
+    const state = readTimerState(brief.id);
+    const secondsToSave = cappedReadSeconds(state ? elapsedSeconds(state) : readSeconds);
+    if (state && !state.stoppedAt) {
+      writeTimerState(brief.id, { ...state, stoppedAt: Date.now() });
+    }
+    setReadSeconds(secondsToSave);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('active_blog_id', brief.id);
+    }
+    try {
+      await fetch('/api/activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          date: new Date().toISOString().split('T')[0],
+          readSeconds: secondsToSave,
+        }),
+      });
+    } catch (e) {
+      console.error('Failed to save reading time', e);
+    }
+    router.push(`/dashboard/quiz/${brief.id}`);
+  }, [brief, quizLoading, readSeconds, router, user]);
 
   useEffect(() => {
     if (!timerActive || !brief?.id) return undefined;
     const tick = () => {
       const state = readTimerState(brief.id);
       if (!state) return;
-      setReadSeconds(elapsedSeconds(state));
+      const elapsed = elapsedSeconds(state);
+      setReadSeconds(cappedReadSeconds(elapsed));
+      if (
+        elapsed >= READING_TIMER_LIMIT_SECONDS &&
+        !autoQuizStartedRef.current &&
+        shouldRunReadingTimer(quizStatus)
+      ) {
+        autoQuizStartedRef.current = true;
+        if (!state.stoppedAt) {
+          writeTimerState(brief.id, { ...state, stoppedAt: Date.now() });
+        }
+        setTimerActive(false);
+        void saveActivityAndOpenQuiz();
+      }
     };
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [timerActive, brief?.id]);
+  }, [timerActive, brief?.id, quizStatus, saveActivityAndOpenQuiz]);
 
   const applyBrief = useCallback(async (blog: any) => {
     setBrief(blog);
+    autoQuizStartedRef.current = false;
     if (typeof window !== 'undefined' && blog?.id) {
       sessionStorage.setItem('active_blog_id', blog.id);
     }
@@ -163,7 +214,9 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         state = { ...state, stoppedAt: Date.now() };
         writeTimerState(blog.id, state);
       }
-      setReadSeconds(elapsedSeconds(state));
+      const elapsed = elapsedSeconds(state);
+      setReadSeconds(cappedReadSeconds(elapsed));
+      // If already at/over 40m when restoring, open quiz on next tick via timer effect.
       setTimerActive(running);
     } else {
       setTimerActive(false);
@@ -314,32 +367,9 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         ? Number(brief.estimated_read_minutes)
         : String(brief?.content || '')
             .split(/\s+/)
-            .filter(Boolean).length / 225,
+            .filter(Boolean).length / 180,
     ),
   );
-
-  const saveActivityAndOpenQuiz = async () => {
-    if (quizLoading || !brief?.id) return;
-    setQuizLoading(true);
-    setTimerActive(false);
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('active_blog_id', brief.id);
-    }
-    try {
-      await fetch('/api/activity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          date: new Date().toISOString().split('T')[0],
-          readSeconds,
-        }),
-      });
-    } catch (e) {
-      console.error('Failed to save reading time', e);
-    }
-    router.push(`/dashboard/quiz/${brief.id}`);
-  };
 
   const handleReviewQuiz = () => {
     if (quizLoading || !brief?.id) return;
@@ -577,21 +607,55 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 </div>
               </div>
 
-              <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
+                <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
                 <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">
                   Sources evaluated
                 </span>
                 <h4 className="text-lg font-black text-zinc-900 mb-4">Network Context</h4>
                 <div className="space-y-3">
-                  <div className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group">
-                    <div>
-                      <p className="text-xs font-bold text-zinc-900 leading-tight">Dev.to API</p>
-                    </div>
-                    <ExternalLink
-                      size={14}
-                      className="text-zinc-400 group-hover:text-brand transition-colors"
-                    />
-                  </div>
+                  {(brief.sources?.length
+                    ? brief.sources
+                    : []
+                  ).map(
+                    (
+                      src: { title?: string; url?: string; source_domain?: string },
+                      idx: number,
+                    ) => {
+                      const href = String(src?.url || '').trim();
+                      const title = String(src?.title || src?.source_domain || 'Source').trim();
+                      const domain = String(src?.source_domain || '').trim();
+                      if (!href) return null;
+                      return (
+                        <a
+                          key={`${href}-${idx}`}
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group hover:border-brand/40 transition-colors"
+                        >
+                          <div className="min-w-0 pr-3">
+                            <p className="text-xs font-bold text-zinc-900 leading-tight truncate">
+                              {title}
+                            </p>
+                            {domain ? (
+                              <p className="text-[10px] text-zinc-400 font-semibold mt-1 truncate">
+                                {domain}
+                              </p>
+                            ) : null}
+                          </div>
+                          <ExternalLink
+                            size={14}
+                            className="text-zinc-400 group-hover:text-brand transition-colors flex-shrink-0"
+                          />
+                        </a>
+                      );
+                    },
+                  )}
+                  {!brief.sources?.length && (
+                    <p className="text-xs text-zinc-400 font-medium">
+                      No source links available for today&apos;s briefing.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>

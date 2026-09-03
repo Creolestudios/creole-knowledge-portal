@@ -75,6 +75,7 @@ class _GeminiResultEnvelope(BaseModel):
 def build_rerank_prompt(profile: UserProfile, candidates: list[RerankCandidate]) -> str:
     """Build a compact JSON-only prompt for Gemini."""
     from src.ranker.next_day import (
+        continuing_interest_run,
         continuing_same_stack_run,
         profile_has_yesterday,
         quiz_focus_terms,
@@ -97,7 +98,13 @@ def build_rerank_prompt(profile: UserProfile, candidates: list[RerankCandidate])
         "quiz_focus": quiz_focus_terms(profile),
     }
     candidate_payload = [candidate.model_dump() for candidate in candidates]
-    if profile.interests:
+    if profile.interests and continuing_interest_run(profile):
+        focus = (
+            "This is a returning user with interests. MUST continue yesterday's technical "
+            "theme and the quiz_focus topics while staying inside the interest list. "
+            "Score anything off-interest or unrelated to yesterday's learning thread near 0."
+        )
+    elif profile.interests:
         focus = (
             "MUST rank only articles that match the user's interests. "
             "Score anything off-interest near 0."
@@ -187,9 +194,17 @@ def rerank_with_gemini(
     model: _GeminiModel | None = None,
 ) -> list[RerankResult]:
     """Rank candidates with Gemini, falling back to deterministic scoring."""
+    from src.core.config import Environment, get_app_settings
+
     bounded_candidates = candidates[:50]
     if not bounded_candidates:
         return []
+
+    # LOCAL ONLY (for now): skip Gemini re-rank to save quota; use vector/composite fallback.
+    # Staging/prod still call Gemini. Pass `model=` in tests to exercise the Gemini path.
+    if model is None and get_app_settings().ENVIRONMENT == Environment.LOCAL:
+        log.info("ranker: gemini rerank skipped in local — deterministic fallback")
+        return fallback_rerank(bounded_candidates, limit)
 
     settings = get_llm_settings()
     if not settings.GEMINI_API_KEY and model is None:
@@ -213,7 +228,7 @@ def rerank_with_gemini(
             return fallback_rerank(bounded_candidates, limit)
 
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    primary = (settings.GEMINI_MODEL or "").strip() or "gemini-3.6-flash"
+    primary = (settings.GEMINI_MODEL or "").strip() or "gemini-2.5-flash-lite"
     dead = {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"}
     models = [
         name

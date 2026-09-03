@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { CalendarSearch, Loader2, Calendar, CalendarDays } from 'lucide-react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 import { isBriefingDay, localDateKey } from '@/lib/data/streak';
@@ -30,6 +30,37 @@ function formatFetchedLabel(dateKey: string): string {
   if (dateKey === today) return 'Today';
   if (dateKey === yesterday) return 'Yesterday';
   return dateKey;
+}
+
+function isQuizCompletedForDate(
+  activities: Record<string, any>,
+  dateStr: string,
+): boolean {
+  return Boolean(activities[dateStr]?.quiz_taken);
+}
+
+/**
+ * Same day: past-blog entry only after quiz is completed.
+ * From the next day onward: blog is visible even if quiz was missed (shown red).
+ */
+function isPastBlogVisibleOnCalendar(
+  dateStr: string,
+  activities: Record<string, any>,
+  todayKey: string,
+): boolean {
+  if (!dateStr) return false;
+  if (dateStr === todayKey) {
+    return isQuizCompletedForDate(activities, dateStr);
+  }
+  return dateStr < todayKey;
+}
+
+function isSameDayQuizLocked(
+  dateStr: string,
+  activities: Record<string, any>,
+  todayKey: string,
+): boolean {
+  return dateStr === todayKey && !isQuizCompletedForDate(activities, dateStr);
 }
 
 export default function PastBlogsTab({
@@ -63,8 +94,26 @@ export default function PastBlogsTab({
   for (let i = 0; i < firstDayIndex; i++) daysArray.push(null);
   for (let i = 1; i <= totalDays; i++) daysArray.push(i);
 
-  const blogDates = new Set(
-    blogs.map((item) => toDateKey(item.digest_date || item.published_at)).filter(Boolean)
+  const todayKey = localDateKey(new Date());
+
+  /** Visible past blogs: quiz done today, or any prior day (missed quiz → red). */
+  const visibleBlogs = useMemo(
+    () =>
+      blogs.filter((item) => {
+        const key = toDateKey(item.digest_date || item.published_at);
+        return key && isPastBlogVisibleOnCalendar(key, activities, todayKey);
+      }),
+    [blogs, activities, todayKey],
+  );
+
+  const blogDates = useMemo(
+    () =>
+      new Set(
+        visibleBlogs
+          .map((item) => toDateKey(item.digest_date || item.published_at))
+          .filter(Boolean),
+      ),
+    [visibleBlogs],
   );
 
   useEffect(() => {
@@ -96,9 +145,14 @@ export default function PastBlogsTab({
     void loadActivities();
   }, []);
 
-  const fetchBlogForDate = async (dateStr: string) => {
+  const fetchBlogForDate = useCallback(async (dateStr: string) => {
     setLoading(true);
     try {
+      // Same day without quiz: do not show in Past Blogs at all.
+      if (isSameDayQuizLocked(dateStr, activities, todayKey)) {
+        setBlog(null);
+        return;
+      }
       const res = await fetch(`/api/digests/past?date=${dateStr}`);
       if (res.ok) {
         const data = await res.json();
@@ -112,7 +166,7 @@ export default function PastBlogsTab({
     } finally {
       setLoading(false);
     }
-  };
+  }, [activities, todayKey]);
 
   useEffect(() => {
     if (!selected) return;
@@ -120,11 +174,11 @@ export default function PastBlogsTab({
       setSelectedDate(selected);
       void fetchBlogForDate(selected);
     });
-  }, [selected]);
+  }, [selected, activities, fetchBlogForDate]);
 
   useEffect(() => {
-    if (selected || selectedDate || blogs.length === 0) return;
-    const key = toDateKey(blogs[0].digest_date || blogs[0].published_at);
+    if (selected || selectedDate || visibleBlogs.length === 0) return;
+    const key = toDateKey(visibleBlogs[0].digest_date || visibleBlogs[0].published_at);
     if (!key) return;
     const [yearNum, monthNum, dayNum] = key.split('-').map(Number);
     queueMicrotask(() => {
@@ -133,7 +187,7 @@ export default function PastBlogsTab({
       onSelect?.(key);
       void fetchBlogForDate(key);
     });
-  }, [blogs, selected, selectedDate, onSelect]);
+  }, [visibleBlogs, selected, selectedDate, onSelect, activities, fetchBlogForDate]);
 
   const handleSelectDate = async (day: number) => {
     const cell = new Date(year, month, day);
@@ -194,22 +248,23 @@ export default function PastBlogsTab({
                 if (cellDate > today) {
                   bgClass = 'bg-zinc-50 text-zinc-300 border border-zinc-100';
                 } else if (!isBriefingDay(cellDate) && !hasBlog) {
-                  // No briefing is generated on weekends -- show it as inert grey
-                  // instead of the red "missed" state used for weekdays.
                   bgClass = 'bg-zinc-100 text-zinc-400 cursor-not-allowed';
                 } else {
                   isClickable = true;
                   if (hasBlog) {
                     const activity = activities[dateStr];
-                    const isRead = activity && activity.read_seconds > 0;
                     const isQuizTaken = activity && activity.quiz_taken;
-                    const passedQuiz = isQuizTaken && (activity.quiz_score >= 3 || (activity.quiz_score / (activity.quiz_total || 5)) >= 0.6);
+                    const passedQuiz =
+                      isQuizTaken &&
+                      (activity.quiz_score >= 3 ||
+                        activity.quiz_score / (activity.quiz_total || 5) >= 0.6);
 
                     if (passedQuiz) {
                       bgClass = 'bg-green-500 text-white hover:bg-green-600 cursor-pointer shadow-sm';
-                    } else if (isRead || isQuizTaken) {
+                    } else if (isQuizTaken) {
                       bgClass = 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer shadow-sm';
                     } else {
+                      // Prior day, quiz never completed → red (available from next day).
                       bgClass = 'bg-red-500 text-white hover:bg-red-600 cursor-pointer shadow-sm';
                     }
                   } else {
@@ -256,11 +311,11 @@ export default function PastBlogsTab({
           </div>
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded bg-blue-500 flex-shrink-0 shadow-sm"></div>
-            <span className="text-xs font-bold text-zinc-700">Read (Needs Practice)</span>
+            <span className="text-xs font-bold text-zinc-700">Completed quiz (practice)</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded bg-red-500 flex-shrink-0 shadow-sm"></div>
-            <span className="text-xs font-bold text-zinc-700">Unread (Missed)</span>
+            <span className="text-xs font-bold text-zinc-700">Missed quiz</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded bg-zinc-100 border border-zinc-200 flex-shrink-0"></div>

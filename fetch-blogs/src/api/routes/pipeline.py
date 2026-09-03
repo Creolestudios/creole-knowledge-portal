@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from celery import chain
@@ -77,7 +78,7 @@ async def execute_pipeline_for_user(user_id: str, timeout: int = 600, runner_fun
         return await _run_pipeline_in_process(user_id)
 
     try:
-        return run_celery_pipeline_and_wait(user_id, timeout=timeout)
+        return await asyncio.to_thread(run_celery_pipeline_and_wait, user_id, timeout)
     except Exception as celery_exc:
         # Local resilience: workers/time-limits/empty pools should not brick Synthesize
         env = getattr(cfg.ENVIRONMENT, "value", cfg.ENVIRONMENT)
