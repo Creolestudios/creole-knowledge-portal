@@ -78,10 +78,6 @@ def test_synthesize_digest_uses_continuity_when_gemini_json_fails(
         url="https://dev.to/change-streams",
     )
 
-    def _boom(_prompt: str, **_kwargs: object) -> tuple[dict, int]:
-        raise json.JSONDecodeError("Expecting ',' delimiter", "{", 1)
-
-    monkeypatch.setattr(synthesizer, "_call_gemini", _boom)
     monkeypatch.setattr(
         synthesizer,
         "_generate_teaching_sections",
@@ -124,41 +120,29 @@ def _minimal_teaching_section(words: int = 25) -> list[dict]:
     ]
 
 
-def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
+def test_synthesize_digest_uses_teaching_without_overview_json_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Digest generation must not spend a separate Gemini call on overview JSON."""
     profile = UserProfile(user_id="u1", name="Dev")
     article = _article("Redis queues", "Celery workers drain Redis. " * 20)
+    calls = {"n": 0}
 
-    monkeypatch.setattr(
-        synthesizer,
-        "_call_gemini",
-        lambda _prompt, **_kwargs: (
-            {
-                "headline": "Queues for your stack",
-                "tldr": ["Celery plus Redis"],
-                "continuation": "Yesterday's Redis basics lead into Celery workers today.",
-                "key_takeaways": ["Watch the worker logs"],
-            },
-            12,
-        ),
-    )
-    monkeypatch.setattr(
-        synthesizer,
-        "_generate_teaching_sections",
-        lambda *_: (_minimal_teaching_section(), 0),
-    )
+    def fake_call(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
+        calls["n"] += 1
+        assert as_json is False
+        return ("Celery workers process jobs from Redis queues. " * 30, 12)
+
+    monkeypatch.setattr(synthesizer, "_call_gemini", fake_call)
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 20)
     monkeypatch.setattr(synthesizer, "_max_words", lambda: 400)
 
     digest = synthesizer.synthesize_digest(profile, [article])
 
     assert digest.content.headline == "Redis queues"
-    assert digest.content.tldr == ["Celery plus Redis"]
-    assert digest.content.sections[0].title == "Briefing"
-    assert "Celery workers today" in digest.content.sections[0].content
+    assert calls["n"] <= synthesizer._MAX_DIGEST_GEMINI_CALLS
     briefing = next(s for s in digest.content.sections if s.title == "Briefing")
-    assert "teach" in briefing.content or "Celery workers drain Redis" in briefing.content
+    assert "Celery workers" in briefing.content
 
 
 def test_call_gemini_raises_clear_quota_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,22 +269,7 @@ def test_teaching_markdown_is_kept_in_the_briefing(monkeypatch: pytest.MonkeyPat
     article = _article("Redis queues", "Celery workers drain Redis. " * 20)
 
     def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
-        if as_json:
-            return (
-                {
-                    "headline": "Queues for your stack",
-                    "tldr": ["Celery plus Redis"],
-                    "sections": [
-                        {
-                            "title": "Why this matters today",
-                            "content": "Overview.",
-                            "sources_cited": [1],
-                        }
-                    ],
-                    "key_takeaways": ["Watch logs"],
-                },
-                12,
-            )
+        assert as_json is False
         return ("Celery workers process jobs from Redis. " * 120, 40)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)
@@ -318,8 +287,7 @@ def test_briefing_is_capped_at_word_ceiling(monkeypatch: pytest.MonkeyPatch) -> 
     article = _article("Long Python piece", "python asyncio source " * 50)
 
     def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
-        if as_json:
-            return ({"headline": "H", "tldr": ["t"], "sections": [], "key_takeaways": []}, 1)
+        assert as_json is False
         return ("chapter " * 8000, 1)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)
@@ -328,6 +296,27 @@ def test_briefing_is_capped_at_word_ceiling(monkeypatch: pytest.MonkeyPatch) -> 
     assert digest.word_count >= synthesizer._WORD_FLOOR
     assert digest.reading_time_minutes <= synthesizer._MAX_READ_MINUTES
     assert digest.reading_time_minutes >= synthesizer._MIN_READ_MINUTES - 0.5
+
+
+def test_digest_generation_caps_gemini_calls_at_two(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Full synthesize path may call Gemini at most twice (write + optional top-up)."""
+    profile = UserProfile(user_id="u1", name="Dev", primary_tech_stack=["python"])
+    article = _article("Python asyncio patterns", "await gather tasks carefully. " * 80)
+    calls = {"n": 0}
+
+    def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
+        calls["n"] += 1
+        assert as_json is False
+        # Short enough that a top-up is requested, but still on-topic.
+        return ("Python asyncio gather patterns for concurrent tasks. " * 40, 5)
+
+    monkeypatch.setattr(synthesizer, "_call_gemini", fake)
+    monkeypatch.setattr(synthesizer, "_min_words", lambda: 500)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 2000)
+    digest = synthesizer.synthesize_digest(profile, [article])
+    assert calls["n"] <= synthesizer._MAX_DIGEST_GEMINI_CALLS
+    assert digest.word_count >= 500
+    assert any(s.title == "Briefing" for s in digest.content.sections)
 
 
 def test_teaching_still_runs_when_scraped_bodies_are_long(
@@ -569,9 +558,10 @@ def test_generate_teaching_sections_stops_when_floor_is_reached(
     assert tokens == 10
 
 
-def test_interest_user_teaching_pulls_similar_articles_when_floor_not_met(
+def test_interest_user_teaching_uses_at_most_two_gemini_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Interest users still get a full briefing, but without multi-article Gemini loops."""
     profile = UserProfile(user_id="u1", interests=["llm"])
     articles = [_article(f"LLM lesson {i}", "word " * 200) for i in range(4)]
     calls = {"n": 0}
@@ -583,9 +573,9 @@ def test_interest_user_teaching_pulls_similar_articles_when_floor_not_met(
     monkeypatch.setattr(synthesizer, "_call_gemini", fake_call)
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 500)
     sections, tokens = synthesizer._generate_teaching_sections(profile, articles)
-    assert len(sections) >= 2
-    assert calls["n"] >= 2
-    assert tokens >= 20
+    assert len(sections) >= 1
+    assert calls["n"] <= synthesizer._MAX_DIGEST_GEMINI_CALLS
+    assert tokens >= 10
 
 
 def test_generate_teaching_top_up_failure_is_logged_not_fatal(
@@ -1000,16 +990,7 @@ def test_off_topic_teaching_is_discarded_for_source_article(
     )
 
     def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
-        if as_json:
-            return (
-                {
-                    "headline": "Python text chunking",
-                    "tldr": ["Slice python strings"],
-                    "continuation": "Yesterday's Python lesson continues.",
-                    "key_takeaways": ["Use python slices"],
-                },
-                12,
-            )
+        assert as_json is False
         return ("Python slicing keeps word boundaries intact when chunking text. " * 40, 40)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)
