@@ -16,14 +16,6 @@ export function localDateKey(d: Date): string {
 }
 
 /**
- * `YYYY-MM-DD` in Asia/Kolkata — digests and the Past Briefings calendar use IST,
- * so activity bucketing must match or the two tabs disagree on which day a quiz landed.
- */
-export function istDateKey(d: Date): string {
-  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-}
-
-/**
  * Parse a `YYYY-MM-DD` key as local midnight.
  *
  * `new Date('2026-06-30')` is parsed as *UTC* midnight, which lands on the

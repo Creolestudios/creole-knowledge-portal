@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { CalendarSearch, Loader2, Calendar, CalendarDays } from 'lucide-react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 import { isBriefingDay, localDateKey } from '@/lib/data/streak';
-import { hasPassedQuiz } from '@/lib/quizzes/scoring';
 
 type PastBlog = {
   title?: string;
@@ -38,17 +37,6 @@ function isQuizCompletedForDate(
   dateStr: string,
 ): boolean {
   return Boolean(activities[dateStr]?.quiz_taken);
-}
-
-/** Same pass rule as Activity Tracker / quiz submit (≥3 correct). */
-function isQuizPassedForDate(
-  activities: Record<string, any>,
-  dateStr: string,
-): boolean {
-  const activity = activities[dateStr];
-  if (!activity?.quiz_taken) return false;
-  if (typeof activity.quiz_passed === 'boolean') return activity.quiz_passed;
-  return hasPassedQuiz(Number(activity.quiz_score) || 0);
 }
 
 /**
@@ -265,8 +253,11 @@ export default function PastBlogsTab({
                   isClickable = true;
                   if (hasBlog) {
                     const activity = activities[dateStr];
-                    const isQuizTaken = Boolean(activity?.quiz_taken);
-                    const passedQuiz = isQuizPassedForDate(activities, dateStr);
+                    const isQuizTaken = activity && activity.quiz_taken;
+                    const passedQuiz =
+                      isQuizTaken &&
+                      (activity.quiz_score >= 3 ||
+                        activity.quiz_score / (activity.quiz_total || 5) >= 0.6);
 
                     if (passedQuiz) {
                       bgClass = 'bg-green-500 text-white hover:bg-green-600 cursor-pointer shadow-sm';

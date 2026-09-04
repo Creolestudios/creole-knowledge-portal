@@ -2,39 +2,8 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
-import { computeStreak, istDateKey } from '@/lib/data/streak';
-import {
-  hasPassedQuiz,
-  QUIZ_QUESTIONS_PER_ATTEMPT,
-  summarizeAttemptRow,
-} from '@/lib/quizzes/scoring';
-
-function emptyDay(dateStr: string) {
-  return {
-    date: dateStr,
-    read_seconds: 0,
-    quiz_taken: false,
-    quiz_started: false,
-    quiz_passed: false,
-    quiz_score: 0,
-    quiz_total: QUIZ_QUESTIONS_PER_ATTEMPT,
-    attempts: [] as Array<{
-      attempt_number: number;
-      correct_answers: number;
-      total_questions: number;
-      passed: boolean;
-      in_progress: boolean;
-      completed_at: string | null;
-    }>,
-  };
-}
-
-/** Prefer client-supplied local date; otherwise bucket the stamp in IST. */
-function dayKeyFromStamp(stamp: string, metadataDate?: string | null): string {
-  const fromMeta = String(metadataDate || '').match(/^(\d{4}-\d{2}-\d{2})/);
-  if (fromMeta) return fromMeta[1];
-  return istDateKey(new Date(stamp));
-}
+import { computeStreak } from '@/lib/data/streak';
+import { summarizeAttemptRow } from '@/lib/quizzes/scoring';
 
 /**
  * True when a Supabase error means "this table does not exist".
@@ -99,18 +68,16 @@ export async function GET(request: Request) {
       throw quizError;
     }
 
-    // 3. Aggregate by Date (IST — same calendar as digests / Past Briefings)
-    const dailyMap: Record<string, ReturnType<typeof emptyDay>> = {};
+    // 3. Aggregate by Date
+    const dailyMap: Record<string, any> = {};
 
     // Process read logs
     if (readLogs) {
       for (const log of readLogs) {
-        const dateStr = dayKeyFromStamp(
-          log.created_at,
-          log.metadata?.date ?? null,
-        );
-        if (!dailyMap[dateStr]) dailyMap[dateStr] = emptyDay(dateStr);
-
+        const dateObj = new Date(log.created_at);
+        const dateStr = dateObj.toISOString().split('T')[0];
+        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_started: false, quiz_score: 0, quiz_total: 0, attempts: [] };
+        
         const readSeconds = log.metadata?.read_seconds || 0;
         dailyMap[dateStr].read_seconds += readSeconds;
       }
@@ -123,14 +90,15 @@ export async function GET(request: Request) {
         // as engaged, so bucket on started_at when there is no completion.
         const stamp = attempt.completed_at || attempt.started_at;
         if (!stamp) continue;
-        const dateStr = dayKeyFromStamp(stamp);
-        if (!dailyMap[dateStr]) dailyMap[dateStr] = emptyDay(dateStr);
+        const dateObj = new Date(stamp);
+        const dateStr = dateObj.toISOString().split('T')[0];
+        if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_started: false, quiz_score: 0, quiz_total: 0, attempts: [] };
 
         dailyMap[dateStr].quiz_started = true;
 
-        // Prefer per-attempt answer chunks so retries don't inflate day score.
-        const summaries = summarizeAttemptRow(attempt);
-        for (const summary of summaries) {
+        // Each attempt is listed on its own rather than merged into one total,
+        // so the activity log can show attempt 1/2/3 separately.
+        for (const summary of summarizeAttemptRow(attempt)) {
           dailyMap[dateStr].attempts.push({
             attempt_number: summary.attemptNumber,
             correct_answers: summary.correctAnswers,
@@ -141,60 +109,33 @@ export async function GET(request: Request) {
           });
         }
 
-        const finished = summaries.filter((s) => !s.inProgress);
-        if (finished.length > 0) {
-          dailyMap[dateStr].quiz_taken = true;
-          for (const summary of finished) {
-            if (summary.correctAnswers > dailyMap[dateStr].quiz_score) {
-              dailyMap[dateStr].quiz_score = summary.correctAnswers;
-              dailyMap[dateStr].quiz_total =
-                summary.totalQuestions || QUIZ_QUESTIONS_PER_ATTEMPT;
-            }
-            if (summary.passed) dailyMap[dateStr].quiz_passed = true;
-          }
-        } else if (attempt.completed_at) {
-          // Legacy rows without quiz_answers — keep a single-attempt score only.
-          dailyMap[dateStr].quiz_taken = true;
-          const rawScore = Number(attempt.score) || 0;
-          const rawTotal = Number(attempt.total_questions) || QUIZ_QUESTIONS_PER_ATTEMPT;
-          const isCumulative =
-            rawTotal > QUIZ_QUESTIONS_PER_ATTEMPT &&
-            rawTotal % QUIZ_QUESTIONS_PER_ATTEMPT === 0;
-          const total = isCumulative ? QUIZ_QUESTIONS_PER_ATTEMPT : rawTotal;
-          const score = isCumulative
-            ? Math.round((rawScore / rawTotal) * QUIZ_QUESTIONS_PER_ATTEMPT)
-            : rawScore;
-          if (score > dailyMap[dateStr].quiz_score) {
-            dailyMap[dateStr].quiz_score = score;
-            dailyMap[dateStr].quiz_total = total;
-          } else if (dailyMap[dateStr].quiz_score === 0) {
-            dailyMap[dateStr].quiz_score = score;
-            dailyMap[dateStr].quiz_total = total;
-          }
-          if (hasPassedQuiz(score)) dailyMap[dateStr].quiz_passed = true;
-        }
+        if (!attempt.completed_at) continue;
 
-        if (!dailyMap[dateStr].quiz_passed) {
-          dailyMap[dateStr].quiz_passed = hasPassedQuiz(dailyMap[dateStr].quiz_score);
+        dailyMap[dateStr].quiz_taken = true;
+        // Keep the highest score of the day
+        if (attempt.score > dailyMap[dateStr].quiz_score) {
+          dailyMap[dateStr].quiz_score = attempt.score;
+          dailyMap[dateStr].quiz_total = attempt.total_questions || 5;
+        } else if (dailyMap[dateStr].quiz_score === 0) {
+           // Default fallback
+           dailyMap[dateStr].quiz_score = attempt.score;
+           dailyMap[dateStr].quiz_total = attempt.total_questions || 5;
         }
       }
 
       // Stable order: attempt 1 first within each day.
       for (const day of Object.values(dailyMap)) {
-        day.attempts.sort((a, b) => a.attempt_number - b.attempt_number);
+        day.attempts.sort((a: any, b: any) => a.attempt_number - b.attempt_number);
       }
     }
 
-    const records = Object.values(dailyMap).sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    const records = Object.values(dailyMap).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    // Anchor streak to IST "today" so it matches digest dates and Past Briefings.
-    const istToday = istDateKey(new Date());
-    const [y, m, d] = istToday.split('-').map(Number);
-    const streakAnchor = new Date(y, m - 1, d);
+    // Streak rules live in lib/data/streak.ts so the API and the UI agree:
+    // weekends never break it (no briefing is generated), and a weekday counts
+    // when there is reading time or a quiz the user started.
     const streak = computeStreak(
-      records.map((r) => ({
+      (records as any[]).map((r) => ({
         date: r.date,
         readSeconds: r.read_seconds || 0,
         quizTaken: !!r.quiz_taken,
@@ -202,7 +143,6 @@ export async function GET(request: Request) {
         quizScore: r.quiz_score || 0,
         quizTotal: r.quiz_total || 0,
       })),
-      streakAnchor,
     );
 
     return NextResponse.json({
