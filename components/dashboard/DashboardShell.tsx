@@ -7,6 +7,8 @@ import { motion } from 'motion/react';
 import { User, Newspaper, History, BarChart3, Menu, X, Flame, Sparkles, Trophy } from 'lucide-react';
 import type { WeeklyStats, ISODate } from '@/types/contracts';
 import { computeWeeklyStats } from '@/lib/data/activity';
+import { istDateKey } from '@/lib/data/streak';
+import { QUIZ_QUESTIONS_PER_ATTEMPT } from '@/lib/quizzes/scoring';
 import DailyBlogTab from './DailyBlogTab';
 import PastBlogsTab from './PastBlogsTab';
 import ActivityTab from './ActivityTab';
@@ -92,9 +94,12 @@ export default function DashboardShell({
             readSeconds: r.read_seconds || 0,
             quizTaken: !!r.quiz_taken,
             quizScore: r.quiz_score || 0,
-            quizTotal: r.quiz_total || 0,
+            quizTotal: r.quiz_total || QUIZ_QUESTIONS_PER_ATTEMPT,
           }));
-          setStats(computeWeeklyStats(records));
+          // Use IST "today" so sidebar week window matches Past Briefings / digests.
+          const istToday = istDateKey(new Date());
+          const [y, m, d] = istToday.split('-').map(Number);
+          setStats(computeWeeklyStats(records, new Date(y, m - 1, d)));
           // The streak is computed server-side (lib/data/streak.ts) so every
           // surface shows the same number.
           setStreak(data.streak || 0);
