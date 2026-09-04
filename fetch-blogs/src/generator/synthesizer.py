@@ -1152,7 +1152,6 @@ def _overview_from_meta(meta: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _teaching_prompt(profile: UserProfile, article: Article, word_target: int) -> str:
-    """Single full-digest prompt — one Gemini call covers the whole briefing."""
     body = _source_excerpt_for_teaching(article)
     active = resolve_active_stack(profile) or (
         ", ".join(profile.primary_tech_stack) or "software engineering"
@@ -1162,20 +1161,19 @@ def _teaching_prompt(profile: UserProfile, article: Article, word_target: int) -
     related = _yesterday_relates_to_article(profile, article)
     if related:
         open_rule = (
-            "Yesterday was the SAME topic family. Open Daily Overview by continuing "
-            "that thread, then teach THIS article in Briefing."
+            "Yesterday was the SAME topic family. Open with one short paragraph that continues "
+            "that thread, then teach THIS article."
         )
         brief_line = "Teach the source article in depth. Put diagrams and code in fenced blocks inside Briefing."
     else:
         open_rule = (
             "Do NOT mention yesterday, prior lessons, Dart/Flutter, or any stack that is not "
-            "this article's subject. Open Daily Overview directly with this article."
+            "this article's subject. Open directly with this article."
         )
         brief_line = "Teach THIS source article only. Put diagrams and code in fenced blocks inside Briefing."
     return f"""
-You are writing the COMPLETE {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute morning briefing in ONE response.
-Write about {word_target} words of markdown (target {_WORD_FLOOR}-{_WORD_CEILING} total). No JSON.
-Do not wrap the whole answer in a code fence.
+You are writing one LEARNING chapter of a {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute morning briefing.
+Write about {word_target} words of markdown. No JSON. Do not wrap the whole answer in a code fence.
 The SOURCE ARTICLE is the only topic. Teach that article's language, APIs, and examples.
 Do NOT rewrite it into the reader's stack ({active}) if the article is about something else.
 Teach a technical skill — never report news or business deals.
@@ -1191,15 +1189,16 @@ HARD RULES — do NOT write about:
 - legal contracts, business law, or non-engineering lifestyle topics
 
 LANGUAGE — critical:
-- Write the entire briefing in ENGLISH only (overview, briefing, takeaways, labels).
+- Write the entire chapter in ENGLISH only (overview, briefing, takeaways, labels).
 - Never paste Portuguese, Spanish, French, German, Korean, Japanese, Chinese, or any other non-English prose.
 - If the source article is not English, skip it — do not translate it and do not copy it.
 
 OUTPUT FORMAT — critical:
-- SINGLE TOPIC ONLY: the entire briefing covers THIS source article ({article.title}).
-- NEVER paste or summarize a second unrelated article mid-briefing.
+- SINGLE TOPIC ONLY: the entire chapter covers THIS source article ({article.title}).
+- NEVER paste or summarize a second unrelated article mid-chapter.
 - NEVER include YAML frontmatter or Dev.to metadata lines (title:, published:, description:, tags:, series:).
 - Do not repeat the article title as a markdown H1 — the dashboard already shows the title.
+- Start teaching content directly under ## Briefing.
 
 MARKDOWN FENCES — critical for the reader UI:
 - Use ``` fences ONLY for real source code, shell commands, or ASCII/box diagrams.
@@ -1209,7 +1208,7 @@ MARKDOWN FENCES — critical for the reader UI:
 - Put teaching prose, bullets, headings, and comparison tables outside fences on normal markdown lines.
 - Unfenced paragraphs of prose that belong in a fence will break the UI — fence code tightly.
 - Code and diagrams MUST be fenced so they render inside a black box.
-- Do not repeat the same paragraph, bullet list, or section twice.
+- Do not repeat the same paragraph, bullet list, or section twice in Briefing or Summary.
 
 ASCII DIAGRAMS — critical:
 - Prefer SIMPLE vertical arrow flows (not wide boxes). Use plain text labels with | and v only:
@@ -1250,20 +1249,15 @@ URL: {article.url}
 Source (may be empty — if so, teach the Title topic only; never invent a different language):
 {body}
 
-Use exactly this structure (prose outside fences; code AND diagrams ONLY inside ``` fences):
-## Daily Overview
-2-4 short sentences: what this article teaches and why it matters today.
+Use this structure (prose outside fences; code AND diagrams ONLY inside ``` fences):
 ## Briefing
 {brief_line}
-A {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute Briefing is teaching, not an essay. Alternate short explanation with fenced examples.
-This Briefing must carry most of the {word_target} words.
+A 20-minute Briefing is teaching, not an essay. Alternate short explanation with fenced examples.
 Include at least 5 fenced code samples in THIS article's language (setup, naive/wrong, correct, edge case, full working snippet) and at least 2 fenced diagrams for the process.
 Do NOT fill the word count with prose only. Do NOT add a separate ## Code Snippet heading — keep fences inside Briefing.
-## Key Action
-3-5 short bullets — the most learnable actions from THIS article only.
 ## Summary
 A tight recap of the overall knowledge from THIS article only (what to remember).
-Do not invent other top-level ## headings — only Daily Overview, Briefing, Key Action, and Summary.
+Do not invent other top-level ## headings — only Briefing and Summary.
 End with one markdown link to the source URL.
 """.strip()
 
@@ -1306,11 +1300,8 @@ Last part already written:
 
 # Live models only — dead 2.x IDs 404 and flash-latest often hangs for minutes.
 _GEMINI_MODEL_FALLBACKS = ("gemini-3.6-flash",)
-_GEMINI_REQUEST_TIMEOUT_SEC = 90
-# One full 3k-word briefing needs headroom; keep a hard cap to avoid runaway bills.
-_GEMINI_MAX_OUTPUT_TOKENS = 8192
-# Digest generation budget: 1 full write + at most 1 length top-up.
-_MAX_DIGEST_GEMINI_CALLS = 2
+_GEMINI_REQUEST_TIMEOUT_SEC = 45
+_GEMINI_MAX_OUTPUT_TOKENS = 4096
 
 
 class GeminiQuotaExceeded(RuntimeError):
@@ -1493,94 +1484,81 @@ def _generate_teaching_sections(
     profile: UserProfile,
     articles: list[Article],
 ) -> tuple[list[dict[str, Any]], int]:
-    """Ask Gemini for the full briefing in at most two calls (write + optional top-up)."""
+    """Ask Gemini for long markdown chapters until we reach the word floor."""
     sections: list[dict[str, Any]] = []
     tokens = 0
     floor = _min_words()
-    # One lead article only — multi-chapter loops burned 3–8 Gemini calls.
-    chosen = articles[:1]
+    chosen = articles[: _teaching_article_limit(profile)]
     if not chosen:
         return sections, tokens
-    if _interest_needs_similar_sources(profile, articles):
+    if _interest_needs_similar_sources(profile, articles) and len(chosen) > 1:
         log.info(
-            "generator: thin interest source; one full Gemini write + scrape pad for length",
+            "generator: thin interest source; teaching from similar articles",
             user_id=profile.user_id,
             lead=(chosen[0].title or "")[:80],
-            similar=len(articles),
+            similar=len(chosen),
             lead_words=_article_body_word_count(chosen[0]),
         )
+    per_chapter = max(650, min(850, floor // max(1, len(chosen))))
 
-    gemini_calls = 0
-    article = chosen[0]
-    ask = max(floor, _WORD_FLOOR)
-    try:
-        text, used = _call_gemini(
-            _teaching_prompt(profile, article, ask),
-            as_json=False,
-            max_output_tokens=min(_GEMINI_MAX_OUTPUT_TOKENS, max(4096, ask * 2)),
-        )
-        tokens += used
-        gemini_calls += 1
-    except GeminiQuotaExceeded:
-        raise
-    except Exception as exc:
-        log.warning("generator: teaching chapter failed", title=article.title, error=str(exc))
-        return sections, tokens
+    for index, article in enumerate(chosen, start=1):
+        if _words_in(sections) >= floor:
+            break
+        remaining = floor - _words_in(sections)
+        ask = min(per_chapter, max(500, remaining))
+        try:
+            text, used = _call_gemini(
+                _teaching_prompt(profile, article, ask),
+                as_json=False,
+                max_output_tokens=min(_GEMINI_MAX_OUTPUT_TOKENS, max(2048, ask * 2)),
+            )
+            tokens += used
+        except GeminiQuotaExceeded:
+            raise
+        except Exception as exc:
+            log.warning("generator: teaching chapter failed", title=article.title, error=str(exc))
+            continue
+        content = str(text or "").strip()
+        if len(content.split()) < 80:
+            log.warning(
+                "generator: teaching chapter too short",
+                title=article.title,
+                words=len(content.split()),
+            )
+            continue
+        if not _content_matches_source(content, article, profile):
+            log.warning(
+                "generator: teaching drifted off source article",
+                title=article.title,
+            )
+            continue
+        sections.append(_section("Briefing", content, [index]))
 
-    content = str(text or "").strip()
-    if len(content.split()) < 80:
-        log.warning(
-            "generator: teaching chapter too short",
-            title=article.title,
-            words=len(content.split()),
-        )
-        return sections, tokens
-    if not _content_matches_source(content, article, profile):
-        log.warning(
-            "generator: teaching drifted off source article",
-            title=article.title,
-        )
-        return sections, tokens
-    sections.append(_section("Briefing", content, [1]))
-
-    # At most one top-up if still under the 18–20 minute floor.
-    if (
-        gemini_calls < _MAX_DIGEST_GEMINI_CALLS
-        and _words_in(sections) < floor
-    ):
+    if _words_in(sections) < floor and sections:
         needed = min(_max_words() - _words_in(sections), floor - _words_in(sections))
-        if needed >= 200:
+        if needed >= 400:
             tail = sections[-1]["content"]
             try:
                 extra, used = _call_gemini(
-                    _top_up_prompt(profile, chosen, needed, tail),
+                    _top_up_prompt(profile, chosen[:1], needed, tail),
                     as_json=False,
                     max_output_tokens=min(_GEMINI_MAX_OUTPUT_TOKENS, max(2048, needed * 2)),
                 )
                 tokens += used
-                gemini_calls += 1
                 extra_text = str(extra or "").strip()
-                if len(extra_text.split()) >= 80 and _content_matches_source(
-                    extra_text, article, profile
-                ):
+                lead = chosen[0]
+                if len(extra_text.split()) >= 80 and _content_matches_source(extra_text, lead, profile):
                     sections.append(_section("Briefing", extra_text, [1]))
-                elif extra_text and not _content_matches_source(extra_text, article, profile):
+                elif extra_text and not _content_matches_source(extra_text, lead, profile):
                     log.warning(
                         "generator: top-up drifted off source article",
-                        title=article.title,
+                        title=lead.title,
                     )
             except GeminiQuotaExceeded:
                 raise
             except Exception as exc:
                 log.warning("generator: teaching top-up failed", error=str(exc))
 
-    log.info(
-        "generator: digest gemini calls",
-        calls=gemini_calls,
-        max_allowed=_MAX_DIGEST_GEMINI_CALLS,
-        words=_words_in(sections),
-        floor=floor,
-    )
     return sections, tokens
 
 
@@ -1703,18 +1681,77 @@ def _enforce_min_length(
     *,
     scraped_only: bool,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Reach the 18–20 minute floor without extra Gemini calls.
-
-    Length after the digest write(+optional top-up) is filled from scraped
-    source bodies only — keeps total Gemini usage at most `_MAX_DIGEST_GEMINI_CALLS`.
-    """
+    """Keep expanding until the digest is at least 20 minutes of reading."""
     if not articles:
         return list(sections), tokens
     floor = _min_words()
     ceiling = _max_words()
     working = list(sections)
 
-    working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
+    if scraped_only:
+        working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
+        if _words_in(working) < floor:
+            working = _pad_shortfall_from_articles(
+                articles,
+                working,
+                floor=floor,
+                ceiling=ceiling,
+                profile=profile,
+            )
+        if _words_in(working) < floor:
+            raise RuntimeError(
+                f"Digest too short ({_words_in(working)} words); "
+                f"need at least {floor} words (~{_MIN_READ_MINUTES} min). "
+                "Need longer scraped article bodies before offline synthesis."
+            )
+        return working, tokens
+
+    rounds = 0
+    while _words_in(working) < floor and rounds < 2:
+        rounds += 1
+        needed = min(ceiling - _words_in(working), floor - _words_in(working))
+        # Small shortfalls (e.g. 4489/4500) — pad from sources instead of giving up
+        if needed < 200:
+            working = _pad_shortfall_from_articles(articles, working, floor=floor, ceiling=ceiling)
+            break
+        try:
+            extra, used = _call_gemini(
+                _top_up_prompt(
+                    profile,
+                    articles[:1],
+                    needed,
+                    working[-1]["content"] if working else "",
+                ),
+                as_json=False,
+                max_output_tokens=min(_GEMINI_MAX_OUTPUT_TOKENS, max(2048, needed * 2)),
+            )
+            tokens += used
+            extra_text = str(extra or "").strip()
+            lead = articles[0] if articles else None
+            if len(extra_text.split()) >= 80 and (
+                lead is None or _content_matches_source(extra_text, lead, profile)
+            ):
+                working.append(_section("Briefing", extra_text, [1]))
+                working = _trim_sections(working, ceiling)
+                continue
+        except GeminiQuotaExceeded:
+            raise
+        except Exception as exc:
+            log.error(
+                "generator: min-length top-up failed",
+                error=str(exc),
+                round=rounds,
+            )
+            if _is_gemini_quota_error(exc):
+                raise GeminiQuotaExceeded(_quota_error_message(exc)) from exc
+            working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
+            break
+
+        # Gemini unavailable — expand technical source bodies (never career fluff).
+        working = _expand_from_articles(articles, working, floor=floor, ceiling=ceiling)
+        if _words_in(working) >= floor:
+            break
+
     if _words_in(working) < floor:
         working = _pad_shortfall_from_articles(
             articles,
@@ -1727,19 +1764,12 @@ def _enforce_min_length(
     if _words_in(working) < floor:
         from src.ranker.next_day import profile_has_interests
 
-        if scraped_only:
-            hint = (
-                "Need longer scraped article bodies before offline synthesis."
-            )
-        elif profile_has_interests(profile):
-            hint = (
-                "Retry synthesize — the pipeline will pull similar interest-matched articles when "
-                "the lead post is too thin."
-            )
-        else:
-            hint = (
-                "Retry synthesize, or fill the user tech stack so Gemini can write a longer briefing."
-            )
+        hint = (
+            "Retry synthesize — the pipeline will pull similar interest-matched articles when "
+            "the lead post is too thin."
+            if profile_has_interests(profile)
+            else "Retry synthesize, or fill the user tech stack so Gemini can write longer chapters."
+        )
         raise RuntimeError(
             f"Digest too short ({_words_in(working)} words); "
             f"need at least {floor} words (~{_MIN_READ_MINUTES} min). "
@@ -1830,25 +1860,56 @@ def synthesize_digest(
         max_words_each=excerpt_each,
         article_limit=excerpt_count,
     )
-    # Start from scraped metadata; one Gemini write (+ optional top-up) fills the body.
-    payload = {
-        "headline": _pick_technical_headline(
-            lead.title if lead else "",
-            lead_list,
-            fallback_theme=theme or "tech",
-        ),
-        "tldr": list(scraped.get("tldr") or []),
-        "sections": list(scraped.get("sections") or []),
-        "key_takeaways": list(scraped.get("key_takeaways") or []),
-        "further_reading": list(scraped.get("further_reading") or []),
-    }
+    payload = scraped
     tokens = 0
-    if lead_list and not scraped_only and (not payload["tldr"] or not payload["key_takeaways"]):
-        continuity = _continuity_opening(profile, lead_list)
-        if not payload["tldr"]:
-            payload["tldr"] = list(continuity.get("tldr") or [])
-        if not payload["key_takeaways"]:
-            payload["key_takeaways"] = list(continuity.get("key_takeaways") or [])
+    overview_sections: list[dict[str, Any]] = []
+    if lead_list and not scraped_only:
+        try:
+            gemini_payload, tokens = _call_gemini(
+                _build_prompt(profile, lead_list),
+                max_output_tokens=1024,
+            )
+            overview_sections = _overview_from_meta(gemini_payload)
+            if lead is not None:
+                overview_sections = [
+                    sec
+                    for sec in overview_sections
+                    if _content_matches_source(str(sec.get("content") or ""), lead, profile)
+                ]
+            tldr = _short_actions(list(gemini_payload.get("tldr") or []), lead)
+            takeaways = _short_actions(
+                list(gemini_payload.get("key_takeaways") or []), lead
+            )
+            payload = {
+                "headline": _pick_technical_headline(
+                    lead.title if lead else "",
+                    lead_list,
+                    fallback_theme=theme or "tech",
+                ),
+                "tldr": tldr or scraped["tldr"],
+                "sections": [*overview_sections, *scraped["sections"]],
+                "key_takeaways": takeaways or scraped["key_takeaways"],
+                "further_reading": scraped["further_reading"],
+            }
+        except GeminiQuotaExceeded:
+            raise
+        except (json.JSONDecodeError, ValueError, RuntimeError, Exception) as exc:
+            if _is_gemini_quota_error(exc):
+                log.error("generator: gemini quota exceeded (429)", error=str(exc))
+                raise GeminiQuotaExceeded(_quota_error_message(exc)) from exc
+            log.warning(
+                "generator: opening JSON failed; continuing with teaching chapters",
+                error=str(exc),
+            )
+            continuity = _continuity_opening(profile, lead_list)
+            overview_sections = list(continuity["sections"])
+            payload = {
+                "headline": continuity["headline"],
+                "tldr": continuity["tldr"],
+                "sections": [*overview_sections, *scraped["sections"]],
+                "key_takeaways": continuity["key_takeaways"],
+                "further_reading": scraped["further_reading"],
+            }
 
     teaching: list[dict[str, Any]] = []
     if not scraped_only and cluster:
@@ -1862,6 +1923,7 @@ def synthesize_digest(
 
     merged = _trim_sections(
         [
+            *overview_sections,
             *teaching,
             *(scraped["sections"] if not teaching else []),
         ],

@@ -458,3 +458,287 @@ def test_refresh_falls_back_to_stored_digest_embedding(monkeypatch) -> None:
     monkeypatch.setattr("src.ranker.next_day.embed_query", lambda _text: [])
     vector = refresh_profile_embedding(profile)
     assert vector == [0.9, 0.8, 0.7]
+
+
+def test_profile_has_yesterday_checks_all_signals() -> None:
+    from datetime import date
+
+    assert profile_has_yesterday(UserProfile(user_id="u0")) is False
+    assert profile_has_yesterday(
+        UserProfile(user_id="u1", learning_path=LearningPath(last_digest_embedding=[0.1]))
+    )
+    assert profile_has_yesterday(
+        UserProfile(user_id="u2", learning_path=LearningPath(last_digest_headline="Python asyncio"))
+    )
+    assert profile_has_yesterday(
+        UserProfile(user_id="u3", learning_path=LearningPath(last_digest_date=date(2026, 9, 1)))
+    )
+    assert profile_has_yesterday(
+        UserProfile(user_id="u4", learning_path=LearningPath(last_topics=["python"]))
+    )
+
+
+def test_quiz_focus_terms_for_remedial_and_advance() -> None:
+    remedial = UserProfile(
+        user_id="u1",
+        primary_tech_stack=["python"],
+        learning_path=LearningPath(
+            last_digest_headline="Python basics",
+            last_quiz_outcome=QuizOutcome.FAILED,
+            last_quiz_percentage=20,
+            weak_topics=["asyncio", "typing"],
+            next_step_topics=["fastapi"],
+            last_topics=["django"],
+        ),
+    )
+    terms = quiz_focus_terms(remedial)
+    assert terms
+    assert any("async" in t or "typing" in t for t in terms)
+
+    advance = UserProfile(
+        user_id="u2",
+        primary_tech_stack=["python"],
+        learning_path=LearningPath(
+            last_digest_headline="Python basics",
+            last_quiz_outcome=QuizOutcome.PASSED,
+            last_quiz_percentage=90,
+            next_step_topics=["fastapi"],
+            attempt_count=1,
+        ),
+    )
+    assert isinstance(quiz_focus_terms(advance), list)
+
+
+def test_digest_embedding_text_and_store(monkeypatch) -> None:
+    from src.ranker.next_day import digest_embedding_text, embed_and_store_digest
+
+    text = digest_embedding_text(
+        headline=" Python queues ",
+        tldr=[" Celery workers ", ""],
+        takeaways=["Use Redis"],
+        section_snippets=["Briefing body", "   "],
+    )
+    assert "Python queues" in text
+    assert "Celery workers" in text
+    assert "Use Redis" in text
+    assert "Briefing body" in text
+
+    profile = UserProfile(user_id="u1")
+    monkeypatch.setattr("src.ranker.next_day.embed_text", lambda *_a, **_k: [0.2, 0.3])
+    vector = embed_and_store_digest(
+        profile,
+        headline="Python queues",
+        tldr=["Celery"],
+        takeaways=["Redis"],
+    )
+    assert vector == [0.2, 0.3]
+    assert profile.learning_path.last_digest_embedding == [0.2, 0.3]
+
+    monkeypatch.setattr("src.ranker.next_day.embed_text", lambda *_a, **_k: [])
+    empty = embed_and_store_digest(profile, headline="", tldr=[], takeaways=[])
+    assert empty == []
+
+
+def test_refresh_falls_back_to_profile_embedding_when_query_empty(monkeypatch) -> None:
+    profile = UserProfile(
+        user_id="u1",
+        interests=["python"],
+        profile_embedding=[1.0, 2.0],
+        learning_path=LearningPath(),
+    )
+    monkeypatch.setattr("src.ranker.next_day.embed_query", lambda _text: [])
+    assert refresh_profile_embedding(profile) == [1.0, 2.0]
+
+
+def test_hay_off_interest_and_family_helpers() -> None:
+    from src.ranker.next_day import (
+        canonicalize_topic,
+        continuing_same_stack_run,
+        family_for_stack_name,
+        hay_is_off_yesterday_family,
+        stack_curriculum_topics,
+        uncovered_stack_topics,
+        yesterday_theme_tokens,
+    )
+
+    profile = UserProfile(
+        user_id="u1",
+        interests=["llm", "rag"],
+        learning_path=LearningPath(
+            last_digest_headline="Building RAG with LLMs",
+            last_topics=["rag", "llm"],
+        ),
+    )
+    assert continuing_interest_run(profile) is True
+    assert hay_is_off_interest_continuity("Flutter widget rebuilds", profile) is True
+    assert hay_is_off_interest_continuity("llm embeddings for rag pipelines", profile) is False
+
+    stack_profile = UserProfile(
+        user_id="u2",
+        primary_tech_stack=["python", "react"],
+        learning_path=LearningPath(
+            last_digest_headline="Python asyncio patterns",
+            last_topics=["python", "asyncio"],
+        ),
+    )
+    assert continuing_same_stack_run(stack_profile) is True
+    assert hay_is_off_yesterday_family("React hooks tutorial", stack_profile) is True
+    assert hay_is_off_yesterday_family("Python generators", stack_profile) is False
+    assert yesterday_theme_tokens(stack_profile)
+    assert canonicalize_topic("Python")
+    assert family_for_stack_name("python")
+    assert isinstance(stack_curriculum_topics(stack_profile), list)
+    assert isinstance(uncovered_stack_topics(stack_profile), list)
+
+
+def test_devto_tags_and_interest_base_tokens_filter_noise() -> None:
+    from src.ranker.next_day import _devto_tags_from_values, interest_base_tokens
+
+    tags = _devto_tags_from_values(["Python", "", "node.js", "want to learn about quantum"])
+    assert tags
+
+    profile = UserProfile(
+        user_id="u1",
+        interests=[
+            "LLMs",
+            "I want to learn about everything under the sun forever",
+            "RAG",
+        ],
+    )
+    tokens = interest_base_tokens(profile)
+    assert tokens
+    assert all(len(str(t).replace("-", " ").split()) < 5 for t in tokens[:8])
+
+
+def test_remaining_helper_branches() -> None:
+    from datetime import date
+    from types import SimpleNamespace
+
+    from src.ranker.next_day import (
+        _is_devto_safe_tag,
+        continuity_match_terms,
+        continuity_scrape_terms,
+        hay_is_off_yesterday_family,
+        interest_base_tokens,
+        stack_curriculum_topics,
+        uncovered_interest_topics,
+        yesterday_theme_tokens,
+    )
+
+    bare = SimpleNamespace(learning_path=None)
+    assert profile_has_yesterday(bare) is False
+    assert yesterday_theme_tokens(bare) == []
+    assert interest_base_tokens(UserProfile(user_id="empty")) == []
+    assert uncovered_interest_topics(UserProfile(user_id="empty")) == []
+    assert continuity_match_terms(UserProfile(user_id="empty")) == []
+    assert continuity_scrape_terms(UserProfile(user_id="empty")) == []
+    assert hay_is_off_interest_continuity("anything", UserProfile(user_id="empty")) is False
+    assert hay_is_off_yesterday_family(
+        "React hooks",
+        UserProfile(user_id="int", interests=["python"]),
+    ) is False
+    assert stack_curriculum_topics(
+        UserProfile(user_id="cobol", primary_tech_stack=["cobol"])
+    ) == []
+    assert _is_devto_safe_tag("") is False
+    assert _is_devto_safe_tag("bad:tag") is False
+    assert _is_devto_safe_tag("this has four whole words") is False
+
+    noisy = UserProfile(
+        user_id="glue",
+        interests=["want to learn python", "RAG pipelines"],
+    )
+    glue_tokens = interest_base_tokens(noisy)
+    assert glue_tokens
+    assert all("want to learn" not in str(t).lower() for t in glue_tokens)
+
+    covered_interest = UserProfile(
+        user_id="covered",
+        interests=["python"],
+        learning_path=LearningPath(
+            last_digest_date=date(2026, 9, 1),
+            last_digest_tldr=["Use asyncio queues"],
+            stack_run_covered=["python"],
+        ),
+    )
+    assert uncovered_interest_topics(covered_interest) == []
+    assert discovery_scrape_terms(covered_interest)
+    assert discovery_match_terms(covered_interest)
+
+    unknown_stack = UserProfile(
+        user_id="cobol",
+        primary_tech_stack=["cobol"],
+        learning_path=LearningPath(
+            last_digest_headline="Cobol batch jobs",
+            last_topics=["cobol"],
+            active_stack="cobol",
+        ),
+    )
+    assert hay_is_off_yesterday_family("random hardware launch", unknown_stack) is False
+    assert discovery_match_terms(
+        UserProfile(user_id="new-cobol", primary_tech_stack=["cobol"])
+    )
+
+    mixed = UserProfile(
+        user_id="py",
+        primary_tech_stack=["python"],
+        learning_path=LearningPath(
+            last_digest_headline="Python asyncio",
+            last_topics=["python"],
+            last_digest_tldr=["Use Redis queues"],
+            last_digest_takeaways=["Scale workers"],
+            active_stack="python",
+        ),
+    )
+    assert continuity_scrape_terms(mixed)
+    assert yesterday_theme_tokens(mixed)
+
+    interest_filter = UserProfile(
+        user_id="llm",
+        interests=["llm", "rag"],
+        learning_path=LearningPath(
+            last_digest_headline="Building RAG with LLMs",
+            last_topics=["rag"],
+            last_digest_tldr=["chunk embeddings"],
+            last_digest_takeaways=["kubernetes orchestration"],
+            last_quiz_outcome=QuizOutcome.FAILED,
+            last_quiz_percentage=20,
+            weak_topics=["zod"],
+        ),
+    )
+    matched = continuity_match_terms(interest_filter)
+    assert matched
+    assert all("kubernetes" not in str(t).lower() for t in matched)
+
+    overlap = UserProfile(
+        user_id="react-run",
+        primary_tech_stack=["react"],
+        learning_path=LearningPath(
+            last_digest_headline="React hooks tutorial",
+            last_topics=["react", "hooks"],
+            active_stack="react",
+        ),
+    )
+    assert hay_is_off_yesterday_family("python react hooks bindings", overlap) is False
+
+
+def test_refresh_after_stack_rotation_reuses_previous_when_embed_empty(
+    monkeypatch,
+) -> None:
+    from src.models.profile import record_stack_run_progress
+    from src.ranker.next_day import stack_curriculum_topics
+
+    profile = UserProfile(
+        user_id="u-py",
+        primary_tech_stack=["python", "react"],
+        learning_path=LearningPath(
+            active_stack="python",
+            last_digest_embedding=[0.4, 0.5],
+            last_digest_headline="Python Text Chunking: Overlapping Slices",
+            last_topics=["python", "chunks"],
+        ),
+    )
+    record_stack_run_progress(profile, list(stack_curriculum_topics(profile)))
+    assert profile.learning_path.active_stack == "react"
+    monkeypatch.setattr("src.ranker.next_day.embed_query", lambda _text: [])
+    assert refresh_profile_embedding(profile) == [0.4, 0.5]

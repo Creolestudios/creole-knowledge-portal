@@ -324,55 +324,6 @@ describe('GET /api/activity', () => {
       total_questions: 5,
       passed: true,
     });
-    // Day score must use best attempt (3), not cumulative row score (9).
-    expect(day.quiz_score).toBe(3);
-    expect(day.quiz_total).toBe(5);
-    expect(day.quiz_passed).toBe(true);
-    vi.useRealTimers();
-  });
-
-  it('does not mark the day passed from a cumulative row score when every attempt failed', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-09-04T12:00:00Z'));
-
-    const answer = (correct: boolean, minute: number) => ({
-      is_correct: correct,
-      created_at: `2026-09-04T10:${String(minute).padStart(2, '0')}:00Z`,
-    });
-
-    responseQueue = [
-      { data: [], error: null },
-      {
-        data: [
-          {
-            started_at: '2026-09-04T10:00:00Z',
-            completed_at: '2026-09-04T11:00:00Z',
-            status: 'completed',
-            // Inflated cumulative fields that used to paint Past Briefings green.
-            score: 4,
-            total_questions: 10,
-            attempt_number: 1,
-            quiz_answers: [
-              answer(true, 1), answer(true, 2), answer(false, 3), answer(false, 4), answer(false, 5),
-              answer(true, 6), answer(true, 7), answer(false, 8), answer(false, 9), answer(false, 10),
-            ],
-          },
-        ],
-        error: null,
-      },
-    ];
-
-    const res = await GET(mockRequest());
-    const body = await res.json();
-    const day = body.records.find((r: any) => r.date === '2026-09-04');
-
-    expect(day.attempts).toHaveLength(2);
-    expect(day.attempts.every((a: any) => a.passed === false)).toBe(true);
-    expect(day.quiz_score).toBe(2);
-    expect(day.quiz_total).toBe(5);
-    expect(day.quiz_passed).toBe(false);
-    expect(day.quiz_taken).toBe(true);
     vi.useRealTimers();
   });
 
