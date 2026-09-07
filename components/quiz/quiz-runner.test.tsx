@@ -20,6 +20,53 @@ vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }));
 
+function installMonitorShareMock() {
+  const screenTrack = {
+    kind: 'video',
+    readyState: 'live',
+    getSettings: () => ({ displaySurface: 'monitor' }),
+    stop: vi.fn(),
+    onended: null as (() => void) | null,
+  };
+  const cameraTrack = {
+    kind: 'video',
+    readyState: 'live',
+    getSettings: () => ({}),
+    stop: vi.fn(),
+    onended: null as (() => void) | null,
+  };
+  const screenStream = {
+    getVideoTracks: () => [screenTrack],
+    getTracks: () => [screenTrack],
+  };
+  const cameraStream = {
+    getVideoTracks: () => [cameraTrack],
+    getTracks: () => [cameraTrack],
+  };
+  const getDisplayMedia = vi.fn().mockResolvedValue(screenStream);
+  const getUserMedia = vi.fn().mockResolvedValue(cameraStream);
+  Object.defineProperty(navigator, 'mediaDevices', {
+    configurable: true,
+    value: { getDisplayMedia, getUserMedia },
+  });
+  return { screenTrack, cameraTrack, getDisplayMedia, getUserMedia };
+}
+
+async function shareScreenToBegin() {
+  const shareBtn = await screen.findByRole('button', { name: /Share entire screen to begin/i });
+  await act(async () => {
+    fireEvent.click(shareBtn);
+  });
+  const cameraBtn = await screen.findByRole('button', { name: /Allow camera to continue/i });
+  await act(async () => {
+    fireEvent.click(cameraBtn);
+  });
+  const startBtn = await screen.findByRole('button', { name: /I understand — start quiz/i });
+  await act(async () => {
+    fireEvent.click(startBtn);
+  });
+}
+
 
 
 const mcQuestion = {
@@ -53,6 +100,8 @@ describe('QuizRunner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPush.mockClear();
+    sessionStorage.clear();
+    installMonitorShareMock();
   });
 
   afterEach(() => {
@@ -60,7 +109,7 @@ describe('QuizRunner', () => {
     vi.useRealTimers();
   });
 
-  it('shows the initializing spinner, then a not-yet-taken prompt with a manual start button', async () => {
+  it('shows the initializing spinner, then a screen-share gate and does not start the quiz', async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/quizzes/status')) {
         return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
@@ -75,11 +124,15 @@ describe('QuizRunner', () => {
     expect(screen.getByText(/Initializing Quiz Environment/)).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText('Start Knowledge Quiz')).toBeInTheDocument();
+      expect(screen.getByText('Share entire screen to begin')).toBeInTheDocument();
     });
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/quizzes/start'),
+      expect.anything(),
+    );
   });
 
-  it('auto-starts the quiz and renders the first question when status says not-yet-taken and start succeeds', async () => {
+  it('starts the quiz only after entire-screen share succeeds', async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/quizzes/status')) {
         return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
@@ -94,6 +147,7 @@ describe('QuizRunner', () => {
     });
 
     render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
     await waitFor(() => {
       expect(screen.getByText('What hook manages side effects?')).toBeInTheDocument();
     });
@@ -115,6 +169,7 @@ describe('QuizRunner', () => {
     });
 
     render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
     await waitFor(() => {
       expect(screen.getByText('What is the output of this code snippet?')).toBeInTheDocument();
     });
@@ -140,6 +195,7 @@ describe('QuizRunner', () => {
     });
 
     render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
     await waitFor(() => {
       expect(screen.getByText('Explain React Server Components philosophy.')).toBeInTheDocument();
     });
@@ -163,12 +219,46 @@ describe('QuizRunner', () => {
     });
 
     render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
     await waitFor(() => {
       expect(screen.getByText('What hook manages side effects?')).toBeInTheDocument();
     });
 
     const useEffectOption = screen.getByText('useEffect').closest('button')!;
     expect(useEffectOption.className).toContain('border-brand');
+  });
+
+  it('resumes an in-progress attempt on the saved question index after camera remount', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            inProgress: true,
+            attemptId: 'a-resume',
+            timeLeft: 1000,
+            questions: [
+              mcQuestion,
+              { id: 'q2', question_type: 'single', difficulty: 'easy', question: 'Second question?', options: ['A', 'B'] },
+            ],
+            answers: { q1: ['useEffect'] },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    // Pretend the user was on question 2 when camera stopped / page remounted.
+    sessionStorage.setItem('quiz-runner-progress:a-resume', JSON.stringify({ currentIndex: 1 }));
+
+    render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
+
+    await waitFor(() => {
+      expect(screen.getByText('Second question?')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Question 2 of 2')).toBeInTheDocument();
+    expect(screen.queryByText('What hook manages side effects?')).not.toBeInTheDocument();
   });
 
   it('shows the already-completed result screen directly', async () => {
@@ -233,6 +323,7 @@ describe('QuizRunner', () => {
     });
 
     render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
     await waitFor(() => screen.getByText('What hook manages side effects?'));
 
     fireEvent.click(screen.getByText('useEffect'));
@@ -267,6 +358,7 @@ describe('QuizRunner', () => {
     });
 
     render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
     await waitFor(() => screen.getByText('What hook manages side effects?'));
     fireEvent.click(screen.getByText('Next'));
     await waitFor(() => screen.getByText('Second question?'));
@@ -319,6 +411,18 @@ describe('QuizRunner', () => {
     await act(async () => {
       await Promise.resolve();
     });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Share entire screen to begin/i }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Allow camera to continue/i }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /I understand — start quiz/i }));
+      await Promise.resolve();
+    });
 
     // Advance 5 seconds so elapsed seconds reaches 1200s (1195 + 5 = 1200s)
     await act(async () => {
@@ -346,6 +450,7 @@ describe('QuizRunner', () => {
     });
 
     render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
     await waitFor(() => {
       expect(screen.getByText('No questions available for this attempt.')).toBeInTheDocument();
     });
@@ -459,5 +564,209 @@ describe('QuizRunner', () => {
     expect(screen.getByText('Correct (2 pts)')).toBeInTheDocument();
     expect(screen.getAllByText(/^Incorrect \(\d+ pts\)$/)).toHaveLength(3);
     expect(screen.getByText('No answer provided')).toBeInTheDocument();
+  });
+
+  it('shows quiz instructions after screen share and only then starts the quiz', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
+      }
+      if (url.includes('/api/quizzes/start')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, attemptId: 'a1', questions: [mcQuestion] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await waitFor(() => {
+      expect(screen.getByText('Share entire screen to begin')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Share entire screen to begin/i }));
+    });
+
+    expect(await screen.findByText(/Allow camera access/i)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Allow camera to continue/i }));
+    });
+
+    expect(await screen.findByText('Quiz instructions')).toBeInTheDocument();
+    expect(screen.getByText(/even once/i)).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('/api/quizzes/start'),
+      expect.anything(),
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /I understand — start quiz/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('What hook manages side effects?')).toBeInTheDocument();
+    });
+  });
+
+  it('halts the quiz with a screen-share warning when screen sharing stops', async () => {
+    const media = installMonitorShareMock();
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
+      }
+      if (url.includes('/api/quizzes/start')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, attemptId: 'a1', questions: [mcQuestion] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
+    await waitFor(() => screen.getByText('What hook manages side effects?'));
+
+    act(() => {
+      media.screenTrack.onended?.();
+    });
+
+    expect(screen.getByText('Quiz paused')).toBeInTheDocument();
+    expect(screen.getByText(/Screen sharing stopped/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Restore screen share/i })).toBeInTheDocument();
+    expect(
+      (global.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/api/quizzes/finish')),
+    ).toBe(false);
+  });
+
+  it('halts the quiz with a camera warning when the camera stops', async () => {
+    const media = installMonitorShareMock();
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
+      }
+      if (url.includes('/api/quizzes/start')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, attemptId: 'a1', questions: [mcQuestion] }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
+    await waitFor(() => screen.getByText('What hook manages side effects?'));
+
+    act(() => {
+      media.cameraTrack.onended?.();
+    });
+
+    expect(screen.getByText('Quiz paused')).toBeInTheDocument();
+    expect(screen.getByText(/Camera stopped/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Restore camera/i })).toBeInTheDocument();
+    expect(
+      (global.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/api/quizzes/finish')),
+    ).toBe(false);
+  });
+
+  it('auto-submits on the first tab leave through the existing finish API', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
+      }
+      if (url.includes('/api/quizzes/start')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ success: true, attemptId: 'a1', questions: [mcQuestion] }),
+        });
+      }
+      if (url.includes('/api/quizzes/evaluate')) {
+        return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
+      }
+      if (url.includes('/api/quizzes/finish')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            result: { score: 0, total: 1, percentage: 0, correctAnswers: 0, timeTaken: 8, reviewData: [] },
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await shareScreenToBegin();
+    await waitFor(() => screen.getByText('What hook manages side effects?'));
+
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('Quiz Completed!')).toBeInTheDocument();
+    });
+    expect(
+      (global.fetch as any).mock.calls.some((call: any[]) => String(call[0]).includes('/api/quizzes/finish')),
+    ).toBe(true);
+  });
+
+  it('freezes elapsed time while screen share is halted (no background tick)', async () => {
+    vi.useFakeTimers();
+    const media = installMonitorShareMock();
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/quizzes/status')) {
+        return Promise.resolve({ ok: true, json: async () => ({ completed: false, inProgress: false }) });
+      }
+      if (url.includes('/api/quizzes/start')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            attemptId: 'a1',
+            questions: [mcQuestion],
+            startedAt: new Date().toISOString(),
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+
+    render(<QuizRunner blogId="blog-1" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Share entire screen to begin/i }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Allow camera to continue/i }));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /I understand — start quiz/i }));
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(3000);
+    });
+    expect(screen.getByText(/Time Elapsed: 0:03/)).toBeInTheDocument();
+
+    act(() => {
+      media.screenTrack.onended?.();
+    });
+    expect(screen.getByText('Quiz paused')).toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(10000);
+    });
+    // Still 0:03 — halt must not let the elapsed timer keep running in the background.
+    expect(screen.getByText(/Time Elapsed: 0:03/)).toBeInTheDocument();
   });
 });
