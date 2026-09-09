@@ -162,7 +162,7 @@ export async function GET(request: Request) {
       }
 
       if (questions.length > 0) {
-        // Calculate remaining time for 20-min (1200s) idle window based on wall-clock
+        // Calculate remaining time for 15-min (900s) idle window based on wall-clock
         const elapsedSeconds = elapsedSecondsSince(activeAttempt.started_at) ?? 0;
         const timeLeft = Math.max(0, QUIZ_TIME_LIMIT_SECONDS - elapsedSeconds);
 

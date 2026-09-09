@@ -152,7 +152,7 @@ describe('ReadingTimer', () => {
     expect(logActivity).not.toHaveBeenCalled();
   });
 
-  it('pauses counting while the tab is hidden', () => {
+  it('keeps counting while the tab is hidden (wall-clock, no pause)', () => {
     render(<ReadingTimer date="2026-08-01" />);
     act(() => {
       vi.advanceTimersByTime(2000);
@@ -164,14 +164,15 @@ describe('ReadingTimer', () => {
       document.dispatchEvent(new Event('visibilitychange'));
       vi.advanceTimersByTime(5000);
     });
-    expect(screen.getByText('00:02')).toBeInTheDocument();
+    // Still advances — reading time must not pause on tab switch.
+    expect(screen.getByText('00:07')).toBeInTheDocument();
 
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'));
       vi.advanceTimersByTime(1000);
     });
-    expect(screen.getByText('00:03')).toBeInTheDocument();
+    expect(screen.getByText('00:08')).toBeInTheDocument();
   });
 });
 

@@ -78,10 +78,6 @@ def test_synthesize_digest_uses_continuity_when_gemini_json_fails(
         url="https://dev.to/change-streams",
     )
 
-    def _boom(_prompt: str, **_kwargs: object) -> tuple[dict, int]:
-        raise json.JSONDecodeError("Expecting ',' delimiter", "{", 1)
-
-    monkeypatch.setattr(synthesizer, "_call_gemini", _boom)
     monkeypatch.setattr(
         synthesizer,
         "_generate_teaching_sections",
@@ -132,19 +128,6 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
 
     monkeypatch.setattr(
         synthesizer,
-        "_call_gemini",
-        lambda _prompt, **_kwargs: (
-            {
-                "headline": "Queues for your stack",
-                "tldr": ["Celery plus Redis"],
-                "continuation": "Yesterday's Redis basics lead into Celery workers today.",
-                "key_takeaways": ["Watch the worker logs"],
-            },
-            12,
-        ),
-    )
-    monkeypatch.setattr(
-        synthesizer,
         "_generate_teaching_sections",
         lambda *_: (_minimal_teaching_section(), 0),
     )
@@ -154,11 +137,11 @@ def test_synthesize_digest_appends_scraped_sections_after_gemini_overview(
     digest = synthesizer.synthesize_digest(profile, [article])
 
     assert digest.content.headline == "Redis queues"
-    assert digest.content.tldr == ["Celery plus Redis"]
     assert digest.content.sections[0].title == "Briefing"
-    assert "Celery workers today" in digest.content.sections[0].content
     briefing = next(s for s in digest.content.sections if s.title == "Briefing")
     assert "teach" in briefing.content or "Celery workers drain Redis" in briefing.content
+    assert digest.content.tldr  # from scraped / continuity, not overview Gemini JSON
+    assert digest.content.key_takeaways
 
 
 def test_call_gemini_raises_clear_quota_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,22 +268,7 @@ def test_teaching_markdown_is_kept_in_the_briefing(monkeypatch: pytest.MonkeyPat
     article = _article("Redis queues", "Celery workers drain Redis. " * 20)
 
     def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
-        if as_json:
-            return (
-                {
-                    "headline": "Queues for your stack",
-                    "tldr": ["Celery plus Redis"],
-                    "sections": [
-                        {
-                            "title": "Why this matters today",
-                            "content": "Overview.",
-                            "sources_cited": [1],
-                        }
-                    ],
-                    "key_takeaways": ["Watch logs"],
-                },
-                12,
-            )
+        assert as_json is False
         return ("Celery workers process jobs from Redis. " * 120, 40)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)
@@ -318,8 +286,7 @@ def test_briefing_is_capped_at_word_ceiling(monkeypatch: pytest.MonkeyPatch) -> 
     article = _article("Long Python piece", "python asyncio source " * 50)
 
     def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
-        if as_json:
-            return ({"headline": "H", "tldr": ["t"], "sections": [], "key_takeaways": []}, 1)
+        assert as_json is False
         return ("chapter " * 8000, 1)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)
@@ -355,14 +322,6 @@ def test_teaching_still_runs_when_scraped_bodies_are_long(
     monkeypatch.setattr(synthesizer, "_generate_teaching_sections", _teaching)
     monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_WORDS", 10_000)
     monkeypatch.setattr(synthesizer, "_SCRAPE_EXCERPT_TOTAL", 10_000)
-    monkeypatch.setattr(
-        synthesizer,
-        "_call_gemini",
-        lambda *_args, **_kwargs: (
-            {"headline": "H", "tldr": ["t"], "continuation": "c", "key_takeaways": []},
-            1,
-        ),
-    )
 
     digest = synthesizer.synthesize_digest(profile, [article])
     assert calls["teaching"] == 1
@@ -569,23 +528,27 @@ def test_generate_teaching_sections_stops_when_floor_is_reached(
     assert tokens == 10
 
 
-def test_interest_user_teaching_pulls_similar_articles_when_floor_not_met(
+def test_interest_user_teaching_stays_within_lean_gemini_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Thin interest sources: one lead write (+ optional top-up), not N similar chapters."""
     profile = UserProfile(user_id="u1", interests=["llm"])
     articles = [_article(f"LLM lesson {i}", "word " * 200) for i in range(4)]
     calls = {"n": 0}
 
     def fake_call(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
         calls["n"] += 1
+        # Intentionally short so a top-up may fire — still capped at 2.
         return ("chapter " * 120, 10)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake_call)
     monkeypatch.setattr(synthesizer, "_min_words", lambda: 500)
+    monkeypatch.setattr(synthesizer, "_max_words", lambda: 2000)
     sections, tokens = synthesizer._generate_teaching_sections(profile, articles)
-    assert len(sections) >= 2
-    assert calls["n"] >= 2
-    assert tokens >= 20
+    assert sections
+    assert calls["n"] <= synthesizer._MAX_DIGEST_GEMINI_CALLS
+    assert calls["n"] >= 1
+    assert tokens >= 10
 
 
 def test_generate_teaching_top_up_failure_is_logged_not_fatal(
@@ -1000,16 +963,7 @@ def test_off_topic_teaching_is_discarded_for_source_article(
     )
 
     def fake(prompt: str, *, as_json: bool = True, max_output_tokens: int = 2048) -> tuple:
-        if as_json:
-            return (
-                {
-                    "headline": "Python text chunking",
-                    "tldr": ["Slice python strings"],
-                    "continuation": "Yesterday's Python lesson continues.",
-                    "key_takeaways": ["Use python slices"],
-                },
-                12,
-            )
+        assert as_json is False
         return ("Python slicing keeps word boundaries intact when chunking text. " * 40, 40)
 
     monkeypatch.setattr(synthesizer, "_call_gemini", fake)

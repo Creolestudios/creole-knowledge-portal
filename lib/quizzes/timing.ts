@@ -2,13 +2,13 @@
  * Single source of truth for quiz timing.
  *
  * Previously `finish` clamped the recorded time to 600s while the actual quiz
- * budget is 1200s, so every attempt longer than 10 minutes was reported as
+ * budget is 900s, so every attempt longer than 10 minutes was reported as
  * exactly "10:00", and `status` hard-coded a different value again (600) than
- * the one it wrote to the database (1200).
+ * the one it wrote to the database (900).
  */
 
 /** Idle window: the runner shows the "still there?" modal at this point. */
-export const QUIZ_TIME_LIMIT_SECONDS = 1200;
+export const QUIZ_TIME_LIMIT_SECONDS = 15 * 60;
 
 /** Countdown the user gets on the idle modal before we auto-submit. */
 export const QUIZ_IDLE_GRACE_SECONDS = 60;

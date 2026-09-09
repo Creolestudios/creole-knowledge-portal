@@ -84,8 +84,9 @@ describe('GET /api/quizzes/status', () => {
     const data = await response.json();
 
     expect(data.inProgress).toBe(true);
-    expect(data.timeLeft).toBeGreaterThanOrEqual(1158);
-    expect(data.timeLeft).toBeLessThanOrEqual(1162);
+    // 15-min limit (900s) minus ~40s elapsed
+    expect(data.timeLeft).toBeGreaterThanOrEqual(858);
+    expect(data.timeLeft).toBeLessThanOrEqual(862);
   });
 
   it('should return inProgress false if no attempt exists', async () => {

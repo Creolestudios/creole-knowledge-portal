@@ -252,6 +252,7 @@ describe('DailyBlogTab', () => {
 
   it('does not show a past session blog when today has no digest', async () => {
     sessionStorage.setItem('active_blog_id', 'fallback-blog-id');
+    localStorage.setItem('active_blog_id', 'fallback-blog-id');
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const digestDate = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
@@ -286,52 +287,22 @@ describe('DailyBlogTab', () => {
     expect(screen.queryByText('Yesterday Next.js Brief')).not.toBeInTheDocument();
 
     sessionStorage.removeItem('active_blog_id');
+    localStorage.removeItem('active_blog_id');
   });
 
-  it('restores the reading timer from the same briefing session', async () => {
-    const today = new Date();
-    const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    sessionStorage.setItem(
-      'reading_timer:blog-1',
-      JSON.stringify({ startedAt: Date.now() - 90_000, stoppedAt: null }),
-    );
-
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (url.startsWith('/api/digests')) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            success: true,
-            blog: {
-              id: 'blog-1',
-              title: 'Timed Brief',
-              content: 'c',
-              tags: [],
-              digest_date: digestDate,
-            },
-          }),
-        });
-      }
-      return Promise.resolve({ ok: true, json: async () => ({}) });
-    });
-
-    render(<DailyBlogTab user={{ id: 'u1' }} profile={{}} />);
-    await waitFor(() => {
-      expect(screen.getByText('Timed Brief')).toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(screen.getByText('1m 30s')).toBeInTheDocument();
-    });
-    sessionStorage.removeItem('reading_timer:blog-1');
-  });
-
-  it('auto-opens the quiz when the reading timer reaches 40 minutes', async () => {
+  it('does not show a reading timer or auto-open the quiz', async () => {
     const today = new Date();
     const digestDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     sessionStorage.setItem(
       'reading_timer:blog-1',
       JSON.stringify({ startedAt: Date.now() - 40 * 60 * 1000, stoppedAt: null }),
     );
+    localStorage.setItem(
+      'reading_timer:blog-1',
+      JSON.stringify({ startedAt: Date.now() - 40 * 60 * 1000, stoppedAt: null }),
+    );
+    localStorage.setItem('active_blog_id', 'blog-1');
+    sessionStorage.removeItem('reading_timer_opening_quiz');
 
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.startsWith('/api/digests')) {
@@ -356,14 +327,12 @@ describe('DailyBlogTab', () => {
     await waitFor(() => {
       expect(screen.getByText('Long Read Brief')).toBeInTheDocument();
     });
-    await waitFor(() => {
-      expect(mockPush).toHaveBeenCalledWith('/dashboard/quiz/blog-1');
-    });
-    expect(global.fetch).toHaveBeenCalledWith(
-      '/api/activity',
-      expect.objectContaining({ method: 'POST' }),
-    );
+    expect(screen.queryByText(/m \d+s/)).not.toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalledWith('/dashboard/quiz/blog-1');
     sessionStorage.removeItem('reading_timer:blog-1');
+    localStorage.removeItem('reading_timer:blog-1');
+    localStorage.removeItem('active_blog_id');
+    sessionStorage.removeItem('reading_timer_opening_quiz');
   });
 
   it('shows Synthesize instead of a Next.js filler briefing for today', async () => {

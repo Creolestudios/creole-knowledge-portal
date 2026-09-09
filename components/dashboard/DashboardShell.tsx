@@ -265,11 +265,11 @@ export default function DashboardShell({
         <div className="p-5 md:p-10 flex-1 overflow-y-auto min-h-0" onScroll={onContentScroll}>
           <div className="max-w-6xl mx-auto">
 
-            {active !== 'roulette' && (
-              <div hidden={active !== 'daily'}>
-                <DailyBlogTab user={activeUser} profile={activeProfile} />
-              </div>
-            )}
+            {/* Keep Daily Blog mounted (hidden) on every dashboard tab so
+                reading activity tracking continues while browsing other tabs. */}
+            <div hidden={active !== 'daily'}>
+              <DailyBlogTab user={activeUser} profile={activeProfile} />
+            </div>
             {active === 'past' && (
               <PastBlogsTab
                 selected={pastDate}

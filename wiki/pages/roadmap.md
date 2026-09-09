@@ -2,7 +2,7 @@
 title: Product Roadmap
 tags: [roadmap, plans, technical-debt]
 created: 2026-05-27
-updated: 2026-08-25
+updated: 2026-09-08
 ---
 
 # Product Roadmap
@@ -43,6 +43,16 @@ See [[pages/fetch-blogs-walkthrough.md|Fetch Blogs walkthrough]] for the live pi
 - [ ] Establish automated cron triggers to dispatch customized digest summaries every morning.
 - [ ] Integrate user feedback actions (upvote, downvote, read metrics) to refine recommended summaries.
 - [ ] Explore community features for users to share or comment on recommended articles.
+
+### Phase 5: Student Mock Interview / Assessment (Planned)
+
+Design: [[pages/resume-jd-assessment-plan.md|Student Mock Interview / Assessment Module]].
+
+- [ ] Admin upload resume + JD → experience vs JD analysis → one-time student invite link
+- [ ] Student chooses Quiz / Interview / Both; mandatory instructions before start
+- [ ] Proctoring: screen share, webcam, gaze, hand gestures, face count, bg noise, tab switch
+- [ ] Real-time alerts; auto-terminate after 2–3 alerts; student sees submit-only message
+- [ ] Admin-only report: performance + English proficiency + integrity
 
 ---
 
