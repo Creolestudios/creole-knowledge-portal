@@ -88,7 +88,7 @@ describe('DashboardShell', () => {
     );
   });
 
-  it('renders Past Blogs while keeping Daily Blog mounted so the reading timer continues', () => {
+  it('renders Past Blogs while keeping Daily Blog mounted so reading activity tracking continues', () => {
     nav.tab = 'past';
     render(<DashboardShell displayName="dev" displayDomain="x.com" footer={null} />);
     expect(screen.getByTestId('past-tab')).toBeInTheDocument();
@@ -109,7 +109,8 @@ describe('DashboardShell', () => {
       </DashboardShell>,
     );
     expect(screen.getByTestId('roulette-page')).toBeInTheDocument();
-    expect(screen.queryByTestId('daily-tab')).not.toBeInTheDocument();
+    // Daily Blog stays mounted (hidden) so reading activity tracking continues.
+    expect(screen.getByTestId('daily-tab')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /blog roulette/i })).toHaveAttribute(
       'aria-current',
       'page',

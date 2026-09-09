@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeStreak, isBriefingDay, parseDateKey } from './streak';
+import { computeStreak, isBriefingDay, istDateKey, parseDateKey } from './streak';
 import type { ActivityRecord } from '@/types/contracts';
 
 const ref = new Date('2026-06-30T12:00:00Z');
@@ -126,5 +126,12 @@ describe('parseDateKey', () => {
 
   it('returns null for a malformed key', () => {
     expect(parseDateKey('nonsense')).toBeNull();
+  });
+});
+
+describe('istDateKey', () => {
+  it('formats an IST calendar day as YYYY-MM-DD', () => {
+    // 2026-09-07 22:30 UTC = 2026-09-08 04:00 IST
+    expect(istDateKey(new Date('2026-09-07T22:30:00Z'))).toBe('2026-09-08');
   });
 });

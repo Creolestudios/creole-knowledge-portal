@@ -6,41 +6,49 @@ import { motion } from 'motion/react';
 import { logActivity } from '@/lib/data/activity';
 
 /**
- * Sticky reading timer. Counts up while the tab is visible and the component
- * is mounted; pauses when the browser tab loses focus. Accumulated seconds are
- * flushed to the activity store periodically and on unmount, so the Activity
- * tab reflects real reading time.
+ * Sticky reading timer. Counts wall-clock time continuously — does NOT pause
+ * when the browser tab is hidden or the user switches dashboard tabs.
+ * Accumulated seconds are flushed to the activity store periodically and on
+ * unmount.
  */
 export default function ReadingTimer({ date }: { date: string }) {
   const [seconds, setSeconds] = useState(0);
-  const unflushedRef = useRef(0);
+  const lastFlushedRef = useRef(0);
 
   useEffect(() => {
-    let active = !document.hidden;
+    // Start clock in effect only — Date.now() during render fails react-hooks/purity.
+    const startedAt = Date.now();
+    lastFlushedRef.current = 0;
 
-    const interval = setInterval(() => {
-      if (!active) return;
-      setSeconds((s) => s + 1);
-      unflushedRef.current += 1;
-      // Flush every 30s so progress survives reloads / navigation.
-      if (unflushedRef.current >= 30) {
-        void logActivity({ date, readSeconds: unflushedRef.current });
-        unflushedRef.current = 0;
-      }
-    }, 1000);
-
-    const onVisibility = () => {
-      active = !document.hidden;
+    const flushDelta = (elapsed: number) => {
+      const delta = elapsed - lastFlushedRef.current;
+      if (delta <= 0) return;
+      void logActivity({ date, readSeconds: delta });
+      lastFlushedRef.current = elapsed;
     };
+
+    const tick = () => {
+      const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      setSeconds(elapsed);
+      if (elapsed - lastFlushedRef.current >= 30) {
+        flushDelta(elapsed);
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    // Catch up immediately when the tab becomes visible again (browsers throttle
+    // background intervals, but wall-clock elapsed must keep advancing).
+    const onVisibility = () => tick();
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onVisibility);
 
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisibility);
-      if (unflushedRef.current > 0) {
-        void logActivity({ date, readSeconds: unflushedRef.current });
-        unflushedRef.current = 0;
-      }
+      window.removeEventListener('focus', onVisibility);
+      const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      flushDelta(elapsed);
     };
   }, [date]);
 

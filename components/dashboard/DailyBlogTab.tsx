@@ -1,14 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Sparkles, Clock, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Sparkles, BookOpen, CheckCircle, ExternalLink, Loader2, CalendarDays } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
 import { useRouter } from 'next/navigation';
 import { isInventedFallback } from '@/lib/digests/invented-fallback';
-
-/** After this reading time, open the quiz (dashboard only — quiz module untouched). */
-const READING_TIMER_LIMIT_SECONDS = 40 * 60;
+import {
+  cappedReadSeconds,
+  claimQuizAutoOpen,
+  clearQuizAutoOpenClaim,
+  elapsedSeconds,
+  getActiveBlogId,
+  readTimerState,
+  setActiveBlogId,
+  writeTimerState,
+} from '@/lib/reading-timer';
 
 /**
  * "Today" in IST (Asia/Kolkata) — must match the server's definition of
@@ -68,49 +75,13 @@ function formatFetchedLabel(value?: string | null): string {
   return `${Number(day)} ${months[Number(month) - 1]} ${year}`;
 }
 
-/** Reading timer only while the daily quiz is still open. */
-function shouldRunReadingTimer(quizStatus: any | null | undefined): boolean {
+/** Track reading time for activity only while the daily quiz is still open. */
+function shouldTrackReading(quizStatus: any | null | undefined): boolean {
   if (!quizStatus) return true;
   if (quizStatus.passed) return false;
   if (quizStatus.failed) return false;
   if ((quizStatus.attemptsRemaining ?? 3) <= 0) return false;
   return true;
-}
-
-function readingTimerKey(blogId: string): string {
-  return `reading_timer:${blogId}`;
-}
-
-function readTimerState(blogId: string): { startedAt: number; stoppedAt: number | null } | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = sessionStorage.getItem(readingTimerKey(blogId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { startedAt?: number; stoppedAt?: number | null };
-    const startedAt = Number(parsed?.startedAt);
-    if (!startedAt) return null;
-    const stoppedRaw = parsed?.stoppedAt;
-    return {
-      startedAt,
-      stoppedAt: stoppedRaw ? Number(stoppedRaw) : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeTimerState(blogId: string, state: { startedAt: number; stoppedAt: number | null }) {
-  if (typeof window === 'undefined') return;
-  sessionStorage.setItem(readingTimerKey(blogId), JSON.stringify(state));
-}
-
-function elapsedSeconds(state: { startedAt: number; stoppedAt: number | null }): number {
-  const end = state.stoppedAt ?? Date.now();
-  return Math.max(0, Math.floor((end - state.startedAt) / 1000));
-}
-
-function cappedReadSeconds(seconds: number): number {
-  return Math.min(Math.max(0, seconds), READING_TIMER_LIMIT_SECONDS);
 }
 
 export default function DailyBlogTab({ user, profile }: { user?: any; profile?: any }) {
@@ -122,27 +93,21 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const [synthError, setSynthError] = useState<string | null>(null);
   const [quizStatus, setQuizStatus] = useState<any>(null);
 
-  // Timer State
-  const [readSeconds, setReadSeconds] = useState(0);
-  const [timerActive, setTimerActive] = useState(false);
-
   // Quiz State
   const [quizLoading, setQuizLoading] = useState(false);
-  const autoQuizStartedRef = useRef(false);
 
   const saveActivityAndOpenQuiz = useCallback(async () => {
     if (quizLoading || !brief?.id) return;
+    if (!claimQuizAutoOpen(brief.id)) {
+      return;
+    }
     setQuizLoading(true);
-    setTimerActive(false);
     const state = readTimerState(brief.id);
-    const secondsToSave = cappedReadSeconds(state ? elapsedSeconds(state) : readSeconds);
+    const secondsToSave = cappedReadSeconds(state ? elapsedSeconds(state) : 0);
     if (state && !state.stoppedAt) {
       writeTimerState(brief.id, { ...state, stoppedAt: Date.now() });
     }
-    setReadSeconds(secondsToSave);
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('active_blog_id', brief.id);
-    }
+    setActiveBlogId(brief.id);
     try {
       await fetch('/api/activity', {
         method: 'POST',
@@ -157,38 +122,13 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
       console.error('Failed to save reading time', e);
     }
     router.push(`/dashboard/quiz/${brief.id}`);
-  }, [brief, quizLoading, readSeconds, router, user]);
-
-  useEffect(() => {
-    if (!timerActive || !brief?.id) return undefined;
-    const tick = () => {
-      const state = readTimerState(brief.id);
-      if (!state) return;
-      const elapsed = elapsedSeconds(state);
-      setReadSeconds(cappedReadSeconds(elapsed));
-      if (
-        elapsed >= READING_TIMER_LIMIT_SECONDS &&
-        !autoQuizStartedRef.current &&
-        shouldRunReadingTimer(quizStatus)
-      ) {
-        autoQuizStartedRef.current = true;
-        if (!state.stoppedAt) {
-          writeTimerState(brief.id, { ...state, stoppedAt: Date.now() });
-        }
-        setTimerActive(false);
-        void saveActivityAndOpenQuiz();
-      }
-    };
-    tick();
-    const interval = setInterval(tick, 1000);
-    return () => clearInterval(interval);
-  }, [timerActive, brief?.id, quizStatus, saveActivityAndOpenQuiz]);
+  }, [brief, quizLoading, router, user]);
 
   const applyBrief = useCallback(async (blog: any) => {
     setBrief(blog);
-    autoQuizStartedRef.current = false;
-    if (typeof window !== 'undefined' && blog?.id) {
-      sessionStorage.setItem('active_blog_id', blog.id);
+    clearQuizAutoOpenClaim();
+    if (blog?.id) {
+      setActiveBlogId(blog.id);
     }
 
     let nextQuizStatus: any = null;
@@ -205,21 +145,15 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     }
 
     if (blog?.id) {
-      const running = shouldRunReadingTimer(nextQuizStatus);
+      const tracking = shouldTrackReading(nextQuizStatus);
       let state = readTimerState(blog.id);
       if (!state) {
-        state = { startedAt: Date.now(), stoppedAt: running ? null : Date.now() };
+        state = { startedAt: Date.now(), stoppedAt: tracking ? null : Date.now() };
         writeTimerState(blog.id, state);
-      } else if (!running && !state.stoppedAt) {
+      } else if (!tracking && !state.stoppedAt) {
         state = { ...state, stoppedAt: Date.now() };
         writeTimerState(blog.id, state);
       }
-      const elapsed = elapsedSeconds(state);
-      setReadSeconds(cappedReadSeconds(elapsed));
-      // If already at/over 40m when restoring, open quiz on next tick via timer effect.
-      setTimerActive(running);
-    } else {
-      setTimerActive(false);
     }
   }, []);
 
@@ -240,7 +174,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
         fetchedBlog = data.blog;
       } else {
         // 2. If no valid digest for today, only restore a session blog that is also today's real digest.
-        const activeBlogId = typeof window !== 'undefined' ? sessionStorage.getItem('active_blog_id') : null;
+        const activeBlogId = getActiveBlogId();
         if (activeBlogId) {
           try {
             const fallbackRes = await fetch(`/api/digests/by-id?id=${activeBlogId}`, { cache: 'no-store' });
@@ -265,7 +199,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
       } else {
         setBrief(null);
         setQuizStatus(null);
-        setTimerActive(false);
       }
     } catch (e) {
       console.error('Error fetching brief:', e);
@@ -286,8 +219,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
     setGenerating(true);
     setSynthError(null);
     setBrief(null);
-    setTimerActive(false);
-    setReadSeconds(0);
 
     const steps = [
       'Syncing your preferences into the pipeline...',
@@ -354,12 +285,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
 
   const hasBrief = isDisplayableTodayBrief(brief);
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}m ${s}s`;
-  };
-
   const estimatedMinutes = Math.max(
     1,
     Math.round(
@@ -374,9 +299,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
   const handleReviewQuiz = () => {
     if (quizLoading || !brief?.id) return;
     setQuizLoading(true);
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('active_blog_id', brief.id);
-    }
+    setActiveBlogId(brief.id);
     router.push(`/dashboard/quiz/${brief.id}`);
   };
 
@@ -440,13 +363,6 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             animate={{ opacity: 1, y: 0 }}
             className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative"
           >
-            {!quizStatus?.passed && (quizStatus?.attemptsRemaining ?? 3) > 0 && (
-              <div className="absolute -top-6 right-0 z-10 bg-black text-white px-4 py-2 rounded-full font-mono text-sm font-bold shadow-lg flex items-center gap-2 border border-zinc-800">
-                <Clock size={14} className="text-brand" />
-                {formatTime(readSeconds)}
-              </div>
-            )}
-
             <div className="lg:col-span-2 space-y-6 min-w-0">
               <div className="mb-2 space-y-1">
                 <p className="text-sm font-bold text-zinc-500 tracking-wide">

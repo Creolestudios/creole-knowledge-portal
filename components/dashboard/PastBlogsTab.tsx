@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { CalendarSearch, Loader2, Calendar, CalendarDays } from 'lucide-react';
 import { PremiumMarkdownRenderer } from './PremiumMarkdownRenderer';
-import { isBriefingDay, localDateKey } from '@/lib/data/streak';
+import { isBriefingDay, istDateKey, localDateKey } from '@/lib/data/streak';
 
 type PastBlog = {
   title?: string;
@@ -19,14 +19,14 @@ function toDateKey(value?: string | null): string {
   if (day) return day[1];
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value.slice(0, 10);
-  return localDateKey(parsed);
+  return istDateKey(parsed);
 }
 
 function formatFetchedLabel(dateKey: string): string {
-  const today = localDateKey(new Date());
+  const today = istDateKey(new Date());
   const yesterdayDate = new Date();
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-  const yesterday = localDateKey(yesterdayDate);
+  const yesterday = istDateKey(yesterdayDate);
   if (dateKey === today) return 'Today';
   if (dateKey === yesterday) return 'Yesterday';
   return dateKey;
@@ -94,7 +94,7 @@ export default function PastBlogsTab({
   for (let i = 0; i < firstDayIndex; i++) daysArray.push(null);
   for (let i = 1; i <= totalDays; i++) daysArray.push(i);
 
-  const todayKey = localDateKey(new Date());
+  const todayKey = istDateKey(new Date());
 
   /** Visible past blogs: quiz done today, or any prior day (missed quiz → red). */
   const visibleBlogs = useMemo(

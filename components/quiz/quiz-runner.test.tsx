@@ -209,7 +209,7 @@ describe('QuizRunner', () => {
           json: async () => ({
             inProgress: true,
             attemptId: 'a1',
-            timeLeft: 1200,
+            timeLeft: 900,
             questions: [mcQuestion],
             answers: { q1: ['useEffect'] },
           }),
@@ -424,7 +424,7 @@ describe('QuizRunner', () => {
       await Promise.resolve();
     });
 
-    // Advance 5 seconds so elapsed seconds reaches 1200s (1195 + 5 = 1200s)
+    // Advance 5 seconds so elapsed seconds reaches the 15-min limit (timeLeft was 5)
     await act(async () => {
       vi.advanceTimersByTime(5 * 1000);
     });

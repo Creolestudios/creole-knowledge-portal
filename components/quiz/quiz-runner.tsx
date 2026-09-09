@@ -336,7 +336,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       const next = Math.max(0, Math.floor((wallClockNow() - startedAtMsRef.current) / 1000));
       frozenElapsedRef.current = next;
       setElapsedSeconds(next);
-      // At 20 minutes of elapsed time, trigger the Idle Check Modal.
+      // At 15 minutes of elapsed time, trigger the Idle Check Modal.
       if (next >= QUIZ_TIME_LIMIT_SECONDS) {
         setShowIdleModal(prev => {
           if (!prev) setIdleCountdown(QUIZ_IDLE_GRACE_SECONDS);
@@ -626,7 +626,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
   const handleContinueQuiz = () => {
     setShowIdleModal(false);
-    setElapsedSeconds(0); // Reset idle timer for another 20 minutes
+    setElapsedSeconds(0); // Reset idle timer for another 15 minutes
     setIdleCountdown(60);
   };
 
@@ -1126,7 +1126,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
                   Still working on your quiz?
                 </h3>
                 <p className="text-zinc-400 text-sm leading-relaxed">
-                  You have been on this attempt for 20 minutes. Please confirm if you would like to keep working.
+                  You have been on this attempt for 15 minutes. Please confirm if you would like to keep working.
                 </p>
               </div>
 

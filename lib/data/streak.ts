@@ -16,6 +16,19 @@ export function localDateKey(d: Date): string {
 }
 
 /**
+ * `YYYY-MM-DD` in IST (Asia/Kolkata) — matches digests / Daily Blog "today".
+ * Prefer this over UTC `toISOString().slice(0, 10)` for activity bucketing.
+ */
+export function istDateKey(d: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/**
  * Parse a `YYYY-MM-DD` key as local midnight.
  *
  * `new Date('2026-06-30')` is parsed as *UTC* midnight, which lands on the

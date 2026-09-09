@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
-import { computeStreak } from '@/lib/data/streak';
+import { computeStreak, istDateKey } from '@/lib/data/streak';
 import { summarizeAttemptRow } from '@/lib/quizzes/scoring';
+import { toValidUUID } from '@/lib/quizzes/review';
 
 /**
  * True when a Supabase error means "this table does not exist".
@@ -20,6 +21,43 @@ import { summarizeAttemptRow } from '@/lib/quizzes/scoring';
  */
 function isMissingTableError(error: { code?: string } | null): boolean {
   return error?.code === 'PGRST205' || error?.code === '42P01';
+}
+
+function digestDateFromBlog(blog: {
+  id?: string;
+  digest_date?: string;
+  published_at?: string;
+  url?: string;
+} | null): string {
+  if (!blog) return '';
+  const fromFields = String(blog.digest_date || blog.published_at || '');
+  const fieldMatch = fromFields.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (fieldMatch) return fieldMatch[1];
+  const urlMatch = String(blog.url || '').match(/:(\d{4}-\d{2}-\d{2})/);
+  return urlMatch ? urlMatch[1] : '';
+}
+
+/** Map quiz blog_id (UUID) → briefing calendar day (IST digest date). */
+async function loadBlogDigestDateById(userId: string): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const res = await fetch(blogServiceUrl(`/digests/${userId}/past`), {
+      headers: blogServiceHeaders(),
+      cache: 'no-store',
+    });
+    if (!res.ok) return map;
+    const payload = await res.json();
+    for (const blog of payload?.blogs || []) {
+      const key = digestDateFromBlog(blog);
+      const id = blog?.id != null ? String(blog.id) : '';
+      if (!key || !id) continue;
+      map.set(toValidUUID(id), key);
+      map.set(id, key);
+    }
+  } catch {
+    // Past Blog unlock still works from attempt timestamps if digests are unavailable.
+  }
+  return map;
 }
 
 async function recordQuizOnBlogService(userId: string, quizScore?: number, quizTotal?: number) {
@@ -68,14 +106,16 @@ export async function GET(request: Request) {
       throw quizError;
     }
 
-    // 3. Aggregate by Date
+    const blogDigestById = await loadBlogDigestDateById(user.id);
+
+    // 3. Aggregate by Date (IST — same calendar as Daily Blog / Past Briefings)
     const dailyMap: Record<string, any> = {};
 
     // Process read logs
     if (readLogs) {
       for (const log of readLogs) {
         const dateObj = new Date(log.created_at);
-        const dateStr = dateObj.toISOString().split('T')[0];
+        const dateStr = istDateKey(dateObj);
         if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_started: false, quiz_score: 0, quiz_total: 0, attempts: [] };
         
         const readSeconds = log.metadata?.read_seconds || 0;
@@ -83,15 +123,17 @@ export async function GET(request: Request) {
       }
     }
 
-    // Process quiz attempts
+    // Process quiz attempts — attribute to the briefing day of that blog, not
+    // "the calendar day you happened to finish" (that wrongly unlocked Today).
     if (quizAttempts) {
       for (const attempt of quizAttempts) {
-        // An attempt the user started but has not finished still marks the day
-        // as engaged, so bucket on started_at when there is no completion.
         const stamp = attempt.completed_at || attempt.started_at;
         if (!stamp) continue;
-        const dateObj = new Date(stamp);
-        const dateStr = dateObj.toISOString().split('T')[0];
+        const blogKey = attempt.blog_id != null ? String(attempt.blog_id) : '';
+        const digestDay =
+          (blogKey && (blogDigestById.get(toValidUUID(blogKey)) || blogDigestById.get(blogKey))) ||
+          istDateKey(new Date(stamp));
+        const dateStr = digestDay;
         if (!dailyMap[dateStr]) dailyMap[dateStr] = { date: dateStr, read_seconds: 0, quiz_taken: false, quiz_started: false, quiz_score: 0, quiz_total: 0, attempts: [] };
 
         dailyMap[dateStr].quiz_started = true;

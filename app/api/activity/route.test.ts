@@ -352,6 +352,40 @@ describe('GET /api/activity', () => {
     vi.useRealTimers();
   });
 
+  it('attributes a completed quiz to the briefing digest day, not the finish calendar day', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        blogs: [{ id: 'blog-sep7', digest_date: '2026-09-07' }],
+      }),
+    });
+
+    responseQueue = [
+      { data: [], error: null },
+      {
+        data: [
+          // Finished on Sep 8, but the quiz belongs to the Sep 7 briefing.
+          {
+            blog_id: 'blog-sep7',
+            started_at: '2026-09-08T08:00:00Z',
+            completed_at: '2026-09-08T08:20:00Z',
+            status: 'completed',
+            score: 2,
+            total_questions: 5,
+            quiz_answers: [],
+          },
+        ],
+        error: null,
+      },
+    ];
+
+    const res = await GET(mockRequest());
+    const body = await res.json();
+    expect(body.records.find((r: any) => r.date === '2026-09-07')?.quiz_taken).toBe(true);
+    expect(body.records.find((r: any) => r.date === '2026-09-08')?.quiz_taken).toBeFalsy();
+  });
+
   it('sums multiple reading logs recorded on the same day', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1' } } });
     const today = new Date();
