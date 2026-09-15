@@ -13,7 +13,7 @@ import ActivityTab from './ActivityTab';
 import LeaderboardTab from './LeaderboardTab';
 import SidebarActivityWidget from './SidebarActivityWidget';
 
-type TabKey = 'daily' | 'past' | 'activity' | 'leaderboard' | 'roulette';
+type TabKey = 'daily' | 'past' | 'activity' | 'leaderboard' | 'roulette' | 'extractor';
 
 const TAB_HREFS: Record<TabKey, string> = {
   daily: '/dashboard',
@@ -21,12 +21,14 @@ const TAB_HREFS: Record<TabKey, string> = {
   activity: '/dashboard?tab=activity',
   leaderboard: '/dashboard?tab=leaderboard',
   roulette: '/blog-roulette',
+  extractor: '/dashboard/ai-interview/extractor',
 };
 
 function tabFromLocation(
   pathname: string | null | undefined,
   tabParam: string | null,
 ): TabKey {
+  if (pathname?.startsWith('/dashboard/ai-interview/extractor')) return 'extractor';
   if (pathname?.startsWith('/blog-roulette')) return 'roulette';
   if (tabParam === 'past') return 'past';
   if (tabParam === 'activity') return 'activity';
@@ -40,6 +42,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'activity', label: 'Activity Tracker', icon: <BarChart3 size={18} /> },
   { key: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={18} /> },
   { key: 'roulette', label: 'Blog Roulette', icon: <Sparkles size={18} /> },
+  { key: 'extractor', label: 'AI Extractor', icon: <User size={18} /> },
 ];
 
 /**

@@ -15,3 +15,4 @@ This section contains important overview pages for the Creole Knowledge Portal p
 *   [[pages/roadmap.md|Roadmap & Known Issues]]
 *   [[pages/gatekeeper-plan.md|Gatekeeper Module Design]]
 *   [[pages/resume-jd-assessment-plan.md|Student Mock Interview / Assessment Module]]
+*   [[pages/ai-interview-extractor.md|AI Interview Resume & JD Keyword Extractor]]
