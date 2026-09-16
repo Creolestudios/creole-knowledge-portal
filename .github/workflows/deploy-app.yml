@@ -108,7 +108,7 @@ jobs:
           build-args: |
             NEXT_PUBLIC_BASE_PATH=/creole-knowledge-portal
             NEXT_PUBLIC_SUPABASE_URL=https://pcovgcyjzprkboxbjkey.supabase.co
-            NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBjb3ZnY3lqenBya2JveGJqa2V5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4NzQ5NzQsImV4cCI6MjA5MzQ1MDk3NH0.vgqRGVKCevVdErojUVmqtOVi_cdneO88nfEuFOY3bCU
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:latest
             ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:${{ github.sha }}
@@ -127,7 +127,7 @@ jobs:
         working-directory: infra
     env:
       AWS_ROLE_ARN: ${{ vars.AWS_GHA_DEPLOY_ROLE_ARN }}
-      PULUMI_ACCESS_TOKEN: "***REMOVED-PULUMI-TOKEN***"
+      PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
