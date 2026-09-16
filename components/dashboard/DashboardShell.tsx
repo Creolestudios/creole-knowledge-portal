@@ -120,7 +120,7 @@ export default function DashboardShell({
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f8f9fa] flex">
+    <div className="h-screen overflow-hidden bg-[#f8f9fa] dark:bg-zinc-950 flex">
       {/* Mobile backdrop */}
       {mobileOpen && (
         <div
@@ -133,7 +133,7 @@ export default function DashboardShell({
       {/* Sidebar — static on desktop, slide-in drawer on mobile. Fixed full
           height so its footer (sign out / preview badge) is always visible. */}
       <aside
-        className={`w-72 h-screen bg-[#0a0a0a] text-white flex flex-col p-7 border-r border-zinc-800 overflow-hidden shrink-0 z-40 transition-transform fixed inset-y-0 left-0 md:relative md:inset-auto md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        className={`w-72 h-screen bg-white dark:bg-[#0a0a0a] text-zinc-900 dark:text-white flex flex-col p-7 border-r border-zinc-200 dark:border-zinc-800 overflow-hidden shrink-0 z-40 transition-transform fixed inset-y-0 left-0 md:relative md:inset-auto md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
@@ -154,7 +154,7 @@ export default function DashboardShell({
             type="button"
             id="sidebar-close"
             onClick={() => setMobileOpen(false)}
-            className="md:hidden text-zinc-400 hover:text-white cursor-pointer"
+            className="md:hidden text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer"
             aria-label="Close menu"
           >
             <X size={22} />
@@ -183,12 +183,12 @@ export default function DashboardShell({
                 {isActive && (
                   <motion.span
                     layoutId="sidebar-active-tab"
-                    className="absolute inset-0 bg-zinc-900/60 border border-brand/20 rounded-xl shadow-sm"
+                    className="absolute inset-0 bg-zinc-100 dark:bg-zinc-900/60 border border-brand/20 rounded-xl shadow-sm"
                     transition={{ type: 'spring', stiffness: 400, damping: 32 }}
                   />
                 )}
                 <span
-                  className={`relative z-10 flex items-center gap-3 ${isActive ? 'text-brand' : 'text-zinc-500'
+                  className={`relative z-10 flex items-center gap-3 ${isActive ? 'text-brand' : 'text-zinc-500 dark:text-zinc-400'
                     }`}
                 >
                   {tab.icon}
@@ -200,13 +200,13 @@ export default function DashboardShell({
         </nav>
 
         {/* Reading streak */}
-        <div className="mt-6 relative z-10 flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-900/40 border border-zinc-800">
+        <div className="mt-6 relative z-10 flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-900/40 border border-zinc-200 dark:border-zinc-800">
           <Flame size={18} className="text-brand shrink-0" />
           <div>
-            <p className="text-sm font-black text-white leading-none tabular-nums">
+            <p className="text-sm font-black text-zinc-900 dark:text-white leading-none tabular-nums">
               {streak} day{streak === 1 ? '' : 's'}
             </p>
-            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest mt-0.5">
+            <p className="text-[10px] text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-widest mt-0.5">
               Reading streak
             </p>
           </div>
@@ -218,17 +218,17 @@ export default function DashboardShell({
         </div>
 
         {/* Footer (logout / preview badge) */}
-        <div className="mt-auto pt-6 border-t border-zinc-800 relative z-10">{footer}</div>
+        <div className="mt-auto pt-6 border-t border-zinc-200 dark:border-zinc-800 relative z-10">{footer}</div>
       </aside>
 
       {/* Main */}
       <main className="flex-1 flex flex-col overflow-hidden min-h-0">
-        <header className="h-20 bg-white border-b border-zinc-200 px-5 md:px-10 flex items-center justify-between gap-3 relative z-20">
+        <header className="h-20 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-5 md:px-10 flex items-center justify-between gap-3 relative z-20">
           <button
             type="button"
             id="sidebar-open"
             onClick={() => setMobileOpen(true)}
-            className="md:hidden text-zinc-600 hover:text-zinc-900 cursor-pointer shrink-0"
+            className="md:hidden text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white cursor-pointer shrink-0"
             aria-label="Open menu"
           >
             <Menu size={24} />
@@ -240,14 +240,14 @@ export default function DashboardShell({
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-4">
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-zinc-900 leading-tight lowercase">
+                <p className="text-sm font-bold text-zinc-900 dark:text-white leading-tight lowercase">
                   {user?.email || displayName}
                 </p>
-                <p className="text-[10px] text-zinc-500 font-medium uppercase tracking-wider">
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 font-medium uppercase tracking-wider">
                   {profile?.current_role || 'Author'}
                 </p>
               </div>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center border bg-zinc-50 border-zinc-200 text-zinc-600">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center border bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300">
                 <User size={20} />
               </div>
             </div>

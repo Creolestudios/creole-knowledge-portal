@@ -17,14 +17,16 @@ import {
   ExternalLink,
   Home,
   ShieldAlert,
+  UploadCloud,
 } from 'lucide-react';
 
 import UserManagement from '@/components/user-management';
 import SubmissionsModeration from '@/components/submissions-moderation';
+import AIInterviewManager from '@/components/ai-interview-manager';
 
 
 
-type Tab = 'sources' | 'users' | 'submissions';
+type Tab = 'sources' | 'users' | 'submissions' | 'ai-interviews';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('sources');
@@ -174,11 +176,11 @@ export default function AdminDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fafafa] flex">
+    <main className="min-h-screen bg-[#fafafa] dark:bg-zinc-950 flex">
       {/* Sidebar */}
-      <aside className="w-72 bg-zinc-900 text-white min-h-screen flex flex-col border-r border-zinc-800 fixed left-0 top-0 bottom-0 z-10 hidden md:flex">
+      <aside className="w-72 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white min-h-screen flex flex-col border-r border-zinc-200 dark:border-zinc-800 fixed left-0 top-0 bottom-0 z-10 hidden md:flex">
         {/* Logo area */}
-        <div className="p-6 border-b border-zinc-800">
+        <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center space-x-4 mb-4">
             <div className="w-10 h-10 bg-[#34c4f2] rounded-lg flex items-center justify-center shrink-0">
               <ShieldCheck className="text-white w-6 h-6" />
@@ -202,7 +204,7 @@ export default function AdminDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
               activeTab === 'sources'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
             <Globe className="w-5 h-5" />
@@ -213,7 +215,7 @@ export default function AdminDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
               activeTab === 'users'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
             }`}
           >
             <svg
@@ -238,18 +240,29 @@ export default function AdminDashboard() {
             onClick={() => setActiveTab('submissions')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'submissions'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
               }`}
           >
             <ShieldAlert className="w-5 h-5" />
             <span>Submissions</span>
           </button>
+          <button
+            onClick={() => setActiveTab('ai-interviews')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'ai-interviews'
+                ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <UploadCloud className="w-5 h-5" />
+            <span>AI Interview</span>
+          </button>
 
-          <div className="h-px bg-zinc-800 my-4" />
+          <div className="h-px bg-zinc-200 dark:bg-zinc-800 my-4" />
 
           <button
             onClick={() => router.push('/dashboard')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-zinc-400 hover:text-white hover:bg-zinc-800"
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
             <Home className="w-5 h-5" />
             <span>User Dashboard</span>
@@ -257,14 +270,14 @@ export default function AdminDashboard() {
         </nav>
 
         {/* User / Sign Out */}
-        <div className="p-4 border-t border-zinc-800 bg-zinc-950/50">
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/50">
           <div className="px-3 mb-4">
             <p className="text-[10px] uppercase tracking-widest text-zinc-500 font-bold mb-1">Logged In As</p>
-            <p className="text-sm font-medium text-zinc-300 truncate">{user?.email}</p>
+            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-300 truncate">{user?.email}</p>
           </div>
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center justify-center gap-2 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all text-sm font-bold group"
+            className="w-full flex items-center justify-center gap-2 py-3 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-all text-sm font-bold group"
           >
             <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
             <span>Sign Out</span>
@@ -275,7 +288,7 @@ export default function AdminDashboard() {
       {/* Main Content Area */}
       <div className="flex-1 md:ml-72 flex flex-col min-h-screen">
         {/* Mobile Header (visible only on small screens) */}
-        <header className="md:hidden bg-zinc-900 text-white p-4 flex items-center justify-between shadow-md z-10 sticky top-0">
+        <header className="md:hidden bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white p-4 flex items-center justify-between shadow-md z-10 sticky top-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-[#34c4f2] rounded-md flex items-center justify-center">
               <ShieldCheck className="text-white w-4 h-4" />
@@ -283,16 +296,19 @@ export default function AdminDashboard() {
             <h1 className="font-bold text-sm">Admin Console</h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setActiveTab('sources')} className={`p-2 rounded-md ${activeTab === 'sources' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
+            <button onClick={() => setActiveTab('sources')} className={`p-2 rounded-md ${activeTab === 'sources' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <Globe className="w-4 h-4" />
             </button>
-            <button onClick={() => setActiveTab('users')} className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
+            <button onClick={() => setActiveTab('users')} className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
             </button>
-            <button onClick={() => setActiveTab('submissions')} className={`p-2 rounded-md ${activeTab === 'submissions' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-400'}`}>
+            <button onClick={() => setActiveTab('submissions')} className={`p-2 rounded-md ${activeTab === 'submissions' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <ShieldAlert className="w-4 h-4" />
             </button>
-            <button onClick={handleSignOut} className="p-2 text-zinc-400 hover:text-white ml-2 border-l border-zinc-700 pl-4">
+            <button onClick={() => setActiveTab('ai-interviews')} className={`p-2 rounded-md ${activeTab === 'ai-interviews' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
+              <UploadCloud className="w-4 h-4" />
+            </button>
+            <button onClick={handleSignOut} className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white ml-2 border-l border-zinc-200 dark:border-zinc-700 pl-4">
               <LogOut className="w-4 h-4" />
             </button>
           </div>
@@ -301,7 +317,7 @@ export default function AdminDashboard() {
         {/* Tab Content */}
         <div className="p-6 md:p-10 lg:p-12 w-full max-w-5xl mx-auto">
           <AnimatePresence mode="wait">
-            {activeTab === 'sources' ? (
+            {activeTab === 'sources' && (
               <motion.div
                 key="sources"
                 initial={{ opacity: 0, y: 20 }}
@@ -437,7 +453,8 @@ export default function AdminDashboard() {
                   </p>
                 </div>
               </motion.div>
-            ) : activeTab === 'users' ? (
+            )}
+            {activeTab === 'users' && (
               <motion.div
                 key="users"
                 initial={{ opacity: 0, y: 20 }}
@@ -447,7 +464,8 @@ export default function AdminDashboard() {
               >
                 <UserManagement />
               </motion.div>
-            ) : (
+            )}
+            {activeTab === 'submissions' && (
               <motion.div
                 key="submissions"
                 initial={{ opacity: 0, y: 20 }}
@@ -456,6 +474,17 @@ export default function AdminDashboard() {
                 transition={{ duration: 0.2 }}
               >
                 <SubmissionsModeration />
+              </motion.div>
+            )}
+            {activeTab === 'ai-interviews' && (
+              <motion.div
+                key="ai-interviews"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <AIInterviewManager />
               </motion.div>
             )}
           </AnimatePresence>

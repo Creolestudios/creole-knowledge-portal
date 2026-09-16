@@ -84,13 +84,15 @@ export default function LoginPage() {
   };
 
   if (!mounted) {
-    return <div className="min-h-screen bg-black" />; // Static placeholder for initial render
+    return <div className="min-h-screen bg-white dark:bg-black" />; // Static placeholder for initial render
   }
 
   return (
     <main className="min-h-screen flex flex-col md:flex-row bg-white font-sans">
       {/* Left Column - Branding & Atmosphere */}
-      <section className="relative w-full md:w-1/2 bg-[#0a0a0a] flex flex-col justify-center px-10 md:px-16 py-20 text-white overflow-hidden min-h-[400px]">
+      <section className="relative w-full md:w-1/2 bg-zinc-900 dark:bg-[#0a0a0a] flex flex-col justify-center px-10 md:px-16 py-20 text-white overflow-hidden min-h-[400px]">
+        {/* This panel stays dark in both themes by design (brand hero) —
+            only the auth card on the right responds to light/dark. */}
         {/* Decorative Geometric Background */}
         <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
           <div className="absolute top-[-10%] left-[-10%] w-[120%] h-[120%]" style={{ backgroundImage: 'radial-gradient(circle at 20% 30%, #34c4f2 0%, transparent 40%), radial-gradient(circle at 80% 70%, #34c4f2 0%, transparent 30%)', filter: 'blur(80px)' }} />
