@@ -579,11 +579,24 @@ export function isFlowStepJunk(label: string): boolean {
   return false;
 }
 
+/**
+ * Strips the given characters from both ends in a single linear pass. Regex
+ * equivalents like /^x+|x+$/ backtrack super-linearly on long runs of `x`,
+ * which is a ReDoS risk on digest text we do not control.
+ */
+function trimEdgeChars(value: string, chars: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && chars.includes(value[start])) start += 1;
+  while (end > start && chars.includes(value[end - 1])) end -= 1;
+  return value.slice(start, end);
+}
+
 /** Cut flow text at example / use-case boundaries so architecture stays separate. */
 export function truncateFlowAtExampleBoundary(text: string): string {
   const lines = String(text || '').split('\n');
   const cut = lines.findIndex((line) => {
-    const t = line.trim().replace(/^\*+|\*+$/g, '').replace(/^\[|\]$/g, '').trim();
+    const t = trimEdgeChars(line.trim(), '*').replace(/^\[|\]$/g, '').trim();
     return /^(for example|e\.g\.?|example|use case|scenario)\b/i.test(t);
   });
   if (cut <= 0) return String(text || '');
@@ -782,7 +795,9 @@ export function looksLikeDirectoryTreeDiagram(text: string): boolean {
 export function looksLikeBranchedArchitectureDiagram(text: string): boolean {
   const raw = String(text || '');
   if (!raw.trim()) return false;
-  const pathish = (raw.match(/[\w.-]+\//g) || []).length;
+  // Counts the same slashes as /[\w.-]+\//g without that pattern's super-linear
+  // backtracking: every match there ends at one "/" preceded by such a character.
+  const pathish = (raw.match(/[\w.-]\//g) || []).length;
   // Folder maps (even with captions mentioning agents/RAG) stay as directory trees
   if (looksLikeDirectoryTreeDiagram(raw) && pathish >= 2) return false;
 
