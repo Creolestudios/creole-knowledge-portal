@@ -42,7 +42,8 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'activity', label: 'Activity Tracker', icon: <BarChart3 size={18} /> },
   { key: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={18} /> },
   { key: 'roulette', label: 'Blog Roulette', icon: <Sparkles size={18} /> },
-  { key: 'extractor', label: 'AI Extractor', icon: <User size={18} /> },
+  { key: 'extractor', label: 'Interview', icon: <User size={18} /> },
+
 ];
 
 /**
@@ -68,6 +69,7 @@ export default function DashboardShell({
 }) {
   const activeUser = user;
   const activeProfile = profile;
+  const isAdmin = activeProfile?.role === 'admin';
   const [previewTab, setPreviewTab] = useState<TabKey>('daily');
   const [stats, setStats] = useState<WeeklyStats | null>(null);
   const [streak, setStreak] = useState(0);
@@ -166,7 +168,7 @@ export default function DashboardShell({
 
         {/* Vertical tab navigation */}
         <nav aria-label="Dashboard sections" className="space-y-1.5 relative z-10">
-          {TABS.map((tab) => {
+          {TABS.filter((tab) => tab.key !== 'extractor' || isAdmin).map((tab) => {
             const isActive = active === tab.key;
             return (
               <Link

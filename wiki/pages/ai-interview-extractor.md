@@ -1,17 +1,18 @@
 ---
-title: 'AI Interview: Resume & JD Keyword Extractor Module'
-tags: [ai-interview, keywords, resume, jd, assessment, extractor]
+title: 'AI Interview Module'
+tags: [ai-interview, interview, resume, jd, assessment]
 created: 2026-09-11
-updated: 2026-09-11
+updated: 2026-09-15
 ---
 
-# AI Interview: Resume & Job Description Keyword Extractor Module
+# AI Interview Module
 
 > **Status:** Implemented & Verified
 
 ## Overview
 
-The **AI Interview Resume & JD Keyword Extractor Module** allows administrators and technical recruiters to upload or paste a candidate resume alongside a Job Description (JD) to extract technical keywords, compute alignment match percentage, categorize skills (matched vs missing/gaps), and provide AI-generated interview recommendations.
+The **AI Interview Module** allows administrators and technical recruiters to upload or paste a candidate resume alongside a Job Description (JD), analyze candidate-to-JD alignment, and dynamically generate tailored HR interview questions based on meeting duration.
+
 
 ---
 
@@ -27,10 +28,10 @@ The **AI Interview Resume & JD Keyword Extractor Module** allows administrators 
      - **Matched Keywords**: Skills present in both Resume & JD.
      - **Missing / Skill Gaps**: Mandatory JD skills not found in candidate resume.
      - **Resume-Only Strengths**: Bonus skills provided by the candidate.
-3. **Candidate-to-JD Match Score**:
-   - Calculates a 0-100% alignment rating based on keyword coverage and experience level.
-4. **Actionable Recommendations**:
-   - Highlights core candidate strengths and recommended interview focus areas for missing skills.
+4. **Generated HR Interview Questions UI**:
+   - Displays the full list of **10+ generated HR & Behavioral questions** directly on the results dashboard.
+   - Includes duration selector controls (15m, 20m, 30m [Default], 45m, 60m) with dynamic re-generation.
+   - Provides a "Copy All Questions" button formatted with question numbers, intents, and time limits.
 
 ---
 
@@ -40,12 +41,14 @@ The **AI Interview Resume & JD Keyword Extractor Module** allows administrators 
 |---|---|---|
 | **Types** | `lib/ai-interview/types.ts` | TypeScript interfaces for upload payloads, candidate profile, JD requirements, and extraction results. |
 | **Extractor Service** | `lib/ai-interview/extractor.ts` | Google Gemini AI integration (`gemini-2.5-flash` with local fallback matcher). |
+| **Question Generator** | `lib/ai-interview/question-generator.ts` | HR Question generator enforcing min 10 questions and duration scaling. |
 | **Unit Tests** | `lib/ai-interview/extractor.test.ts` | Vitest test suite for keyword extraction and fallback parsing. |
-| **API Route** | `app/api/ai-interview/extract/route.ts` | POST endpoint supporting JSON and `multipart/form-data`. |
-| **API Tests** | `app/api/ai-interview/extract/route.test.ts` | Vitest test suite for API endpoint validation. |
+| **Extract API Route** | `app/api/ai-interview/extract/route.ts` | POST endpoint for Resume & JD extraction. |
+| **Questions API Route** | `app/api/ai-interview/generate-questions/route.ts` | POST endpoint for generating HR interview questions. |
 | **Uploader Component** | `components/ai-interview/resume-jd-uploader.tsx` | Drag-and-drop file upload & text paste UI. |
-| **Results Component** | `components/ai-interview/keyword-results.tsx` | Dashboard displaying match score, categorized keywords, and report export. |
-| **Page View** | `app/dashboard/ai-interview/extractor/page.tsx` | Next.js 15 App Router page view. |
+| **Results Component** | `components/ai-interview/keyword-results.tsx` | Dashboard displaying match score, skill gaps, and generated HR interview questions section. |
+| **Page View** | `app/dashboard/ai-interview/extractor/page.tsx` | Next.js 15 App Router page view (`/dashboard/ai-interview/extractor`). |
+
 
 ---
 

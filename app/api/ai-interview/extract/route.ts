@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { extractKeywordsFromResumeAndJD } from '@/lib/ai-interview/extractor';
 import { ExtractKeywordsInput } from '@/lib/ai-interview/types';
+import { requireAdminUser } from '@/lib/supabase/admin';
 
 export async function POST(req: NextRequest) {
   try {
+    if (!(await requireAdminUser())) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const contentType = req.headers.get('content-type') || '';
     const payload: ExtractKeywordsInput = {};
 

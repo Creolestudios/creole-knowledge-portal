@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+
+vi.mock('@/lib/supabase/admin', () => ({
+  requireAdminUser: vi.fn().mockResolvedValue({ userId: 'admin-1' }),
+}));
+
 import { POST } from './route';
 
 describe('POST /api/ai-interview/extract', () => {

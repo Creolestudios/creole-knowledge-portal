@@ -75,12 +75,27 @@ export async function POST(
       improvementAreas: [],
     };
 
+    let reqBody: any = {};
+    try {
+      reqBody = await req.json();
+    } catch {
+      // Body may be empty on standard POST
+    }
+
+    const durationMinutes = reqBody.duration_minutes || reqBody.durationMinutes || session.duration_minutes;
+    const targetQuestions = reqBody.total_questions || reqBody.totalQuestions;
+
     const questions = await generateInterviewQuestions(
       profile,
       jd,
       analysis,
-      hrQuestions
+      hrQuestions,
+      {
+        durationMinutes: typeof durationMinutes === 'number' ? durationMinutes : undefined,
+        targetQuestions: typeof targetQuestions === 'number' ? targetQuestions : undefined,
+      }
     );
+
 
     // Remove any previously generated questions for this session
     await supabaseAdmin

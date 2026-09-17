@@ -66,6 +66,14 @@ describe('middleware', () => {
     expect(res.status).toBe(200);
   });
 
+  it('redirects an authenticated non-admin away from the AI interview extractor', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
+    mockProfileSingle.mockResolvedValue({ data: { role: 'user' } });
+
+    const res = await middleware(makeRequest('/dashboard/ai-interview/extractor'));
+    expect(res.headers.get('location')).toContain('/dashboard');
+  });
+
   it('redirects an authenticated non-admin away from /admin to /dashboard', async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
     mockProfileSingle.mockResolvedValue({ data: { role: 'user' } });

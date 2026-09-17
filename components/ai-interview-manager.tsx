@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   UploadCloud,
   FileText,
+  Sparkles,
   Loader2,
   AlertCircle,
   CheckCircle2,
@@ -15,6 +16,8 @@ import {
   ClipboardPaste,
 } from 'lucide-react';
 import type { IInterviewSummary, ICreatedInterview } from '@/lib/ai-interview/types';
+import type { ExtractionResult } from '@/lib/ai-interview/types';
+import { KeywordResults } from '@/components/ai-interview/keyword-results';
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
   completed: 'bg-emerald-50 text-emerald-600 border-emerald-100',
@@ -35,6 +38,8 @@ export default function AIInterviewManager() {
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<ICreatedInterview | null>(null);
   const [copied, setCopied] = useState<'link' | 'code' | null>(null);
+  const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
+  const [extracting, setExtracting] = useState(false);
 
   const [interviews, setInterviews] = useState<IInterviewSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -110,6 +115,43 @@ export default function AIInterviewManager() {
       setError('Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleExtract = async () => {
+    setError(null);
+    if (!resume) {
+      setError('Please attach a resume before analyzing.');
+      return;
+    }
+    if (jdMode === 'file' && !jd) {
+      setError('Please attach a job description file before analyzing.');
+      return;
+    }
+    if (jdMode === 'text' && !jdText.trim()) {
+      setError('Please paste the job description text before analyzing.');
+      return;
+    }
+
+    setExtracting(true);
+    try {
+      const form = new FormData();
+      form.append('resumeFile', resume);
+      if (jdMode === 'file' && jd) form.append('jdFile', jd);
+      else form.append('jdText', jdText.trim());
+
+      const res = await fetch('/api/ai-interview/extract', { method: 'POST', body: form });
+      const json = await res.json();
+      if (!res.ok) {
+        setError(json.error ?? 'Failed to analyze resume and job description.');
+        return;
+      }
+      setExtractionResult(json);
+    } catch (err) {
+      console.error('[ai-interview-manager] extraction failed:', err);
+      setError('Something went wrong while analyzing the resume and job description.');
+    } finally {
+      setExtracting(false);
     }
   };
 
@@ -307,6 +349,23 @@ export default function AIInterviewManager() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        <button
+          id="analyze-interview-documents"
+          type="button"
+          onClick={handleExtract}
+          disabled={extracting || submitting}
+          className="w-full border-2 border-dashed border-[#34c4f2]/40 hover:border-[#34c4f2] text-[#1689aa] font-bold py-4 rounded-2xl transition-all flex items-center justify-center space-x-3 disabled:opacity-70 disabled:cursor-not-allowed"
+        >
+          {extracting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
+          <span>{extracting ? 'Analyzing Resume & JD...' : 'Extract Keywords & Analyze Alignment'}</span>
+        </button>
+
+        {extractionResult && (
+          <div className="rounded-2xl bg-slate-950 p-5">
+            <KeywordResults result={extractionResult} onReset={() => setExtractionResult(null)} />
+          </div>
+        )}
 
         <button
           id="create-interview-submit"

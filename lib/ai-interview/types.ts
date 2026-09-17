@@ -127,7 +127,14 @@ export interface InterviewInvite {
 export interface GenerateQuestionsInput {
   session_id: string;
   total_questions?: number;
+  duration_minutes?: number;
   include_hr_questions?: boolean;
+}
+
+export interface QuestionGeneratorOptions {
+  durationMinutes?: number;
+  targetQuestions?: number;
+  minQuestions?: number;
 }
 
 export interface GenerateQuestionsResponse {
