@@ -8,7 +8,7 @@
  * start passing once the linked bug is fixed — they document the desired behavior.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'interview-1' }),
@@ -299,7 +299,9 @@ describe('In-session proctoring (ready stage)', () => {
     fireEvent.click(screen.getByText('Allow & Start Interview'));
     await screen.findByText("You're verified");
 
-    endedHandler?.();
+    act(() => {
+      endedHandler?.();
+    });
 
     expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
     expect(
@@ -328,7 +330,9 @@ describe('In-session proctoring (ready stage)', () => {
     fireEvent.click(screen.getByText('Allow & Start Interview'));
     await screen.findByText("You're verified");
 
-    endedHandler?.();
+    act(() => {
+      endedHandler?.();
+    });
 
     expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
     expect(screen.getByText('Screen sharing was stopped during the interview.')).toBeInTheDocument();

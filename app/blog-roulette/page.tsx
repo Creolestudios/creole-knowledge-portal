@@ -198,10 +198,10 @@ function BlogRouletteListPageContent() {
               const status = STATUS_STYLES[b.status];
               const href = `/blog-roulette/${b.id}/edit`;
               return (
-                <Link
+                <div
                   key={b.id}
-                  href={href}
-                  className="bg-white rounded-[28px] p-8 border border-zinc-100 shadow-card hover:shadow-lg hover:border-brand/30 transition-all group block"
+                  onClick={() => router.push(href)}
+                  className="cursor-pointer bg-white rounded-[28px] p-8 border border-zinc-100 shadow-card hover:shadow-lg hover:border-brand/30 transition-all group block"
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
@@ -276,7 +276,7 @@ function BlogRouletteListPageContent() {
                       )}
                     </div>
                   )}
-                </Link>
+                </div>
               );
             })}
           </div>

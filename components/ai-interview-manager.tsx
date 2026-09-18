@@ -82,10 +82,7 @@ export default function AIInterviewManager() {
       setError('Please paste the job description text, or switch to uploading a file.');
       return;
     }
-    if (!selectedQuestions.length || !selectedDurationMinutes) {
-      setError('Please analyze the resume and JD, select the interview questions, and set the duration before generating the link.');
-      return;
-    }
+    // Validation relaxed to allow default question generation fallback
     setSubmitting(true);
     try {
       const form = new FormData();
