@@ -1,16 +1,23 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Target, CheckCircle2 } from 'lucide-react';
-import { CandidateBaseline } from '@/lib/ai-interview/face-tracking';
 
 interface CalibrationModalProps {
-  onComplete: (baseline: CandidateBaseline) => void;
+  onComplete: () => void;
   calibrationProgress: number; // 0 to 15 samples
 }
 
-export function CalibrationModal({ calibrationProgress }: CalibrationModalProps) {
+export function CalibrationModal({ calibrationProgress, onComplete }: CalibrationModalProps) {
   const progressPct = Math.min(100, Math.round((calibrationProgress / 15) * 100));
   const dotsCompleted = progressPct >= 100;
+
+  // Auto-advance to interview stage once calibration is complete
+  useEffect(() => {
+    if (!dotsCompleted) return;
+    const timer = setTimeout(onComplete, 800); // brief pause so user sees 100%
+    return () => clearTimeout(timer);
+  }, [dotsCompleted, onComplete]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-md px-4">
