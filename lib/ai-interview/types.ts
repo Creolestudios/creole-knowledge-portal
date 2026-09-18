@@ -1,3 +1,14 @@
+export interface EducationRecord {
+  level: 'school' | 'college' | 'postgraduate' | 'other';
+  institution?: string;
+  qualification?: string;
+  fieldOfStudy?: string;
+  percentage?: number;
+  cgpa?: number;
+  grade?: string;
+  passingYear?: number;
+}
+
 export interface CandidateProfile {
   name?: string;
   email?: string;
@@ -6,7 +17,11 @@ export interface CandidateProfile {
   summary?: string;
   extractedSkills: string[];
   domains: string[];
-  education?: string[];
+  education?: EducationRecord[];
+  noticePeriod?: string;
+  currentLocation?: string;
+  availability?: string;
+  workAuthorization?: string;
   projectHighlights?: string[];
 }
 
@@ -135,6 +150,9 @@ export interface QuestionGeneratorOptions {
   durationMinutes?: number;
   targetQuestions?: number;
   minQuestions?: number;
+  categoryCounts?: Record<string, number>;
+  includeMandatoryHr?: boolean;
+  selectedQuestionIds?: string[];
 }
 
 export interface GenerateQuestionsResponse {

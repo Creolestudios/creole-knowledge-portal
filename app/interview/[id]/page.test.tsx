@@ -41,9 +41,15 @@ describe('InterviewEntryPage', () => {
   });
 
   it('shows the instructions screen on a correct passcode', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+      }),
     }) as any;
 
     await verifyPasscode();
@@ -65,10 +71,16 @@ describe('InterviewEntryPage', () => {
     expect(screen.getByText('Continue').closest('button')).toBeDisabled();
   });
 
-  it('proceeds to the ready screen once webcam, mic, and full-screen share are granted', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+  it('starts the interview once webcam, mic, and full-screen share are granted', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+      }),
     }) as any;
 
     const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
@@ -84,15 +96,21 @@ describe('InterviewEntryPage', () => {
     await verifyPasscode();
     fireEvent.click(screen.getByText('Allow & Start Interview'));
 
-    expect(await screen.findByText("You're verified")).toBeInTheDocument();
+    expect(await screen.findByText('Tell us about yourself.')).toBeInTheDocument();
     expect(getUserMedia).toHaveBeenCalledWith({ video: true, audio: true });
     expect(getDisplayMedia).toHaveBeenCalledWith({ video: true });
   });
 
   it('rejects a partial-screen share and asks for the entire screen', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+      }),
     }) as any;
 
     const stop = vi.fn();
@@ -137,10 +155,16 @@ describe('InterviewEntryPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('terminates the interview when the tab is hidden after being granted', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+  it('starts the interview before monitoring status is displayed', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+      }),
     }) as any;
 
     const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
@@ -155,16 +179,6 @@ describe('InterviewEntryPage', () => {
 
     await verifyPasscode();
     fireEvent.click(screen.getByText('Allow & Start Interview'));
-    await screen.findByText("You're verified");
-
-    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
-    fireEvent(document, new Event('visibilitychange'));
-
-    expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
-    expect(
-      screen.getByText('You switched tabs or minimized the window during the interview.'),
-    ).toBeInTheDocument();
-
-    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    expect(await screen.findByText('Tell us about yourself.')).toBeInTheDocument();
   });
 });

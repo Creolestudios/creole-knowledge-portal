@@ -5,7 +5,7 @@ import {
   DEFAULT_MANDATORY_HR_QUESTIONS,
   generateInterviewQuestions,
   calculateQuestionCount,
-  MIN_INTERVIEW_QUESTIONS,
+  QUESTION_BANK,
 } from './question-generator';
 import { CandidateProfile, JDRequirements, KeywordMatchAnalysis } from './types';
 
@@ -34,29 +34,55 @@ describe('question-generator', () => {
     improvementAreas: ['graphql', 'docker'],
   };
 
-  it('calculates question count with a hard floor of 10 questions', () => {
-    expect(calculateQuestionCount()).toBe(10);
-    expect(calculateQuestionCount({ durationMinutes: 15 })).toBe(10); // 15m -> 6 questions, floor to 10
-    expect(calculateQuestionCount({ durationMinutes: 20 })).toBe(10); // 20m -> 8 questions, floor to 10
-    expect(calculateQuestionCount({ durationMinutes: 30 })).toBe(12); // 30m / 2.5 = 12
-    expect(calculateQuestionCount({ durationMinutes: 45 })).toBe(18); // 45m / 2.5 = 18
-    expect(calculateQuestionCount({ targetQuestions: 5 })).toBe(10); // requested 5, enforced to 10
-    expect(calculateQuestionCount({ targetQuestions: 15 })).toBe(15); // requested 15, stays 15
+  it('uses administrator-provided question count or duration', () => {
+    expect(calculateQuestionCount()).toBe(0);
+    expect(calculateQuestionCount({ durationMinutes: 15 })).toBe(6);
+    expect(calculateQuestionCount({ durationMinutes: 20 })).toBe(8);
+    expect(calculateQuestionCount({ durationMinutes: 30 })).toBe(12);
+    expect(calculateQuestionCount({ durationMinutes: 45 })).toBe(18);
+    expect(calculateQuestionCount({ targetQuestions: 5 })).toBe(5);
+    expect(calculateQuestionCount({ targetQuestions: 15 })).toBe(15);
   });
 
-  it('generates at least 10 questions using local fallback', () => {
-    const questions = generateQuestionsLocalFallback(sampleProfile, sampleJd, sampleAnalysis);
-    expect(questions.length).toBeGreaterThanOrEqual(MIN_INTERVIEW_QUESTIONS);
-    expect(questions.length).toBe(10);
-
-    // Check mandatory HR questions are included
-    const hrQuestions = questions.filter((q) => q.is_mandatory_hr);
-    expect(hrQuestions.length).toBe(3);
+  it('generates the administrator-selected count and category allocation', () => {
+    const questions = generateQuestionsLocalFallback(sampleProfile, sampleJd, sampleAnalysis, {
+      targetQuestions: 4,
+      durationMinutes: 20,
+      categoryCounts: {
+        teamwork: 2,
+        culture_fit: 2,
+      },
+      includeMandatoryHr: false,
+    });
+    expect(questions.length).toBe(4);
+    expect(questions.map((question) => question.category)).toEqual([
+      'teamwork',
+      'teamwork',
+      'culture_fit',
+      'culture_fit',
+    ]);
 
     // Check sequential order index
     for (let i = 0; i < questions.length; i++) {
       expect(questions[i].question_order).toBe(i + 1);
     }
+  });
+
+  it('returns the exact questions selected from the question bank', async () => {
+    const selected = QUESTION_BANK.filter((question) =>
+      ['teamwork-1', 'culture_fit-2', 'hr-3'].includes(question.id)
+    );
+    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
+      targetQuestions: selected.length,
+      durationMinutes: 15,
+      selectedQuestionIds: selected.map((question) => question.id),
+      includeMandatoryHr: false,
+    });
+
+    expect(result.map((question) => question.id)).toEqual(selected.map((question) => question.id));
+    expect(result.map((question) => question.question_text)).toEqual(
+      selected.map((question) => question.question_text)
+    );
   });
 
   it('scales generated questions for longer interview durations', () => {
@@ -93,13 +119,17 @@ describe('question-generator', () => {
     expect(assembled[assembled.length - 1].question_order).toBe(assembled.length);
   });
 
-  it('fallback triggers when GEMINI_API_KEY is missing and enforces min 10 questions', async () => {
+  it('fallback triggers when GEMINI_API_KEY is missing and uses administrator count', async () => {
     const prevKey = process.env.GEMINI_API_KEY;
     delete process.env.GEMINI_API_KEY;
 
-    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis);
-    expect(result.length).toBeGreaterThanOrEqual(10);
-    expect(result.some((q) => q.is_mandatory_hr)).toBe(true);
+    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
+      targetQuestions: 8,
+      categoryCounts: { hr: 8 },
+      includeMandatoryHr: false,
+    });
+    expect(result.length).toBe(8);
+    expect(result.every((question) => question.category === 'hr')).toBe(true);
 
     process.env.GEMINI_API_KEY = prevKey;
   });

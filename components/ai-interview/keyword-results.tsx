@@ -16,13 +16,15 @@ import {
 } from 'lucide-react';
 
 import { ExtractionResult } from '@/lib/ai-interview/types';
+import { INTERVIEW_CATEGORIES, QUESTION_BANK } from '@/lib/ai-interview/question-generator';
 
 interface KeywordResultsProps {
   result: ExtractionResult;
   onReset: () => void;
+  onQuestionsGenerated?: (questions: any[], durationMinutes: number) => void;
 }
 
-export function KeywordResults({ result, onReset }: KeywordResultsProps) {
+export function KeywordResults({ result, onReset, onQuestionsGenerated }: KeywordResultsProps) {
   const [copied, setCopied] = useState(false);
   const { candidateProfile, jdRequirements, analysis } = result;
 
@@ -150,6 +152,35 @@ ${analysis.skillGapSummary}
         </div>
       </div>
 
+      {(candidateProfile.education?.length || candidateProfile.noticePeriod || candidateProfile.currentLocation || candidateProfile.availability) && (
+        <div className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-4 h-4 text-amber-400" />
+            <h3 className="text-lg font-semibold text-slate-100">HR Screening Details</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-300">
+            {candidateProfile.education?.map((education, index) => (
+              <div key={`${education.level}-${index}`} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4 space-y-1">
+                <p className="font-semibold uppercase tracking-wider text-slate-400">
+                  {education.qualification || education.level}
+                </p>
+                {education.fieldOfStudy && <p>{education.fieldOfStudy}</p>}
+                {education.institution && <p className="text-slate-400">{education.institution}</p>}
+                <p className="text-emerald-300">
+                  {education.percentage !== undefined && `${education.percentage}%`}
+                  {education.cgpa !== undefined && `CGPA ${education.cgpa}`}
+                  {education.grade && `Grade ${education.grade}`}
+                  {education.passingYear && ` | ${education.passingYear}`}
+                </p>
+              </div>
+            ))}
+            {candidateProfile.noticePeriod && <p><span className="text-slate-500">Notice period:</span> {candidateProfile.noticePeriod}</p>}
+            {candidateProfile.currentLocation && <p><span className="text-slate-500">Location:</span> {candidateProfile.currentLocation}</p>}
+            {candidateProfile.availability && <p><span className="text-slate-500">Availability:</span> {candidateProfile.availability}</p>}
+          </div>
+        </div>
+      )}
+
       {/* KEYWORD TAXONOMY BREAKDOWN */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* MATCHED KEYWORDS */}
@@ -276,20 +307,49 @@ ${analysis.skillGapSummary}
       </div>
 
       {/* GENERATED HR INTERVIEW QUESTIONS SECTION */}
-      <GeneratedQuestionsSection result={result} />
+      <GeneratedQuestionsSection result={result} onQuestionsGenerated={onQuestionsGenerated} />
     </div>
   );
 }
 
-function GeneratedQuestionsSection({ result }: { result: ExtractionResult }) {
-  const [durationMinutes, setDurationMinutes] = useState<number>(30);
+function GeneratedQuestionsSection({
+  result,
+  onQuestionsGenerated,
+}: {
+  result: ExtractionResult;
+  onQuestionsGenerated?: (questions: any[], durationMinutes: number) => void;
+}) {
+  const [durationMinutes, setDurationMinutes] = useState('');
+  const [targetQuestions, setTargetQuestions] = useState('');
+  const [activeCategories, setActiveCategories] = useState<string[]>([]);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [questions, setQuestions] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [copiedQuestions, setCopiedQuestions] = useState<boolean>(false);
+  const [lowMatchConfirmed, setLowMatchConfirmed] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  const durationOptions = [15, 20, 30, 45, 60];
+  const handleGenerateQuestions = useCallback(async () => {
+    const requestedQuestionCount = Number.parseInt(targetQuestions, 10);
+    const requestedDuration = Number.parseInt(durationMinutes, 10);
+    if (!Number.isInteger(requestedQuestionCount) || requestedQuestionCount <= 0) {
+      setValidationError('Enter the total number of questions the candidate should answer.');
+      return;
+    }
+    if (!Number.isInteger(requestedDuration) || requestedDuration <= 0) {
+      setValidationError('Enter the interview duration in minutes.');
+      return;
+    }
+    if (selectedQuestionIds.length !== requestedQuestionCount) {
+      setValidationError(`Select exactly ${requestedQuestionCount} questions from the question bank.`);
+      return;
+    }
+    if (result.analysis.matchPercentage < 70 && !lowMatchConfirmed) {
+      setValidationError('Confirm the low-similarity warning before generating questions.');
+      return;
+    }
 
-  const handleGenerateQuestions = useCallback(async (duration: number) => {
+    setValidationError(null);
     setLoading(true);
     try {
       const res = await fetch('/api/ai-interview/generate-questions', {
@@ -299,28 +359,25 @@ function GeneratedQuestionsSection({ result }: { result: ExtractionResult }) {
           candidateProfile: result.candidateProfile,
           jdRequirements: result.jdRequirements,
           analysis: result.analysis,
-          durationMinutes: duration,
+          durationMinutes: requestedDuration,
+          targetQuestions: requestedQuestionCount,
+          categoryCounts: {},
+          includeMandatoryHr: false,
+          selectedQuestionIds,
         }),
       });
 
       const data = await res.json();
       if (res.ok && Array.isArray(data.questions)) {
         setQuestions(data.questions);
+        onQuestionsGenerated?.(data.questions, requestedDuration);
       }
     } catch (err) {
       console.error('Failed to generate HR questions:', err);
     } finally {
       setLoading(false);
     }
-  }, [result.analysis, result.candidateProfile, result.jdRequirements]);
-
-  React.useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      void handleGenerateQuestions(30);
-    }, 0);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [handleGenerateQuestions]);
+  }, [durationMinutes, lowMatchConfirmed, onQuestionsGenerated, result.analysis, result.candidateProfile, result.jdRequirements, selectedQuestionIds, targetQuestions]);
 
   const handleCopyQuestionsText = () => {
     if (!questions.length) return;
@@ -347,7 +404,7 @@ function GeneratedQuestionsSection({ result }: { result: ExtractionResult }) {
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
               AI HR Question Generator
             </span>
-            <span className="text-xs text-slate-400">Min 10 Questions Floor Enforced</span>
+            <span className="text-xs text-slate-400">Admin-selected question bank</span>
           </div>
           <h3 className="text-xl font-bold text-slate-100 mt-2">
             Generated HR Interview Questions ({questions.length})
@@ -368,42 +425,129 @@ function GeneratedQuestionsSection({ result }: { result: ExtractionResult }) {
         </div>
       </div>
 
-      {/* DURATION MINUTES SELECTOR BAR */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-slate-950/60 rounded-xl border border-slate-800/80">
+      <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800/80 space-y-4">
         <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
           <BookOpen className="w-4 h-4 text-indigo-400" />
-          <span>Select Interview Duration (Meeting Minutes):</span>
+          <span>Configure Candidate Interview</span>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {durationOptions.map((mins) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <label className="text-xs text-slate-400">
+            Total questions
+            <input
+              id="interview-question-count"
+              type="number"
+              min="1"
+              value={targetQuestions}
+              onChange={(event) => setTargetQuestions(event.target.value)}
+              placeholder="Admin decides"
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+            />
+          </label>
+          <label className="text-xs text-slate-400">
+            Duration (minutes)
+            <input
+              id="interview-duration-minutes"
+              type="number"
+              min="1"
+              value={durationMinutes}
+              onChange={(event) => setDurationMinutes(event.target.value)}
+              placeholder="Admin decides"
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+            />
+          </label>
+        </div>
+
+        <div>
+          <p className="text-xs text-slate-400 mb-2">
+            Select categories, then choose the exact questions to ask ({selectedQuestionIds.length} selected)
+          </p>
+          <div className="space-y-3">
+            {INTERVIEW_CATEGORIES.map((category) => {
+              const categoryQuestions = QUESTION_BANK.filter((question) => question.category === category);
+              const categoryIsActive = activeCategories.includes(category);
+              return (
+                <div key={category} className="rounded-lg border border-slate-800 bg-slate-900/60">
+                  <label className="flex cursor-pointer items-center gap-2 p-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
+                    <input
+                      id={`category-select-${category}`}
+                      type="checkbox"
+                      checked={categoryIsActive}
+                      onChange={(event) => {
+                        setActiveCategories((current) => event.target.checked
+                          ? [...current, category]
+                          : current.filter((item) => item !== category));
+                      }}
+                      className="h-4 w-4 accent-indigo-500"
+                    />
+                    {category.replace(/_/g, ' ')}
+                    <span className="ml-auto text-[11px] font-normal normal-case text-slate-500">
+                      {categoryQuestions.length} available
+                    </span>
+                  </label>
+                  {categoryIsActive && (
+                    <div className="space-y-2 border-t border-slate-800 p-3">
+                      {categoryQuestions.map((question) => (
+                        <label key={question.id} className="flex cursor-pointer gap-3 rounded-md border border-slate-800 p-3 text-xs text-slate-300 hover:border-indigo-500/50">
+                          <input
+                            id={`question-select-${question.id}`}
+                            type="checkbox"
+                            checked={selectedQuestionIds.includes(question.id)}
+                            onChange={(event) => {
+                              setSelectedQuestionIds((current) => event.target.checked
+                                ? [...current, question.id]
+                                : current.filter((item) => item !== question.id));
+                            }}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-500"
+                          />
+                          <span>{question.question_text}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {result.analysis.matchPercentage < 70 && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+            <p>
+              Resume and JD similarity is {result.analysis.matchPercentage}%, below the recommended 70%.
+              Do you want to continue?
+            </p>
             <button
-              key={mins}
+              id="confirm-low-similarity"
               type="button"
-              onClick={() => {
-                setDurationMinutes(mins);
-                handleGenerateQuestions(mins);
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                durationMinutes === mins
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 border border-indigo-500'
-                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
-              }`}
+              onClick={() => setLowMatchConfirmed(true)}
+              className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950"
             >
-              {mins} mins {mins === 30 ? '(Default)' : ''}
+              Yes, continue
             </button>
-          ))}
-        </div>
+          </div>
+        )}
+
+        {validationError && <p className="text-xs text-rose-400">{validationError}</p>}
+        <button
+          id="generate-candidate-questions"
+          type="button"
+          onClick={() => void handleGenerateQuestions()}
+          disabled={loading || (result.analysis.matchPercentage < 70 && !lowMatchConfirmed)}
+          className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loading ? 'Generating questions...' : 'Generate candidate questions'}
+        </button>
       </div>
 
       {/* QUESTIONS CARDS LIST */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-12 space-y-3">
           <div className="w-8 h-8 border-3 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
-          <p className="text-xs text-slate-400">Generating HR & Behavioral Interview Questions for {durationMinutes} mins...</p>
+          <p className="text-xs text-slate-400">Generating questions for this candidate...</p>
         </div>
       ) : questions.length === 0 ? (
         <div className="text-center py-8">
-          <p className="text-xs text-slate-500">No questions generated yet. Click generate above.</p>
+          <p className="text-xs text-slate-500">Set the question count, duration, and category allocation, then generate.</p>
         </div>
       ) : (
         <div className="space-y-3">

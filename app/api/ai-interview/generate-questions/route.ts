@@ -17,7 +17,16 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { candidateProfile, jdRequirements, analysis, durationMinutes } = body;
+    const {
+      candidateProfile,
+      jdRequirements,
+      analysis,
+      durationMinutes,
+      targetQuestions,
+      categoryCounts,
+      includeMandatoryHr,
+      selectedQuestionIds,
+    } = body;
 
     const profile: CandidateProfile = candidateProfile || {
       extractedSkills: [],
@@ -38,21 +47,32 @@ export async function POST(req: NextRequest) {
       improvementAreas: [],
     };
 
-    const duration = typeof durationMinutes === 'number' && durationMinutes > 0 ? durationMinutes : 30;
+    if (typeof durationMinutes !== 'number' || durationMinutes <= 0) {
+      return NextResponse.json({ error: 'Interview duration is required.' }, { status: 400 });
+    }
+    if (typeof targetQuestions !== 'number' || targetQuestions <= 0) {
+      return NextResponse.json({ error: 'Question count is required.' }, { status: 400 });
+    }
 
     const questions = await generateInterviewQuestions(
       profile,
       jd,
       matchAnalysis,
       DEFAULT_MANDATORY_HR_QUESTIONS,
-      { durationMinutes: duration }
+      {
+        durationMinutes,
+        targetQuestions,
+        categoryCounts: categoryCounts && typeof categoryCounts === 'object' ? categoryCounts : undefined,
+        includeMandatoryHr: includeMandatoryHr === true,
+        selectedQuestionIds: Array.isArray(selectedQuestionIds) ? selectedQuestionIds : undefined,
+      }
     );
 
     return NextResponse.json(
       {
         questions,
         totalCount: questions.length,
-        durationMinutes: duration,
+        durationMinutes,
         generatedAt: new Date().toISOString(),
       },
       { status: 200 }

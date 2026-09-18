@@ -34,7 +34,6 @@ export async function POST(req: Request) {
   const candidateName = (form.get('candidateName') as string | null)?.trim() || null;
   const candidateEmail = (form.get('candidateEmail') as string | null)?.trim() || null;
   const jobTitle = (form.get('jobTitle') as string | null)?.trim() || null;
-
   const resumeError = validateFile(resume, 'Resume');
   if (resumeError) return resumeError;
 

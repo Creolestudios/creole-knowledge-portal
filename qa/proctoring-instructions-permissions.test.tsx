@@ -20,9 +20,21 @@ const originalFetch = global.fetch;
 const originalMediaDevices = global.navigator.mediaDevices;
 
 function verifiedFetchMock() {
-  return vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+  return vi.fn().mockImplementation((url: string) => {
+    if (typeof url === 'string' && url.includes('/questions')) {
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+          }),
+      });
+    }
+    return Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    });
   }) as any;
 }
 

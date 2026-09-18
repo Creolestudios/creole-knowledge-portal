@@ -54,6 +54,29 @@ export function extractKeywordsLocalFallback(
   };
 }
 
+function normalizeMatchPercentage(
+  rawScore: unknown,
+  matchedKeywords: string[],
+  missingKeywords: string[]
+): number {
+  const parsedScore = typeof rawScore === 'number'
+    ? rawScore
+    : Number.parseFloat(String(rawScore).replace('%', '').trim());
+
+  if (Number.isFinite(parsedScore) && parsedScore > 0) {
+    return Math.max(0, Math.min(100, parsedScore));
+  }
+
+  if (matchedKeywords.length > 0 && missingKeywords.length === 0) {
+    return 100;
+  }
+
+  const totalKeywords = matchedKeywords.length + missingKeywords.length;
+  return totalKeywords > 0
+    ? Math.round((matchedKeywords.length / totalKeywords) * 100)
+    : 0;
+}
+
 /**
  * Extracts keywords, candidate profile, JD requirements, and match analysis using Gemini AI.
  */
@@ -88,6 +111,7 @@ CRITICAL INSTRUCTIONS:
 2. Calculate an accurate matchPercentage (0 to 100) based on how well candidate experience & keywords cover the JD requirements.
 3. Identify matchedKeywords, missingKeywords (JD requirements missing from Resume), and resumeOnlyKeywords.
 4. Provide a clear skillGapSummary, candidate keyStrengths, and improvementAreas.
+5. Extract HR screening details when explicitly present in the resume. Include school results such as 10th/SSC and 12th/HSC percentage, CGPA, grade, and passing year. Never infer or calculate an academic result that is not stated.
 
 Output format requirement:
 Respond ONLY with valid JSON conforming strictly to this structure without markdown wraps:
@@ -99,6 +123,22 @@ Respond ONLY with valid JSON conforming strictly to this structure without markd
     "summary": "short profile summary",
     "extractedSkills": ["string"],
     "domains": ["string"],
+    "education": [
+      {
+        "level": "school | college | postgraduate | other",
+        "institution": "string or null",
+        "qualification": "string or null (for example: 10th, 12th, SSC, HSC)",
+        "fieldOfStudy": "string or null",
+        "percentage": "number or null",
+        "cgpa": "number or null",
+        "grade": "string or null",
+        "passingYear": "number or null"
+      }
+    ],
+    "noticePeriod": "string or null",
+    "currentLocation": "string or null",
+    "availability": "string or null",
+    "workAuthorization": "string or null",
     "projectHighlights": ["string"]
   },
   "jdRequirements": {
@@ -182,6 +222,24 @@ ${jdText || '(See attached JD file)'}
             domains: Array.isArray(parsed.candidateProfile?.domains)
               ? parsed.candidateProfile.domains
               : [],
+            education: Array.isArray(parsed.candidateProfile?.education)
+              ? parsed.candidateProfile.education.map((record: Record<string, unknown>) => ({
+                  level: ['school', 'college', 'postgraduate', 'other'].includes(String(record.level))
+                    ? record.level as 'school' | 'college' | 'postgraduate' | 'other'
+                    : 'other',
+                  institution: typeof record.institution === 'string' ? record.institution : undefined,
+                  qualification: typeof record.qualification === 'string' ? record.qualification : undefined,
+                  fieldOfStudy: typeof record.fieldOfStudy === 'string' ? record.fieldOfStudy : undefined,
+                  percentage: typeof record.percentage === 'number' ? record.percentage : undefined,
+                  cgpa: typeof record.cgpa === 'number' ? record.cgpa : undefined,
+                  grade: typeof record.grade === 'string' ? record.grade : undefined,
+                  passingYear: typeof record.passingYear === 'number' ? record.passingYear : undefined,
+                }))
+              : [],
+            noticePeriod: parsed.candidateProfile?.noticePeriod || undefined,
+            currentLocation: parsed.candidateProfile?.currentLocation || undefined,
+            availability: parsed.candidateProfile?.availability || undefined,
+            workAuthorization: parsed.candidateProfile?.workAuthorization || undefined,
             projectHighlights: Array.isArray(parsed.candidateProfile?.projectHighlights)
               ? parsed.candidateProfile.projectHighlights
               : [],
@@ -201,9 +259,10 @@ ${jdText || '(See attached JD file)'}
               : [],
           },
           analysis: {
-            matchPercentage: Math.max(
-              0,
-              Math.min(100, Number(parsed.analysis?.matchPercentage) || 0)
+            matchPercentage: normalizeMatchPercentage(
+              parsed.analysis?.matchPercentage,
+              Array.isArray(parsed.analysis?.matchedKeywords) ? parsed.analysis.matchedKeywords : [],
+              Array.isArray(parsed.analysis?.missingKeywords) ? parsed.analysis.missingKeywords : []
             ),
             matchedKeywords: Array.isArray(parsed.analysis?.matchedKeywords)
               ? parsed.analysis.matchedKeywords

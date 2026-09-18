@@ -243,44 +243,37 @@ The existing helper module `lib/quizzes/proctor.ts` already implements entire-sc
 
 ### 10.1 Architecture
 
-Three vision models running at full frame rate would make the interface stutter. They therefore execute inside a Web Worker using `OffscreenCanvas`, at deliberately staggered inference rates, with GPU acceleration enabled.
+Three vision models run off the main thread inside a Web Worker using `OffscreenCanvas` downscaling ($320\times 240$) to minimize candidate CPU and GPU load:
 
 ```mermaid
 flowchart LR
   cam[Webcam Stream] --> worker[Detection Web Worker]
-  worker --> face["FaceLandmarker at 10 fps"]
-  worker --> hand["HandLandmarker at 5 fps"]
-  worker --> obj["ObjectDetector at 1.5 fps"]
-  mic[Microphone Stream] --> audio["AnalyserNode and Silero VAD"]
-  face --> rules[Rule Engine with Debounce]
-  hand --> rules
-  obj --> rules
-  audio --> rules
-  rules -->|violation| api["Event API"]
-  api --> counter[Server Warning Counter]
-  counter -->|"three warnings"| terminate[Automatic Termination]
+  worker --> face["FaceLandmarker (numFaces: 2) at ~8 fps"]
+  worker --> canvas["OffscreenCanvas 320x240 Downscaling"]
+  face --> calib["3-Second Dot Calibration Baseline"]
+  calib --> tracker["ProctoringTimeTracker Engine"]
+  tracker -->|Time-Window & 20s Debounce| events["interview_events DB & Realtime"]
+  events --> counter[Server Warning Counter]
+  counter -->|"3 warnings"| terminate[Automatic Termination]
+  tracker --> snapshots["JPEG Evidence Upload to Storage"]
 ```
 
 ### 10.2 Detection rules
 
 | Signal | Model and method | Trigger condition |
 |---|---|---|
-| Eye movement | FaceLandmarker, iris position within the eye socket combined with head yaw and pitch | Looking away from the screen continuously for two seconds |
-| Facial expression | FaceLandmarker blendshapes, monitoring jaw opening, brow lowering, eye squinting and mouth pressing | Sustained anomalous pattern; also contributes to the confidence assessment |
-| Hand movement | HandLandmarker, twenty-one landmarks per hand | Hands entering the face or mouth region, or repeatedly leaving the frame |
-| Prohibited objects | ObjectDetector with EfficientDet-Lite0, COCO classes | A mobile phone, book or laptop detected above fifty percent confidence across three consecutive inferences |
-| Multiple faces | FaceLandmarker configured for up to three faces | Two or more faces present for one second |
-| Absent candidate | FaceLandmarker | No face detected for three seconds |
+| Head turned away (`gaze_away`) | FaceLandmarker 4x4 matrix vs calibrated baseline | $|\Delta \text{yaw}| > 25^\circ$ OR $|\Delta \text{pitch}| > 20^\circ$ sustained for $> 2\text{s}$ |
+| Fine iris gaze ratio | 478 landmarks (iris 468/473 vs eye corners 33/133 & 263/362) | Normalized iris center offset $> 0.35$ relative to calibrated baseline |
+| Reading suspected (`reading_suspected`) | Frontal head pose + `eyeLookDown`/`eyeLookOut` blendshapes | Sustained downward/sideways eye glance $> 2\text{s}$ while head is straight |
+| Facial expression | FaceLandmarker blendshapes (`mouthSmile`, `browDown`, `mouthPress`) | Rolling average for communication/stress confidence scoring |
+| Multiple faces (`multi_face`) | FaceLandmarker configured for `numFaces: 2` | $\ge 2$ faces detected continuously for $> 2\text{s}$ |
+| Absent candidate (`no_face`) | FaceLandmarker | No face detected continuously for $> 3\text{s}$ |
 
-Every rule is debounced. A momentary glance away or a single ambiguous frame never raises a warning.
+Every rule is debounced ($20\text{s}$ per category) and requires continuous time-window validation.
 
-### 10.3 Server authority
+### 10.3 Evidence & Realtime Monitoring
 
-The warning counter is held on the server, not in the browser. Each violation event returns the authoritative count and termination state, so tampering with client-side code cannot suppress warnings or avoid termination.
-
-### 10.4 Evidence capture
-
-Each violation optionally stores a single small JPEG frame from the webcam in a private bucket. This allows the administrator to verify a flagged incident rather than relying on the classifier alone.
+Each violation generates a JPEG evidence frame uploaded to Supabase Storage (`interview-snapshots/`) and publishes a Realtime event to the HR live monitoring channel.
 
 ---
 

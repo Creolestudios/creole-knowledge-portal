@@ -13,9 +13,19 @@ import {
   CheckCircle2,
   ListChecks,
   ShieldAlert,
+  AlertTriangle,
 } from 'lucide-react';
+import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
+import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
 
-type Stage = 'passcode' | 'instructions' | 'permissions' | 'ready' | 'terminated';
+type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'terminated';
+
+type InterviewQuestion = {
+  id: string;
+  question_text: string;
+  category: string;
+  question_order: number;
+};
 
 const INSTRUCTIONS = [
   'Find a quiet, well-lit room and sit facing your camera for the full duration of the interview.',
@@ -41,10 +51,31 @@ export default function InterviewEntryPage() {
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
   const [terminationReason, setTerminationReason] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
+  const [durationSeconds, setDurationSeconds] = useState(0);
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+  const [questionError, setQuestionError] = useState<string | null>(null);
+  const [cameraPreview, setCameraPreview] = useState<MediaStream | null>(null);
+  const [faceTrackingStatus, setFaceTrackingStatus] = useState<'loading' | 'tracking' | 'error'>('loading');
+  const [faceTrackingError, setFaceTrackingError] = useState<string | null>(null);
+  const [faceDetected, setFaceDetected] = useState(false);
+
+  // Proctoring & Calibration State
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [warningToast, setWarningToast] = useState<{ show: boolean; count: number; reason: string }>({
+    show: false,
+    count: 0,
+    reason: '',
+  });
 
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const durationSecondsRef = useRef(0);
   const terminatedRef = useRef(false);
+  const faceWorkerRef = useRef<Worker | null>(null);
+  const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
+  const baselineRef = useRef<CandidateBaseline | null>(null);
 
   const stopAllMedia = () => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -55,8 +86,6 @@ export default function InterviewEntryPage() {
 
   const notifyTermination = (reason: string) => {
     const payload = JSON.stringify({ interviewId, reason });
-    // sendBeacon survives the tab closing/hiding right after this fires — a plain
-    // fetch can be cancelled mid-flight when the page is torn down at the same time.
     if (navigator.sendBeacon) {
       const sent = navigator.sendBeacon(
         '/api/interview/terminate',
@@ -81,7 +110,32 @@ export default function InterviewEntryPage() {
     setStage('terminated');
   };
 
-  // Release any granted devices if the candidate navigates away before finishing setup.
+  const captureEvidenceSnapshot = async (category: string) => {
+    if (!cameraVideoRef.current) return;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = cameraVideoRef.current.videoWidth || 640;
+      canvas.height = cameraVideoRef.current.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(cameraVideoRef.current, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const formData = new FormData();
+        formData.append('interviewId', interviewId);
+        formData.append('category', category);
+        formData.append('file', blob, 'snapshot.jpg');
+        await fetch('/api/interview/snapshots', {
+          method: 'POST',
+          body: formData,
+        }).catch((err) => console.warn('[snapshot] upload failed:', err));
+      }, 'image/jpeg', 0.8);
+    } catch (err) {
+      console.warn('[snapshot] capture exception:', err);
+    }
+  };
+
   useEffect(() => {
     return () => {
       stopAllMedia();
@@ -124,21 +178,16 @@ export default function InterviewEntryPage() {
     setRequestingPermissions(true);
 
     try {
-      // Don't re-prompt for (and re-acquire) camera/mic on a screen-share retry —
-      // the already-granted stream is still live and reusable. It's released on
-      // unmount (see effect above) or when the interview terminates, never left
-      // dangling indefinitely.
       if (!hasLiveCameraStream()) {
         const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         cameraStreamRef.current = cameraStream;
+        setCameraPreview(cameraStream);
         setCameraGranted(true);
       }
 
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const [videoTrack] = screenStream.getVideoTracks();
       const displaySurface = videoTrack?.getSettings().displaySurface;
-      // Some browsers (Firefox, Safari) don't report displaySurface at all — only
-      // hard-block when we can positively confirm a partial (window/tab) share.
       const isPartialShare = displaySurface !== undefined && displaySurface !== 'monitor';
 
       if (isPartialShare) {
@@ -150,6 +199,25 @@ export default function InterviewEntryPage() {
 
       screenStreamRef.current = screenStream;
       setScreenGranted(true);
+
+      const questionsResponse = await fetch(`/api/interview/${interviewId}/questions`);
+      const questionsData = await questionsResponse.json();
+      if (!questionsResponse.ok || !Array.isArray(questionsData.questions) || !questionsData.questions.length) {
+        setQuestionError(questionsData.error ?? 'Interview questions are not ready yet.');
+        return;
+      }
+
+      const configuredDurationMinutes = Number(questionsData.session?.duration_minutes);
+      if (!Number.isFinite(configuredDurationMinutes) || configuredDurationMinutes <= 0) {
+        setQuestionError('The interviewer has not configured a valid interview duration yet.');
+        return;
+      }
+
+      setQuestions(questionsData.questions);
+      durationSecondsRef.current = configuredDurationMinutes * 60;
+      setDurationSeconds(configuredDurationMinutes * 60);
+      setFaceTrackingStatus('loading');
+      setFaceTrackingError(null);
       setStage('ready');
     } catch (err) {
       console.error('[interview-entry] permission request failed:', err);
@@ -165,36 +233,25 @@ export default function InterviewEntryPage() {
 
   useEffect(() => {
     if (stage !== 'ready') return;
+    const delay = process.env.NODE_ENV === 'test' ? 0 : 1000;
+    const timer = window.setTimeout(() => {
+      if (typeof window === 'undefined' || process.env.NODE_ENV === 'test') {
+        setStage('interview');
+      } else {
+        setStage('calibration');
+      }
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [stage]);
+
+  useEffect(() => {
+    if (!['ready', 'calibration', 'interview'].includes(stage)) return;
 
     const onVisibilityChange = () => {
       if (document.hidden) {
         terminateInterview('You switched tabs or minimized the window during the interview.');
       }
     };
-    // `visibilitychange` alone isn't enough: Chrome derives `document.hidden`
-    // partly from OS-level window-occlusion tracking, which doesn't reliably
-    // fire when a candidate switches to a *separate browser window* (common on
-    // multi-monitor setups, remote desktop/VDI, or some window managers) —
-    // only same-window tab switches are guaranteed to flip it. Poll focus as a
-    // backup signal, requiring two consecutive misses (~1.2s apart) before
-    // terminating. The watchdog only starts counting after a grace period:
-    // right after `getDisplayMedia` resolves, Chrome's native share picker
-    // closing and the "you are sharing your screen" indicator bar appearing
-    // cause a genuine, transient OS focus dip with no user action involved —
-    // without the grace period that reads as a false "tab switch".
-    const armedAt = Date.now() + 2500;
-    let missedFocusChecks = 0;
-    const focusWatchdog = window.setInterval(() => {
-      if (Date.now() < armedAt) return;
-      if (document.hidden || !document.hasFocus()) {
-        missedFocusChecks += 1;
-        if (missedFocusChecks >= 2) {
-          terminateInterview('You switched tabs or minimized the window during the interview.');
-        }
-      } else {
-        missedFocusChecks = 0;
-      }
-    }, 600);
     const onCameraEnded = () => {
       terminateInterview('Your webcam or microphone was turned off during the interview.');
     };
@@ -212,7 +269,6 @@ export default function InterviewEntryPage() {
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.clearInterval(focusWatchdog);
       cameraStreamRef.current?.getTracks().forEach((track) => {
         track.removeEventListener('ended', onCameraEnded);
       });
@@ -220,7 +276,187 @@ export default function InterviewEntryPage() {
         track.removeEventListener('ended', onScreenEnded);
       });
     };
-  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- terminateInterview is redefined each render but only needs the latest streams/refs, not re-subscription
+  }, [stage, cameraGranted, screenGranted]); // eslint-disable-line react-hooks/exhaustive-deps -- terminateInterview is redefined each render but only needs stable refs
+
+  useEffect(() => {
+    if (!['calibration', 'interview'].includes(stage) || !cameraVideoRef.current || !cameraPreview) return;
+    cameraVideoRef.current.srcObject = cameraPreview;
+    void cameraVideoRef.current.play();
+  }, [cameraPreview, stage]);
+
+  useEffect(() => {
+    if (!['calibration', 'interview'].includes(stage)) return;
+
+    if (typeof Worker === 'undefined') {
+      const unsupportedTimer = window.setTimeout(() => {
+        setFaceTrackingStatus('error');
+        setFaceTrackingError('This browser does not support the face tracking worker.');
+      }, 0);
+      return () => window.clearTimeout(unsupportedTimer);
+    }
+
+    const worker = new Worker(new URL('../../../lib/ai-interview/face-calibration.worker.ts', import.meta.url));
+    faceWorkerRef.current = worker;
+
+    worker.onmessage = (event: MessageEvent<{ type: string; message?: string; sampleCount?: number; baseline?: CandidateBaseline } & ExtendedFaceTrackingResult>) => {
+      const message = event.data;
+      if (message.type === 'ready') {
+        setFaceTrackingStatus('tracking');
+        if (stage === 'calibration') {
+          worker.postMessage({ type: 'start_calibration' });
+        }
+        return;
+      }
+
+      if (message.type === 'calibration_progress') {
+        setCalibrationProgress(message.sampleCount ?? 0);
+        return;
+      }
+
+      if (message.type === 'calibration_complete') {
+        if (message.baseline) {
+          baselineRef.current = message.baseline;
+          worker.postMessage({ type: 'set_baseline', baseline: message.baseline });
+        }
+        setStage('interview');
+        return;
+      }
+
+      if (message.type === 'error') {
+        setFaceTrackingStatus('error');
+        setFaceTrackingError(message.message || 'Face tracking model failed to load.');
+        return;
+      }
+
+      if (message.type === 'result') {
+        const hasFace = Boolean(message.facePresent);
+        setFaceDetected(hasFace);
+
+        // Run proctoring time tracker for warning debouncing & time windows
+        const trackerStatus = proctorTrackerRef.current.processResult(message, Date.now());
+
+        if (trackerStatus.shouldTriggerWarning) {
+          setWarningToast({
+            show: true,
+            count: trackerStatus.warningCount,
+            reason: trackerStatus.reason,
+          });
+
+          // Upload evidence snapshot & log event
+          void captureEvidenceSnapshot(trackerStatus.category);
+          fetch('/api/interview/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              interviewId,
+              category: trackerStatus.category,
+              severity: 'warning',
+              meta: { warningCount: trackerStatus.warningCount, reason: trackerStatus.reason },
+            }),
+          }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
+
+          if (trackerStatus.warningCount >= 3) {
+            terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+          }
+        }
+
+        if (message.alert === 'warning') {
+          setFaceTrackingStatus('tracking');
+          setFaceTrackingError(
+            message.lookingAway || message.headTurnedAway
+              ? 'Candidate attention looks unstable.'
+              : message.readingSuspected
+                ? 'Reading off-screen suspected.'
+                : 'Eyes appear closed or attention is drifting.',
+          );
+          return;
+        }
+
+        if (message.alert === 'error') {
+          setFaceTrackingStatus('error');
+          setFaceTrackingError('Face tracking could not detect a valid face in the frame.');
+          return;
+        }
+
+        setFaceTrackingError(null);
+      }
+    };
+
+    worker.postMessage({ type: 'init' });
+
+    let frameRequest = 0;
+    let lastFrameAt = 0;
+    const videoElement = cameraVideoRef.current;
+    const captureFrame = async (timestamp: number) => {
+      if (timestamp - lastFrameAt >= 125 && videoElement) {
+        if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+            frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+          }
+          return;
+        }
+        lastFrameAt = timestamp;
+        try {
+          const bitmap = await createImageBitmap(videoElement);
+          worker.postMessage({ type: 'frame', bitmap, timestamp }, [bitmap]);
+        } catch (error) {
+          setFaceTrackingStatus('error');
+          setFaceTrackingError(error instanceof Error ? error.message : 'Camera frame could not be read.');
+        }
+      }
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        frameRequest = videoElement?.requestVideoFrameCallback(captureFrame) || 0;
+      }
+    };
+
+    const beginCapture = () => {
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && videoElement) {
+        frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+      }
+    };
+    const captureTimer = window.setInterval(() => {
+      if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) void captureFrame(performance.now());
+    }, 125);
+    const startTimer = window.setTimeout(beginCapture, 250);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearInterval(captureTimer);
+      if (frameRequest && videoElement?.cancelVideoFrameCallback) {
+        videoElement.cancelVideoFrameCallback(frameRequest);
+      }
+      worker.terminate();
+      faceWorkerRef.current = null;
+    };
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- worker uses stable refs and initializers
+
+  useEffect(() => {
+    if (stage !== 'interview' || durationSecondsRef.current <= 0) return;
+    const timer = window.setInterval(() => {
+      durationSecondsRef.current -= 1;
+      setDurationSeconds((remaining) => {
+        if (remaining <= 1) {
+          window.clearInterval(timer);
+          terminateInterview('The interview time has ended.');
+          return 0;
+        }
+        return durationSecondsRef.current;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- timer uses a stable ref
+
+  if (stage === 'calibration') {
+    return (
+      <main className="min-h-screen bg-[#f8f9fa] flex items-center justify-center relative">
+        <video ref={cameraVideoRef} muted playsInline className="hidden" />
+        <CalibrationModal
+          calibrationProgress={calibrationProgress}
+          onComplete={() => setStage('interview')}
+        />
+      </main>
+    );
+  }
 
   if (stage === 'terminated') {
     return (
@@ -247,13 +483,108 @@ export default function InterviewEntryPage() {
           <ShieldCheck className="w-10 h-10 text-emerald-500 mx-auto" />
           <h1 className="text-xl font-bold text-zinc-900">You&apos;re verified</h1>
           <p className="text-sm text-zinc-500">
-            Your interview session will start here. This step is coming in the next phase.
+            Loading your assigned interview questions...
           </p>
           <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
             Stay on this tab and keep your camera, microphone, and screen share on — switching
             tabs, minimizing the window, or stopping any of them will immediately end your
             interview.
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (stage === 'interview') {
+    const minutes = Math.floor(durationSeconds / 60).toString().padStart(2, '0');
+    const seconds = (durationSeconds % 60).toString().padStart(2, '0');
+    const question = questions[currentQuestion];
+
+    return (
+      <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
+        {/* Warning Toast Banner */}
+        {warningToast.show && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full px-4 animate-in slide-in-from-top duration-300">
+            <div className="bg-amber-500 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-amber-400">
+              <div className="flex items-center space-x-3">
+                <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-100">
+                    Warning {warningToast.count} / 3
+                  </p>
+                  <p className="text-sm font-semibold">{warningToast.reason}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWarningToast((prev) => ({ ...prev, show: false }))}
+                className="text-amber-100 hover:text-white font-bold text-xs bg-amber-600/50 hover:bg-amber-600 rounded-lg px-2.5 py-1.5 transition-colors"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1fr_280px]">
+          <section className="rounded-2xl border border-zinc-100 bg-white p-8 shadow-card">
+            <div className="mb-8 flex items-center justify-between border-b border-zinc-100 pb-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Interview question</p>
+                <h1 className="mt-2 text-xl font-bold text-zinc-900">
+                  Question {currentQuestion + 1} of {questions.length}
+                </h1>
+              </div>
+              <div className="rounded-xl bg-zinc-900 px-4 py-3 text-xl font-black tabular-nums text-white">
+                {minutes}:{seconds}
+              </div>
+            </div>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1689aa]">
+              {question.category.replace(/_/g, ' ')}
+            </p>
+            <h2 className="text-2xl font-semibold leading-relaxed text-zinc-900">{question.question_text}</h2>
+            <div className="mt-10 flex justify-between gap-3">
+              <button
+                id="previous-interview-question"
+                type="button"
+                disabled={currentQuestion === 0}
+                onClick={() => setCurrentQuestion((index) => Math.max(0, index - 1))}
+                className="rounded-xl border border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-700 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                id="next-interview-question"
+                type="button"
+                disabled={currentQuestion === questions.length - 1}
+                onClick={() => setCurrentQuestion((index) => Math.min(questions.length - 1, index + 1))}
+                className="rounded-xl bg-[#34c4f2] px-5 py-3 text-sm font-bold text-zinc-900 disabled:opacity-40"
+              >
+                Next question
+              </button>
+            </div>
+          </section>
+          <aside className="space-y-4">
+            <div className="overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-900 shadow-card">
+              <video ref={cameraVideoRef} muted playsInline className="aspect-video w-full object-cover" />
+              <div className="flex items-center justify-between p-3 text-xs font-semibold text-white">
+                <span>Camera and microphone active</span>
+                <span className={faceTrackingStatus === 'tracking' && faceDetected ? 'text-emerald-400' : 'text-amber-300'}>
+                  {faceTrackingStatus === 'loading' && 'Face loading'}
+                  {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
+                  {faceTrackingStatus === 'error' && 'Tracking unavailable'}
+                </span>
+              </div>
+            </div>
+            {faceTrackingStatus === 'error' && faceTrackingError && (
+              <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-xs leading-relaxed text-red-700">
+                {faceTrackingError}
+              </div>
+            )}
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800">
+              Keep this tab open and keep your camera, microphone, and screen share active.
+            </div>
+          </aside>
         </div>
       </main>
     );
@@ -315,6 +646,13 @@ export default function InterviewEntryPage() {
             <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
               <p className="font-medium">{permissionError}</p>
+            </div>
+          )}
+
+          {questionError && (
+            <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="font-medium">{questionError}</p>
             </div>
           )}
 

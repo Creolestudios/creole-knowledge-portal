@@ -51,5 +51,13 @@ export async function POST(req: Request) {
       .eq('id', interviewId);
   }
 
-  return NextResponse.json({ verified: true, interviewId: interview.id });
+  const response = NextResponse.json({ verified: true, interviewId: interview.id });
+  response.cookies.set('interview_verified_id', interview.id, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60 * 4,
+    path: `/api/interview/${interview.id}`,
+  });
+  return response;
 }

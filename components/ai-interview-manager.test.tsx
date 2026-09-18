@@ -98,7 +98,6 @@ describe('AIInterviewManager', () => {
     fireEvent.change(screen.getByPlaceholderText('Paste the job description here...'), {
       target: { value: 'We are hiring a great engineer.' },
     });
-
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
     expect(await screen.findByText('654321')).toBeInTheDocument();
@@ -138,7 +137,6 @@ describe('AIInterviewManager', () => {
     fireEvent.change(jdInput, {
       target: { files: [new File(['jd'], 'jd.pdf', { type: 'application/pdf' })] },
     });
-
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
     expect(await screen.findByText('111222')).toBeInTheDocument();
@@ -164,7 +162,6 @@ describe('AIInterviewManager', () => {
     fireEvent.change(screen.getByPlaceholderText('Paste the job description here...'), {
       target: { value: 'We are hiring a great engineer.' },
     });
-
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
     expect(await screen.findByText('Resume is required')).toBeInTheDocument();

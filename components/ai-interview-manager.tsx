@@ -39,6 +39,8 @@ export default function AIInterviewManager() {
   const [created, setCreated] = useState<ICreatedInterview | null>(null);
   const [copied, setCopied] = useState<'link' | 'code' | null>(null);
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
+  const [selectedQuestions, setSelectedQuestions] = useState<any[]>([]);
+  const [selectedDurationMinutes, setSelectedDurationMinutes] = useState<number | null>(null);
   const [extracting, setExtracting] = useState(false);
 
   const [interviews, setInterviews] = useState<IInterviewSummary[]>([]);
@@ -80,7 +82,10 @@ export default function AIInterviewManager() {
       setError('Please paste the job description text, or switch to uploading a file.');
       return;
     }
-
+    if (!selectedQuestions.length || !selectedDurationMinutes) {
+      setError('Please analyze the resume and JD, select the interview questions, and set the duration before generating the link.');
+      return;
+    }
     setSubmitting(true);
     try {
       const form = new FormData();
@@ -109,6 +114,21 @@ export default function AIInterviewManager() {
       setResume(null);
       setJd(null);
       setJdText('');
+      if (selectedQuestions.length > 0) {
+        const questionsResponse = await fetch(`/api/interview/${json.interviewId}/questions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            questions: selectedQuestions,
+            durationMinutes: selectedDurationMinutes,
+            questionCount: selectedQuestions.length,
+            extraction: extractionResult,
+          }),
+        });
+        if (!questionsResponse.ok) {
+          setError('Interview link created, but questions could not be assigned.');
+        }
+      }
       fetchInterviews();
     } catch (err) {
       console.error('[ai-interview-manager] submit failed:', err);
@@ -363,7 +383,18 @@ export default function AIInterviewManager() {
 
         {extractionResult && (
           <div className="rounded-2xl bg-slate-950 p-5">
-            <KeywordResults result={extractionResult} onReset={() => setExtractionResult(null)} />
+            <KeywordResults
+              result={extractionResult}
+              onReset={() => {
+                setExtractionResult(null);
+                setSelectedQuestions([]);
+                setSelectedDurationMinutes(null);
+              }}
+              onQuestionsGenerated={(questions, duration) => {
+                setSelectedQuestions(questions);
+                setSelectedDurationMinutes(duration);
+              }}
+            />
           </div>
         )}
 
