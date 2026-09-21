@@ -144,6 +144,23 @@ def uncovered_interest_topics(profile: UserProfile) -> list[str]:
     ][:4]
 
 
+def _append_continuity_briefing_parts(parts: list[str], profile: UserProfile, path) -> None:
+    """Shared 'yesterday headline / themes / quiz pace / quiz focus' section for a returning-user briefing."""
+    headline = str(path.last_digest_headline or "").strip()
+    if headline:
+        parts.append(f"Yesterday headline: {headline}")
+    topics = [str(t).strip() for t in (path.last_topics or []) if str(t).strip()]
+    if topics:
+        parts.append("Yesterday themes: " + ", ".join(topics[:8]))
+    from src.models.profile import next_scrape_pace
+
+    pace = next_scrape_pace(profile)
+    parts.append(f"Quiz pace: {pace.value}")
+    quiz_terms = quiz_focus_terms(profile)
+    if quiz_terms:
+        parts.append("Quiz focus topics: " + ", ".join(quiz_terms[:8]))
+
+
 def build_next_day_query_text(profile: UserProfile) -> str:
     """Text embedded for ranking when we cannot reuse yesterday's digest vector.
 
@@ -162,19 +179,7 @@ def build_next_day_query_text(profile: UserProfile) -> str:
                 "Stay inside these interests only (reject off-interest posts): "
                 + ", ".join(interests[:12]),
             ]
-            headline = str(path.last_digest_headline or "").strip()
-            if headline:
-                parts.append(f"Yesterday headline: {headline}")
-            topics = [str(t).strip() for t in (path.last_topics or []) if str(t).strip()]
-            if topics:
-                parts.append("Yesterday themes: " + ", ".join(topics[:8]))
-            from src.models.profile import next_scrape_pace
-
-            pace = next_scrape_pace(profile)
-            parts.append(f"Quiz pace: {pace.value}")
-            quiz_terms = quiz_focus_terms(profile)
-            if quiz_terms:
-                parts.append("Quiz focus topics: " + ", ".join(quiz_terms[:8]))
+            _append_continuity_briefing_parts(parts, profile, path)
             uncovered = uncovered_interest_topics(profile)
             if uncovered:
                 parts.append("Still uncovered in these interests: " + ", ".join(uncovered[:8]))
@@ -191,19 +196,7 @@ def build_next_day_query_text(profile: UserProfile) -> str:
             "Stay on the SAME stack family until every topic in that stack is covered.",
             "Match the next tutorial on this stack (not a new random language).",
         ]
-        headline = str(path.last_digest_headline or "").strip()
-        if headline:
-            parts.append(f"Yesterday headline: {headline}")
-        topics = [str(t).strip() for t in (path.last_topics or []) if str(t).strip()]
-        if topics:
-            parts.append("Yesterday themes: " + ", ".join(topics[:8]))
-        from src.models.profile import next_scrape_pace
-
-        pace = next_scrape_pace(profile)
-        parts.append(f"Quiz pace: {pace.value}")
-        quiz_terms = quiz_focus_terms(profile)
-        if quiz_terms:
-            parts.append("Quiz focus topics: " + ", ".join(quiz_terms[:8]))
+        _append_continuity_briefing_parts(parts, profile, path)
         uncovered = uncovered_stack_topics(profile)
         if uncovered:
             parts.append("Still uncovered in this stack: " + ", ".join(uncovered[:8]))
@@ -395,6 +388,28 @@ def continuity_match_terms(profile: UserProfile) -> list[str]:
     return (specific or ordered)[:12]
 
 
+def _headline_and_tldr_tokens(path) -> list[str]:
+    """Tokenized candidates from yesterday's headline + TL;DR (shared by both scrape-term paths)."""
+    candidates: list[str] = []
+    headline = str(getattr(path, "last_digest_headline", "") or "").strip()
+    if headline:
+        candidates.extend(topic_tokens_from_text(headline))
+    for item in getattr(path, "last_digest_tldr", None) or []:
+        text = str(item or "").strip()
+        if text:
+            candidates.extend(topic_tokens_from_text(text))
+    return candidates
+
+
+def _dedup_devto_safe_tags(candidates: list[str], limit: int = 6) -> list[str]:
+    ordered: list[str] = []
+    for item in candidates:
+        term = str(item or "").strip().lower()
+        if _is_devto_safe_tag(term):
+            ordered.append(term)
+    return list(dict.fromkeys(ordered))[:limit]
+
+
 def _yesterday_scrape_tokens(profile: UserProfile) -> list[str]:
     """Dev.to-safe tags extracted from yesterday's briefing (no stack filter)."""
     path = profile.learning_path
@@ -404,19 +419,8 @@ def _yesterday_scrape_tokens(profile: UserProfile) -> list[str]:
         if text:
             candidates.extend(topic_tokens_from_text(text))
             candidates.append(text)
-    headline = str(getattr(path, "last_digest_headline", "") or "").strip()
-    if headline:
-        candidates.extend(topic_tokens_from_text(headline))
-    for item in getattr(path, "last_digest_tldr", None) or []:
-        text = str(item or "").strip()
-        if text:
-            candidates.extend(topic_tokens_from_text(text))
-    ordered: list[str] = []
-    for item in candidates:
-        term = str(item or "").strip().lower()
-        if _is_devto_safe_tag(term):
-            ordered.append(term)
-    return list(dict.fromkeys(ordered))[:6]
+    candidates.extend(_headline_and_tldr_tokens(path))
+    return _dedup_devto_safe_tags(candidates)
 
 
 def discovery_scrape_terms(profile: UserProfile) -> list[str]:
@@ -500,21 +504,8 @@ def continuity_scrape_terms(profile: UserProfile) -> list[str]:
             if text.lower() in allowed or topic_tokens_from_text(text):
                 candidates.append(text)
 
-    headline = str(getattr(path, "last_digest_headline", "") or "").strip()
-    if headline:
-        candidates.extend(topic_tokens_from_text(headline))
-
-    for item in getattr(path, "last_digest_tldr", None) or []:
-        text = str(item or "").strip()
-        if text:
-            candidates.extend(topic_tokens_from_text(text))
-
-    ordered: list[str] = []
-    for item in candidates:
-        term = str(item or "").strip().lower()
-        if _is_devto_safe_tag(term):
-            ordered.append(term)
-    return list(dict.fromkeys(ordered))[:6]
+    candidates.extend(_headline_and_tldr_tokens(path))
+    return _dedup_devto_safe_tags(candidates)
 
 
 def hay_is_off_interest_continuity(haystack: str, profile: UserProfile) -> bool:

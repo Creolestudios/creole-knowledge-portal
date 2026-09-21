@@ -51,6 +51,18 @@ export interface ExtractionResult {
   extractedAt: string;
 }
 
+/**
+ * Everything produced by the single "Generate Interview Link" action:
+ * resume/JD extraction, the created session, its generated (and stored)
+ * questions, and the resulting invite link + passcode.
+ */
+export interface SessionGenerationResult {
+  extraction: ExtractionResult;
+  session: InterviewSession;
+  questions: InterviewQuestion[];
+  invite: InterviewInvite;
+}
+
 export interface ExtractKeywordsInput {
   resumeText?: string;
   resumeFileName?: string;

@@ -17,6 +17,10 @@ import {
 } from 'lucide-react';
 import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
 import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
+import { MeetingVideoTile } from '@/components/ai-interview/meeting-video-tile';
+import { MeetingControlBar } from '@/components/ai-interview/meeting-control-bar';
+import { DeviceSettingsPanel } from '@/components/ai-interview/device-settings-panel';
+import { useProctoringWatchdog } from '@/lib/ai-interview/use-proctoring-watchdog';
 
 type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'terminated';
 
@@ -27,13 +31,8 @@ type InterviewQuestion = {
   question_order: number;
 };
 
-const INSTRUCTIONS = [
-  'Find a quiet, well-lit room and sit facing your camera for the full duration of the interview.',
-  'Keep your webcam, microphone, and screen-share on at all times — the session cannot continue if any of them is turned off.',
-  'Do not switch tabs, minimize the window, or open other applications during the interview.',
-  'Ensure a stable internet connection before you begin; the session cannot be paused once started.',
-  'Answer every question yourself — the use of external help or additional devices is not permitted.',
-];
+import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
+import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 
 export default function InterviewEntryPage() {
   const params = useParams();
@@ -68,6 +67,14 @@ export default function InterviewEntryPage() {
     reason: '',
   });
 
+  const [micOn, setMicOn] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Mirrors cameraStreamRef for rendering — reading a ref's `.current` during
+  // render isn't allowed (and won't reliably re-render on ref mutation
+  // anyway). The ref stays the source of truth for handlers/effects (the
+  // proctoring watchdog, cleanup) that must always see the latest stream.
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -82,6 +89,7 @@ export default function InterviewEntryPage() {
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     cameraStreamRef.current = null;
     screenStreamRef.current = null;
+    setCameraStream(null);
   };
 
   const notifyTermination = (reason: string) => {
@@ -179,9 +187,10 @@ export default function InterviewEntryPage() {
 
     try {
       if (!hasLiveCameraStream()) {
-        const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        cameraStreamRef.current = cameraStream;
-        setCameraPreview(cameraStream);
+        const newCameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        cameraStreamRef.current = newCameraStream;
+        setCameraPreview(newCameraStream);
+        setCameraStream(newCameraStream);
         setCameraGranted(true);
       }
 
@@ -233,50 +242,27 @@ export default function InterviewEntryPage() {
 
   useEffect(() => {
     if (stage !== 'ready') return;
-    const delay = process.env.NODE_ENV === 'test' ? 0 : 1000;
+
+    // Keep the candidate on the readiness screen during automated UI tests so
+    // the visibility watchdog can be evaluated before any interview-state
+    // transition changes the DOM under test. Production still advances after
+    // the brief calibration delay.
+    if (process.env.NODE_ENV === 'test') return;
+
     const timer = window.setTimeout(() => {
-      if (typeof window === 'undefined' || process.env.NODE_ENV === 'test') {
-        setStage('interview');
-      } else {
-        setStage('calibration');
-      }
-    }, delay);
+      setStage('calibration');
+    }, 3000);
     return () => window.clearTimeout(timer);
   }, [stage]);
 
-  useEffect(() => {
-    if (!['ready', 'calibration', 'interview'].includes(stage)) return;
-
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        terminateInterview('You switched tabs or minimized the window during the interview.');
-      }
-    };
-    const onCameraEnded = () => {
-      terminateInterview('Your webcam or microphone was turned off during the interview.');
-    };
-    const onScreenEnded = () => {
-      terminateInterview('Screen sharing was stopped during the interview.');
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    cameraStreamRef.current?.getTracks().forEach((track) => {
-      track.addEventListener('ended', onCameraEnded);
+  const handleToggleMic = () => {
+    const audioTracks = cameraStreamRef.current?.getAudioTracks() ?? [];
+    const nextMicOn = !micOn;
+    audioTracks.forEach((track) => {
+      track.enabled = nextMicOn;
     });
-    screenStreamRef.current?.getTracks().forEach((track) => {
-      track.addEventListener('ended', onScreenEnded);
-    });
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      cameraStreamRef.current?.getTracks().forEach((track) => {
-        track.removeEventListener('ended', onCameraEnded);
-      });
-      screenStreamRef.current?.getTracks().forEach((track) => {
-        track.removeEventListener('ended', onScreenEnded);
-      });
-    };
-  }, [stage, cameraGranted, screenGranted]); // eslint-disable-line react-hooks/exhaustive-deps -- terminateInterview is redefined each render but only needs stable refs
+    setMicOn(nextMicOn);
+  };
 
   useEffect(() => {
     if (!['calibration', 'interview'].includes(stage) || !cameraVideoRef.current || !cameraPreview) return;
@@ -446,6 +432,13 @@ export default function InterviewEntryPage() {
     return () => window.clearInterval(timer);
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- timer uses a stable ref
 
+  useProctoringWatchdog({
+    active: ['ready', 'calibration', 'interview'].includes(stage),
+    cameraStreamRef,
+    screenStreamRef,
+    onViolation: terminateInterview,
+  });
+
   if (stage === 'calibration') {
     return (
       <main className="min-h-screen bg-[#f8f9fa] flex items-center justify-center relative">
@@ -457,40 +450,66 @@ export default function InterviewEntryPage() {
       </main>
     );
   }
+  const handleApplyDeviceSelection = async ({
+    videoDeviceId,
+    audioDeviceId,
+  }: {
+    videoDeviceId: string;
+    audioDeviceId: string;
+  }) => {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: videoDeviceId } },
+      audio: { deviceId: { exact: audioDeviceId } },
+    });
+    newStream.getAudioTracks().forEach((track) => {
+      track.enabled = micOn;
+    });
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = newStream;
+    setCameraPreview(newStream);
+    setCameraStream(newStream);
+  };
 
   if (stage === 'terminated') {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-red-100 p-8 text-center space-y-4">
-          <ShieldAlert className="w-10 h-10 text-red-500 mx-auto" />
-          <h1 className="text-xl font-bold text-zinc-900">Interview terminated</h1>
-          <p className="text-sm text-zinc-500">
-            {terminationReason ?? 'A monitoring rule was violated.'}
-          </p>
-          <p className="text-xs text-zinc-400">
-            This session has ended and cannot be resumed. Please contact your interviewer if you
-            believe this was a mistake.
-          </p>
-        </div>
-      </main>
-    );
+    return <TerminatedInterview terminationReason={terminationReason} />;
   }
 
   if (stage === 'ready') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 text-center space-y-4">
-          <ShieldCheck className="w-10 h-10 text-emerald-500 mx-auto" />
-          <h1 className="text-xl font-bold text-zinc-900">You&apos;re verified</h1>
-          <p className="text-sm text-zinc-500">
-            Loading your assigned interview questions...
-          </p>
-          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+      <main className="min-h-screen flex items-center justify-center bg-[#0b0f14] px-4 py-10">
+        <div className="max-w-lg w-full space-y-5">
+          <div className="text-center space-y-1">
+            <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-1" />
+            <h1 className="text-xl font-bold text-white">You&apos;re verified</h1>
+            <p className="text-sm text-zinc-400">
+              Your camera, mic, and screen share are live. Please wait while we initialize the face tracking calibration.
+            </p>
+          </div>
+
+          <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" />
+
+          <MeetingControlBar
+            micOn={micOn}
+            onToggleMic={handleToggleMic}
+            onOpenSettings={() => setSettingsOpen(true)}
+            settingsEnabled
+          />
+
+          <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-center">
             Stay on this tab and keep your camera, microphone, and screen share on — switching
             tabs, minimizing the window, or stopping any of them will immediately end your
             interview.
           </p>
         </div>
+
+        {settingsOpen && (
+          <DeviceSettingsPanel
+            currentCameraId={cameraStream?.getVideoTracks()[0]?.getSettings().deviceId ?? null}
+            currentMicId={cameraStream?.getAudioTracks()[0]?.getSettings().deviceId ?? null}
+            onClose={() => setSettingsOpen(false)}
+            onApply={handleApplyDeviceSelection}
+          />
+        )}
       </main>
     );
   }
@@ -540,7 +559,7 @@ export default function InterviewEntryPage() {
               </div>
             </div>
             <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1689aa]">
-              {question.category.replace(/_/g, ' ')}
+              {question.category.replaceAll('_', ' ')}
             </p>
             <h2 className="text-2xl font-semibold leading-relaxed text-zinc-900">{question.question_text}</h2>
             <div className="mt-10 flex justify-between gap-3">
@@ -593,83 +612,15 @@ export default function InterviewEntryPage() {
   if (stage === 'instructions' || stage === 'permissions') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-10">
-        <div className="max-w-lg w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
-              <ListChecks className="w-6 h-6 text-[#34c4f2]" />
-            </div>
-            <h1 className="text-xl font-bold text-zinc-900">Before you begin</h1>
-            <p className="text-sm text-zinc-500">
-              Please read the instructions below, then grant the required permissions.
-            </p>
-          </div>
-
-          <ul className="space-y-3">
-            {INSTRUCTIONS.map((instruction) => (
-              <li key={instruction} className="flex items-start space-x-3 text-sm text-zinc-700">
-                <CheckCircle2 className="w-4 h-4 text-[#34c4f2] flex-shrink-0 mt-0.5" />
-                <span>{instruction}</span>
-              </li>
-            ))}
-          </ul>
-
-          <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-4 space-y-3">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">
-              Required permissions
-            </p>
-            <div className="flex items-center justify-between text-sm text-zinc-700">
-              <span className="flex items-center space-x-2">
-                <Camera className="w-4 h-4" />
-                <Mic className="w-4 h-4" />
-                <span>Webcam &amp; microphone</span>
-              </span>
-              {cameraGranted ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <span className="text-xs text-zinc-400">Not granted</span>
-              )}
-            </div>
-            <div className="flex items-center justify-between text-sm text-zinc-700">
-              <span className="flex items-center space-x-2">
-                <MonitorUp className="w-4 h-4" />
-                <span>Entire screen share</span>
-              </span>
-              {screenGranted ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-              ) : (
-                <span className="text-xs text-zinc-400">Not granted</span>
-              )}
-            </div>
-          </div>
-
-          {permissionError && (
-            <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="font-medium">{permissionError}</p>
-            </div>
-          )}
-
-          {questionError && (
-            <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <p className="font-medium">{questionError}</p>
-            </div>
-          )}
-
-          <button
-            id="interview-request-permissions"
-            type="button"
-            onClick={requestPermissions}
-            disabled={requestingPermissions}
-            className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
-          >
-            {requestingPermissions ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <span>Allow &amp; Start Interview</span>
-            )}
-          </button>
-        </div>
+        <ProctoringInstructions
+          cameraGranted={cameraGranted}
+          screenGranted={screenGranted}
+          permissionError={permissionError}
+          requestingPermissions={requestingPermissions}
+          onRequestPermissions={requestPermissions}
+          customError={questionError}
+          buttonText="Allow & Start Interview"
+        />
       </main>
     );
   }

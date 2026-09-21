@@ -47,6 +47,8 @@ async function goToInstructions() {
 
 function liveTrack(overrides: Partial<MediaStreamTrack> = {}) {
   return {
+    kind: 'video',
+    enabled: true,
     readyState: 'live',
     stop: vi.fn(),
     addEventListener: vi.fn(),
@@ -55,13 +57,28 @@ function liveTrack(overrides: Partial<MediaStreamTrack> = {}) {
   } as unknown as MediaStreamTrack;
 }
 
+/**
+ * The video tiles call `getVideoTracks()`/`getAudioTracks()` on the stream, so a
+ * stream stub that only implements `getTracks()` crashes the render.
+ */
+function fakeStream(tracks: MediaStreamTrack[]) {
+  return {
+    getTracks: () => tracks,
+    getVideoTracks: () => tracks.filter((track) => track.kind !== 'audio'),
+    getAudioTracks: () => tracks.filter((track) => track.kind === 'audio'),
+  } as unknown as MediaStream;
+}
+
 function mockMediaDevices(overrides: Partial<{ getUserMedia: any; getDisplayMedia: any }>) {
   const value = {
-    getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [liveTrack(), liveTrack()] }),
-    getDisplayMedia: vi.fn().mockResolvedValue({
-      getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
-      getTracks: () => [liveTrack()],
-    }),
+    getUserMedia: vi
+      .fn()
+      .mockResolvedValue(fakeStream([liveTrack(), liveTrack({ kind: 'audio' })])),
+    getDisplayMedia: vi
+      .fn()
+      .mockResolvedValue(
+        fakeStream([liveTrack({ getSettings: () => ({ displaySurface: 'monitor' }) } as any)]),
+      ),
     ...overrides,
   };
   Object.defineProperty(global.navigator, 'mediaDevices', { value, configurable: true });
@@ -167,7 +184,7 @@ describe('Instructions & permissions gate', () => {
     global.fetch = verifiedFetchMock();
     const cameraStop = vi.fn();
     mockMediaDevices({
-      getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [liveTrack({ stop: cameraStop })] }),
+      getUserMedia: vi.fn().mockResolvedValue(fakeStream([liveTrack({ stop: cameraStop })])),
       getDisplayMedia: vi.fn().mockRejectedValue(new Error('Permission dismissed')),
     });
     render(<InterviewEntryPage />);
@@ -187,7 +204,7 @@ describe('Instructions & permissions gate', () => {
     global.fetch = verifiedFetchMock();
     const cameraStop = vi.fn();
     mockMediaDevices({
-      getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [liveTrack({ stop: cameraStop })] }),
+      getUserMedia: vi.fn().mockResolvedValue(fakeStream([liveTrack({ stop: cameraStop })])),
       getDisplayMedia: vi.fn().mockRejectedValue(new Error('Permission dismissed')),
     });
     const { unmount } = render(<InterviewEntryPage />);
@@ -293,7 +310,7 @@ describe('In-session proctoring (ready stage)', () => {
       removeEventListener: vi.fn(),
     };
     mockMediaDevices({
-      getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [cameraTrack] }),
+      getUserMedia: vi.fn().mockResolvedValue(fakeStream([cameraTrack as unknown as MediaStreamTrack])),
     });
     await goToInstructions();
     fireEvent.click(screen.getByText('Allow & Start Interview'));
@@ -354,6 +371,45 @@ describe('In-session proctoring (ready stage)', () => {
 
     expect(screen.getByText('Interview terminated')).toBeInTheDocument();
     expect(screen.queryByText("You're verified")).not.toBeInTheDocument();
+  });
+
+  it('TC-PROC-17 [regression: BUG-05] stays live when the page loses keyboard focus but remains visible', async () => {
+    global.fetch = verifiedFetchMock();
+    mockMediaDevices({});
+    await goToInstructions();
+    fireEvent.click(screen.getByText('Allow & Start Interview'));
+    await screen.findByText("You're verified");
+
+    // With a full-screen share running, Chrome's "you are sharing your screen"
+    // indicator takes keyboard focus while the interview page stays fully
+    // visible. The old focus-polling watchdog read that as a tab switch and
+    // killed healthy sessions ~3.7s after joining.
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    fireEvent(window, new Event('blur'));
+
+    // Real timers on purpose: the bug lived in a real setInterval created
+    // before this point, so swapping in fake timers here would never run it.
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
+    expect(screen.getByText("You're verified")).toBeInTheDocument();
+    hasFocus.mockRestore();
+  });
+
+  it('TC-PROC-18 still terminates when an unfocused page is also hidden (real tab switch)', async () => {
+    global.fetch = verifiedFetchMock();
+    mockMediaDevices({});
+    await goToInstructions();
+    fireEvent.click(screen.getByText('Allow & Start Interview'));
+    await screen.findByText("You're verified");
+
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    fireEvent(document, new Event('visibilitychange'));
+
+    expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
+    hasFocus.mockRestore();
   });
 
   it('TC-PROC-14 [regression guard for BUG-01] a terminated session cannot be resumed by re-verifying the same passcode', async () => {

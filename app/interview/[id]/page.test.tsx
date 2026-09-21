@@ -25,6 +25,8 @@ describe('InterviewEntryPage', () => {
       value: originalMediaDevices,
       configurable: true,
     });
+    // Tests below flip this; leaking it makes later renders arm while "hidden".
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
   });
 
   it('shows an error on an incorrect passcode', async () => {
@@ -83,7 +85,7 @@ describe('InterviewEntryPage', () => {
       }),
     }) as any;
 
-    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
     const getDisplayMedia = vi.fn().mockResolvedValue({
       getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
       getTracks: () => [],
@@ -96,7 +98,7 @@ describe('InterviewEntryPage', () => {
     await verifyPasscode();
     fireEvent.click(screen.getByText('Allow & Start Interview'));
 
-    expect(await screen.findByText('Tell us about yourself.')).toBeInTheDocument();
+    expect(await screen.findByText("You're verified")).toBeInTheDocument();
     expect(getUserMedia).toHaveBeenCalledWith({ video: true, audio: true });
     expect(getDisplayMedia).toHaveBeenCalledWith({ video: true });
   });
@@ -114,7 +116,7 @@ describe('InterviewEntryPage', () => {
     }) as any;
 
     const stop = vi.fn();
-    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
     const getDisplayMedia = vi.fn().mockResolvedValue({
       getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'browser' }) }],
       getTracks: () => [{ stop }],
@@ -167,7 +169,7 @@ describe('InterviewEntryPage', () => {
       }),
     }) as any;
 
-    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [] });
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
     const getDisplayMedia = vi.fn().mockResolvedValue({
       getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
       getTracks: () => [],
@@ -179,6 +181,78 @@ describe('InterviewEntryPage', () => {
 
     await verifyPasscode();
     fireEvent.click(screen.getByText('Allow & Start Interview'));
-    expect(await screen.findByText('Tell us about yourself.')).toBeInTheDocument();
+    expect(await screen.findByText("You're verified")).toBeInTheDocument();
+  });
+
+  it('terminates the interview as soon as the tab is hidden or the window minimized', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+      }),
+    }).mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }) as any;
+
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
+    const getDisplayMedia = vi.fn().mockResolvedValue({
+      getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
+      getTracks: () => [],
+    });
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: { getUserMedia, getDisplayMedia },
+      configurable: true,
+    });
+
+    await verifyPasscode();
+    fireEvent.click(screen.getByText('Allow & Start Interview'));
+    expect(await screen.findByText("You're verified")).toBeInTheDocument();
+
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    fireEvent(document, new Event('visibilitychange'));
+
+    expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
+  });
+
+  it('does NOT terminate when the page only loses keyboard focus while staying visible', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+      }),
+    }) as any;
+
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
+    const getDisplayMedia = vi.fn().mockResolvedValue({
+      getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
+      getTracks: () => [],
+    });
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: { getUserMedia, getDisplayMedia },
+      configurable: true,
+    });
+
+    await verifyPasscode();
+    fireEvent.click(screen.getByText('Allow & Start Interview'));
+    await screen.findByText("You're verified");
+
+    // A running full-screen share leaves Chrome's sharing indicator holding
+    // keyboard focus while the page itself stays visible.
+    const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    fireEvent(window, new Event('blur'));
+    fireEvent(document, new Event('visibilitychange'));
+
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
+    expect(screen.getByText("You're verified")).toBeInTheDocument();
+    hasFocus.mockRestore();
   });
 });

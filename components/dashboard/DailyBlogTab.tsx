@@ -403,6 +403,26 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                     );
                     const isInProgress = Boolean(quizStatus?.inProgress);
 
+                    const ReviewQuizBtn = () => (
+                      <button
+                        onClick={handleReviewQuiz}
+                        disabled={quizLoading}
+                        className="px-8 py-4 bg-zinc-950 hover:bg-zinc-900 text-white font-black rounded-2xl shadow-lg hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                      >
+                        {quizLoading ? (
+                          <>
+                            <Loader2 size={18} className="animate-spin" />
+                            Opening...
+                          </>
+                        ) : (
+                          <>
+                            <BookOpen size={18} />
+                            Review Quiz Results
+                          </>
+                        )}
+                      </button>
+                    );
+
                     if (isPassed) {
                       return (
                         <div className="text-center space-y-3">
@@ -411,23 +431,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                             {quizStatus.result?.percentage}%) 🎉
                           </p>
                           <div className="flex flex-wrap items-center justify-center gap-3">
-                            <button
-                              onClick={handleReviewQuiz}
-                              disabled={quizLoading}
-                              className="px-8 py-4 bg-zinc-950 hover:bg-zinc-900 text-white font-black rounded-2xl shadow-lg hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                            >
-                              {quizLoading ? (
-                                <>
-                                  <Loader2 size={18} className="animate-spin" />
-                                  Opening...
-                                </>
-                              ) : (
-                                <>
-                                  <BookOpen size={18} />
-                                  Review Quiz Results
-                                </>
-                              )}
-                            </button>
+                            <ReviewQuizBtn />
                           </div>
                         </div>
                       );
@@ -447,23 +451,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                               <CheckCircle size={18} />
                               Max Attempts Reached (0/3 left)
                             </button>
-                            <button
-                              onClick={handleReviewQuiz}
-                              disabled={quizLoading}
-                              className="px-8 py-4 bg-zinc-950 hover:bg-zinc-900 text-white font-black rounded-2xl shadow-lg hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                            >
-                              {quizLoading ? (
-                                <>
-                                  <Loader2 size={18} className="animate-spin" />
-                                  Opening...
-                                </>
-                              ) : (
-                                <>
-                                  <BookOpen size={18} />
-                                  Review Quiz Results
-                                </>
-                              )}
-                            </button>
+                            <ReviewQuizBtn />
                           </div>
                         </div>
                       );

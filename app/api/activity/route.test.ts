@@ -645,3 +645,55 @@ describe('POST /api/activity', () => {
     expect(body.message).toContain('Simulated');
   });
 });
+
+// Additional unit tests for exported helpers to improve coverage on new code
+import { isMissingTableError, digestDateFromBlog, loadBlogDigestDateById, recordQuizOnBlogService } from './route';
+
+describe('activity route helpers (unit)', () => {
+  it('isMissingTableError recognizes expected codes', () => {
+    expect(isMissingTableError({ code: 'PGRST205' })).toBe(true);
+    expect(isMissingTableError({ code: '42P01' })).toBe(true);
+    expect(isMissingTableError({ code: 'OTHER' })).toBe(false);
+  });
+
+  it('digestDateFromBlog extracts from fields and url', () => {
+    expect(digestDateFromBlog(null)).toBe('');
+    expect(digestDateFromBlog({ digest_date: '2026-06-30' })).toBe('2026-06-30');
+    expect(digestDateFromBlog({ published_at: '2026-06-29T12:00:00Z' })).toBe('2026-06-29');
+    expect(digestDateFromBlog({ url: 'https://x:2026-06-28/path' })).toBe('2026-06-28');
+  });
+
+  it('loadBlogDigestDateById handles responses and non-ok results', async () => {
+    // stub global.fetch locally for this test
+    // @ts-ignore
+    const old = global.fetch;
+    // @ts-ignore
+    global.fetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ blogs: [{ id: 'a', digest_date: '2026-06-30' }] }) });
+    const map = await loadBlogDigestDateById('u1');
+    expect(map.get('a')).toBe('2026-06-30');
+    // @ts-ignore
+    global.fetch = vi.fn().mockResolvedValueOnce({ ok: false });
+    const empty = await loadBlogDigestDateById('u1');
+    expect(empty.size).toBe(0);
+    // restore
+    // @ts-ignore
+    global.fetch = old;
+  });
+
+  it('recordQuizOnBlogService calls fetch when score present and swallows errors', async () => {
+    // @ts-ignore
+    const old = global.fetch;
+    // @ts-ignore
+    global.fetch = vi.fn().mockResolvedValueOnce({ ok: true });
+    await recordQuizOnBlogService('u1', 3, 5);
+    // @ts-ignore
+    expect(global.fetch).toHaveBeenCalled();
+    // simulate failure
+    // @ts-ignore
+    global.fetch = vi.fn().mockRejectedValueOnce(new Error('down'));
+    await recordQuizOnBlogService('u1', 2, 4);
+    // restore
+    // @ts-ignore
+    global.fetch = old;
+  });
+});

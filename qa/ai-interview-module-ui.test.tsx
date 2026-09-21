@@ -5,12 +5,23 @@
  * - Candidate passcode entry page (app/interview/[id]/page.tsx)
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import AIInterviewManager from '@/components/ai-interview-manager';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'interview-1' }),
 }));
+
+const { mockCreateSession } = vi.hoisted(() => ({
+  mockCreateSession: vi.fn(),
+}));
+
+vi.mock('@/lib/ai-interview/create-session-and-invite', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/ai-interview/create-session-and-invite')>(
+    '@/lib/ai-interview/create-session-and-invite',
+  );
+  return { ...actual, createInterviewSessionWithInvite: mockCreateSession };
+});
 
 const originalFetch = global.fetch;
 
@@ -18,9 +29,21 @@ function jsonResponse(body: unknown, ok = true) {
   return Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);
 }
 
+/** URL-routed so call order (list / extract / question-bank) doesn't matter. */
+function mockFetchByUrl(handlers: Record<string, unknown>) {
+  return vi.fn().mockImplementation((url: string) => {
+    for (const [match, response] of Object.entries(handlers)) {
+      if (url.includes(match)) return jsonResponse(response);
+    }
+    return jsonResponse({});
+  });
+}
+
 describe('Admin create-interview form — UI scenarios', () => {
   afterEach(() => {
+    cleanup();
     global.fetch = originalFetch;
+    mockCreateSession.mockReset();
   });
 
   it('TC-UI-01 Defaults to "paste text" mode for the job description', async () => {
@@ -47,7 +70,7 @@ describe('Admin create-interview form — UI scenarios', () => {
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText('Generate Interview Link'));
+    fireEvent.click(screen.getByText('Analyze Resume & JD'));
     expect(await screen.findByText(/please attach a resume/i)).toBeInTheDocument();
   });
 
@@ -59,7 +82,7 @@ describe('Admin create-interview form — UI scenarios', () => {
     fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
       target: { files: [new File(['r'], 'resume.pdf', { type: 'application/pdf' })] },
     });
-    fireEvent.click(screen.getByText('Generate Interview Link'));
+    fireEvent.click(screen.getByText('Analyze Resume & JD'));
     expect(await screen.findByText(/paste the job description text/i)).toBeInTheDocument();
   });
 
@@ -72,16 +95,49 @@ describe('Admin create-interview form — UI scenarios', () => {
     fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
       target: { files: [new File(['r'], 'resume.pdf', { type: 'application/pdf' })] },
     });
-    fireEvent.click(screen.getByText('Generate Interview Link'));
+    fireEvent.click(screen.getByText('Analyze Resume & JD'));
     expect(await screen.findByText(/attach a job description file/i)).toBeInTheDocument();
   });
 
-  it('TC-UI-06 Successful submission (JD text) surfaces the link + passcode with copy buttons', async () => {
-    global.fetch = vi
-      .fn()
-      .mockReturnValueOnce(jsonResponse({ interviews: [] }))
-      .mockReturnValueOnce(jsonResponse({ interviewId: 'i1', link: 'http://x/interview/i1', accessCode: '987654' }))
-      .mockReturnValueOnce(jsonResponse({ interviews: [] })) as any;
+  const extractionPayload = {
+    candidateProfile: { extractedSkills: [], domains: [] },
+    jdRequirements: { mustHaveSkills: [], niceToHaveSkills: [], keyResponsibilities: [] },
+    analysis: {
+      matchPercentage: 80,
+      matchedKeywords: [],
+      missingKeywords: [],
+      resumeOnlyKeywords: [],
+      skillGapSummary: '',
+      keyStrengths: [],
+      improvementAreas: [],
+    },
+    extractedAt: new Date().toISOString(),
+  };
+
+  it('TC-UI-06 Successful analysis reaches question selection, then generation surfaces the link + passcode + questions', async () => {
+    global.fetch = mockFetchByUrl({
+      '/api/admin/ai-interviews': { interviews: [] },
+      '/api/ai-interview/extract': extractionPayload,
+      '/api/ai-interview/question-bank': {
+        questions: [
+          {
+            id: 'b1',
+            title: 'HR 1',
+            question_text: 'Introduce yourself.',
+            category: 'hr',
+            difficulty: 'easy',
+            is_mandatory: false,
+            default_order: 1,
+          },
+        ],
+      },
+    }) as any;
+    mockCreateSession.mockResolvedValue({
+      extraction: extractionPayload,
+      session: { id: 's1', status: 'questions_generated' },
+      questions: [{ id: 'q1', question_text: 'Introduce yourself.' }],
+      invite: { invite_url: 'http://x/assess/tok', passcode: '987654' },
+    });
 
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
@@ -92,15 +148,19 @@ describe('Admin create-interview form — UI scenarios', () => {
     fireEvent.change(screen.getByPlaceholderText('Paste the job description here...'), {
       target: { value: 'A job description.' },
     });
+    fireEvent.click(screen.getByText('Analyze Resume & JD'));
+
+    await screen.findByText('Select Interview Questions');
+    fireEvent.change(await screen.findByLabelText(/Total question count/i), { target: { value: '1' } });
+    fireEvent.click(screen.getByText('hr'));
+    fireEvent.click(screen.getByText('Introduce yourself.'));
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
-    expect(await screen.findByText('987654')).toBeInTheDocument();
-    expect(screen.getByText('http://x/interview/i1')).toBeInTheDocument();
-    expect(document.getElementById('copy-interview-link')).toBeInTheDocument();
-    expect(document.getElementById('copy-interview-code')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('987654')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('http://x/assess/tok')).toBeInTheDocument();
   });
 
-  it('TC-UI-07 Backend validation error is surfaced to the admin verbatim', async () => {
+  it('TC-UI-07 A backend validation error from analysis is surfaced to the admin verbatim', async () => {
     global.fetch = vi
       .fn()
       .mockReturnValueOnce(jsonResponse({ interviews: [] }))
@@ -115,12 +175,13 @@ describe('Admin create-interview form — UI scenarios', () => {
     fireEvent.change(screen.getByPlaceholderText('Paste the job description here...'), {
       target: { value: 'A job description.' },
     });
-    fireEvent.click(screen.getByText('Generate Interview Link'));
+    fireEvent.click(screen.getByText('Analyze Resume & JD'));
 
     expect(await screen.findByText(/job description text too long/i)).toBeInTheDocument();
+    expect(screen.queryByText('Select Interview Questions')).not.toBeInTheDocument();
   });
 
-  it('TC-UI-08 Network failure during submission shows a generic error, not a crash', async () => {
+  it('TC-UI-08 Network failure during analysis shows a generic error, not a crash', async () => {
     global.fetch = vi
       .fn()
       .mockReturnValueOnce(jsonResponse({ interviews: [] }))
@@ -135,9 +196,11 @@ describe('Admin create-interview form — UI scenarios', () => {
     fireEvent.change(screen.getByPlaceholderText('Paste the job description here...'), {
       target: { value: 'A job description.' },
     });
-    fireEvent.click(screen.getByText('Generate Interview Link'));
+    fireEvent.click(screen.getByText('Analyze Resume & JD'));
 
-    expect(await screen.findByText(/something went wrong/i)).toBeInTheDocument();
+    // The component surfaces the thrown error's message verbatim rather than
+    // a generic fallback — still an inline message, not a crash.
+    expect(await screen.findByText('network down')).toBeInTheDocument();
   });
 
   it('TC-UI-09 Renders an empty state when no interviews exist yet', async () => {

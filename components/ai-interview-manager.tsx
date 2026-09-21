@@ -5,19 +5,19 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   UploadCloud,
   FileText,
-  Sparkles,
   Loader2,
   AlertCircle,
-  CheckCircle2,
   Copy,
   Check,
   KeyRound,
   Link2,
   ClipboardPaste,
+  X,
 } from 'lucide-react';
-import type { IInterviewSummary, ICreatedInterview } from '@/lib/ai-interview/types';
-import type { ExtractionResult } from '@/lib/ai-interview/types';
-import { KeywordResults } from '@/components/ai-interview/keyword-results';
+import type { IInterviewSummary } from '@/lib/ai-interview/types';
+import type { ExtractionResult, SessionGenerationResult } from '@/lib/ai-interview/types';
+import { KeywordAnalysisOverview, KeywordResults } from '@/components/ai-interview/keyword-results';
+import { QuestionBankSelector } from '@/components/ai-interview/question-bank-selector';
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
   completed: 'bg-emerald-50 text-emerald-600 border-emerald-100',
@@ -35,16 +35,15 @@ export default function AIInterviewManager() {
   const [jdText, setJdText] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<ICreatedInterview | null>(null);
-  const [copied, setCopied] = useState<'link' | 'code' | null>(null);
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
-  const [selectedQuestions, setSelectedQuestions] = useState<any[]>([]);
-  const [selectedDurationMinutes, setSelectedDurationMinutes] = useState<number | null>(null);
-  const [extracting, setExtracting] = useState(false);
+  const [sessionResult, setSessionResult] = useState<SessionGenerationResult | null>(null);
 
   const [interviews, setInterviews] = useState<IInterviewSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [selectedInterview, setSelectedInterview] = useState<IInterviewSummary | null>(null);
+  const [modalCopied, setModalCopied] = useState<'link' | 'code' | null>(null);
 
   const fetchInterviews = useCallback(async () => {
     try {
@@ -65,10 +64,18 @@ export default function AIInterviewManager() {
     return () => clearTimeout(timer);
   }, [fetchInterviews]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  /**
+   * Step 1 of 2: analyzes the resume/JD and hands off to the question-bank
+   * selection step (same category/question picker as the
+   * `/dashboard/ai-interview/extractor` flow) instead of creating the
+   * interview immediately — the admin still has to pick the exact questions
+   * before a session and invite are created.
+   */
+  const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setCreated(null);
+    setExtractionResult(null);
+    setSessionResult(null);
 
     if (!resume) {
       setError('Please attach a resume.');
@@ -82,104 +89,89 @@ export default function AIInterviewManager() {
       setError('Please paste the job description text, or switch to uploading a file.');
       return;
     }
-    // Validation relaxed to allow default question generation fallback
+
     setSubmitting(true);
     try {
-      const form = new FormData();
-      form.append('resume', resume);
-      if (jdMode === 'file' && jd) {
-        form.append('jd', jd);
-      } else {
-        form.append('jdText', jdText.trim());
-      }
-      if (candidateName) form.append('candidateName', candidateName);
-      if (candidateEmail) form.append('candidateEmail', candidateEmail);
-      if (jobTitle) form.append('jobTitle', jobTitle);
+      setStatusMessage('Analyzing resume & job description...');
+      const extractForm = new FormData();
+      extractForm.append('resumeFile', resume);
+      if (jdMode === 'file' && jd) extractForm.append('jdFile', jd);
+      else extractForm.append('jdText', jdText.trim());
 
-      const res = await fetch('/api/admin/ai-interviews', { method: 'POST', body: form });
-      const json = await res.json();
-
-      if (!res.ok) {
-        setError(json.error ?? 'Failed to create interview.');
-        return;
+      const extractRes = await fetch('/api/ai-interview/extract', { method: 'POST', body: extractForm });
+      const extractJson = await extractRes.json();
+      if (!extractRes.ok) {
+        throw new Error(extractJson.error ?? 'Failed to analyze resume and job description.');
       }
 
-      setCreated(json);
-      setCandidateName('');
-      setCandidateEmail('');
-      setJobTitle('');
-      setResume(null);
-      setJd(null);
-      setJdText('');
-      if (selectedQuestions.length > 0) {
-        const questionsResponse = await fetch(`/api/interview/${json.interviewId}/questions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            questions: selectedQuestions,
-            durationMinutes: selectedDurationMinutes,
-            questionCount: selectedQuestions.length,
-            extraction: extractionResult,
-          }),
-        });
-        if (!questionsResponse.ok) {
-          setError('Interview link created, but questions could not be assigned.');
-        }
-      }
-      fetchInterviews();
+      // Admin-typed candidate/job fields take priority over whatever Gemini
+      // extracted from the documents, since they're what the admin meant.
+      const mergedExtraction: ExtractionResult = {
+        ...extractJson,
+        candidateProfile: {
+          ...extractJson.candidateProfile,
+          name: candidateName.trim() || extractJson.candidateProfile?.name,
+          email: candidateEmail.trim() || extractJson.candidateProfile?.email,
+        },
+        jdRequirements: {
+          ...extractJson.jdRequirements,
+          jobTitle: jobTitle.trim() || extractJson.jdRequirements?.jobTitle,
+        },
+      };
+      setExtractionResult(mergedExtraction);
+      setStatusMessage(null);
     } catch (err) {
-      console.error('[ai-interview-manager] submit failed:', err);
-      setError('Something went wrong. Please try again.');
+      console.error('[ai-interview-manager] analysis failed:', err);
+      setStatusMessage(null);
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleExtract = async () => {
-    setError(null);
-    if (!resume) {
-      setError('Please attach a resume before analyzing.');
-      return;
-    }
-    if (jdMode === 'file' && !jd) {
-      setError('Please attach a job description file before analyzing.');
-      return;
-    }
-    if (jdMode === 'text' && !jdText.trim()) {
-      setError('Please paste the job description text before analyzing.');
-      return;
-    }
-
-    setExtracting(true);
-    try {
-      const form = new FormData();
-      form.append('resumeFile', resume);
-      if (jdMode === 'file' && jd) form.append('jdFile', jd);
-      else form.append('jdText', jdText.trim());
-
-      const res = await fetch('/api/ai-interview/extract', { method: 'POST', body: form });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error ?? 'Failed to analyze resume and job description.');
-        return;
-      }
-      setExtractionResult(json);
-    } catch (err) {
-      console.error('[ai-interview-manager] extraction failed:', err);
-      setError('Something went wrong while analyzing the resume and job description.');
-    } finally {
-      setExtracting(false);
-    }
+  const handleSessionComplete = (result: SessionGenerationResult) => {
+    setSessionResult(result);
+    fetchInterviews();
   };
 
-  const copyToClipboard = async (value: string, kind: 'link' | 'code') => {
+  // Starts a fresh candidate: clears the form and both the analysis and the
+  // generated session/invite, back to the upload step.
+  const handleStartOver = () => {
+    setCandidateName('');
+    setCandidateEmail('');
+    setJobTitle('');
+    setResume(null);
+    setJd(null);
+    setJdText('');
+    setExtractionResult(null);
+    setSessionResult(null);
+    setError(null);
+  };
+
+  const copyValue = async (
+    value: string,
+    kind: 'link' | 'code',
+    setCopiedState: (kind: 'link' | 'code' | null) => void,
+  ) => {
     try {
       await navigator.clipboard.writeText(value);
-      setCopied(kind);
-      setTimeout(() => setCopied(null), 1500);
+      setCopiedState(kind);
+      setTimeout(() => setCopiedState(null), 1500);
     } catch (err) {
       console.error('[ai-interview-manager] copy failed:', err);
     }
+  };
+
+  const copyModalValue = (value: string, kind: 'link' | 'code') => copyValue(value, kind, setModalCopied);
+
+  const interviewLinkFor = (interviewId: string) =>
+    typeof window !== 'undefined' ? `${window.location.origin}/interview/${interviewId}` : `/interview/${interviewId}`;
+
+  // Editing the resume/JD after an analysis clears it, so a stale analysis
+  // never gets attached to a different candidate's documents.
+  const clearSuccessState = () => {
+    if (extractionResult) setExtractionResult(null);
+    if (sessionResult) setSessionResult(null);
   };
 
   return (
@@ -197,7 +189,23 @@ export default function AIInterviewManager() {
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="p-8 space-y-6">
+      {sessionResult ? (
+        <div className="p-8">
+          <KeywordResults result={sessionResult} onReset={handleStartOver} />
+        </div>
+      ) : extractionResult ? (
+        <div className="p-8 space-y-8">
+          <div className="rounded-2xl bg-slate-950 p-5">
+            <KeywordAnalysisOverview extraction={extractionResult} onReset={handleStartOver} />
+          </div>
+          <QuestionBankSelector
+            extraction={extractionResult}
+            onComplete={handleSessionComplete}
+            onBack={() => setExtractionResult(null)}
+          />
+        </div>
+      ) : (
+      <form onSubmit={handleAnalyze} className="p-8 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <input
             id="candidate-name"
@@ -241,7 +249,10 @@ export default function AIInterviewManager() {
             type="file"
             accept=".pdf,.doc,.docx,.txt"
             className="hidden"
-            onChange={(e) => setResume(e.target.files?.[0] ?? null)}
+            onChange={(e) => {
+              setResume(e.target.files?.[0] ?? null);
+              clearSuccessState();
+            }}
           />
         </label>
 
@@ -280,7 +291,10 @@ export default function AIInterviewManager() {
             <textarea
               id="jd-text"
               value={jdText}
-              onChange={(e) => setJdText(e.target.value)}
+              onChange={(e) => {
+                setJdText(e.target.value);
+                clearSuccessState();
+              }}
               placeholder="Paste the job description here..."
               rows={6}
               maxLength={20000}
@@ -303,7 +317,10 @@ export default function AIInterviewManager() {
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
                 className="hidden"
-                onChange={(e) => setJd(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  setJd(e.target.files?.[0] ?? null);
+                  clearSuccessState();
+                }}
               />
             </label>
           )}
@@ -321,80 +338,11 @@ export default function AIInterviewManager() {
               <p className="font-medium">{error}</p>
             </motion.div>
           )}
-
-          {created && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="p-5 space-y-3 text-sm bg-emerald-50 rounded-xl border border-emerald-100"
-            >
-              <div className="flex items-center space-x-2 text-emerald-700 font-bold">
-                <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                <span>Interview created — share these with the candidate</span>
-              </div>
-
-              <div className="flex items-center gap-2 bg-white rounded-lg border border-emerald-200 p-3">
-                <Link2 className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                <span id="interview-link" className="flex-1 truncate text-zinc-700 font-mono text-xs">
-                  {created.link}
-                </span>
-                <button
-                  id="copy-interview-link"
-                  type="button"
-                  onClick={() => copyToClipboard(created.link, 'link')}
-                  className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
-                >
-                  {copied === 'link' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 bg-white rounded-lg border border-emerald-200 p-3">
-                <KeyRound className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                <span id="interview-passcode" className="flex-1 font-mono text-lg font-black tracking-[0.3em] text-zinc-900">
-                  {created.accessCode}
-                </span>
-                <button
-                  id="copy-interview-code"
-                  type="button"
-                  onClick={() => copyToClipboard(created.accessCode, 'code')}
-                  className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
-                >
-                  {copied === 'code' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-            </motion.div>
-          )}
         </AnimatePresence>
 
-        <button
-          id="analyze-interview-documents"
-          type="button"
-          onClick={handleExtract}
-          disabled={extracting || submitting}
-          className="w-full border-2 border-dashed border-[#34c4f2]/40 hover:border-[#34c4f2] text-[#1689aa] font-bold py-4 rounded-2xl transition-all flex items-center justify-center space-x-3 disabled:opacity-70 disabled:cursor-not-allowed"
-        >
-          {extracting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-          <span>{extracting ? 'Analyzing Resume & JD...' : 'Extract Keywords & Analyze Alignment'}</span>
-        </button>
-
-        {extractionResult && (
-          <div className="rounded-2xl bg-slate-950 p-5">
-            <KeywordResults
-              result={extractionResult}
-              onReset={() => {
-                setExtractionResult(null);
-                setSelectedQuestions([]);
-                setSelectedDurationMinutes(null);
-              }}
-              onQuestionsGenerated={(questions, duration) => {
-                setSelectedQuestions(questions);
-                setSelectedDurationMinutes(duration);
-              }}
-            />
-          </div>
-        )}
-
+        {/* Step 1 of 2 — analyzes the resume/JD, then hands off to the
+            question-bank selection step above (rendered instead of this
+            form once `extractionResult` is set). */}
         <button
           id="create-interview-submit"
           type="submit"
@@ -402,15 +350,19 @@ export default function AIInterviewManager() {
           className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-5 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
         >
           {submitting ? (
-            <Loader2 className="w-6 h-6 animate-spin" />
+            <>
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <span>{statusMessage || 'Working...'}</span>
+            </>
           ) : (
             <>
               <UploadCloud className="w-5 h-5" />
-              <span>Generate Interview Link</span>
+              <span>Analyze Resume &amp; JD</span>
             </>
           )}
         </button>
       </form>
+      )}
 
       <div className="p-8 bg-zinc-50/50 border-t border-zinc-100">
         <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-4">
@@ -430,10 +382,15 @@ export default function AIInterviewManager() {
                 className="flex items-center justify-between bg-white p-4 rounded-xl border border-zinc-100 text-sm"
               >
                 <div>
-                  <p className="font-bold text-zinc-800">
+                  <button
+                    id={`interview-row-name-${iv.id}`}
+                    type="button"
+                    onClick={() => setSelectedInterview(iv)}
+                    className="font-bold text-zinc-800 hover:text-[#34c4f2] hover:underline text-left transition-colors"
+                  >
                     {iv.candidate_name || 'Unnamed candidate'}{' '}
                     {iv.job_title && <span className="text-zinc-400 font-normal">— {iv.job_title}</span>}
-                  </p>
+                  </button>
                   <p className="text-zinc-400 text-xs font-mono">
                     Code: {iv.access_code} · Expires {new Date(iv.expires_at).toLocaleDateString()}
                   </p>
@@ -450,6 +407,81 @@ export default function AIInterviewManager() {
           </div>
         )}
       </div>
+
+      {/* LINK & PASSCODE POPUP — opened by clicking a candidate's name in Recent Interviews */}
+      <AnimatePresence>
+        {selectedInterview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 px-4"
+            onClick={() => setSelectedInterview(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              id="interview-link-modal"
+              className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-zinc-100 p-6 space-y-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-zinc-900">
+                    {selectedInterview.candidate_name || 'Unnamed candidate'}
+                  </h3>
+                  {selectedInterview.job_title && (
+                    <p className="text-xs text-zinc-400">{selectedInterview.job_title}</p>
+                  )}
+                </div>
+                <button
+                  id="interview-link-modal-close"
+                  type="button"
+                  onClick={() => setSelectedInterview(null)}
+                  className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
+                <Link2 className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                <span className="flex-1 truncate text-zinc-700 font-mono text-xs">
+                  {interviewLinkFor(selectedInterview.id)}
+                </span>
+                <button
+                  id="interview-link-modal-copy-link"
+                  type="button"
+                  onClick={() => copyModalValue(interviewLinkFor(selectedInterview.id), 'link')}
+                  className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
+                >
+                  {modalCopied === 'link' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
+                <KeyRound className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                <span className="flex-1 font-mono text-lg font-black tracking-[0.3em] text-zinc-900">
+                  {selectedInterview.access_code}
+                </span>
+                <button
+                  id="interview-link-modal-copy-code"
+                  type="button"
+                  onClick={() => copyModalValue(selectedInterview.access_code, 'code')}
+                  className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
+                >
+                  {modalCopied === 'code' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+
+              <p className="text-xs text-zinc-400">
+                Expires {new Date(selectedInterview.expires_at).toLocaleString()} · Status: {selectedInterview.status}
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

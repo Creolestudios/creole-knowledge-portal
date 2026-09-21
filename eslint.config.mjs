@@ -25,6 +25,7 @@ export default defineConfig([
       "scratch/**",
       "public/**",
       "**/*.min.js",
+      ".claude/worktrees/**",
     ],
   },
   {

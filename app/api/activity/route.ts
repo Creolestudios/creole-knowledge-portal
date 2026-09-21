@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 import { computeStreak, istDateKey } from '@/lib/data/streak';
 import { summarizeAttemptRow } from '@/lib/quizzes/scoring';
@@ -19,11 +20,11 @@ import { toValidUUID } from '@/lib/quizzes/review';
  * The activity tables are optional gamification extras, so a missing table is
  * degraded to an empty result rather than a 500 that breaks the whole sidebar.
  */
-function isMissingTableError(error: { code?: string } | null): boolean {
+export function isMissingTableError(error: { code?: string } | null): boolean {
   return error?.code === 'PGRST205' || error?.code === '42P01';
 }
 
-function digestDateFromBlog(blog: {
+export function digestDateFromBlog(blog: {
   id?: string;
   digest_date?: string;
   published_at?: string;
@@ -38,7 +39,7 @@ function digestDateFromBlog(blog: {
 }
 
 /** Map quiz blog_id (UUID) → briefing calendar day (IST digest date). */
-async function loadBlogDigestDateById(userId: string): Promise<Map<string, string>> {
+export async function loadBlogDigestDateById(userId: string): Promise<Map<string, string>> {
   const map = new Map<string, string>();
   try {
     const res = await fetch(blogServiceUrl(`/digests/${userId}/past`), {
@@ -60,7 +61,7 @@ async function loadBlogDigestDateById(userId: string): Promise<Map<string, strin
   return map;
 }
 
-async function recordQuizOnBlogService(userId: string, quizScore?: number, quizTotal?: number) {
+export async function recordQuizOnBlogService(userId: string, quizScore?: number, quizTotal?: number) {
   if (quizScore === undefined || quizTotal === undefined) {
     return;
   }
@@ -77,12 +78,8 @@ async function recordQuizOnBlogService(userId: string, quizScore?: number, quizT
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
 
     // 1. Fetch reading logs from user_activity_logs
     const { data: readLogs, error: readError } = await supabaseAdmin
@@ -200,12 +197,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user: postUser, errorResponse: postError } = await requireUser();
+    if (postError) return postError;
+    const user = postUser;
 
     const body = await request.json();
     const { date, readSeconds, quizScore, quizTotal } = body;

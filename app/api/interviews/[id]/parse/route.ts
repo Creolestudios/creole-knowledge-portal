@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { extractKeywordsFromResumeAndJD } from '@/lib/ai-interview/extractor';
+import { getSessionOrError } from '@/lib/ai-interview/session-utils';
 
 export async function POST(
   req: NextRequest,
@@ -9,18 +10,8 @@ export async function POST(
   try {
     const { id } = await params;
 
-    const { data: session, error: fetchErr } = await supabaseAdmin
-      .from('interview_sessions')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (fetchErr || !session) {
-      return NextResponse.json(
-        { error: 'Interview session not found' },
-        { status: 404 }
-      );
-    }
+    const { session, errorResponse } = await getSessionOrError(id);
+    if (errorResponse || !session) return errorResponse;
 
     const body = await req.json().catch(() => ({}));
     const resumeText =

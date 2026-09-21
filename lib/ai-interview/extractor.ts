@@ -8,12 +8,21 @@ export function extractKeywordsLocalFallback(
   resumeText: string,
   jdText: string
 ): ExtractionResult {
+  const stripDotsAndPunctuation = (word: string) => {
+    const noPunctuation = word.replace(/[,;:!?]/g, '');
+    let start = 0;
+    let end = noPunctuation.length;
+    while (start < end && noPunctuation[start] === '.') start++;
+    while (end > start && noPunctuation[end - 1] === '.') end--;
+    return noPunctuation.slice(start, end);
+  };
+
   const clean = (text: string) =>
     text
       .toLowerCase()
       .replace(/[^a-z0-9+#.\s]/g, ' ')
       .split(/\s+/)
-      .map((w) => w.replace(/^\.+|\.+$|[,;:!?]/g, ''))
+      .map(stripDotsAndPunctuation)
       .filter((w) => w.length >= 2);
 
   const resumeWords = new Set(clean(resumeText));
@@ -203,9 +212,10 @@ ${jdText || '(See attached JD file)'}
 
       if (response && response.text) {
         let rawText = response.text.trim();
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          rawText = jsonMatch[0];
+        const firstBrace = rawText.indexOf('{');
+        const lastBrace = rawText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          rawText = rawText.slice(firstBrace, lastBrace + 1);
         }
 
         const parsed = JSON.parse(rawText);

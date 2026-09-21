@@ -10,6 +10,12 @@ export async function POST(req: NextRequest) {
     let jd_storage_path = '';
     let resumeText = '';
     let jdText = '';
+    let parsedResume: Record<string, unknown> | undefined;
+    let parsedJd: Record<string, unknown> | undefined;
+    let skillGap: Record<string, unknown> | undefined;
+    let questionCount: number | undefined;
+    let durationMinutes: number | undefined;
+    let similarityConfirmed: boolean | undefined;
 
     const contentType = req.headers.get('content-type') || '';
 
@@ -39,6 +45,12 @@ export async function POST(req: NextRequest) {
       jdText = body.jdText || '';
       resume_storage_path = body.resume_storage_path || '';
       jd_storage_path = body.jd_storage_path || '';
+      parsedResume = body.parsed_resume || undefined;
+      parsedJd = body.parsed_jd || undefined;
+      skillGap = body.skill_gap || undefined;
+      questionCount = typeof body.question_count === 'number' ? body.question_count : undefined;
+      durationMinutes = typeof body.duration_minutes === 'number' ? body.duration_minutes : undefined;
+      similarityConfirmed = typeof body.similarity_confirmed === 'boolean' ? body.similarity_confirmed : undefined;
     }
 
     const { data: session, error } = await supabaseAdmin
@@ -49,8 +61,12 @@ export async function POST(req: NextRequest) {
         candidate_phone,
         resume_storage_path,
         jd_storage_path,
-        parsed_resume: resumeText ? { summary: resumeText } : {},
-        parsed_jd: jdText ? { keyResponsibilities: [jdText] } : {},
+        parsed_resume: parsedResume || (resumeText ? { summary: resumeText } : {}),
+        parsed_jd: parsedJd || (jdText ? { keyResponsibilities: [jdText] } : {}),
+        skill_gap: skillGap || {},
+        question_count: questionCount,
+        duration_minutes: durationMinutes,
+        similarity_confirmed: similarityConfirmed,
         status: 'draft',
       })
       .select()

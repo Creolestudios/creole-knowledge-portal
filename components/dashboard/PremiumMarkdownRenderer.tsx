@@ -48,7 +48,7 @@ export function restoreArticleMarkdown(content: string): string {
     '$1\n\n```bash\n$2\n```\n\n',
   );
   text = text.replaceAll(
-    /(^|\n)[ \t]*(uv |npm |npx |pipx |pip install |git clone |git commit |docker (?:run|build|compose) |python3? -\w)([^\n]+)/gi,
+    /(^|\n)[ \t]{0,20}(uv |npm |npx |pipx |pip install |git clone |git commit |docker (?:run|build|compose) |python3? -\w)([^\n]+)/gi,
     '$1\n\n```bash\n$2$3\n```\n\n',
   );
   text = text.replaceAll(/ (\d+\. )/g, '\n$1');
@@ -68,7 +68,7 @@ export function restoreFlattenedTreeDiagram(content: string): string {
   // Each segment starts with a character the previous one cannot match, so the
   // engine never has to backtrack across the caption (linear, not super-linear).
   const mapLine =
-    /^\*{0,2}([^*|\n]+)(?:\*{1,2}[ \t]*)?(?:\|[ \t]*){1,6}(?:—{1,2}|├─{1,2}|└─{1,2})[ \t]*([\w.@/-]+)$/;
+    /^\*{0,2}([^*|\n]+)(?:\*{1,2}[ \t]{0,20})?(?:\|[ \t]{0,20}){1,6}(?:—{1,2}|├─{1,2}|└─{1,2})[ \t]{0,20}([\w.@/-]+)$/;
 
   const lines = raw.split('\n');
   const out: string[] = [];
@@ -106,7 +106,7 @@ export function restoreFlattenedTreeDiagram(content: string): string {
           return `${before}\n${pad}${branch} `;
         },
       );
-      working = working.replaceAll(/\/[ \t]+(?=[├└]─)/g, '/\n');
+      working = working.replaceAll(/\/[ \t]{1,20}(?=[├└]─)/g, '/\n');
       working = working.replaceAll(/\|([ \t]*\|)+/g, '\n');
       for (const part of working.split('\n')) {
         if (part.trim()) diagramBuf.push(part.trimEnd());
@@ -205,7 +205,7 @@ export function looksLikeFlowLine(text: string): boolean {
   // Prose sentences are never flow diagrams
   if (t.split(/\s+/).length >= 14 && /[.!?]$/.test(t)) return false;
   if (/\b(==>|-->|<-+>|=>)\b/.test(t)) return true;
-  if (/==[ \t]*\[[^\]]+\][ \t]*==/.test(t)) return true;
+  if (/==[ \t]{0,20}\[[^\]]+\][ \t]{0,20}==/.test(t)) return true;
   if (/\bArchitecture\b/i.test(t) && /\[[^\]]{1,200}\]/.test(t) && /==|->|→/.test(t)) return true;
   if ((t.match(/\[[^\]]{2,40}\]/g) || []).length >= 2 && /==|->|→|⇒/.test(t)) return true;
   // Chunking / slice diagrams: [--- Slice 1 ---][--- Slice 2 ---]
@@ -1803,8 +1803,8 @@ export function stripDigestBodyChrome(content: string): string {
 /** Drop mid-blog "From [title](url):" attribution lines (sources belong at the end). */
 export function stripMidBlogSourceLines(content: string): string {
   return String(content || '')
-    .replaceAll(/^[ \t]*\*\*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:\*\*[ \t\r]*$/gim, '')
-    .replaceAll(/^[ \t]*From[ \t]+\[[^\]]+\]\([^)]*\)(?:[ \t]*\(continued\))?:[ \t\r]*$/gim, '')
+    .replaceAll(/^[ \t]{0,20}\*\*From[ \t]{1,20}\[[^\]]+\]\([^)]*\)(?:[ \t]{0,20}\(continued\))?:\*\*[ \t\r]{0,20}$/gim, '')
+    .replaceAll(/^[ \t]{0,20}From[ \t]{1,20}\[[^\]]+\]\([^)]*\)(?:[ \t]{0,20}\(continued\))?:[ \t\r]{0,20}$/gim, '')
     .replaceAll(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -2265,6 +2265,53 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     }
   };
 
+  const pushComplexContent = (content: string) => {
+    if (looksLikeMarkdownTable(content) || looksLikeBrokenAsciiDiagram(content)) {
+      if (looksLikeBrokenAsciiDiagram(content) && !looksLikeMarkdownTable(content)) {
+        let labels = salvageDiagramLabels(content);
+        if (labels.length < 2 && looksLikeBracketFlowDiagram(content)) {
+          labels = salvageBracketFlowSteps(content);
+        }
+        if (labels.length >= 2) {
+          pushVisualDiagram(content, blocks);
+          return true;
+        }
+      }
+      if (depth < 2) {
+        blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
+      } else {
+        blocks.push({ type: 'p', content });
+      }
+      return true;
+    }
+    if (
+      looksLikeAsciiDiagram(content) ||
+      looksLikeSimpleArrowFlow(content) ||
+      looksLikePlusEqualsStack(content) ||
+      looksLikeBracketFlowDiagram(content)
+    ) {
+      pushVisualDiagram(content, blocks);
+      return true;
+    }
+    if (
+      currentSection === 'code' &&
+      !looksLikeProseMistakenlyFenced(content) &&
+      (looksLikeSourceCode(content) || /[{};=]/.test(content))
+    ) {
+      blocks.push({ type: 'code', content, label: 'Code Snippet' });
+      return true;
+    }
+    if (looksLikeProseMistakenlyFenced(content) || !looksLikeSourceCode(content)) {
+      if (depth < 2) {
+        blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
+      } else if (!looksLikeNonEnglishJunk(content)) {
+        blocks.push({ type: 'p', content });
+      }
+      return true;
+    }
+    return false;
+  };
+
   const flushPendingCode = () => {
     if (pendingCode.length === 0) return;
     const content = pendingCode.join('\n');
@@ -2274,49 +2321,7 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
       blocks.push({ type: 'code', content, label: 'Code Snippet' });
       return;
     }
-    if (looksLikeMarkdownTable(content) || looksLikeBrokenAsciiDiagram(content)) {
-      if (looksLikeBrokenAsciiDiagram(content) && !looksLikeMarkdownTable(content)) {
-        let labels = salvageDiagramLabels(content);
-        if (labels.length < 2 && looksLikeBracketFlowDiagram(content)) {
-          labels = salvageBracketFlowSteps(content);
-        }
-        if (labels.length >= 2) {
-          pushVisualDiagram(content, blocks);
-          return;
-        }
-      }
-      if (depth < 2) {
-        blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
-      } else {
-        blocks.push({ type: 'p', content });
-      }
-      return;
-    }
-    if (
-      looksLikeAsciiDiagram(content) ||
-      looksLikeSimpleArrowFlow(content) ||
-      looksLikePlusEqualsStack(content) ||
-      looksLikeBracketFlowDiagram(content)
-    ) {
-      pushVisualDiagram(content, blocks);
-      return;
-    }
-    if (
-      currentSection === 'code' &&
-      !looksLikeProseMistakenlyFenced(content) &&
-      (looksLikeSourceCode(content) || /[{};=]/.test(content))
-    ) {
-      blocks.push({ type: 'code', content, label: 'Code Snippet' });
-      return;
-    }
-    if (looksLikeProseMistakenlyFenced(content) || !looksLikeSourceCode(content)) {
-      if (depth < 2) {
-        blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
-      } else {
-        blocks.push({ type: 'p', content });
-      }
-      return;
-    }
+    if (pushComplexContent(content)) return;
     blocks.push({ type: 'code', content, label: 'Code Snippet' });
   };
 
@@ -2357,49 +2362,7 @@ function parseMarkdownBlocks(lines: string[], depth = 0): MdBlock[] {
     }
 
     if (tryPushTableBlock(content, blocks)) return;
-    if (looksLikeMarkdownTable(content) || looksLikeBrokenAsciiDiagram(content)) {
-      if (looksLikeBrokenAsciiDiagram(content) && !looksLikeMarkdownTable(content)) {
-        let labels = salvageDiagramLabels(content);
-        if (labels.length < 2 && looksLikeBracketFlowDiagram(content)) {
-          labels = salvageBracketFlowSteps(content);
-        }
-        if (labels.length >= 2) {
-          pushVisualDiagram(content, blocks);
-          return;
-        }
-      }
-      if (depth < 2) {
-        blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
-      } else {
-        blocks.push({ type: 'p', content });
-      }
-      return;
-    }
-    if (
-      looksLikeAsciiDiagram(content) ||
-      looksLikeSimpleArrowFlow(content) ||
-      looksLikePlusEqualsStack(content) ||
-      looksLikeBracketFlowDiagram(content)
-    ) {
-      pushVisualDiagram(content, blocks);
-      return;
-    }
-    if (
-      currentSection === 'code' &&
-      !looksLikeProseMistakenlyFenced(content) &&
-      (looksLikeSourceCode(content) || /[{};=]/.test(content))
-    ) {
-      blocks.push({ type: 'code', content, label: 'Code Snippet' });
-      return;
-    }
-    if (looksLikeProseMistakenlyFenced(content) || !looksLikeSourceCode(content)) {
-      if (depth < 2) {
-        blocks.push(...parseMarkdownBlocks(content.split('\n'), depth + 1));
-      } else if (!looksLikeNonEnglishJunk(content)) {
-        blocks.push({ type: 'p', content });
-      }
-      return;
-    }
+    if (pushComplexContent(content)) return;
     blocks.push({ type: 'code', content, label: 'Code Snippet' });
   };
 

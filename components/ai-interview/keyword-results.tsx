@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useState } from 'react';
 import {
   CheckCircle2,
   XCircle,
@@ -12,21 +12,44 @@ import {
   Tag,
   AlertTriangle,
   ArrowRight,
-  Sparkles,
+  Link2,
+  KeyRound,
 } from 'lucide-react';
 
-import { ExtractionResult } from '@/lib/ai-interview/types';
-import { INTERVIEW_CATEGORIES, QUESTION_BANK } from '@/lib/ai-interview/question-generator';
+import { ExtractionResult, SessionGenerationResult } from '@/lib/ai-interview/types';
 
 interface KeywordResultsProps {
-  result: ExtractionResult;
+  result: SessionGenerationResult;
   onReset: () => void;
-  onQuestionsGenerated?: (questions: any[], durationMinutes: number) => void;
 }
 
-export function KeywordResults({ result, onReset, onQuestionsGenerated }: KeywordResultsProps) {
+/**
+ * Full results view for the "Generate Interview Link" flow: the keyword
+ * analysis overview plus the interview link/passcode and the questions that
+ * were actually generated and stored for the session.
+ */
+export function KeywordResults({ result, onReset }: KeywordResultsProps) {
+  return (
+    <div className="w-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <KeywordAnalysisOverview extraction={result.extraction} onReset={onReset} />
+      <InterviewLinkAndQuestions result={result} />
+    </div>
+  );
+}
+
+interface KeywordAnalysisOverviewProps {
+  extraction: ExtractionResult;
+  onReset: () => void;
+}
+
+/**
+ * Just the keyword/skill-match analysis display, with no session/invite
+ * data — reused by the older ai-interview-manager.tsx flow, which only
+ * previews extraction results and doesn't create a session or invite.
+ */
+export function KeywordAnalysisOverview({ extraction, onReset }: KeywordAnalysisOverviewProps) {
   const [copied, setCopied] = useState(false);
-  const { candidateProfile, jdRequirements, analysis } = result;
+  const { candidateProfile, jdRequirements, analysis } = extraction;
 
   const matchPercentage = analysis.matchPercentage || 0;
 
@@ -64,7 +87,7 @@ ${analysis.skillGapSummary}
   };
 
   return (
-    <div className="w-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+    <div className="w-full space-y-8">
       {/* HEADER BAR */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl shadow-xl">
         <div>
@@ -73,7 +96,7 @@ ${analysis.skillGapSummary}
               Extraction Complete
             </span>
             <span className="text-xs text-slate-500">
-              Extracted at {new Date(result.extractedAt).toLocaleTimeString()}
+              Extracted at {new Date(extraction.extractedAt).toLocaleTimeString()}
             </span>
           </div>
           <h2 className="text-2xl font-bold text-slate-100 mt-2">Candidate & JD Skill Analysis</h2>
@@ -151,35 +174,6 @@ ${analysis.skillGapSummary}
           </div>
         </div>
       </div>
-
-      {(candidateProfile.education?.length || candidateProfile.noticePeriod || candidateProfile.currentLocation || candidateProfile.availability) && (
-        <div className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4">
-          <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-amber-400" />
-            <h3 className="text-lg font-semibold text-slate-100">HR Screening Details</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-300">
-            {candidateProfile.education?.map((education, index) => (
-              <div key={`${education.level}-${index}`} className="rounded-xl border border-slate-800 bg-slate-950/50 p-4 space-y-1">
-                <p className="font-semibold uppercase tracking-wider text-slate-400">
-                  {education.qualification || education.level}
-                </p>
-                {education.fieldOfStudy && <p>{education.fieldOfStudy}</p>}
-                {education.institution && <p className="text-slate-400">{education.institution}</p>}
-                <p className="text-emerald-300">
-                  {education.percentage !== undefined && `${education.percentage}%`}
-                  {education.cgpa !== undefined && `CGPA ${education.cgpa}`}
-                  {education.grade && `Grade ${education.grade}`}
-                  {education.passingYear && ` | ${education.passingYear}`}
-                </p>
-              </div>
-            ))}
-            {candidateProfile.noticePeriod && <p><span className="text-slate-500">Notice period:</span> {candidateProfile.noticePeriod}</p>}
-            {candidateProfile.currentLocation && <p><span className="text-slate-500">Location:</span> {candidateProfile.currentLocation}</p>}
-            {candidateProfile.availability && <p><span className="text-slate-500">Availability:</span> {candidateProfile.availability}</p>}
-          </div>
-        </div>
-      )}
 
       {/* KEYWORD TAXONOMY BREAKDOWN */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -305,255 +299,98 @@ ${analysis.skillGapSummary}
           </div>
         </div>
       </div>
-
-      {/* GENERATED HR INTERVIEW QUESTIONS SECTION */}
-      <GeneratedQuestionsSection result={result} onQuestionsGenerated={onQuestionsGenerated} />
     </div>
   );
 }
 
-function GeneratedQuestionsSection({
-  result,
-  onQuestionsGenerated,
-}: {
-  result: ExtractionResult;
-  onQuestionsGenerated?: (questions: any[], durationMinutes: number) => void;
-}) {
-  const [durationMinutes, setDurationMinutes] = useState('');
-  const [targetQuestions, setTargetQuestions] = useState('');
-  const [activeCategories, setActiveCategories] = useState<string[]>([]);
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
-  const [questions, setQuestions] = useState<any[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [copiedQuestions, setCopiedQuestions] = useState<boolean>(false);
-  const [lowMatchConfirmed, setLowMatchConfirmed] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
+/**
+ * Interview link/passcode panel + the questions actually generated and
+ * stored for the session — produced by the single "Generate Interview Link"
+ * action, shown only from the full `KeywordResults` view.
+ */
+function InterviewLinkAndQuestions({ result }: { result: SessionGenerationResult }) {
+  const { invite, questions } = result;
+  const [copiedField, setCopiedField] = useState<'link' | 'passcode' | null>(null);
 
-  const handleGenerateQuestions = useCallback(async () => {
-    const requestedQuestionCount = Number.parseInt(targetQuestions, 10);
-    const requestedDuration = Number.parseInt(durationMinutes, 10);
-    if (!Number.isInteger(requestedQuestionCount) || requestedQuestionCount <= 0) {
-      setValidationError('Enter the total number of questions the candidate should answer.');
-      return;
-    }
-    if (!Number.isInteger(requestedDuration) || requestedDuration <= 0) {
-      setValidationError('Enter the interview duration in minutes.');
-      return;
-    }
-    if (selectedQuestionIds.length !== requestedQuestionCount) {
-      setValidationError(`Select exactly ${requestedQuestionCount} questions from the question bank.`);
-      return;
-    }
-    if (result.analysis.matchPercentage < 70 && !lowMatchConfirmed) {
-      setValidationError('Confirm the low-similarity warning before generating questions.');
-      return;
-    }
-
-    setValidationError(null);
-    setLoading(true);
-    try {
-      const res = await fetch('/api/ai-interview/generate-questions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          candidateProfile: result.candidateProfile,
-          jdRequirements: result.jdRequirements,
-          analysis: result.analysis,
-          durationMinutes: requestedDuration,
-          targetQuestions: requestedQuestionCount,
-          categoryCounts: {},
-          includeMandatoryHr: false,
-          selectedQuestionIds,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && Array.isArray(data.questions)) {
-        setQuestions(data.questions);
-        onQuestionsGenerated?.(data.questions, requestedDuration);
-      }
-    } catch (err) {
-      console.error('Failed to generate HR questions:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [durationMinutes, lowMatchConfirmed, onQuestionsGenerated, result.analysis, result.candidateProfile, result.jdRequirements, selectedQuestionIds, targetQuestions]);
-
-  const handleCopyQuestionsText = () => {
-    if (!questions.length) return;
-    const formatted = questions
-      .map(
-        (q, idx) =>
-          `Q${idx + 1} [${q.category.toUpperCase()} - ${Math.round(q.time_limit_sec / 60)}m]: ${q.question_text}\n   Intent: ${q.intent || 'N/A'}`
-      )
-      .join('\n\n');
-
-    navigator.clipboard.writeText(
-      `=== GENERATED HR INTERVIEW QUESTIONS (${questions.length} Questions - ${durationMinutes} Mins) ===\n\n${formatted}`
-    );
-    setCopiedQuestions(true);
-    setTimeout(() => setCopiedQuestions(false), 2000);
+  const handleCopy = (value: string, field: 'link' | 'passcode') => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
   return (
-    <div className="p-6 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-purple-400 bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/20 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-              AI HR Question Generator
-            </span>
-            <span className="text-xs text-slate-400">Admin-selected question bank</span>
-          </div>
-          <h3 className="text-xl font-bold text-slate-100 mt-2">
-            Generated HR Interview Questions ({questions.length})
-          </h3>
-        </div>
+    <div className="space-y-6">
+      {/* SUCCESS BANNER — confirms whether question generation succeeded */}
+      <div
+        id="interview-generation-status"
+        className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-300 text-sm"
+      >
+        <CheckCircle2 className="w-5 h-5 shrink-0" />
+        <span>
+          {questions.length} interview question{questions.length === 1 ? '' : 's'} generated and
+          saved successfully. The interview link and passcode are ready below.
+        </span>
+      </div>
 
-        <div className="flex items-center gap-3">
-          {questions.length > 0 && (
+      {/* INTERVIEW LINK & PASSCODE */}
+      <div className="p-6 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl space-y-4">
+        <h3 className="text-lg font-bold text-slate-100">Interview Link &amp; Passcode</h3>
+        <p className="text-xs text-slate-400">
+          Share the link and passcode below with the candidate. The link expires at{' '}
+          {invite.expires_at ? new Date(invite.expires_at).toLocaleString() : 'N/A'}.
+        </p>
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
+            <Link2 className="w-4 h-4 text-blue-400 shrink-0" />
+            <input
+              id="keyword-results-invite-link"
+              readOnly
+              value={invite.invite_url || ''}
+              className="flex-1 bg-transparent text-sm text-slate-200 outline-none"
+            />
             <button
+              id="keyword-results-copy-link"
               type="button"
-              onClick={handleCopyQuestionsText}
-              className="flex items-center gap-2 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 transition-all"
+              onClick={() => handleCopy(invite.invite_url || '', 'link')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700"
             >
-              {copiedQuestions ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-slate-400" />}
-              <span>{copiedQuestions ? 'Copied' : 'Copy All Questions'}</span>
+              {copiedField === 'link' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedField === 'link' ? 'Copied' : 'Copy'}
             </button>
-          )}
+          </div>
+
+          <div className="flex items-center gap-2 p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
+            <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
+            <input
+              id="keyword-results-invite-passcode"
+              readOnly
+              value={invite.passcode || ''}
+              className="flex-1 bg-transparent text-sm font-mono tracking-widest text-slate-200 outline-none"
+            />
+            <button
+              id="keyword-results-copy-passcode"
+              type="button"
+              onClick={() => handleCopy(invite.passcode || '', 'passcode')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700"
+            >
+              {copiedField === 'passcode' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedField === 'passcode' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="p-4 bg-slate-950/60 rounded-xl border border-slate-800/80 space-y-4">
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
-          <BookOpen className="w-4 h-4 text-indigo-400" />
-          <span>Configure Candidate Interview</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="text-xs text-slate-400">
-            Total questions
-            <input
-              id="interview-question-count"
-              type="number"
-              min="1"
-              value={targetQuestions}
-              onChange={(event) => setTargetQuestions(event.target.value)}
-              placeholder="Admin decides"
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-          <label className="text-xs text-slate-400">
-            Duration (minutes)
-            <input
-              id="interview-duration-minutes"
-              type="number"
-              min="1"
-              value={durationMinutes}
-              onChange={(event) => setDurationMinutes(event.target.value)}
-              placeholder="Admin decides"
-              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
-            />
-          </label>
-        </div>
+      {/* THE QUESTIONS THAT WERE ACTUALLY GENERATED & STORED */}
+      <div className="p-6 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
+        <h3 className="text-xl font-bold text-slate-100">
+          Generated Interview Questions ({questions.length})
+        </h3>
 
-        <div>
-          <p className="text-xs text-slate-400 mb-2">
-            Select categories, then choose the exact questions to ask ({selectedQuestionIds.length} selected)
-          </p>
-          <div className="space-y-3">
-            {INTERVIEW_CATEGORIES.map((category) => {
-              const categoryQuestions = QUESTION_BANK.filter((question) => question.category === category);
-              const categoryIsActive = activeCategories.includes(category);
-              return (
-                <div key={category} className="rounded-lg border border-slate-800 bg-slate-900/60">
-                  <label className="flex cursor-pointer items-center gap-2 p-3 text-xs font-semibold uppercase tracking-wide text-slate-300">
-                    <input
-                      id={`category-select-${category}`}
-                      type="checkbox"
-                      checked={categoryIsActive}
-                      onChange={(event) => {
-                        setActiveCategories((current) => event.target.checked
-                          ? [...current, category]
-                          : current.filter((item) => item !== category));
-                      }}
-                      className="h-4 w-4 accent-indigo-500"
-                    />
-                    {category.replace(/_/g, ' ')}
-                    <span className="ml-auto text-[11px] font-normal normal-case text-slate-500">
-                      {categoryQuestions.length} available
-                    </span>
-                  </label>
-                  {categoryIsActive && (
-                    <div className="space-y-2 border-t border-slate-800 p-3">
-                      {categoryQuestions.map((question) => (
-                        <label key={question.id} className="flex cursor-pointer gap-3 rounded-md border border-slate-800 p-3 text-xs text-slate-300 hover:border-indigo-500/50">
-                          <input
-                            id={`question-select-${question.id}`}
-                            type="checkbox"
-                            checked={selectedQuestionIds.includes(question.id)}
-                            onChange={(event) => {
-                              setSelectedQuestionIds((current) => event.target.checked
-                                ? [...current, question.id]
-                                : current.filter((item) => item !== question.id));
-                            }}
-                            className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-500"
-                          />
-                          <span>{question.question_text}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {result.analysis.matchPercentage < 70 && (
-          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
-            <p>
-              Resume and JD similarity is {result.analysis.matchPercentage}%, below the recommended 70%.
-              Do you want to continue?
-            </p>
-            <button
-              id="confirm-low-similarity"
-              type="button"
-              onClick={() => setLowMatchConfirmed(true)}
-              className="mt-3 rounded-lg bg-amber-500 px-3 py-2 text-xs font-semibold text-slate-950"
-            >
-              Yes, continue
-            </button>
-          </div>
-        )}
-
-        {validationError && <p className="text-xs text-rose-400">{validationError}</p>}
-        <button
-          id="generate-candidate-questions"
-          type="button"
-          onClick={() => void handleGenerateQuestions()}
-          disabled={loading || (result.analysis.matchPercentage < 70 && !lowMatchConfirmed)}
-          className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? 'Generating questions...' : 'Generate candidate questions'}
-        </button>
-      </div>
-
-      {/* QUESTIONS CARDS LIST */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-12 space-y-3">
-          <div className="w-8 h-8 border-3 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
-          <p className="text-xs text-slate-400">Generating questions for this candidate...</p>
-        </div>
-      ) : questions.length === 0 ? (
-        <div className="text-center py-8">
-          <p className="text-xs text-slate-500">Set the question count, duration, and category allocation, then generate.</p>
-        </div>
-      ) : (
         <div className="space-y-3">
           {questions.map((q, idx) => (
             <div
-              key={idx}
+              key={q.id || idx}
               className="p-4 bg-slate-950/50 hover:bg-slate-950/80 border border-slate-800/90 rounded-xl transition-all space-y-2"
             >
               <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -568,7 +405,7 @@ function GeneratedQuestionsSection({
                         : 'bg-purple-500/10 text-purple-300 border border-purple-500/30'
                     }`}
                   >
-                    {q.category ? q.category.replace(/_/g, ' ') : q.question_type}
+                    {q.category ? q.category.replaceAll('_', ' ') : q.question_type}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-slate-400 font-medium">
@@ -601,7 +438,7 @@ function GeneratedQuestionsSection({
             </div>
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }

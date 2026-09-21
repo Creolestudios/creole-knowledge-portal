@@ -80,3 +80,32 @@ export function summarizeAttemptRow(
     };
   });
 }
+
+/** Points per question: 2 for multi-part types, 1 otherwise; 5 as a floor when no questions resolved. */
+export function calculateMaxPossibleScore(questions: { question_type?: string }[]): number {
+  const total = questions.reduce(
+    (sum, q) => sum + (['multiple', 'code', 'descriptive'].includes(q.question_type || '') ? 2 : 1),
+    0,
+  );
+  return total === 0 ? 5 : total;
+}
+
+export function calculateFinishedAttempts(attempts: any[] | null | undefined): { finishedAttemptsCount: number; attemptsRemaining: number } {
+  let finishedAttemptsCount = 0;
+  if (attempts && attempts.length > 0) {
+    if (attempts.length > 1) {
+      finishedAttemptsCount = attempts.filter((a: any) => a.status === 'completed').length;
+    } else {
+      const single = attempts[0];
+      const tq = single.total_questions || 5;
+      const attemptNum = tq >= 25 ? 3 : (tq >= 15 ? 2 : 1);
+      if (single.status === 'completed') {
+        finishedAttemptsCount = attemptNum;
+      } else {
+        finishedAttemptsCount = Math.max(0, attemptNum - 1);
+      }
+    }
+  }
+  const attemptsRemaining = Math.max(0, 3 - finishedAttemptsCount);
+  return { finishedAttemptsCount, attemptsRemaining };
+}

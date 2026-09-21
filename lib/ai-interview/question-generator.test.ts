@@ -1,4 +1,26 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('@google/genai', () => {
+  return {
+    GoogleGenAI: class GoogleGenAI {
+      static mockError = false;
+      static mockMalformed = false;
+      models = {
+        generateContent: vi.fn().mockImplementation(() => {
+          if (GoogleGenAI.mockError) {
+            if (GoogleGenAI.mockMalformed) {
+              return Promise.resolve({ text: 'Not a JSON' });
+            }
+            return Promise.reject(new Error('API Error'));
+          }
+          return Promise.resolve({
+            text: '[{"question_text":"Gemini generated question?","question_type":"behavioral","category":"teamwork","difficulty":"medium","required_skills":["Teamwork"],"intent":"Test intent"}]'
+          });
+        })
+      };
+    }
+  };
+});
 import {
   generateQuestionsLocalFallback,
   assembleQuestionSet,
@@ -133,5 +155,52 @@ describe('question-generator', () => {
 
     process.env.GEMINI_API_KEY = prevKey;
   });
-});
+  it('generates questions using Gemini API when key is present', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+    const { GoogleGenAI } = await import('@google/genai');
+    // @ts-ignore
+    GoogleGenAI.mockError = false;
+    GoogleGenAI.mockMalformed = false;
 
+    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
+      targetQuestions: 1,
+      categoryCounts: { teamwork: 1 },
+      includeMandatoryHr: false,
+    });
+    console.log('Result:', result[0]);
+    expect(result.length).toBe(1);
+    expect(result[0].question_text).toBe('Gemini generated question?');
+  });
+
+  it('falls back to local when Gemini API returns malformed JSON', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+    const { GoogleGenAI } = await import('@google/genai');
+    // @ts-ignore
+    GoogleGenAI.mockError = true;
+    GoogleGenAI.mockMalformed = true;
+    
+    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
+      targetQuestions: 1,
+      categoryCounts: { teamwork: 1 },
+      includeMandatoryHr: false,
+    });
+    expect(result.length).toBe(1);
+    expect(result[0].question_text).not.toBe('Gemini generated question?');
+  });
+
+  it('falls back to local when Gemini API throws an error', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+    const { GoogleGenAI } = await import('@google/genai');
+    // @ts-ignore
+    GoogleGenAI.mockError = true;
+    GoogleGenAI.mockMalformed = false;
+    
+    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
+      targetQuestions: 1,
+      categoryCounts: { teamwork: 1 },
+      includeMandatoryHr: false,
+    });
+    expect(result.length).toBe(1);
+    expect(result[0].question_text).not.toBe('Gemini generated question?');
+  });
+});

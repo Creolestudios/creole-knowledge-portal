@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'node:crypto';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getSessionOrError } from '@/lib/ai-interview/session-utils';
 
 export async function POST(
   req: NextRequest,
@@ -10,30 +11,21 @@ export async function POST(
     const { id } = await params;
     const body = await req.json().catch(() => ({}));
 
-    const { data: session, error: fetchErr } = await supabaseAdmin
-      .from('interview_sessions')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (fetchErr || !session) {
-      return NextResponse.json(
-        { error: 'Interview session not found' },
-        { status: 404 }
-      );
-    }
+    const { session, errorResponse } = await getSessionOrError(id);
+    if (errorResponse || !session) return errorResponse;
 
     // Generate high-entropy token and passcode
     const rawToken = crypto.randomBytes(24).toString('hex');
     const token_hash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
-    const rawPasscode =
-      body.passcode || Math.floor(100000 + Math.random() * 900000).toString();
+    // crypto.randomInt (CSPRNG) rather than Math.random() — this passcode
+    // gates access to a candidate's interview session, so it must not be
+    // predictable.
+    const rawPasscode = body.passcode || crypto.randomInt(100000, 1000000).toString();
     const passcode_salt = crypto.randomBytes(16).toString('hex');
     const passcode_hash = crypto
-      .createHash('sha256')
-      .update(rawPasscode + passcode_salt)
-      .digest('hex');
+      .scryptSync(rawPasscode + passcode_salt, passcode_salt, 64)
+      .toString('hex');
 
     const expires_in_hours = body.expires_in_hours || 72;
     const expires_at = new Date(

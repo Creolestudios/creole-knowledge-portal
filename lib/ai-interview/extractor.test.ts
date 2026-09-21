@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const mockGenerateContent = vi.hoisted(() => vi.fn());
+
+vi.mock('@google/genai', () => ({
+  GoogleGenAI: class {
+    models = { generateContent: mockGenerateContent };
+  },
+}));
+
 import { extractKeywordsFromResumeAndJD, extractKeywordsLocalFallback } from './extractor';
 
 describe('extractKeywordsLocalFallback', () => {
@@ -16,11 +25,33 @@ describe('extractKeywordsLocalFallback', () => {
     expect(result.analysis.matchPercentage).toBeGreaterThan(0);
     expect(result.extractedAt).toBeDefined();
   });
+
+  it('strips leading/trailing dots and punctuation from words without catastrophic backtracking', () => {
+    const resumeText = '...Experienced with C++ ...and Node.js, (great), skills!';
+    const jdText = 'C++ and Node.js required.';
+
+    const start = Date.now();
+    const result = extractKeywordsLocalFallback(resumeText, jdText);
+    expect(Date.now() - start).toBeLessThan(500);
+
+    expect(result.candidateProfile.extractedSkills).toContain('c++');
+    expect(result.candidateProfile.extractedSkills).toContain('node.js');
+    expect(result.candidateProfile.extractedSkills).not.toContain('...experienced');
+  });
+
+  it('does not hang on long dot-heavy strings (regression for superlinear regex)', () => {
+    const pathological = `${'.'.repeat(5000)}word${'.'.repeat(5000)}`;
+    const start = Date.now();
+    const result = extractKeywordsLocalFallback(pathological, 'word');
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(result.analysis.matchedKeywords).toContain('word');
+  });
 });
 
 describe('extractKeywordsFromResumeAndJD', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockGenerateContent.mockReset();
   });
 
   it('throws an error if both text and file inputs are missing', async () => {
@@ -48,6 +79,66 @@ describe('extractKeywordsFromResumeAndJD', () => {
     expect(result.jdRequirements).toBeDefined();
     expect(result.analysis.matchedKeywords).toContain('python');
     expect(result.analysis.matchedKeywords).toContain('fastapi');
+
+    process.env.GEMINI_API_KEY = originalApiKey;
+  });
+
+  it('parses the Gemini response, stripping any surrounding non-JSON prose', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    const jsonPayload = {
+      candidateProfile: {
+        name: 'Jane Doe',
+        summary: 'Experienced engineer',
+        extractedSkills: ['react'],
+        domains: ['Engineering'],
+        yearsOfExperience: 5,
+      },
+      jdRequirements: {
+        mustHaveSkills: ['react'],
+        niceToHaveSkills: [],
+        keyResponsibilities: ['Build things'],
+      },
+      analysis: {
+        matchPercentage: 90,
+        matchedKeywords: ['react'],
+        missingKeywords: [],
+        resumeOnlyKeywords: [],
+        skillGapSummary: 'Strong match',
+        keyStrengths: ['react'],
+        improvementAreas: [],
+      },
+    };
+
+    mockGenerateContent.mockResolvedValueOnce({
+      text: `Here is the JSON:\n${JSON.stringify(jsonPayload)}\nThanks!`,
+    });
+
+    const result = await extractKeywordsFromResumeAndJD({
+      resumeText: 'Jane Doe resume',
+      jdText: 'React JD',
+    });
+
+    expect(result.candidateProfile.name).toBe('Jane Doe');
+    expect(result.analysis.matchPercentage).toBe(90);
+    expect(result.analysis.matchedKeywords).toEqual(['react']);
+
+    process.env.GEMINI_API_KEY = originalApiKey;
+  });
+
+  it('falls back to the local parser when every Gemini model call fails', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY = 'test-key';
+
+    mockGenerateContent.mockRejectedValue(new Error('model unavailable'));
+
+    const result = await extractKeywordsFromResumeAndJD({
+      resumeText: 'Python FastAPI engineer',
+      jdText: 'Python FastAPI role',
+    });
+
+    expect(result.analysis.matchedKeywords).toContain('python');
 
     process.env.GEMINI_API_KEY = originalApiKey;
   });

@@ -5,13 +5,13 @@ import { Upload, FileText, Sparkles, X, CheckCircle2, AlertCircle } from 'lucide
 import { ExtractionResult } from '@/lib/ai-interview/types';
 
 interface ResumeJDUploaderProps {
-  onExtractionComplete: (data: ExtractionResult) => void;
+  onExtracted: (data: ExtractionResult) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
 }
 
 export function ResumeJDUploader({
-  onExtractionComplete,
+  onExtracted,
   isLoading,
   setIsLoading,
 }: ResumeJDUploaderProps) {
@@ -25,6 +25,7 @@ export function ResumeJDUploader({
   const [jdFile, setJdFile] = useState<File | null>(null);
 
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const handleResumeFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -40,8 +41,9 @@ export function ResumeJDUploader({
     }
   };
 
-  const handleExtract = async () => {
+  const handleExtractKeywords = async () => {
     setError(null);
+    setStatusMessage(null);
 
     const hasResume = (resumeMode === 'upload' && resumeFile) || (resumeMode === 'text' && resumeText.trim());
     const hasJd = (jdMode === 'upload' && jdFile) || (jdMode === 'text' && jdText.trim());
@@ -54,6 +56,8 @@ export function ResumeJDUploader({
     setIsLoading(true);
 
     try {
+      setStatusMessage('Extracting resume & JD keywords with AI...');
+
       const formData = new FormData();
       if (resumeMode === 'text' && resumeText.trim()) {
         formData.append('resumeText', resumeText.trim());
@@ -72,15 +76,17 @@ export function ResumeJDUploader({
         body: formData,
       });
 
-      const data = await res.json();
+      const extraction = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to extract keywords');
+        throw new Error(extraction.error || 'Failed to extract keywords');
       }
 
-      onExtractionComplete(data);
-    } catch (err: any) {
-      setError(err.message || 'An unexpected error occurred during extraction.');
+      setStatusMessage(null);
+      onExtracted(extraction);
+    } catch (err: unknown) {
+      setStatusMessage(null);
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
     } finally {
       setIsLoading(false);
     }
@@ -89,7 +95,10 @@ export function ResumeJDUploader({
   return (
     <div className="w-full space-y-6">
       {error && (
-        <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm animate-in fade-in">
+        <div
+          id="resume-jd-uploader-error"
+          className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm animate-in fade-in"
+        >
           <AlertCircle className="w-5 h-5 shrink-0" />
           <span>{error}</span>
         </div>
@@ -261,26 +270,31 @@ export function ResumeJDUploader({
         </div>
       </div>
 
-      {/* EXTRACT ACTION BUTTON */}
-      <div className="flex justify-center pt-2">
+      {/* ACTION BUTTON — extracts keywords, then hands off to the question-selection step */}
+      <div className="flex flex-col items-center gap-3 pt-2">
         <button
+          id="resume-jd-uploader-extract"
           type="button"
-          onClick={handleExtract}
+          onClick={handleExtractKeywords}
           disabled={isLoading}
           className="relative inline-flex items-center justify-center gap-3 px-8 py-3.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0"
         >
           {isLoading ? (
             <>
               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Analyzing Resume & JD with AI...</span>
+              <span>{statusMessage || 'Working...'}</span>
             </>
           ) : (
             <>
               <Sparkles className="w-5 h-5 text-amber-300 animate-pulse" />
-              <span>Extract Keywords & Analyze Alignment</span>
+              <span>Analyze Resume & JD</span>
             </>
           )}
         </button>
+        <p className="text-xs text-slate-500 text-center max-w-md">
+          Extracts keywords and computes candidate-to-JD alignment. You&apos;ll pick the exact
+          interview questions on the next step.
+        </p>
       </div>
     </div>
   );

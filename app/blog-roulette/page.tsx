@@ -200,7 +200,16 @@ function BlogRouletteListPageContent() {
               return (
                 <div
                   key={b.id}
+                  role="button"
+                  tabIndex={0}
+                  id={`blog-card-${b.id}`}
                   onClick={() => router.push(href)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push(href);
+                    }
+                  }}
                   className="cursor-pointer bg-white rounded-[28px] p-8 border border-zinc-100 shadow-card hover:shadow-lg hover:border-brand/30 transition-all group block"
                 >
                   <div className="flex items-center justify-between mb-4">

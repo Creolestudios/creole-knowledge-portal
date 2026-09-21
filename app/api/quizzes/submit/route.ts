@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 
 interface AnswerSubmission {
   questionId: string;
@@ -10,17 +10,9 @@ interface AnswerSubmission {
 export async function POST(request: Request) {
   try {
     // 1. Authenticate user
-    let userId: string | null = null;
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (user) {
-      userId = user.id;
-    }
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
+    const userId: string = user.id;
 
     // 2. Parse request body
     const body = await request.json();

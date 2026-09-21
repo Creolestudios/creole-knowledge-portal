@@ -1,18 +1,14 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 import { generateQuizForBlog } from '@/lib/ai/quiz-generator';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 import { toValidUUID } from '@/lib/quizzes/review';
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
 
     const { blogId } = await request.json();
 

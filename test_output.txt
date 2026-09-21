@@ -1,0 +1,606 @@
+
+ RUN  v4.1.5 /var/www/html/creole-knowledge-portal
+
+Not implemented: HTMLMediaElement's play() method
+stderr | app/interview/[id]/page.test.tsx > InterviewEntryPage > shows an error when permissions are denied
+[interview-entry] permission request failed: Error: Permission denied
+    at /var/www/html/creole-knowledge-portal/app/interview/[id]/page.test.tsx:144:52
+    at file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11
+    at file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:26
+    at file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:2326:20
+    at new Promise (<anonymous>)
+    at runWithCancel (file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:2323:10)
+    at file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:2305:20
+    at new Promise (<anonymous>)
+    at runWithTimeout (file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:2272:10)
+    at file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:2955:64
+
+Not implemented: HTMLMediaElement's play() method
+Not implemented: HTMLMediaElement's play() method
+Not implemented: HTMLMediaElement's play() method
+ ❯ app/interview/[id]/page.test.tsx (9 tests | 1 failed) 25413ms
+     ✓ shows an error on an incorrect passcode 79ms
+     ✓ shows the instructions screen on a correct passcode 30ms
+     ✓ only strips non-digit characters and enforces the 6-digit length 8ms
+     ✓ starts the interview once webcam, mic, and full-screen share are granted 46ms
+     ✓ rejects a partial-screen share and asks for the entire screen 37ms
+     ✓ shows an error when permissions are denied 42ms
+     ✓ starts the interview before monitoring status is displayed 36ms
+     × terminates the interview as soon as the tab is hidden or the window minimized 20049ms
+     ✓ does NOT terminate when the page only loses keyboard focus while staying visible  5083ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  app/interview/[id]/page.test.tsx > InterviewEntryPage > terminates the interview as soon as the tab is hidden or the window minimized
+TestingLibraryElementError: Unable to find an element with the text: Interview terminated. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<main[39m
+      [33mclass[39m=[32m"min-h-screen flex items-center justify-center bg-[#0b0f14] px-4 py-10"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"max-w-lg w-full space-y-5"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"text-center space-y-1"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-shield-check w-8 h-8 text-emerald-400 mx-auto mb-1"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"m9 12 2 2 4-4"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-xl font-bold text-white"[39m
+          [36m>[39m
+            [0mYou're verified[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-sm text-zinc-400"[39m
+          [36m>[39m
+            [0mYour camera, mic, and screen share are live. Please wait while we initialize the face tracking calibration.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33maria-label[39m=[32m"You camera preview"[39m
+          [33mclass[39m=[32m"relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-lg aspect-video w-full"[39m
+        [36m>[39m
+          [36m<video[39m
+            [33mautoplay[39m=[32m""[39m
+            [33mclass[39m=[32m"h-full w-full object-cover scale-x-[-1] transition-opacity opacity-0"[39m
+            [33mplaysinline[39m=[32m""[39m
+          [36m/>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-user w-6 h-6"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"[39m
+                [36m/>[39m
+                [36m<circle[39m
+                  [33mcx[39m=[32m"12"[39m
+                  [33mcy[39m=[32m"7"[39m
+                  [33mr[39m=[32m"4"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+            [36m</div>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[10px] uppercase tracking-wider"[39m
+            [36m>[39m
+              [0mCamera off[0m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0mYou[0m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"absolute bottom-2 right-2 flex items-center justify-center w-6 h-6 rounded-full bg-black/60"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-mic w-3 h-3 text-white"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 19v3"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M19 10v2a7 7 0 0 1-14 0v-2"[39m
+              [36m/>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"13"[39m
+                [33mrx[39m=[32m"3"[39m
+                [33mwidth[39m=[32m"6"[39m
+                [33mx[39m=[32m"9"[39m
+                [33my[39m=[32m"2"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex items-center justify-center gap-3 p-3 bg-zinc-900 rounded-2xl border border-zinc-800"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33maria-pressed[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex items-center justify-center w-11 h-11 rounded-full transition-all bg-zinc-800 text-white hover:bg-zinc-700"[39m
+            [33mid[39m=[32m"meeting-toggle-mic"[39m
+            [33mtitle[39m=[32m"Mute microphone"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-mic w-5 h-5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 19v3"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M19 10v2a7 7 0 0 1-14 0v-2"[39m
+              [36m/>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"13"[39m
+                [33mrx[39m=[32m"3"[39m
+                [33mwidth[39m=[32m"6"[39m
+                [33mx[39m=[32m"9"[39m
+                [33my[39m=[32m"2"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"relative flex items-center justify-center w-11 h-11 rounded-full bg-zinc-800 text-white opacity-60 cursor-not-allowed"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mid[39m=[32m"meeting-camera-locked"[39m
+            [33mtitle[39m=[32m"Camera must stay on for the duration of the interview"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-video w-5 h-5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"[39m
+              [36m/>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"12"[39m
+                [33mrx[39m=[32m"2"[39m
+                [33mwidth[39m=[32m"14"[39m
+                [33mx[39m=[32m"2"[39m
+                [33my[39m=[32m"6"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-lock w-2.5 h-2.5 absolute -bottom-0.5 -right-0.5 bg-zinc-700 rounded-full p-0.5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"11"[39m
+                [33mrx[39m=[32m"2"[39m
+                [33mry[39m=[32m"2"[39m
+                [33mwidth[39m=[32m"18"[39m
+                [33mx[39m=[32m"3"[39m
+                [33my[39m=[32m"11"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M7 11V7a5 5 0 0 1 10 0v4"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"flex items-center justify-center w-11 h-11 rounded-full bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"[39m
+            [33mid[39m=[32m"meeting-open-settings"[39m
+            [33mtitle[39m=[32m"Camera & microphone settings"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-settings w-5 h-5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"[39m
+              [36m/>[39m
+              [36m<circle[39m
+                [33mcx[39m=[32m"12"[39m
+                [33mcy[39m=[32m"12"[39m
+                [33mr[39m=[32m"3"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-center"[39m
+        [36m>[39m
+          [0mStay on this tab and keep your camera, microphone, and screen share on — switching tabs, minimizing the window, or stopping any of them will immediately end your interview.[0m
+        [36m</p>[39m
+      [36m</div>[39m
+    [36m</main>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<main[39m
+      [33mclass[39m=[32m"min-h-screen flex items-center justify-center bg-[#0b0f14] px-4 py-10"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"max-w-lg w-full space-y-5"[39m
+      [36m>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"text-center space-y-1"[39m
+        [36m>[39m
+          [36m<svg[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33mclass[39m=[32m"lucide lucide-shield-check w-8 h-8 text-emerald-400 mx-auto mb-1"[39m
+            [33mfill[39m=[32m"none"[39m
+            [33mheight[39m=[32m"24"[39m
+            [33mstroke[39m=[32m"currentColor"[39m
+            [33mstroke-linecap[39m=[32m"round"[39m
+            [33mstroke-linejoin[39m=[32m"round"[39m
+            [33mstroke-width[39m=[32m"2"[39m
+            [33mviewBox[39m=[32m"0 0 24 24"[39m
+            [33mwidth[39m=[32m"24"[39m
+            [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+          [36m>[39m
+            [36m<path[39m
+              [33md[39m=[32m"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"[39m
+            [36m/>[39m
+            [36m<path[39m
+              [33md[39m=[32m"m9 12 2 2 4-4"[39m
+            [36m/>[39m
+          [36m</svg>[39m
+          [36m<h1[39m
+            [33mclass[39m=[32m"text-xl font-bold text-white"[39m
+          [36m>[39m
+            [0mYou're verified[0m
+          [36m</h1>[39m
+          [36m<p[39m
+            [33mclass[39m=[32m"text-sm text-zinc-400"[39m
+          [36m>[39m
+            [0mYour camera, mic, and screen share are live. Please wait while we initialize the face tracking calibration.[0m
+          [36m</p>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33maria-label[39m=[32m"You camera preview"[39m
+          [33mclass[39m=[32m"relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-lg aspect-video w-full"[39m
+        [36m>[39m
+          [36m<video[39m
+            [33mautoplay[39m=[32m""[39m
+            [33mclass[39m=[32m"h-full w-full object-cover scale-x-[-1] transition-opacity opacity-0"[39m
+            [33mplaysinline[39m=[32m""[39m
+          [36m/>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center"[39m
+            [36m>[39m
+              [36m<svg[39m
+                [33maria-hidden[39m=[32m"true"[39m
+                [33mclass[39m=[32m"lucide lucide-user w-6 h-6"[39m
+                [33mfill[39m=[32m"none"[39m
+                [33mheight[39m=[32m"24"[39m
+                [33mstroke[39m=[32m"currentColor"[39m
+                [33mstroke-linecap[39m=[32m"round"[39m
+                [33mstroke-linejoin[39m=[32m"round"[39m
+                [33mstroke-width[39m=[32m"2"[39m
+                [33mviewBox[39m=[32m"0 0 24 24"[39m
+                [33mwidth[39m=[32m"24"[39m
+                [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+              [36m>[39m
+                [36m<path[39m
+                  [33md[39m=[32m"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"[39m
+                [36m/>[39m
+                [36m<circle[39m
+                  [33mcx[39m=[32m"12"[39m
+                  [33mcy[39m=[32m"7"[39m
+                  [33mr[39m=[32m"4"[39m
+                [36m/>[39m
+              [36m</svg>[39m
+            [36m</div>[39m
+            [36m<span[39m
+              [33mclass[39m=[32m"text-[10px] uppercase tracking-wider"[39m
+            [36m>[39m
+              [0mCamera off[0m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"absolute bottom-2 left-2 flex items-center gap-1.5 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white"[39m
+          [36m>[39m
+            [36m<span>[39m
+              [0mYou[0m
+            [36m</span>[39m
+          [36m</div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"absolute bottom-2 right-2 flex items-center justify-center w-6 h-6 rounded-full bg-black/60"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-mic w-3 h-3 text-white"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 19v3"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M19 10v2a7 7 0 0 1-14 0v-2"[39m
+              [36m/>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"13"[39m
+                [33mrx[39m=[32m"3"[39m
+                [33mwidth[39m=[32m"6"[39m
+                [33mx[39m=[32m"9"[39m
+                [33my[39m=[32m"2"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div[39m
+          [33mclass[39m=[32m"flex items-center justify-center gap-3 p-3 bg-zinc-900 rounded-2xl border border-zinc-800"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33maria-pressed[39m=[32m"true"[39m
+            [33mclass[39m=[32m"flex items-center justify-center w-11 h-11 rounded-full transition-all bg-zinc-800 text-white hover:bg-zinc-700"[39m
+            [33mid[39m=[32m"meeting-toggle-mic"[39m
+            [33mtitle[39m=[32m"Mute microphone"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-mic w-5 h-5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M12 19v3"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M19 10v2a7 7 0 0 1-14 0v-2"[39m
+              [36m/>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"13"[39m
+                [33mrx[39m=[32m"3"[39m
+                [33mwidth[39m=[32m"6"[39m
+                [33mx[39m=[32m"9"[39m
+                [33my[39m=[32m"2"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"relative flex items-center justify-center w-11 h-11 rounded-full bg-zinc-800 text-white opacity-60 cursor-not-allowed"[39m
+            [33mdisabled[39m=[32m""[39m
+            [33mid[39m=[32m"meeting-camera-locked"[39m
+            [33mtitle[39m=[32m"Camera must stay on for the duration of the interview"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-video w-5 h-5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"[39m
+              [36m/>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"12"[39m
+                [33mrx[39m=[32m"2"[39m
+                [33mwidth[39m=[32m"14"[39m
+                [33mx[39m=[32m"2"[39m
+                [33my[39m=[32m"6"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-lock w-2.5 h-2.5 absolute -bottom-0.5 -right-0.5 bg-zinc-700 rounded-full p-0.5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<rect[39m
+                [33mheight[39m=[32m"11"[39m
+                [33mrx[39m=[32m"2"[39m
+                [33mry[39m=[32m"2"[39m
+                [33mwidth[39m=[32m"18"[39m
+                [33mx[39m=[32m"3"[39m
+                [33my[39m=[32m"11"[39m
+              [36m/>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M7 11V7a5 5 0 0 1 10 0v4"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+          [36m<button[39m
+            [33mclass[39m=[32m"flex items-center justify-center w-11 h-11 rounded-full bg-zinc-800 text-white hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"[39m
+            [33mid[39m=[32m"meeting-open-settings"[39m
+            [33mtitle[39m=[32m"Camera & microphone settings"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [36m<svg[39m
+              [33maria-hidden[39m=[32m"true"[39m
+              [33mclass[39m=[32m"lucide lucide-settings w-5 h-5"[39m
+              [33mfill[39m=[32m"none"[39m
+              [33mheight[39m=[32m"24"[39m
+              [33mstroke[39m=[32m"currentColor"[39m
+              [33mstroke-linecap[39m=[32m"round"[39m
+              [33mstroke-linejoin[39m=[32m"round"[39m
+              [33mstroke-width[39m=[32m"2"[39m
+              [33mviewBox[39m=[32m"0 0 24 24"[39m
+              [33mwidth[39m=[32m"24"[39m
+              [33mxmlns[39m=[32m"http://www.w3.org/2000/svg"[39m
+            [36m>[39m
+              [36m<path[39m
+                [33md[39m=[32m"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"[39m
+              [36m/>[39m
+              [36m<circle[39m
+                [33mcx[39m=[32m"12"[39m
+                [33mcy[39m=[32m"12"[39m
+                [33mr[39m=[32m"3"[39m
+              [36m/>[39m
+            [36m</svg>[39m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-center"[39m
+        [36m>[39m
+          [0mStay on this tab and keep your camera, microphone, and screen share on — switching tabs, minimizing the window, or stopping any of them will immediately end your interview.[0m
+        [36m</p>[39m
+      [36m</div>[39m
+    [36m</main>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ app/interview/[id]/page.test.tsx:216:25
+    214|     fireEvent(document, new Event('visibilitychange'));
+    215|
+    216|     expect(await screen.findByText('Interview terminated')).toBeInTheD…
+       |                         ^
+    217|   });
+    218|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 1 unhandled error during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯ Uncaught Exception ⎯⎯⎯⎯⎯
+TypeError: Cannot read properties of undefined (reading 'catch')
+ ❯ notifyTermination app/interview/[id]/page.tsx:109:7
+    107|       body: payload,
+    108|       keepalive: true,
+    109|     }).catch((err) => console.error('[interview-entry] terminate notif…
+       |       ^
+    110|   };
+    111|
+ ❯ Object.terminateInterview [as current] app/interview/[id]/page.tsx:116:5
+ ❯ report lib/ai-interview/use-proctoring-watchdog.ts:50:55
+ ❯ Document.onVisibilityChange lib/ai-interview/use-proctoring-watchdog.ts:53:28
+ ❯ Document.callTheUserObjectsOperation node_modules/jsdom/lib/generated/idl/EventListener.js:26:30
+ ❯ innerInvokeEventListeners node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:360:16
+ ❯ invokeEventListeners node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:296:3
+ ❯ DocumentImpl._dispatch node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:243:9
+ ❯ DocumentImpl.dispatchEvent node_modules/jsdom/lib/jsdom/living/events/EventTarget-impl.js:114:17
+ ❯ Document.dispatchEvent node_modules/jsdom/lib/generated/idl/EventTarget.js:241:34
+
+This error originated in "app/interview/[id]/page.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The latest test that might've caused the error is "terminates the interview as soon as the tab is hidden or the window minimized". It might mean one of the following:
+- The error was thrown, while Vitest was running this test.
+- If the error occurred after the test had been completed, this was the last documented test before it was thrown.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+     Errors  1 error
+   Start at  15:38:00
+   Duration  26.71s (transform 209ms, setup 180ms, import 299ms, tests 25.41s, environment 659ms)
+

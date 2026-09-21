@@ -187,111 +187,83 @@ export function generateQuestionsLocalFallback(
 
   const candidateTitle = jd?.jobTitle || 'Software Engineer';
 
-  const baseHrTemplates: Array<{
+  type HrTemplate = {
     text: string;
     type: QuestionType;
     category: string;
     difficulty: QuestionDifficulty;
     skills: string[];
     intent: string;
-  }> = [
-    {
-      text: `Please introduce yourself and highlight the experiences that best prepare you for this ${candidateTitle} role.`,
-      type: 'hr',
-      category: 'hr',
-      difficulty: 'easy',
-      skills: ['Communication', 'Self-Awareness'],
-      intent: 'Understand the candidate background and communication style.',
-    },
-    {
-      text: 'Tell us about a challenging professional situation and what you learned from handling it.',
-      type: 'behavioral',
-      category: 'behavioral',
-      difficulty: 'medium',
-      skills: ['Reflection', 'Judgment'],
-      intent: 'Assess behavior, ownership, and learning from experience.',
-    },
-    {
-      text: `Can you walk us through your professional journey so far and how your background aligns with the requirements of this ${candidateTitle} position?`,
-      type: 'hr',
-      category: 'experience_overview',
-      difficulty: 'easy',
-      skills: ['Communication', 'Career Overview'],
-      intent: 'Assess candidate presentation skills and relevant career progression.',
-    },
-    {
-      text: `The job description emphasizes skills like ${matchedSkills[0] || 'core competencies'}. How have you demonstrated these strengths in your previous team environments?`,
-      type: 'behavioral',
-      category: 'role_alignment',
-      difficulty: 'easy',
-      skills: ['Role Alignment', matchedSkills[0] || 'Teamwork'],
-      intent: 'Evaluate practical application of key candidate strengths in a workplace setting.',
-    },
-    {
-      text: `This role requires working with ${missingSkills[0] || 'new methodologies'}. How do you typically adapt when tasked with learning new tools or domain requirements on the job?`,
-      type: 'role_specific',
-      category: 'adaptability',
-      difficulty: 'medium',
-      skills: ['Adaptability', 'Growth Mindset'],
-      intent: 'Probe candidate learning agility and willingness to bridge skill gaps.',
-    },
-    {
-      text: `Describe a situation where you had a disagreement with a team member or stakeholder regarding project deadlines or priorities. How did you handle it?`,
-      type: 'behavioral',
-      category: 'conflict_resolution',
-      difficulty: 'medium',
-      skills: ['Conflict Resolution', 'Empathy'],
-      intent: 'Assess interpersonal skills, emotional intelligence, and collaboration.',
-    },
-    {
-      text: `What type of work environment and management style enables you to perform at your best, and how do you handle high-pressure deadlines?`,
-      type: 'hr',
-      category: 'work_preferences',
-      difficulty: 'easy',
-      skills: ['Self-Management', 'Stress Handling'],
-      intent: 'Understand candidate work preferences and resilience under pressure.',
-    },
-    {
-      text: `Can you share an example of a project or milestone you are most proud of? What was your specific contribution to the team's success?`,
-      type: 'behavioral',
-      category: 'project_experience',
-      difficulty: 'medium',
-      skills: ['Ownership', 'Project Impact'],
-      intent: 'Measure accountability, personal impact, and pride in work quality.',
-    },
-    {
-      text: `How do you prioritize your daily tasks when managing multiple competing requests or unexpected urgent priorities?`,
-      type: 'situational',
-      category: 'teamwork',
-      difficulty: 'medium',
-      skills: ['Time Management', 'Prioritization'],
-      intent: 'Evaluate organizational skills and task prioritization methodology.',
-    },
-    {
-      text: `Where do you see your career evolving over the next 2 to 3 years, and how does this role fit into your long-term goals?`,
-      type: 'hr',
-      category: 'career_vision',
-      difficulty: 'easy',
-      skills: ['Career Vision', 'Long-term Commitment'],
-      intent: 'Determine candidate career trajectory and long-term organizational fit.',
-    },
-    {
-      text: `How do you approach receiving constructive feedback or performance critiques from managers or peers?`,
-      type: 'behavioral',
-      category: 'feedback_reception',
-      difficulty: 'easy',
-      skills: ['Receptivity', 'Professional Growth'],
-      intent: 'Assess openness to feedback and continuous self-improvement.',
-    },
-    {
-      text: `What core values do you believe are most important in a team culture, and how do you contribute to maintaining a positive workplace?`,
-      type: 'hr',
-      category: 'culture_fit',
-      difficulty: 'easy',
-      skills: ['Culture Fit', 'Team Building'],
-      intent: 'Evaluate alignment with organizational culture and team dynamics.',
-    },
+  };
+
+  // [text, type, category, difficulty, skills, intent] — tuple form keeps this
+  // template bank from reading as 12 near-identical object-literal blocks.
+  const hrTemplateRows: [string, QuestionType, string, QuestionDifficulty, string[], string][] = [
+    [
+      `Please introduce yourself and highlight the experiences that best prepare you for this ${candidateTitle} role.`,
+      'hr', 'hr', 'easy', ['Communication', 'Self-Awareness'],
+      'Understand the candidate background and communication style.',
+    ],
+    [
+      'Tell us about a challenging professional situation and what you learned from handling it.',
+      'behavioral', 'behavioral', 'medium', ['Reflection', 'Judgment'],
+      'Assess behavior, ownership, and learning from experience.',
+    ],
+    [
+      `Can you walk us through your professional journey so far and how your background aligns with the requirements of this ${candidateTitle} position?`,
+      'hr', 'experience_overview', 'easy', ['Communication', 'Career Overview'],
+      'Assess candidate presentation skills and relevant career progression.',
+    ],
+    [
+      `The job description emphasizes skills like ${matchedSkills[0] || 'core competencies'}. How have you demonstrated these strengths in your previous team environments?`,
+      'behavioral', 'role_alignment', 'easy', ['Role Alignment', matchedSkills[0] || 'Teamwork'],
+      'Evaluate practical application of key candidate strengths in a workplace setting.',
+    ],
+    [
+      `This role requires working with ${missingSkills[0] || 'new methodologies'}. How do you typically adapt when tasked with learning new tools or domain requirements on the job?`,
+      'role_specific', 'adaptability', 'medium', ['Adaptability', 'Growth Mindset'],
+      'Probe candidate learning agility and willingness to bridge skill gaps.',
+    ],
+    [
+      `Describe a situation where you had a disagreement with a team member or stakeholder regarding project deadlines or priorities. How did you handle it?`,
+      'behavioral', 'conflict_resolution', 'medium', ['Conflict Resolution', 'Empathy'],
+      'Assess interpersonal skills, emotional intelligence, and collaboration.',
+    ],
+    [
+      `What type of work environment and management style enables you to perform at your best, and how do you handle high-pressure deadlines?`,
+      'hr', 'work_preferences', 'easy', ['Self-Management', 'Stress Handling'],
+      'Understand candidate work preferences and resilience under pressure.',
+    ],
+    [
+      `Can you share an example of a project or milestone you are most proud of? What was your specific contribution to the team's success?`,
+      'behavioral', 'project_experience', 'medium', ['Ownership', 'Project Impact'],
+      'Measure accountability, personal impact, and pride in work quality.',
+    ],
+    [
+      `How do you prioritize your daily tasks when managing multiple competing requests or unexpected urgent priorities?`,
+      'situational', 'teamwork', 'medium', ['Time Management', 'Prioritization'],
+      'Evaluate organizational skills and task prioritization methodology.',
+    ],
+    [
+      `Where do you see your career evolving over the next 2 to 3 years, and how does this role fit into your long-term goals?`,
+      'hr', 'career_vision', 'easy', ['Career Vision', 'Long-term Commitment'],
+      'Determine candidate career trajectory and long-term organizational fit.',
+    ],
+    [
+      `How do you approach receiving constructive feedback or performance critiques from managers or peers?`,
+      'behavioral', 'feedback_reception', 'easy', ['Receptivity', 'Professional Growth'],
+      'Assess openness to feedback and continuous self-improvement.',
+    ],
+    [
+      `What core values do you believe are most important in a team culture, and how do you contribute to maintaining a positive workplace?`,
+      'hr', 'culture_fit', 'easy', ['Culture Fit', 'Team Building'],
+      'Evaluate alignment with organizational culture and team dynamics.',
+    ],
   ];
+
+  const baseHrTemplates: HrTemplate[] = hrTemplateRows.map(
+    ([text, type, category, difficulty, skills, intent]) => ({ text, type, category, difficulty, skills, intent })
+  );
 
   const generatedHrQuestions: InterviewQuestion[] = [];
 
@@ -396,14 +368,18 @@ Return only a JSON array. Each item must contain question_text, question_type, c
       contents: prompt,
       config: { responseMimeType: 'application/json', temperature: 0.2 },
     });
+    console.log('TRACE: response:', response);
 
     const cleanedText = (response.text || '').replace(/```json\n?|\n?```/g, '').trim();
+    console.log('TRACE: cleanedText:', cleanedText);
     if (!cleanedText) {
+      console.log('TRACE: falling back due to empty cleanedText');
       return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
     }
 
     const rawParsed = JSON.parse(cleanedText);
     if (!Array.isArray(rawParsed) || rawParsed.length < requiredAiCount) {
+      console.log('TRACE: falling back due to invalid rawParsed');
       return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
     }
 
@@ -431,12 +407,15 @@ Return only a JSON array. Each item must contain question_text, question_type, c
       : aiQuestions;
 
     if (selectedAiQuestions.length !== requiredAiCount) {
+      console.log('FALLBACK TRIGGERED IN IF CONDITION!');
       return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
     }
 
-    return assembleQuestionSet(selectedAiQuestions, selectedHrQuestions).slice(0, targetTotalCount || undefined);
+    const assembled = assembleQuestionSet(selectedAiQuestions, selectedHrQuestions).slice(0, targetTotalCount || undefined);
+    console.log('RETURNING ASSEMBLED:', JSON.stringify(assembled));
+    return assembled;
   } catch (error) {
-    console.error('Error calling Gemini for question generation:', error);
+    console.log('CRITICAL ERROR IN GEMINI PATH:', error);
     return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
   }
 }
