@@ -172,6 +172,7 @@ describe('POST /api/interview/[id]/questions', () => {
 describe('GET /api/interview/[id]/questions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRequireAdminUser.mockResolvedValue(null);
     state.session = { id: 'sess-1', duration_minutes: 30, question_count: 1, status: 'questions_generated' };
     state.sessionSelectError = null;
     state.questions = [{ id: 'q1' }];
@@ -189,6 +190,12 @@ describe('GET /api/interview/[id]/questions', () => {
   it('returns 401 when the interview_verified_id cookie does not match', async () => {
     const res = await GET(makeGetRequest('other-id'), makeParams());
     expect(res.status).toBe(401);
+  });
+
+  it('allows access without cookie if the user is an admin', async () => {
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
+    const res = await GET(makeGetRequest('other-id'), makeParams());
+    expect(res.status).toBe(200);
   });
 
   it('returns 404 when the session is not found', async () => {

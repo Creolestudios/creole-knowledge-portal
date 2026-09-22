@@ -2,6 +2,28 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
+const { mockGetUser, mockProfileSingle, mockEq, mockSelect, mockFrom } = vi.hoisted(() => {
+  const mockProfileSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+  const mockEq = vi.fn().mockReturnValue({ single: mockProfileSingle });
+  const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
+  const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
+  const mockGetUser = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
+  return { mockGetUser, mockProfileSingle, mockEq, mockSelect, mockFrom };
+});
+
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    auth: { getUser: mockGetUser },
+    from: mockFrom,
+    channel: vi.fn().mockReturnValue({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnThis(),
+      send: vi.fn(),
+      unsubscribe: vi.fn(),
+    }),
+  }),
+}));
+
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'interview-1' }),
 }));
@@ -21,6 +43,8 @@ async function verifyPasscode() {
 describe('InterviewEntryPage', () => {
   afterEach(() => {
     global.fetch = originalFetch;
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: null, error: null });
     Object.defineProperty(global.navigator, 'mediaDevices', {
       value: originalMediaDevices,
       configurable: true,
@@ -254,5 +278,40 @@ describe('InterviewEntryPage', () => {
     expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
     expect(screen.getByText("You're verified")).toBeInTheDocument();
     hasFocus.mockRestore();
+  });
+
+  it('bypasses passcode and directly shows instructions when the user is an admin', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: { role: 'admin' }, error: null });
+
+    render(<InterviewEntryPage />);
+
+    expect(await screen.findByText('Allow & Start Interview')).toBeInTheDocument();
+  });
+
+  it('bypasses calibration and jumps to interview when the user is an admin', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: { role: 'admin' }, error: null });
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Admin Question', category: 'hr', question_order: 1 }],
+      }),
+    }) as any;
+
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: { getUserMedia, getDisplayMedia: vi.fn() }, // getDisplayMedia not needed for admin
+      configurable: true,
+    });
+
+    render(<InterviewEntryPage />);
+    
+    const startButton = await screen.findByText('Allow & Start Interview');
+    fireEvent.click(startButton);
+
+    expect(await screen.findByText('Admin Question')).toBeInTheDocument();
   });
 });

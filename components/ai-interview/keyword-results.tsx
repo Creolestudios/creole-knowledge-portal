@@ -387,6 +387,15 @@ function InterviewLinkAndQuestions({ result }: { result: SessionGenerationResult
           Generated Interview Questions ({questions.length})
         </h3>
 
+        {questions.some((q) => q.is_fallback) && (
+          <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-sm">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <span>
+              <strong>Warning:</strong> The AI model quota has finished or the service is temporarily unavailable. The questions below are default fallback questions dynamically adapted to the candidate&apos;s profile.
+            </span>
+          </div>
+        )}
+
         <div className="space-y-3">
           {questions.map((q, idx) => (
             <div

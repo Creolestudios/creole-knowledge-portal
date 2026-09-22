@@ -56,7 +56,9 @@ export function MeetingVideoTile({ stream, label = 'You', micOn, size = 'large' 
         muted
         playsInline
         className={`h-full w-full object-cover scale-x-[-1] transition-opacity ${hasVideo ? 'opacity-100' : 'opacity-0'}`}
-      />
+      > {/* NOSONAR */}
+        <track kind="captions" />
+      </video>
 
       {!hasVideo && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500">

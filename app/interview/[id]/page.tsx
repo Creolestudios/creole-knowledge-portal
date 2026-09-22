@@ -33,6 +33,8 @@ type InterviewQuestion = {
 
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
+import { createClient } from '@/lib/supabase/client';
+import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
 
 export default function InterviewEntryPage() {
   const params = useParams();
@@ -58,6 +60,28 @@ export default function InterviewEntryPage() {
   const [faceTrackingStatus, setFaceTrackingStatus] = useState<'loading' | 'tracking' | 'error'>('loading');
   const [faceTrackingError, setFaceTrackingError] = useState<string | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const supabase = createClient();
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const initAdmin = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single();
+
+      if (profile?.role === 'admin') {
+        setIsAdmin(true);
+        setStage('instructions');
+      }
+    };
+    initAdmin();
+  }, [interviewId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Proctoring & Calibration State
   const [calibrationProgress, setCalibrationProgress] = useState(0);
@@ -74,6 +98,20 @@ export default function InterviewEntryPage() {
   // anyway). The ref stays the source of truth for handlers/effects (the
   // proctoring watchdog, cleanup) that must always see the latest stream.
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  const { remoteStream } = useWebRTC(
+    interviewId,
+    cameraStream,
+    isAdmin ? 'admin' : 'candidate',
+    stage === 'interview'
+  );
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      void remoteVideoRef.current.play().catch(console.warn);
+    }
+  }, [remoteStream, stage]);
 
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
@@ -194,20 +232,24 @@ export default function InterviewEntryPage() {
         setCameraGranted(true);
       }
 
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      const [videoTrack] = screenStream.getVideoTracks();
-      const displaySurface = videoTrack?.getSettings().displaySurface;
-      const isPartialShare = displaySurface !== undefined && displaySurface !== 'monitor';
+      if (!isAdmin) {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const [videoTrack] = screenStream.getVideoTracks();
+        const displaySurface = videoTrack?.getSettings().displaySurface;
+        const isPartialShare = displaySurface !== undefined && displaySurface !== 'monitor';
 
-      if (isPartialShare) {
-        screenStream.getTracks().forEach((track) => track.stop());
-        setScreenGranted(false);
-        setPermissionError('Please share your entire screen, not a window or tab, to continue.');
-        return;
+        if (isPartialShare) {
+          screenStream.getTracks().forEach((track) => track.stop());
+          setScreenGranted(false);
+          setPermissionError('Please share your entire screen, not a window or tab, to continue.');
+          return;
+        }
+
+        screenStreamRef.current = screenStream;
+        setScreenGranted(true);
+      } else {
+        setScreenGranted(true);
       }
-
-      screenStreamRef.current = screenStream;
-      setScreenGranted(true);
 
       const questionsResponse = await fetch(`/api/interview/${interviewId}/questions`);
       const questionsData = await questionsResponse.json();
@@ -227,7 +269,7 @@ export default function InterviewEntryPage() {
       setDurationSeconds(configuredDurationMinutes * 60);
       setFaceTrackingStatus('loading');
       setFaceTrackingError(null);
-      setStage('ready');
+      setStage(isAdmin ? 'interview' : 'ready');
     } catch (err) {
       console.error('[interview-entry] permission request failed:', err);
       setPermissionError(
@@ -243,10 +285,6 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage !== 'ready') return;
 
-    // Keep the candidate on the readiness screen during automated UI tests so
-    // the visibility watchdog can be evaluated before any interview-state
-    // transition changes the DOM under test. Production still advances after
-    // the brief calibration delay.
     if (process.env.NODE_ENV === 'test') return;
 
     const timer = window.setTimeout(() => {
@@ -265,13 +303,13 @@ export default function InterviewEntryPage() {
   };
 
   useEffect(() => {
-    if (!['calibration', 'interview'].includes(stage) || !cameraVideoRef.current || !cameraPreview) return;
+    if (!['calibration', 'interview'].includes(stage) || !cameraVideoRef.current || !cameraPreview || isAdmin) return;
     cameraVideoRef.current.srcObject = cameraPreview;
     void cameraVideoRef.current.play();
-  }, [cameraPreview, stage]);
+  }, [cameraPreview, stage, isAdmin]);
 
   useEffect(() => {
-    if (!['calibration', 'interview'].includes(stage)) return;
+    if (!['calibration', 'interview'].includes(stage) || isAdmin) return;
 
     if (typeof Worker === 'undefined') {
       const unsupportedTimer = window.setTimeout(() => {
@@ -433,7 +471,7 @@ export default function InterviewEntryPage() {
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- timer uses a stable ref
 
   useProctoringWatchdog({
-    active: ['ready', 'calibration', 'interview'].includes(stage),
+    active: !isAdmin && ['ready', 'calibration', 'interview'].includes(stage),
     cameraStreamRef,
     screenStreamRef,
     onViolation: terminateInterview,
@@ -442,7 +480,9 @@ export default function InterviewEntryPage() {
   if (stage === 'calibration') {
     return (
       <main className="min-h-screen bg-[#f8f9fa] flex items-center justify-center relative">
-        <video ref={cameraVideoRef} muted playsInline className="hidden" />
+        <video ref={cameraVideoRef} muted playsInline className="hidden"> {/* NOSONAR */}
+          <track kind="captions" />
+        </video>
         <CalibrationModal
           calibrationProgress={calibrationProgress}
           onComplete={() => setStage('interview')}
@@ -584,18 +624,48 @@ export default function InterviewEntryPage() {
             </div>
           </section>
           <aside className="space-y-4">
-            <div className="overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-900 shadow-card">
-              <video ref={cameraVideoRef} muted playsInline className="aspect-video w-full object-cover" />
+            <div className="overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-900 shadow-card flex flex-col">
+              <div className="relative">
+                <video ref={cameraVideoRef} muted playsInline className="aspect-video w-full object-cover"> {/* NOSONAR */}
+                  <track kind="captions" />
+                </video>
+                <div className="absolute top-2 left-2 bg-black/50 px-2 py-1 rounded text-[10px] text-white font-bold uppercase tracking-wider">
+                  You {isAdmin ? '(Admin)' : ''}
+                </div>
+              </div>
+
+              {remoteStream ? (
+                <div className="relative border-t border-zinc-800">
+                  <video ref={remoteVideoRef} playsInline className="aspect-video w-full object-cover"> {/* NOSONAR */}
+                    <track kind="captions" />
+                  </video>
+                  <div className="absolute top-2 left-2 bg-[#34c4f2]/90 px-2 py-1 rounded text-[10px] text-zinc-900 font-bold uppercase tracking-wider">
+                    {isAdmin ? 'Candidate' : 'Admin'}
+                  </div>
+                </div>
+              ) : (
+                <div className="aspect-video w-full bg-zinc-800 flex items-center justify-center border-t border-zinc-700">
+                  <span className="text-xs text-zinc-500 font-semibold">
+                    {isAdmin ? 'Waiting for candidate...' : 'Admin not in session'}
+                  </span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between p-3 text-xs font-semibold text-white">
                 <span>Camera and microphone active</span>
-                <span className={faceTrackingStatus === 'tracking' && faceDetected ? 'text-emerald-400' : 'text-amber-300'}>
-                  {faceTrackingStatus === 'loading' && 'Face loading'}
-                  {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
-                  {faceTrackingStatus === 'error' && 'Tracking unavailable'}
-                </span>
+                {!isAdmin && (
+                  <span className={faceTrackingStatus === 'tracking' && faceDetected ? 'text-emerald-400' : 'text-amber-300'}>
+                    {faceTrackingStatus === 'loading' && 'Face loading'}
+                    {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
+                    {faceTrackingStatus === 'error' && 'Tracking unavailable'}
+                  </span>
+                )}
+                {isAdmin && (
+                  <span className="text-[#34c4f2]">Admin Proctoring Bypassed</span>
+                )}
               </div>
             </div>
-            {faceTrackingStatus === 'error' && faceTrackingError && (
+            {!isAdmin && faceTrackingStatus === 'error' && faceTrackingError && (
               <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-xs leading-relaxed text-red-700">
                 {faceTrackingError}
               </div>

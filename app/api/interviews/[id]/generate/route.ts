@@ -119,12 +119,31 @@ export async function POST(
         })
         .filter((q): q is InterviewQuestion & { question_bank_id: string } => q !== null);
 
-      if (questions.length === 0) {
+      if (questions.length === 0 && questionBankIds.length > 0 && !questionBankIds.some(id => id.startsWith('dynamic-tech'))) {
         return NextResponse.json(
           { error: 'None of the selected question-bank IDs are active or found.' },
           { status: 400 }
         );
       }
+
+      // Automatically append 4 dynamic technical questions to any manual selection
+      const technicalQuestions = await generateInterviewQuestions(
+        profile,
+        jd,
+        analysis,
+        [],
+        {
+          targetQuestions: 4,
+          categoryCounts: { technical: 4 },
+          includeMandatoryHr: false,
+        }
+      );
+      
+      technicalQuestions.forEach((tq, i) => {
+        tq.question_order = questions.length + i + 1;
+      });
+      
+      questions = [...questions, ...technicalQuestions];
     } else {
       questions = await generateInterviewQuestions(
         profile,
@@ -184,6 +203,7 @@ export async function POST(
       questions: createdQuestions || [],
       total_count: (createdQuestions || []).length,
       generated_at: new Date().toISOString(),
+      is_fallback: questions.some((q) => q.is_fallback),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal Server Error';

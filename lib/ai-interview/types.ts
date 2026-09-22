@@ -110,6 +110,7 @@ export interface InterviewQuestion {
   time_limit_sec: number;
   is_mandatory_hr: boolean;
   weight?: number;
+  is_fallback?: boolean;
   created_at?: string;
 }
 
@@ -172,6 +173,7 @@ export interface GenerateQuestionsResponse {
   questions: InterviewQuestion[];
   total_count: number;
   generated_at: string;
+  is_fallback?: boolean;
 }
 
 export interface CreateInviteInput {

@@ -37,8 +37,10 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
   const [bankLoading, setBankLoading] = useState(true);
   const [bankError, setBankError] = useState<string | null>(null);
 
-  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set(['technical']));
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(
+    new Set(['dynamic-tech-1', 'dynamic-tech-2', 'dynamic-tech-3', 'dynamic-tech-4'])
+  );
   const [questionCount, setQuestionCount] = useState(10);
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [similarityConfirmed, setSimilarityConfirmed] = useState(false);
@@ -66,10 +68,11 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
     };
   }, []);
 
-  const categories = useMemo(
-    () => Array.from(new Set(bank.map((q) => q.category))).sort((a, b) => a.localeCompare(b)),
-    [bank],
-  );
+  const categories = useMemo(() => {
+    const cats = Array.from(new Set(bank.map((q) => q.category))).sort((a, b) => a.localeCompare(b));
+    if (!cats.includes('technical')) cats.push('technical');
+    return cats;
+  }, [bank]);
 
   const questionsByCategory = useMemo(() => {
     const map = new Map<string, HRQuestionBankRow[]>();
@@ -79,10 +82,27 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
       map.set(q.category, list);
     }
     for (const list of map.values()) list.sort((a, b) => a.default_order - b.default_order);
+    
+    // Inject dynamic technical questions for the UI using candidate's actual skills
+    const matchedSkills = extraction.analysis.matchedKeywords || [];
+    const missingSkills = extraction.analysis.missingKeywords || [];
+    
+    const skill1 = matchedSkills[0] || 'core technologies';
+    const skill2 = matchedSkills[1] || matchedSkills[0] || 'relevant frameworks';
+    const gapSkill = missingSkills[0] || 'new methodologies';
+
+    map.set('technical', [
+      { id: 'dynamic-tech-1', title: 'Technical Depth', question_text: `Based on your resume, you have experience with ${skill1}. Could you elaborate on a complex project where you utilized these skills, and describe the specific technical challenges you overcame?`, category: 'technical', difficulty: 'medium', is_mandatory: true, default_order: 1 },
+      { id: 'dynamic-tech-2', title: 'Technical Application', question_text: `How have you applied your knowledge of ${skill2} in a practical, real-world scenario? What was the outcome?`, category: 'technical', difficulty: 'medium', is_mandatory: true, default_order: 2 },
+      { id: 'dynamic-tech-3', title: 'Problem Solving', question_text: `What is the most complex technical problem you've solved recently involving ${skill1}, and what was your specific approach to troubleshooting it?`, category: 'technical', difficulty: 'hard', is_mandatory: true, default_order: 3 },
+      { id: 'dynamic-tech-4', title: 'Technical Adaptability', question_text: `This role requires working with ${gapSkill}. Given your background, how would you approach getting up to speed and ensuring code quality in this area?`, category: 'technical', difficulty: 'medium', is_mandatory: true, default_order: 4 },
+    ]);
+    
     return map;
-  }, [bank]);
+  }, [bank, extraction]);
 
   const toggleCategory = (category: string) => {
+    if (category === 'technical') return; // Enforce mandatory technical
     setSelectedCategories((prev) => {
       const next = new Set(prev);
       if (next.has(category)) {
@@ -98,6 +118,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
   };
 
   const toggleQuestion = (id: string) => {
+    if (id.startsWith('dynamic-tech-')) return; // Enforce mandatory technical
     setSelectedQuestionIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);

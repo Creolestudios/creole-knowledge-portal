@@ -66,7 +66,7 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={extraction} onComplete={vi.fn()} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '6' } }); // 4 tech + 2 hr
     fireEvent.click(screen.getByText('hr'));
 
     const generateButton = screen.getByText('Generate Interview Link');
@@ -87,7 +87,7 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={lowMatchExtraction} onComplete={vi.fn()} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '5' } }); // 4 tech + 1 hr
     fireEvent.click(screen.getByText('hr'));
     fireEvent.click(screen.getByText('Introduce yourself.'));
 
@@ -111,7 +111,7 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={extraction} onComplete={onComplete} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '5' } }); // 4 tech + 1 hr
     fireEvent.click(screen.getByText('hr'));
     fireEvent.click(screen.getByText('Introduce yourself.'));
 
@@ -119,9 +119,9 @@ describe('QuestionBankSelector', () => {
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith(sessionResult));
     expect(mockCreateSession).toHaveBeenCalledWith(extraction, 30, {
-      questionCount: 1,
+      questionCount: 5,
       similarityConfirmed: false,
-      questionBankIds: ['b1'],
+      questionBankIds: expect.arrayContaining(['b1', 'dynamic-tech-1', 'dynamic-tech-2', 'dynamic-tech-3', 'dynamic-tech-4']),
     });
   });
 
@@ -131,7 +131,7 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={extraction} onComplete={vi.fn()} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '5' } }); // 4 tech + 1 hr
     fireEvent.click(screen.getByText('hr'));
     fireEvent.click(screen.getByText('Introduce yourself.'));
     fireEvent.click(screen.getByText('Generate Interview Link'));

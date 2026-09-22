@@ -92,4 +92,14 @@ describe('KeywordResults', () => {
     render(<KeywordResults result={result} onReset={vi.fn()} />);
     expect(screen.getByText(/expires at N\/A/)).toBeInTheDocument();
   });
+
+  it('shows the fallback warning when is_fallback is true on a question', () => {
+    const result = makeResult({ 
+      questions: [
+        { question_text: 'Q1', question_type: 'hr', category: 'hr', difficulty: 'easy', required_skills: [], intent: '', question_order: 1, time_limit_sec: 120, is_mandatory_hr: true, weight: 5, is_fallback: true } as any
+      ]
+    });
+    render(<KeywordResults result={result} onReset={vi.fn()} />);
+    expect(screen.getByText(/The AI model quota has finished/)).toBeInTheDocument();
+  });
 });

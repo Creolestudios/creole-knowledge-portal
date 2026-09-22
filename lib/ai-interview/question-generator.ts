@@ -23,6 +23,7 @@ export const INTERVIEW_CATEGORIES = [
   'work_preferences',
   'career_vision',
   'culture_fit',
+  'technical',
 ] as const;
 
 export interface QuestionBankItem {
@@ -80,6 +81,10 @@ export const QUESTION_BANK: QuestionBankItem[] = [
   { id: 'culture_fit-2', category: 'culture_fit', question_text: 'How do you contribute to a respectful and positive team environment?', question_type: 'behavioral', difficulty: 'easy', required_skills: ['Respect', 'Teamwork'], intent: 'Assess contribution to team culture.' },
   { id: 'culture_fit-3', category: 'culture_fit', question_text: 'How do you work effectively with people whose perspectives differ from yours?', question_type: 'behavioral', difficulty: 'medium', required_skills: ['Inclusion', 'Empathy'], intent: 'Assess inclusive collaboration.' },
   { id: 'culture_fit-4', category: 'culture_fit', question_text: 'What does professional integrity mean in everyday work?', question_type: 'hr', difficulty: 'easy', required_skills: ['Integrity', 'Judgment'], intent: 'Understand professional values.' },
+  { id: 'technical-1', category: 'technical', question_text: 'Describe a significant project where you used your core technical skills. What was your role and the outcome?', question_type: 'role_specific', difficulty: 'medium', required_skills: ['Technical Experience', 'Communication'], intent: 'Gauge depth of past technical work.' },
+  { id: 'technical-2', category: 'technical', question_text: 'Based on your experience, how do you ensure the quality and maintainability of the technical work you deliver?', question_type: 'role_specific', difficulty: 'medium', required_skills: ['Quality Assurance', 'Best Practices'], intent: 'Understand approach to technical quality.' },
+  { id: 'technical-3', category: 'technical', question_text: 'Can you discuss a time when you had to quickly learn a new technology or framework to complete a project?', question_type: 'role_specific', difficulty: 'medium', required_skills: ['Learning Agility', 'Technical Depth'], intent: 'Assess technical adaptability.' },
+  { id: 'technical-4', category: 'technical', question_text: 'What is the most complex technical problem you have solved in your recent roles, and how did you approach it?', question_type: 'role_specific', difficulty: 'medium', required_skills: ['Problem Solving', 'Technical Depth'], intent: 'Evaluate complex technical problem solving.' },
 ];
 
 /**
@@ -259,6 +264,11 @@ export function generateQuestionsLocalFallback(
       'hr', 'culture_fit', 'easy', ['Culture Fit', 'Team Building'],
       'Evaluate alignment with organizational culture and team dynamics.',
     ],
+    [
+      `Based on your resume, you have experience with ${matchedSkills[0] || 'various technologies'}. Could you elaborate on a complex project where you utilized these skills, and describe the specific technical challenges you overcame?`,
+      'role_specific', 'technical', 'medium', ['Technical Depth', 'Experience'],
+      'Gauge depth of technical knowledge and practical application based on past work.',
+    ],
   ];
 
   const baseHrTemplates: HrTemplate[] = hrTemplateRows.map(
@@ -284,6 +294,7 @@ export function generateQuestionsLocalFallback(
       is_mandatory_hr: false,
       question_order: i + 3,
       weight: 10,
+      is_fallback: true,
     });
   }
 
@@ -335,11 +346,30 @@ export async function generateInterviewQuestions(
   const targetTotalCount = calculateQuestionCount(options);
   const selectedHrQuestions = options?.includeMandatoryHr === false ? [] : hrQuestions;
   const requiredAiCount = Math.max(0, targetTotalCount - selectedHrQuestions.length);
-  const categoryCounts = options?.categoryCounts || {};
+  
+  // Guarantee exactly 4 technical questions
+  const categoryCounts: Record<string, number> = { ...(options?.categoryCounts || {}) };
+  categoryCounts['technical'] = 4;
+  
+  // Distribute remaining question count among other categories if not explicitly provided
+  let currentSum = Object.values(categoryCounts).reduce((a, b) => a + b, 0);
+  if (currentSum < requiredAiCount) {
+    let remaining = requiredAiCount - currentSum;
+    let i = 0;
+    while (remaining > 0) {
+      const cat = INTERVIEW_CATEGORIES[i % INTERVIEW_CATEGORIES.length];
+      if (cat !== 'technical' && cat !== 'hr') {
+        categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+        remaining--;
+      }
+      i++;
+    }
+  }
+
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
 
   if (!apiKey) {
-    return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
+    return generateQuestionsLocalFallback(profile, jd, analysis, { ...options, categoryCounts }, selectedHrQuestions);
   }
 
   try {
@@ -356,10 +386,10 @@ Job description:
 - Must-have skills: ${jd.mustHaveSkills.join(', ')}
 - Interview duration: ${options?.durationMinutes || 'administrator-defined'} minutes
 
-Generate EXACTLY ${requiredAiCount} generalized questions for these categories: ${Object.keys(categoryCounts).join(', ') || INTERVIEW_CATEGORIES.join(', ')}.
-Honor these category counts when provided: ${JSON.stringify(categoryCounts)}.
-Focus on HR, behavioral, experience overview, role alignment, project experience, teamwork, adaptability, conflict resolution, work preferences, career vision, and culture fit.
-Do not ask deep coding, system design, or low-level architecture questions.
+Generate EXACTLY ${requiredAiCount} generalized questions for these categories: ${Object.keys(categoryCounts).join(', ')}.
+Honor these exact category counts: ${JSON.stringify(categoryCounts)}.
+Focus on HR, behavioral, experience overview, role alignment, project experience, teamwork, adaptability, conflict resolution, work preferences, career vision, culture fit, and technical experience.
+For the 'technical' category questions (you must generate exactly 4), focus on gauging their past work, language proficiency, and depth of knowledge based on their resume and projects. Do NOT ask deep coding (like writing code algorithms), system design, or low-level architecture questions. DO ask about their practical experience with the skills they claim (${analysis.matchedKeywords.join(', ')}).
 
 Return only a JSON array. Each item must contain question_text, question_type, category, difficulty, required_skills, intent, time_limit_sec, and weight.`;
 
@@ -407,8 +437,8 @@ Return only a JSON array. Each item must contain question_text, question_type, c
       : aiQuestions;
 
     if (selectedAiQuestions.length !== requiredAiCount) {
-      console.log('FALLBACK TRIGGERED IN IF CONDITION!');
-      return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
+      console.log('FALLBACK TRIGGERED IN IF CONDITION! requested:', requiredAiCount, 'got:', selectedAiQuestions.length);
+      return generateQuestionsLocalFallback(profile, jd, analysis, { ...options, categoryCounts }, selectedHrQuestions);
     }
 
     const assembled = assembleQuestionSet(selectedAiQuestions, selectedHrQuestions).slice(0, targetTotalCount || undefined);
@@ -416,7 +446,7 @@ Return only a JSON array. Each item must contain question_text, question_type, c
     return assembled;
   } catch (error) {
     console.log('CRITICAL ERROR IN GEMINI PATH:', error);
-    return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
+    return generateQuestionsLocalFallback(profile, jd, analysis, { ...options, categoryCounts }, selectedHrQuestions);
   }
 }
 

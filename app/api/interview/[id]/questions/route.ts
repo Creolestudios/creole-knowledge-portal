@@ -83,7 +83,10 @@ export async function GET(
 ) {
   const { id } = await params;
   if (req.cookies.get('interview_verified_id')?.value !== id) {
-    return NextResponse.json({ error: 'Interview verification is required.' }, { status: 401 });
+    const adminUser = await requireAdminUser().catch(() => null);
+    if (!adminUser) {
+      return NextResponse.json({ error: 'Interview verification is required.' }, { status: 401 });
+    }
   }
   const { data: session, error: sessionError } = await supabaseAdmin
     .from('interview_sessions')

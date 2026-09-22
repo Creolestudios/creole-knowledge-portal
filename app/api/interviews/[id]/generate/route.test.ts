@@ -111,7 +111,22 @@ describe('POST /api/interviews/[id]/generate', () => {
     const res = await POST(makeReq({ question_bank_ids: ['bank-1'], duration_minutes: 10 }), makeParams());
     const body = await res.json();
     expect(res.status).toBe(200);
+    // Since mock state.insertedQuestions has length 1, total_count is 1
     expect(body.total_count).toBe(1);
+    
+    // Verify that the dynamic technical questions are still requested and appended
+    const { generateInterviewQuestions } = await import('@/lib/ai-interview/question-generator');
+    expect(generateInterviewQuestions).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      [], // no mandatory HR
+      expect.objectContaining({
+        targetQuestions: 4,
+        categoryCounts: { technical: 4 },
+        includeMandatoryHr: false,
+      })
+    );
   });
 
   it('returns a 500 when the question-bank lookup errors', async () => {

@@ -51,7 +51,9 @@ export function QuizCameraPreview({ stream, visible }: QuizCameraPreviewProps) {
         muted
         playsInline
         className="aspect-[3/4] h-full w-full object-cover scale-x-[-1]"
-      />
+      > {/* NOSONAR */}
+        <track kind="captions" />
+      </video>
       <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
         <Camera size={10} />
         You

@@ -224,7 +224,7 @@ describe('AIInterviewManager', () => {
     fireEvent.click(screen.getByText('Analyze Resume & JD'));
     await screen.findByText('Select Interview Questions');
 
-    fireEvent.change(await screen.findByLabelText(/Total question count/i), { target: { value: '1' } });
+    fireEvent.change(await screen.findByLabelText(/Total question count/i), { target: { value: '5' } });
     fireEvent.click(screen.getByText('hr'));
     fireEvent.click(screen.getByText('Introduce yourself.'));
     fireEvent.click(screen.getByText('Generate Interview Link'));
@@ -261,7 +261,7 @@ describe('AIInterviewManager', () => {
     fireEvent.click(screen.getByText('Analyze Resume & JD'));
     await screen.findByText('Select Interview Questions');
 
-    fireEvent.change(await screen.findByLabelText(/Total question count/i), { target: { value: '1' } });
+    fireEvent.change(await screen.findByLabelText(/Total question count/i), { target: { value: '5' } });
     fireEvent.click(screen.getByText('hr'));
     fireEvent.click(screen.getByText('Introduce yourself.'));
     fireEvent.click(screen.getByText('Generate Interview Link'));
