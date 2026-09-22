@@ -220,6 +220,6 @@ describe('GET /api/interview/[id]/questions', () => {
 
     expect(res.status).toBe(200);
     expect(body.session).toEqual(state.session);
-    expect(body.questions).toEqual([{ id: 'q1' }]);
+    expect(body.questions).toEqual([{ id: 'q1', is_custom: false }]);
   });
 });

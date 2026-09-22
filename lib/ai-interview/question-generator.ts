@@ -7,6 +7,9 @@ import {
   QuestionType,
   QuestionDifficulty,
   QuestionGeneratorOptions,
+  normalizeQuestionType,
+  normalizeDifficulty,
+  normalizeInteger,
 } from './types';
 
 export const MIN_INTERVIEW_QUESTIONS = 10;
@@ -108,13 +111,45 @@ export function getSelectedQuestionBankItems(questionIds: string[]): QuestionBan
   return QUESTION_BANK.filter((question) => selected.has(question.id));
 }
 
-function buildQuestionsFromBank(questionIds: string[]): InterviewQuestion[] {
-  return getSelectedQuestionBankItems(questionIds).map((question, index) => ({
+function normalizeCustomQuestions(customQuestions?: string[]): string[] {
+  return (customQuestions || [])
+    .map((question) => question.trim())
+    .filter((question) => question.length > 0);
+}
+
+function buildQuestionsFromSelection(
+  questionIds: string[] = [],
+  customQuestions: string[] = []
+): InterviewQuestion[] {
+  const bankQuestions = getSelectedQuestionBankItems(questionIds).map((question) => ({
     ...question,
-    question_order: index + 1,
+    question_type: normalizeQuestionType(question.question_type, question.category),
+    difficulty: normalizeDifficulty(question.difficulty),
     time_limit_sec: 150,
     is_mandatory_hr: false,
+    is_custom: false,
+    question_bank_id: question.id,
     weight: 10,
+  }));
+
+  const authoredQuestions = normalizeCustomQuestions(customQuestions).map((questionText, index) => ({
+    id: `custom-${index + 1}`,
+    question_text: questionText,
+    question_type: 'hr' as QuestionType,
+    category: 'custom',
+    difficulty: 'medium' as QuestionDifficulty,
+    required_skills: [] as string[],
+    intent: 'Admin-authored question for this candidate.',
+    time_limit_sec: 150,
+    is_mandatory_hr: false,
+    is_custom: true,
+    question_bank_id: null,
+    weight: 10,
+  }));
+
+  return [...bankQuestions, ...authoredQuestions].map((question, index) => ({
+    ...question,
+    question_order: index + 1,
   }));
 }
 
@@ -170,8 +205,8 @@ export function generateQuestionsLocalFallback(
   options?: QuestionGeneratorOptions,
   hrQuestions: InterviewQuestion[] = DEFAULT_MANDATORY_HR_QUESTIONS
 ): InterviewQuestion[] {
-  if (options?.selectedQuestionIds?.length) {
-    return buildQuestionsFromBank(options.selectedQuestionIds);
+  if (options?.selectedQuestionIds?.length || options?.customQuestions?.length) {
+    return buildQuestionsFromSelection(options.selectedQuestionIds, options.customQuestions);
   }
 
   const targetTotal = calculateQuestionCount(options);
@@ -316,9 +351,9 @@ export function generateQuestionsLocalFallback(
 
     generatedHrQuestions.push({
       question_text: `${template.text}${cycleSuffix}`,
-      question_type: template.type,
+      question_type: normalizeQuestionType(template.type, template.category),
       category: template.category,
-      difficulty: template.difficulty,
+      difficulty: normalizeDifficulty(template.difficulty),
       required_skills: template.skills,
       intent: template.intent,
       time_limit_sec: 150,
@@ -370,8 +405,8 @@ export async function generateInterviewQuestions(
   hrQuestions: InterviewQuestion[] = DEFAULT_MANDATORY_HR_QUESTIONS,
   options?: QuestionGeneratorOptions
 ): Promise<InterviewQuestion[]> {
-  if (options?.selectedQuestionIds?.length) {
-    return buildQuestionsFromBank(options.selectedQuestionIds);
+  if (options?.selectedQuestionIds?.length || options?.customQuestions?.length) {
+    return buildQuestionsFromSelection(options.selectedQuestionIds, options.customQuestions);
   }
 
   const targetTotalCount = calculateQuestionCount(options);
@@ -447,7 +482,15 @@ For the 'technical' category questions (you must generate exactly 4):
   still keep it specific to their years of experience and the role's responsibilities rather than generic.
 - Do NOT ask deep coding (like writing code algorithms), system design, or low-level architecture questions.
 
-Return only a JSON array. Each item must contain question_text, question_type, category, difficulty, required_skills, intent, time_limit_sec, and weight.`;
+Return only a JSON array. Each item must contain:
+- question_text: string
+- question_type: must be strictly one of: "technical", "role_specific", "behavioral", "situational", "hr", "system_design"
+- category: string
+- difficulty: must be strictly one of: "easy", "medium", "hard"
+- required_skills: string[]
+- intent: string
+- time_limit_sec: integer seconds (e.g. 150)
+- weight: integer between 1 and 100 (e.g. 10)`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -467,15 +510,15 @@ Return only a JSON array. Each item must contain question_text, question_type, c
 
     const aiQuestions: InterviewQuestion[] = rawParsed.slice(0, requiredAiCount).map((item, idx) => ({
       question_text: item.question_text || `Tell us about your experience relevant to the ${jd.jobTitle || 'role'}.`,
-      question_type: (item.question_type as QuestionType) || 'hr',
+      question_type: normalizeQuestionType(item.question_type, item.category),
       category: item.category || 'experience_overview',
-      difficulty: (item.difficulty as QuestionDifficulty) || 'easy',
+      difficulty: normalizeDifficulty(item.difficulty),
       required_skills: Array.isArray(item.required_skills) ? item.required_skills : ['Communication'],
       intent: item.intent || 'Evaluate candidate experience and alignment.',
       question_order: idx + 1,
-      time_limit_sec: typeof item.time_limit_sec === 'number' ? item.time_limit_sec : 150,
+      time_limit_sec: normalizeInteger(item.time_limit_sec, 150, 30),
       is_mandatory_hr: false,
-      weight: typeof item.weight === 'number' ? item.weight : 10,
+      weight: normalizeInteger(item.weight, 10, 1),
     }));
 
     const requestedCategoryEntries = Object.entries(categoryCounts).filter(([, count]) => count > 0);

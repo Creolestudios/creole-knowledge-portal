@@ -39,6 +39,8 @@ export interface SessionSelectionOptions {
   questionCount?: number;
   similarityConfirmed?: boolean;
   questionBankIds?: string[];
+  customQuestions?: string[];
+  dynamicQuestions?: InterviewQuestion[];
 }
 
 /**
@@ -78,6 +80,8 @@ export async function createInterviewSessionWithInvite(
     body: JSON.stringify({
       duration_minutes: durationMinutes,
       question_bank_ids: options.questionBankIds,
+      custom_questions: options.customQuestions,
+      dynamic_questions: options.dynamicQuestions,
     }),
   });
   const generateJson = await readJsonOrThrow(generateRes, 'questions', 'Failed to generate interview questions.');

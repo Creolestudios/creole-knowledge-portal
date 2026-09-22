@@ -360,12 +360,14 @@ function InterviewLinkAndQuestions({ result }: { result: SessionGenerationResult
                   </span>
                   <span
                     className={`text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-md ${
-                      q.is_mandatory_hr
+                      q.is_custom
+                        ? 'bg-indigo-500/10 text-indigo-300 border border-indigo-500/30'
+                        : q.is_mandatory_hr
                         ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                         : 'bg-purple-500/10 text-purple-300 border border-purple-500/30'
                     }`}
                   >
-                    {q.category ? q.category.replaceAll('_', ' ') : q.question_type}
+                    {q.is_custom ? 'custom' : q.category ? q.category.replaceAll('_', ' ') : q.question_type}
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-slate-400 font-medium">

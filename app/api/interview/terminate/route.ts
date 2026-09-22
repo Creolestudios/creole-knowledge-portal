@@ -36,12 +36,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ terminated: true, interviewId: interview.id });
   }
 
-  await supabaseAdmin
+  const now = new Date().toISOString();
+
+  const { error: updateError } = await supabaseAdmin
     .from('ai_interviews')
     .update({
       status: 'terminated',
-      terminated_at: new Date().toISOString(),
+      terminated_at: now,
       termination_reason: reason,
+    })
+    .eq('id', interviewId);
+
+  if (updateError) {
+    console.error('[terminate] ai_interviews update error:', updateError);
+  }
+
+  // Also sync cancellation into interview_sessions if present
+  await supabaseAdmin
+    .from('interview_sessions')
+    .update({
+      status: 'cancelled',
+      updated_at: now,
     })
     .eq('id', interviewId);
 

@@ -62,10 +62,12 @@ export async function POST(
       })
       .eq('id', id);
 
-    const baseUrl =
+    let baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.VERCEL_URL ||
-      'http://localhost:3000';
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+    if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `http://${baseUrl}`;
+    }
     const inviteUrl = `${baseUrl}/assess/${rawToken}`;
 
     return NextResponse.json({

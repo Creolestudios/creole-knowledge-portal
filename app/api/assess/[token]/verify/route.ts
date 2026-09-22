@@ -60,7 +60,7 @@ export async function POST(
 
   const { data: session, error: sessionErr } = await supabaseAdmin
     .from('interview_sessions')
-    .select('id, candidate_name, status')
+    .select('id, candidate_name, status, duration_minutes')
     .eq('id', invite.session_id)
     .single();
 
@@ -105,6 +105,7 @@ export async function POST(
     verified: true,
     session_id: invite.session_id,
     candidate_name: session.candidate_name,
+    duration_minutes: session.duration_minutes || 15,
     questions,
   });
 }

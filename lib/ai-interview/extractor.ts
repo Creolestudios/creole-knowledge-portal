@@ -198,107 +198,151 @@ ${jdText || '(See attached JD file)'}
 
   contents.push(prompt);
 
-  const modelsToTry = ['gemini-2.5-flash', 'gemini-3.6-flash'];
+  // Model priority list — first working model wins.
+  // gemini-2.5-flash-lite is deprecated; replaced with gemini-3.5-flash-lite.
+  const modelsToTry = ['gemini-3.6-flash', 'gemini-3.1-pro-preview', 'gemini-3.5-flash-lite'];
+  const maxAttemptsPerModel = 3;
 
   for (const modelName of modelsToTry) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+    for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        });
 
-      if (response && response.text) {
-        let rawText = response.text.trim();
-        const firstBrace = rawText.indexOf('{');
-        const lastBrace = rawText.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          rawText = rawText.slice(firstBrace, lastBrace + 1);
+
+        if (response && response.text) {
+          let rawText = response.text.trim();
+          const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            rawText = jsonMatch[0];
+          }
+
+          const parsed = JSON.parse(rawText);
+
+          return {
+            candidateProfile: {
+              name: parsed.candidateProfile?.name || undefined,
+              email: parsed.candidateProfile?.email || undefined,
+              yearsOfExperience: Number(parsed.candidateProfile?.yearsOfExperience) || 0,
+              summary: parsed.candidateProfile?.summary || '',
+              extractedSkills: Array.isArray(parsed.candidateProfile?.extractedSkills)
+                ? parsed.candidateProfile.extractedSkills
+                : [],
+              domains: Array.isArray(parsed.candidateProfile?.domains)
+                ? parsed.candidateProfile.domains
+                : [],
+              education: Array.isArray(parsed.candidateProfile?.education)
+                ? parsed.candidateProfile.education.map((record: Record<string, unknown>) => ({
+                    level: ['school', 'college', 'postgraduate', 'other'].includes(String(record.level))
+                      ? record.level as 'school' | 'college' | 'postgraduate' | 'other'
+                      : 'other',
+                    institution: typeof record.institution === 'string' ? record.institution : undefined,
+                    qualification: typeof record.qualification === 'string' ? record.qualification : undefined,
+                    fieldOfStudy: typeof record.fieldOfStudy === 'string' ? record.fieldOfStudy : undefined,
+                    percentage: typeof record.percentage === 'number' ? record.percentage : undefined,
+                    cgpa: typeof record.cgpa === 'number' ? record.cgpa : undefined,
+                    grade: typeof record.grade === 'string' ? record.grade : undefined,
+                    passingYear: typeof record.passingYear === 'number' ? record.passingYear : undefined,
+                  }))
+                : [],
+              noticePeriod: parsed.candidateProfile?.noticePeriod || undefined,
+              currentLocation: parsed.candidateProfile?.currentLocation || undefined,
+              availability: parsed.candidateProfile?.availability || undefined,
+              workAuthorization: parsed.candidateProfile?.workAuthorization || undefined,
+              projectHighlights: Array.isArray(parsed.candidateProfile?.projectHighlights)
+                ? parsed.candidateProfile.projectHighlights
+                : [],
+            },
+            jdRequirements: {
+              jobTitle: parsed.jdRequirements?.jobTitle || undefined,
+              seniorityLevel: parsed.jdRequirements?.seniorityLevel || undefined,
+              requiredExperienceYears: Number(parsed.jdRequirements?.requiredExperienceYears) || 0,
+              mustHaveSkills: Array.isArray(parsed.jdRequirements?.mustHaveSkills)
+                ? parsed.jdRequirements.mustHaveSkills
+                : [],
+              niceToHaveSkills: Array.isArray(parsed.jdRequirements?.niceToHaveSkills)
+                ? parsed.jdRequirements.niceToHaveSkills
+                : [],
+              keyResponsibilities: Array.isArray(parsed.jdRequirements?.keyResponsibilities)
+                ? parsed.jdRequirements.keyResponsibilities
+                : [],
+            },
+            analysis: {
+              matchPercentage: normalizeMatchPercentage(
+                parsed.analysis?.matchPercentage,
+                Array.isArray(parsed.analysis?.matchedKeywords) ? parsed.analysis.matchedKeywords : [],
+                Array.isArray(parsed.analysis?.missingKeywords) ? parsed.analysis.missingKeywords : []
+              ),
+              matchedKeywords: Array.isArray(parsed.analysis?.matchedKeywords)
+                ? parsed.analysis.matchedKeywords
+                : [],
+              missingKeywords: Array.isArray(parsed.analysis?.missingKeywords)
+                ? parsed.analysis.missingKeywords
+                : [],
+              resumeOnlyKeywords: Array.isArray(parsed.analysis?.resumeOnlyKeywords)
+                ? parsed.analysis.resumeOnlyKeywords
+                : [],
+              skillGapSummary: parsed.analysis?.skillGapSummary || '',
+              keyStrengths: Array.isArray(parsed.analysis?.keyStrengths)
+                ? parsed.analysis.keyStrengths
+                : [],
+              improvementAreas: Array.isArray(parsed.analysis?.improvementAreas)
+                ? parsed.analysis.improvementAreas
+                : [],
+            },
+            extractedAt: new Date().toISOString(),
+          };
+        }
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+
+        // Skip model immediately — retrying won't help:
+        //   • 404 / NOT_FOUND  → model is deprecated or doesn't exist
+        //   • 429 / RESOURCE_EXHAUSTED / quota → daily quota used up for this model
+        const isSkipModel =
+          errMsg.includes('404') ||
+          errMsg.includes('NOT_FOUND') ||
+          errMsg.includes('no longer available') ||
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED') ||
+          errMsg.includes('quota');
+
+        // Retry with backoff only for transient server-side errors:
+        //   • 500 INTERNAL / 503 UNAVAILABLE → temporary Google infra issue
+        const isTransient =
+          !isSkipModel &&
+          (errMsg.includes('500') ||
+            errMsg.includes('503') ||
+            errMsg.includes('INTERNAL') ||
+            errMsg.includes('UNAVAILABLE') ||
+            errMsg.includes('demand'));
+
+        console.warn(
+          `[AI Interview Extractor] Model ${modelName} failed (attempt ${attempt}/${maxAttemptsPerModel}):`,
+          err
+        );
+
+        if (isSkipModel) {
+          // No point retrying — move straight to the next model
+          break;
+
         }
 
-        const parsed = JSON.parse(rawText);
+        if (isTransient && attempt < maxAttemptsPerModel) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+          continue;
+        }
 
-        return {
-          candidateProfile: {
-            name: parsed.candidateProfile?.name || undefined,
-            email: parsed.candidateProfile?.email || undefined,
-            yearsOfExperience: Number(parsed.candidateProfile?.yearsOfExperience) || 0,
-            summary: parsed.candidateProfile?.summary || '',
-            extractedSkills: Array.isArray(parsed.candidateProfile?.extractedSkills)
-              ? parsed.candidateProfile.extractedSkills
-              : [],
-            domains: Array.isArray(parsed.candidateProfile?.domains)
-              ? parsed.candidateProfile.domains
-              : [],
-            education: Array.isArray(parsed.candidateProfile?.education)
-              ? parsed.candidateProfile.education.map((record: Record<string, unknown>) => ({
-                  level: ['school', 'college', 'postgraduate', 'other'].includes(String(record.level))
-                    ? record.level as 'school' | 'college' | 'postgraduate' | 'other'
-                    : 'other',
-                  institution: typeof record.institution === 'string' ? record.institution : undefined,
-                  qualification: typeof record.qualification === 'string' ? record.qualification : undefined,
-                  fieldOfStudy: typeof record.fieldOfStudy === 'string' ? record.fieldOfStudy : undefined,
-                  percentage: typeof record.percentage === 'number' ? record.percentage : undefined,
-                  cgpa: typeof record.cgpa === 'number' ? record.cgpa : undefined,
-                  grade: typeof record.grade === 'string' ? record.grade : undefined,
-                  passingYear: typeof record.passingYear === 'number' ? record.passingYear : undefined,
-                }))
-              : [],
-            noticePeriod: parsed.candidateProfile?.noticePeriod || undefined,
-            currentLocation: parsed.candidateProfile?.currentLocation || undefined,
-            availability: parsed.candidateProfile?.availability || undefined,
-            workAuthorization: parsed.candidateProfile?.workAuthorization || undefined,
-            projectHighlights: Array.isArray(parsed.candidateProfile?.projectHighlights)
-              ? parsed.candidateProfile.projectHighlights
-              : [],
-          },
-          jdRequirements: {
-            jobTitle: parsed.jdRequirements?.jobTitle || undefined,
-            seniorityLevel: parsed.jdRequirements?.seniorityLevel || undefined,
-            requiredExperienceYears: Number(parsed.jdRequirements?.requiredExperienceYears) || 0,
-            mustHaveSkills: Array.isArray(parsed.jdRequirements?.mustHaveSkills)
-              ? parsed.jdRequirements.mustHaveSkills
-              : [],
-            niceToHaveSkills: Array.isArray(parsed.jdRequirements?.niceToHaveSkills)
-              ? parsed.jdRequirements.niceToHaveSkills
-              : [],
-            keyResponsibilities: Array.isArray(parsed.jdRequirements?.keyResponsibilities)
-              ? parsed.jdRequirements.keyResponsibilities
-              : [],
-          },
-          analysis: {
-            matchPercentage: normalizeMatchPercentage(
-              parsed.analysis?.matchPercentage,
-              Array.isArray(parsed.analysis?.matchedKeywords) ? parsed.analysis.matchedKeywords : [],
-              Array.isArray(parsed.analysis?.missingKeywords) ? parsed.analysis.missingKeywords : []
-            ),
-            matchedKeywords: Array.isArray(parsed.analysis?.matchedKeywords)
-              ? parsed.analysis.matchedKeywords
-              : [],
-            missingKeywords: Array.isArray(parsed.analysis?.missingKeywords)
-              ? parsed.analysis.missingKeywords
-              : [],
-            resumeOnlyKeywords: Array.isArray(parsed.analysis?.resumeOnlyKeywords)
-              ? parsed.analysis.resumeOnlyKeywords
-              : [],
-            skillGapSummary: parsed.analysis?.skillGapSummary || '',
-            keyStrengths: Array.isArray(parsed.analysis?.keyStrengths)
-              ? parsed.analysis.keyStrengths
-              : [],
-            improvementAreas: Array.isArray(parsed.analysis?.improvementAreas)
-              ? parsed.analysis.improvementAreas
-              : [],
-          },
-          extractedAt: new Date().toISOString(),
-        };
+        break;
       }
-    } catch (err) {
-      console.warn(`[AI Interview Extractor] Model ${modelName} failed:`, err);
     }
   }
 
-  // Fallback if AI calls fail
+  console.warn('[AI Interview Extractor] All Gemini models failed. Using local keyword fallback.');
   return extractKeywordsLocalFallback(resumeText || 'Resume', jdText || 'JD');
 }

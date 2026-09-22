@@ -123,6 +123,26 @@ describe('question-generator', () => {
     );
   });
 
+  it('appends admin-authored custom questions after selected bank questions', async () => {
+    const selected = QUESTION_BANK.filter((question) => question.id === 'hr-1');
+    const customQuestion = 'How would you handle a production incident on your first week?';
+    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
+      targetQuestions: 2,
+      durationMinutes: 10,
+      selectedQuestionIds: selected.map((question) => question.id),
+      customQuestions: ['  ', customQuestion],
+      includeMandatoryHr: false,
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[0].question_text).toBe(selected[0].question_text);
+    expect(result[0].is_custom).toBe(false);
+    expect(result[1].question_text).toBe(customQuestion);
+    expect(result[1].is_custom).toBe(true);
+    expect(result[1].category).toBe('custom');
+    expect(result[1].question_bank_id).toBeNull();
+  });
+
   it('scales generated questions for longer interview durations', () => {
     const questions45m = generateQuestionsLocalFallback(
       sampleProfile,

@@ -74,15 +74,83 @@ export interface ExtractKeywordsInput {
   jdMimeType?: string;
 }
 
-export type QuestionType =
-  | 'technical'
-  | 'role_specific'
-  | 'behavioral'
-  | 'situational'
-  | 'hr'
-  | 'system_design';
+export const VALID_QUESTION_TYPES = [
+  'technical',
+  'role_specific',
+  'behavioral',
+  'situational',
+  'hr',
+  'system_design',
+] as const;
 
-export type QuestionDifficulty = 'easy' | 'medium' | 'hard';
+export type QuestionType = typeof VALID_QUESTION_TYPES[number];
+
+export const VALID_DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+
+export type QuestionDifficulty = typeof VALID_DIFFICULTIES[number];
+
+export function normalizeQuestionType(type: unknown, category?: string): QuestionType {
+  const raw = typeof type === 'string' ? type.trim().toLowerCase().replace(/[\s-]+/g, '_') : '';
+  if ((VALID_QUESTION_TYPES as readonly string[]).includes(raw)) {
+    return raw as QuestionType;
+  }
+  if (raw.includes('tech') || raw.includes('code') || raw.includes('coding') || raw.includes('program')) {
+    return 'technical';
+  }
+  if (raw.includes('system') || raw.includes('design') || raw.includes('architecture')) {
+    return 'system_design';
+  }
+  if (raw.includes('behav') || raw.includes('culture') || raw.includes('conflict') || raw.includes('team')) {
+    return 'behavioral';
+  }
+  if (raw.includes('sit') || raw.includes('scenario') || raw.includes('priorit')) {
+    return 'situational';
+  }
+  if (raw.includes('role') || raw.includes('specific') || raw.includes('domain') || raw.includes('adapt') || raw.includes('project')) {
+    return 'role_specific';
+  }
+  if (category) {
+    const cat = category.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if ((VALID_QUESTION_TYPES as readonly string[]).includes(cat)) {
+      return cat as QuestionType;
+    }
+    if (cat.includes('tech')) return 'technical';
+    if (cat.includes('behav') || cat.includes('culture') || cat.includes('conflict') || cat.includes('team')) return 'behavioral';
+    if (cat.includes('role') || cat.includes('adapt') || cat.includes('project')) return 'role_specific';
+    if (cat.includes('sit')) return 'situational';
+  }
+  return 'hr';
+}
+
+export function normalizeDifficulty(diff: unknown): QuestionDifficulty {
+  const raw = typeof diff === 'string' ? diff.trim().toLowerCase() : '';
+  if ((VALID_DIFFICULTIES as readonly string[]).includes(raw)) {
+    return raw as QuestionDifficulty;
+  }
+  if (raw === 'beginner' || raw === 'basic' || raw === 'simple') return 'easy';
+  if (raw === 'intermediate' || raw === 'moderate') return 'medium';
+  if (raw === 'advanced' || raw === 'expert' || raw === 'complex') return 'hard';
+  return 'medium';
+}
+
+export function normalizeInteger(val: unknown, fallback = 10, min = 1): number {
+  if (typeof val === 'number' && Number.isFinite(val)) {
+    if (val > 0 && val < 1) {
+      return Math.max(min, Math.round(val * 100));
+    }
+    return Math.max(min, Math.round(val));
+  }
+  if (typeof val === 'string') {
+    const parsed = Number.parseFloat(val);
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+      if (parsed > 0 && parsed < 1) {
+        return Math.max(min, Math.round(parsed * 100));
+      }
+      return Math.max(min, Math.round(parsed));
+    }
+  }
+  return Math.max(min, Math.round(fallback));
+}
 
 export interface HRQuestionBank {
   id: string;
@@ -109,6 +177,8 @@ export interface InterviewQuestion {
   question_order: number;
   time_limit_sec: number;
   is_mandatory_hr: boolean;
+  is_custom?: boolean;
+  question_bank_id?: string | null;
   weight?: number;
   is_fallback?: boolean;
   created_at?: string;
@@ -132,6 +202,30 @@ export interface InterviewSession {
   questions?: InterviewQuestion[];
   invite?: InterviewInvite;
 }
+
+/**
+ * All proctoring event categories stored in interview_events.category.
+ *
+ * Face-tracking categories (existing):
+ *   gaze_away | reading_suspected | no_face | multi_face | none
+ *
+ * Object detection categories (new):
+ *   object_detected — meta: { object: string, confidence: number, boundingBox: number[] }
+ *
+ * Background voice categories (new):
+ *   background_voice — meta: { duration_ms: number, rms_level: number }
+ */
+export type ProctoringEventCategory =
+  | 'gaze_away'
+  | 'reading_suspected'
+  | 'no_face'
+  | 'multi_face'
+  | 'object_detected'
+  | 'background_voice'
+  | 'expression_metrics'
+  | 'identity_mismatch'
+  | 'none';
+
 
 export interface InterviewInvite {
   id: string;
@@ -166,6 +260,7 @@ export interface QuestionGeneratorOptions {
   categoryCounts?: Record<string, number>;
   includeMandatoryHr?: boolean;
   selectedQuestionIds?: string[];
+  customQuestions?: string[];
 }
 
 export interface GenerateQuestionsResponse {

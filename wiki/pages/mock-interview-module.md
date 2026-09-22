@@ -480,8 +480,8 @@ Each stage concludes with `npm run test` and `npm run lint`, together with a man
 
 | Risk | Mitigation |
 |---|---|
-| Three vision models degrade performance on low-specification hardware | GPU delegation, worker isolation with `OffscreenCanvas`, staggered inference rates, and a pre-flight frame rate check that warns the candidate in advance |
-| Object detection false positives, for example a mug interpreted as a phone | A fifty percent confidence floor combined with three consecutive confirming inferences, plus a captured frame so the administrator can verify |
+| Three vision models degrade performance on low-specification hardware | GPU delegation, worker isolation with `OffscreenCanvas` (300x300 downsampling), `lite_mobilenet_v2` for sub-2s startup and low latency inference |
+| Object detection false positives or latency | Tuned confidence floor (0.28) on tracked classes (`phone`, `earbuds`, `book`, `second_screen`, `remote`), real-time alert trigger (`thresholdMs: 0`), and a 5-second per-object debounce |
 | The Web Speech API is available only in Chromium browsers | Browser support is verified before the session begins, with Gemini audio transcription as the fallback path |
 | Poor microphone quality distorts fluency metrics | The pre-flight check measures input level, and the report flags low audio quality so that scores are interpreted in context |
 | Immediate termination on tab switch penalises accidental key presses | A configuration flag allows this to be softened to a warning following a pilot |

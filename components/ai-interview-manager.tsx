@@ -93,6 +93,7 @@ export default function AIInterviewManager() {
       return;
     }
 
+
     setSubmitting(true);
     try {
       setStatusMessage('Analyzing resume & job description...');

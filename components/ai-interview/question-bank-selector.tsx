@@ -1,7 +1,16 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckSquare, Loader2, Square } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckSquare,
+  Loader2,
+  PencilLine,
+  Plus,
+  Sparkles,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import { ExtractionResult, SessionGenerationResult } from '@/lib/ai-interview/types';
 import {
   createInterviewSessionWithInvite,
@@ -37,18 +46,20 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
   const [bankLoading, setBankLoading] = useState(true);
   const [bankError, setBankError] = useState<string | null>(null);
 
-  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set(['technical']));
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(
-    new Set(['dynamic-tech-1', 'dynamic-tech-2', 'dynamic-tech-3', 'dynamic-tech-4'])
-  );
-  const [questionCount, setQuestionCount] = useState(4);
+  // Selection states — dedicated strictly to HR / behavioral categories from the question bank
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
+  const [questionCount, setQuestionCount] = useState(2);
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [similarityConfirmed, setSimilarityConfirmed] = useState(false);
+  const [customQuestions, setCustomQuestions] = useState<string[]>([]);
+  const [draftCustomQuestion, setDraftCustomQuestion] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  // Load HR question bank from DB
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -68,57 +79,35 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
     };
   }, []);
 
+  // Filter categories strictly to HR / behavioral bank rows (no artificial technical items in the bank)
   const categories = useMemo(() => {
-    const cats = Array.from(new Set(bank.map((q) => q.category))).sort((a, b) => a.localeCompare(b));
-    if (!cats.includes('technical')) cats.push('technical');
-    return cats;
+    return Array.from(new Set(bank.map((q) => q.category)))
+      .filter((cat) => cat !== 'technical')
+      .sort((a, b) => a.localeCompare(b));
   }, [bank]);
 
   const questionsByCategory = useMemo(() => {
     const map = new Map<string, HRQuestionBankRow[]>();
     for (const q of bank) {
+      if (q.category === 'technical') continue;
       const list = map.get(q.category) || [];
       list.push(q);
       map.set(q.category, list);
     }
     for (const list of map.values()) list.sort((a, b) => a.default_order - b.default_order);
-    
-    // Inject dynamic technical questions for the UI using candidate's actual skills
-    const matchedSkills = extraction.analysis.matchedKeywords || [];
-    const missingSkills = extraction.analysis.missingKeywords || [];
-    
-    const skill1 = matchedSkills[0] || 'core technologies';
-    const skill2 = matchedSkills[1] || matchedSkills[0] || 'relevant frameworks';
-    const gapSkill = missingSkills[0] || 'new methodologies';
-
-    map.set('technical', [
-      { id: 'dynamic-tech-1', title: 'Technical Depth', question_text: `Based on your resume, you have experience with ${skill1}. Could you elaborate on a complex project where you utilized these skills, and describe the specific technical challenges you overcame?`, category: 'technical', difficulty: 'medium', is_mandatory: true, default_order: 1 },
-      { id: 'dynamic-tech-2', title: 'Technical Application', question_text: `How have you applied your knowledge of ${skill2} in a practical, real-world scenario? What was the outcome?`, category: 'technical', difficulty: 'medium', is_mandatory: true, default_order: 2 },
-      { id: 'dynamic-tech-3', title: 'Problem Solving', question_text: `What is the most complex technical problem you've solved recently involving ${skill1}, and what was your specific approach to troubleshooting it?`, category: 'technical', difficulty: 'hard', is_mandatory: true, default_order: 3 },
-      { id: 'dynamic-tech-4', title: 'Technical Adaptability', question_text: `This role requires working with ${gapSkill}. Given your background, how would you approach getting up to speed and ensuring code quality in this area?`, category: 'technical', difficulty: 'medium', is_mandatory: true, default_order: 4 },
-    ]);
-    
     return map;
-  }, [bank, extraction]);
+  }, [bank]);
 
   const toggleCategory = (category: string) => {
-    if (category === 'technical') return; // Enforce mandatory technical
     setSelectedCategories((prev) => {
       const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
-        const ids = new Set(selectedQuestionIds);
-        (questionsByCategory.get(category) || []).forEach((q) => ids.delete(q.id));
-        setSelectedQuestionIds(ids);
-      } else {
-        next.add(category);
-      }
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
       return next;
     });
   };
 
   const toggleQuestion = (id: string) => {
-    if (id.startsWith('dynamic-tech-')) return; // Enforce mandatory technical
     setSelectedQuestionIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -127,22 +116,53 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
     });
   };
 
+  const selectAllInCategory = (category: string) => {
+    const questions = questionsByCategory.get(category) || [];
+    setSelectedQuestionIds((prev) => {
+      const next = new Set(prev);
+      questions.forEach((q) => next.add(q.id));
+      return next;
+    });
+  };
+
+  const clearCategory = (category: string) => {
+    const questions = questionsByCategory.get(category) || [];
+    setSelectedQuestionIds((prev) => {
+      const next = new Set(prev);
+      questions.forEach((q) => next.delete(q.id));
+      return next;
+    });
+  };
+
   const matchPercentage = extraction.analysis.matchPercentage || 0;
   const isLowMatch = matchPercentage < LOW_MATCH_THRESHOLD;
-  const selectedCount = selectedQuestionIds.size;
+  const selectedCount = selectedQuestionIds.size + customQuestions.length;
   const countMatches = selectedCount === questionCount;
   const canGenerate =
     !isSubmitting && !bankLoading && countMatches && selectedCount > 0 && (!isLowMatch || similarityConfirmed);
+
+  const handleAddCustomQuestion = () => {
+    const nextQuestion = draftCustomQuestion.trim();
+    if (!nextQuestion) return;
+    setCustomQuestions((current) => [...current, nextQuestion]);
+    setDraftCustomQuestion('');
+  };
+
+  const handleRemoveCustomQuestion = (indexToRemove: number) => {
+    setCustomQuestions((current) => current.filter((_, idx) => idx !== indexToRemove));
+  };
 
   const handleGenerate = async () => {
     setSubmitError(null);
     setIsSubmitting(true);
     try {
-      setStatusMessage('Creating the interview session & saving selected questions...');
+      setStatusMessage('Generating 4 dynamic technical questions with AI & creating session...');
+
       const result = await createInterviewSessionWithInvite(extraction, durationMinutes, {
         questionCount,
         similarityConfirmed,
         questionBankIds: Array.from(selectedQuestionIds),
+        customQuestions,
       });
       setStatusMessage(`Interview link ready — ${result.questions.length} questions saved successfully.`);
       onComplete(result);
@@ -160,12 +180,25 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
 
   return (
     <div className="w-full space-y-6">
-      <div className="p-4 bg-blue-500/5 border border-blue-500/20 rounded-2xl">
-        <h3 className="text-lg font-semibold text-slate-100">Select Interview Questions</h3>
-        <p className="text-xs text-slate-400 mt-1">
-          Choose the categories, then check the exact questions to include. The number of
-          questions checked must equal the configured question count.
-        </p>
+      <div className="p-5 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-2xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+            <span>Select Interview Questions</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-medium">
+              {selectedCount} HR Selected
+            </span>
+          </h3>
+          <div className="text-xs text-slate-400">
+            Total Interview: <strong className="text-white">{selectedCount + 4}</strong> questions ({selectedCount} HR + 4 Technical)
+          </div>
+        </div>
+
+        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200 leading-relaxed">
+          <Sparkles className="w-4 h-4 text-yellow-300 shrink-0 mt-0.5" />
+          <span>
+            <strong>Automatic Dynamic Technical Questions:</strong> Exactly 4 candidate-tailored technical questions will be generated dynamically by AI every time upon clicking &quot;Generate Interview Link&quot;, referencing the candidate&apos;s resume, project highlights, and job description skills.
+          </span>
+        </div>
       </div>
 
       {bankError && (
@@ -195,7 +228,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
           {/* CONFIGURATION */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-400">
-              <span>Total question count</span>
+              <span>Total question count (HR)</span>
               <input
                 id="question-bank-selector-question-count"
                 type="number"
@@ -204,6 +237,9 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                 onChange={(e) => setQuestionCount(Math.max(1, Number(e.target.value) || 1))}
                 className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-slate-100 outline-none focus:border-blue-500"
               />
+              <span className="text-[11px] text-slate-500">
+                Number of HR / behavioral questions to pick from the bank (+ 4 technical questions generated by AI)
+              </span>
             </label>
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-400">
               <span>Interview duration (minutes)</span>
@@ -215,6 +251,9 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                 onChange={(e) => setDurationMinutes(Math.max(5, Number(e.target.value) || 5))}
                 className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-slate-100 outline-none focus:border-blue-500"
               />
+              <span className="text-[11px] text-slate-500">
+                Allocated interview duration (split evenly across all questions)
+              </span>
             </label>
           </div>
 
@@ -236,68 +275,177 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
             </label>
           )}
 
-          {/* CATEGORIES */}
-          <div className="flex flex-wrap gap-2">
-            {categories.map((category) => {
-              const active = selectedCategories.has(category);
-              return (
-                <button
-                  key={category}
-                  type="button"
-                  id={`question-bank-category-${category}`}
-                  onClick={() => toggleCategory(category)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
-                    active
-                      ? 'bg-blue-600 border-blue-500 text-white'
-                      : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  {active ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
-                  {category.replaceAll('_', ' ')}
-                </button>
-              );
-            })}
+          {/* HR CATEGORIES PILLS */}
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-slate-400">HR & Behavioral Categories</span>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((category) => {
+                const active = selectedCategories.has(category);
+                const questions = questionsByCategory.get(category) || [];
+                const categorySelectedCount = questions.filter((q) => selectedQuestionIds.has(q.id)).length;
+
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    id={`question-bank-category-${category}`}
+                    onClick={() => toggleCategory(category)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
+                      active
+                        ? 'bg-blue-600 border-blue-500 text-white shadow-sm'
+                        : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    {active ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
+                    <span className="capitalize">{category.replaceAll('_', ' ')}</span>
+                    {categorySelectedCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-semibold">
+                        {categorySelectedCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* QUESTIONS PER SELECTED CATEGORY */}
           <div className="space-y-4">
-            {Array.from(selectedCategories).map((category) => (
-              <div
-                key={category}
-                className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-2"
-              >
-                <h4 className="text-sm font-semibold text-slate-200 capitalize">
-                  {category.replaceAll('_', ' ')}
-                </h4>
-                <div className="space-y-2">
-                  {(questionsByCategory.get(category) || []).map((q) => {
-                    const checked = selectedQuestionIds.has(q.id);
-                    return (
-                      <label
-                        key={q.id}
-                        className="flex items-start gap-3 p-3 bg-slate-950/50 border border-slate-800/90 rounded-xl cursor-pointer hover:border-slate-700"
+            {Array.from(selectedCategories).map((category) => {
+              const questions = questionsByCategory.get(category) || [];
+              const categorySelectedCount = questions.filter((q) => selectedQuestionIds.has(q.id)).length;
+
+              return (
+                <div
+                  key={category}
+                  className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-semibold text-slate-200 capitalize">
+                        {category.replaceAll('_', ' ')}
+                      </h4>
+                      <span className="text-xs text-slate-500">
+                        ({categorySelectedCount}/{questions.length} selected)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => selectAllInCategory(category)}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded-lg hover:bg-blue-500/10 transition"
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleQuestion(q.id)}
-                          className="mt-0.5"
-                        />
-                        <span className="text-sm text-slate-200">{q.question_text}</span>
-                      </label>
-                    );
-                  })}
+                        Select All
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => clearCategory(category)}
+                        className="text-xs text-slate-400 hover:text-slate-300 px-2 py-1 rounded-lg hover:bg-slate-800 transition"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {questions.map((q) => {
+                      const checked = selectedQuestionIds.has(q.id);
+                      return (
+                        <label
+                          key={q.id}
+                          className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                            checked
+                              ? 'bg-blue-950/20 border-blue-500/40 text-slate-100'
+                              : 'bg-slate-950/50 border-slate-800/90 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleQuestion(q.id)}
+                            className="mt-1"
+                          />
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-slate-400">{q.title}</span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 uppercase font-medium">
+                                {q.difficulty}
+                              </span>
+                            </div>
+                            <p className="text-sm leading-relaxed">{q.question_text}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+
+          {/* CUSTOM QUESTIONS */}
+          <div className="p-4 bg-slate-900/60 border border-indigo-500/30 rounded-2xl space-y-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+              <PencilLine className="h-4 w-4 text-indigo-400" />
+              Write any other question
+              <span className="ml-auto text-[11px] font-normal text-slate-500">For this candidate only</span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Add a question that is not in the bank. It will be saved only on this candidate&apos;s interview.
+            </p>
+            <textarea
+              id="custom-interview-question"
+              value={draftCustomQuestion}
+              onChange={(event) => setDraftCustomQuestion(event.target.value)}
+              placeholder="Write any other question..."
+              rows={3}
+              className="w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-indigo-500"
+            />
+            <button
+              id="add-custom-interview-question"
+              type="button"
+              onClick={handleAddCustomQuestion}
+              disabled={!draftCustomQuestion.trim()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add question
+            </button>
+            {customQuestions.length > 0 && (
+              <div className="space-y-2">
+                {customQuestions.map((question, index) => (
+                  <div
+                    key={`${question}-${index}`}
+                    className="flex items-start gap-3 rounded-xl border border-indigo-500/40 bg-indigo-500/5 p-3 text-sm text-slate-200"
+                  >
+                    <span className="mt-0.5 rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-300">
+                      Custom
+                    </span>
+                    <span className="flex-1">{question}</span>
+                    <button
+                      type="button"
+                      aria-label={`Remove custom question ${index + 1}`}
+                      onClick={() => handleRemoveCustomQuestion(index)}
+                      className="text-slate-500 transition hover:text-rose-400"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
 
           {/* ACTIONS */}
           <div className="flex flex-col items-center gap-3 pt-2">
-            <div className="text-xs text-slate-400">
-              Selected {selectedCount} of {questionCount} question{questionCount === 1 ? '' : 's'}
+            <div className="text-xs text-slate-400 text-center">
+              Selected <strong className="text-white">{selectedCount}</strong> of {questionCount} HR question{questionCount === 1 ? '' : 's'}
+              <span className="text-purple-300 font-medium"> + 4 dynamic technical questions will be generated</span>
               {!countMatches && (
-                <span className="text-amber-400"> — selection must match the configured count</span>
+                <div className="text-amber-400 mt-1">
+                  HR selection must match configured count ({questionCount}) before generating
+                </div>
               )}
             </div>
             <div className="flex items-center gap-3">

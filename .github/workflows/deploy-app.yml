@@ -108,7 +108,6 @@ jobs:
           build-args: |
             NEXT_PUBLIC_BASE_PATH=/creole-knowledge-portal
             NEXT_PUBLIC_SUPABASE_URL=https://pcovgcyjzprkboxbjkey.supabase.co
-<<<<<<< HEAD
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.WEB_REPO }}:latest

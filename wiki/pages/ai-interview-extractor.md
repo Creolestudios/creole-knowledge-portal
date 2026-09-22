@@ -41,13 +41,16 @@ The **AI Interview Module** allows administrators and technical recruiters to up
 |---|---|---|
 | **Types** | `lib/ai-interview/types.ts` | TypeScript interfaces for upload payloads, candidate profile, JD requirements, and extraction results. |
 | **Extractor Service** | `lib/ai-interview/extractor.ts` | Google Gemini AI integration (`gemini-2.5-flash` with local fallback matcher). |
-| **Question Generator** | `lib/ai-interview/question-generator.ts` | HR Question generator enforcing min 10 questions and duration scaling. |
+| **Question Generator** | `lib/ai-interview/question-generator.ts` | HR Question generator with custom selection and duration scaling. |
+| **Object Detection Service** | `lib/ai-interview/object-detection.ts` | Rules & confidence filtering for cell phones, earbuds, books, and unauthorized screens. |
+| **Object Detection Worker** | `lib/ai-interview/object-detection.worker.ts` | Web Worker running TensorFlow.js COCO-SSD with WebGL/CPU fallback and non-blocking concurrency. |
 | **Unit Tests** | `lib/ai-interview/extractor.test.ts` | Vitest test suite for keyword extraction and fallback parsing. |
 | **Extract API Route** | `app/api/ai-interview/extract/route.ts` | POST endpoint for Resume & JD extraction. |
 | **Questions API Route** | `app/api/ai-interview/generate-questions/route.ts` | POST endpoint for generating HR interview questions. |
 | **Uploader Component** | `components/ai-interview/resume-jd-uploader.tsx` | Drag-and-drop file upload & text paste UI. |
-| **Results Component** | `components/ai-interview/keyword-results.tsx` | Dashboard displaying match score, skill gaps, and generated HR interview questions section. |
+| **Results Component** | `components/ai-interview/keyword-results.tsx` | Dashboard displaying match score, skill gaps, and synchronized question selection & duration. |
 | **Page View** | `app/dashboard/ai-interview/extractor/page.tsx` | Next.js 15 App Router page view (`/dashboard/ai-interview/extractor`). |
+| **Live Interview Entry** | `app/interview/[id]/page.tsx` | Proctoring room featuring face tracking, background voice, and real-time object detection. |
 
 
 ---

@@ -277,7 +277,7 @@ export class ProctoringTimeTracker {
       readingThresholdMs?: number; // default 2000ms
       noFaceThresholdMs?: number; // default 3000ms
       multiFaceThresholdMs?: number; // default 2000ms
-      debounceMs?: number; // default 20000ms
+      debounceMs?: number; // default 5000ms
     } = {},
   ): {
     shouldTriggerWarning: boolean;
@@ -290,7 +290,7 @@ export class ProctoringTimeTracker {
       readingThresholdMs = 2000,
       noFaceThresholdMs = 3000,
       multiFaceThresholdMs = 2000,
-      debounceMs = 20000,
+      debounceMs = 5000,
     } = options;
 
     const currentCategory = result.category;
@@ -336,6 +336,69 @@ export class ProctoringTimeTracker {
     }
 
     return { shouldTriggerWarning: false, category: currentCategory, warningCount: this.warningCount, reason: '' };
+  }
+
+  /**
+   * processGenericEvent — used by object detection and voice detection.
+   *
+   * Object and voice warnings are counted in the SAME warningCount as face events.
+   * There is no separate counter — all proctoring alerts share one unified count.
+   *
+   * @param category  e.g. 'object_detected' | 'background_voice'
+   * @param subKey    differentiates objects within a category (e.g. 'phone', 'book')
+   * @param reason    human-readable reason shown in the warning toast
+   * @param thresholdMs how long (ms) the condition must persist before firing
+   * @param debounceMs  min gap (ms) between consecutive warnings for this subKey
+   * @param nowMs     current timestamp (injectable for testing)
+   */
+  public processGenericEvent(
+    category: string,
+    subKey: string,
+    reason: string,
+    thresholdMs: number,
+    debounceMs = 5000,
+    nowMs: number = Date.now(),
+  ): {
+    shouldTriggerWarning: boolean;
+    category: string;
+    warningCount: number;
+    reason: string;
+  } {
+    const key = `${category}:${subKey}`;
+
+    if (!this.categoryStartTime.has(key)) {
+      this.categoryStartTime.set(key, nowMs);
+    }
+
+    const elapsed = nowMs - (this.categoryStartTime.get(key) ?? nowMs);
+
+    if (elapsed >= thresholdMs) {
+      const lastTrigger = this.lastWarningTime.get(key);
+      const timeSinceLast = lastTrigger === undefined ? Infinity : nowMs - lastTrigger;
+
+      if (timeSinceLast >= debounceMs) {
+        this.lastWarningTime.set(key, nowMs);
+        this.categoryStartTime.delete(key); // reset after trigger
+        this.warningCount += 1;
+
+        return {
+          shouldTriggerWarning: true,
+          category,
+          warningCount: this.warningCount,
+          reason,
+        };
+      }
+    }
+
+    return { shouldTriggerWarning: false, category, warningCount: this.warningCount, reason: '' };
+  }
+
+  /**
+   * clearGenericKey — call when an object/voice condition is no longer active
+   * so the sustained-duration timer resets correctly.
+   */
+  public clearGenericKey(category: string, subKey: string): void {
+    this.categoryStartTime.delete(`${category}:${subKey}`);
   }
 
   public getWarningCount(): number {

@@ -153,6 +153,9 @@ describe('CandidateAssessmentPage', () => {
     await joinFromReadyLobby();
     await waitFor(() => expect(screen.getByText('Question 1 of 1')).toBeInTheDocument());
     expect(screen.getByText('Tell me about yourself')).toBeInTheDocument();
+    expect(screen.getByText('Live Video')).toBeInTheDocument();
+    expect(screen.getByLabelText('You camera preview')).toBeInTheDocument();
+    expect(screen.getByLabelText('Remaining time')).toBeInTheDocument();
   });
 
   it('shows a network-error message when passcode verification throws', async () => {

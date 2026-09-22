@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
       categoryCounts,
       includeMandatoryHr,
       selectedQuestionIds,
+      customQuestions,
     } = body;
 
     const profile: CandidateProfile = candidateProfile || {
@@ -65,6 +66,9 @@ export async function POST(req: NextRequest) {
         categoryCounts: categoryCounts && typeof categoryCounts === 'object' ? categoryCounts : undefined,
         includeMandatoryHr: includeMandatoryHr === true,
         selectedQuestionIds: Array.isArray(selectedQuestionIds) ? selectedQuestionIds : undefined,
+        customQuestions: Array.isArray(customQuestions)
+          ? customQuestions.filter((question: unknown) => typeof question === 'string' && question.trim())
+          : undefined,
       }
     );
 

@@ -8,6 +8,7 @@ interface MeetingVideoTileProps {
   label?: string;
   micOn: boolean;
   size?: 'large' | 'small';
+  videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
 
 /**
@@ -17,12 +18,19 @@ interface MeetingVideoTileProps {
  * underlying audio track is actually enabled (i.e. what the interview
  * recording/monitoring receives).
  */
-export function MeetingVideoTile({ stream, label = 'You', micOn, size = 'large' }: MeetingVideoTileProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+export function MeetingVideoTile({
+  stream,
+  label = 'You',
+  micOn,
+  size = 'large',
+  videoRef: externalVideoRef,
+}: MeetingVideoTileProps) {
+  const internalVideoRef = useRef<HTMLVideoElement>(null);
+  const activeVideoRef = externalVideoRef ?? internalVideoRef;
   const hasVideo = !!stream && stream.getVideoTracks().some((track) => track.enabled && track.readyState === 'live');
 
   useEffect(() => {
-    const el = videoRef.current;
+    const el = activeVideoRef.current;
     if (!el) return;
 
     if (stream) {
@@ -41,7 +49,7 @@ export function MeetingVideoTile({ stream, label = 'You', micOn, size = 'large' 
     return () => {
       if (el) el.srcObject = null;
     };
-  }, [stream]);
+  }, [stream, activeVideoRef]);
 
   const dimensions = size === 'large' ? 'aspect-video w-full' : 'aspect-[4/3] w-40 sm:w-48';
 
@@ -51,7 +59,7 @@ export function MeetingVideoTile({ stream, label = 'You', micOn, size = 'large' 
       aria-label={`${label} camera preview`}
     >
       <video
-        ref={videoRef}
+        ref={activeVideoRef}
         autoPlay
         muted
         playsInline

@@ -21,8 +21,10 @@ import { MeetingVideoTile } from '@/components/ai-interview/meeting-video-tile';
 import { MeetingControlBar } from '@/components/ai-interview/meeting-control-bar';
 import { DeviceSettingsPanel } from '@/components/ai-interview/device-settings-panel';
 import { useProctoringWatchdog } from '@/lib/ai-interview/use-proctoring-watchdog';
+import { OBJECT_RULES, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
+import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 
-type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'terminated';
+type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated';
 
 type InterviewQuestion = {
   id: string;
@@ -42,6 +44,12 @@ export default function InterviewEntryPage() {
   const interviewId = params?.id as string;
 
   const [stage, setStage] = useState<Stage>('passcode');
+  // Keep stageRef in sync with every stage transition so worker callbacks
+  // always read the current stage without closure staleness.
+  const setStageWithRef = (next: Stage) => {
+    stageRef.current = next;
+    setStage(next);
+  };
 
   const [accessCode, setAccessCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -146,9 +154,17 @@ export default function InterviewEntryPage() {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const durationSecondsRef = useRef(0);
   const terminatedRef = useRef(false);
+  const completedRef = useRef(false);
+  const terminatingRef = useRef(false);
   const faceWorkerRef = useRef<Worker | null>(null);
+  const objectWorkerRef = useRef<Worker | null>(null);
+  const voiceDetectorRef = useRef<VoiceDetector | null>(null);
   const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
   const baselineRef = useRef<CandidateBaseline | null>(null);
+  const missingFramesRef = useRef<Map<string, number>>(new Map());
+  // Always reflects the latest stage so worker message handlers never
+  // capture a stale value from their closure.
+  const stageRef = useRef<Stage>(stage);
 
   const stopAllMedia = () => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -176,12 +192,12 @@ export default function InterviewEntryPage() {
   };
 
   const terminateInterview = (reason: string) => {
-    if (terminatedRef.current) return;
+    if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
     terminatedRef.current = true;
     stopAllMedia();
     notifyTermination(reason);
     setTerminationReason(reason);
-    setStage('terminated');
+    setStageWithRef('terminated');
   };
 
   const captureEvidenceSnapshot = async (category: string) => {
@@ -234,7 +250,7 @@ export default function InterviewEntryPage() {
         return;
       }
 
-      setStage('instructions');
+      setStageWithRef('instructions');
     } catch (err) {
       console.error('[interview-entry] verify failed:', err);
       setError('Something went wrong. Please try again.');
@@ -282,22 +298,18 @@ export default function InterviewEntryPage() {
       const questionsResponse = await fetch(`/api/interview/${interviewId}/questions`);
       const questionsData = await questionsResponse.json();
       if (!questionsResponse.ok || !Array.isArray(questionsData.questions) || !questionsData.questions.length) {
-        setQuestionError(questionsData.error ?? 'Interview questions are not ready yet.');
+        setPermissionError(questionsData.error ?? 'Interview questions are not ready yet.');
         return;
       }
 
-      const configuredDurationMinutes = Number(questionsData.session?.duration_minutes);
-      if (!Number.isFinite(configuredDurationMinutes) || configuredDurationMinutes <= 0) {
-        setQuestionError('The interviewer has not configured a valid interview duration yet.');
-        return;
-      }
+      const configuredDurationMinutes = Number(questionsData.session?.duration_minutes) || 15;
 
       setQuestions(questionsData.questions);
       durationSecondsRef.current = configuredDurationMinutes * 60;
       setDurationSeconds(configuredDurationMinutes * 60);
       setFaceTrackingStatus('loading');
       setFaceTrackingError(null);
-      setStage(isAdmin ? 'interview' : 'ready');
+      setStageWithRef(isAdmin ? 'interview' : 'ready');
     } catch (err) {
       console.error('[interview-entry] permission request failed:', err);
       setPermissionError(
@@ -313,13 +325,20 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage !== 'ready') return;
 
+    if (isAdmin) {
+      const adminTimer = window.setTimeout(() => {
+        setStageWithRef('interview');
+      }, 0);
+      return () => window.clearTimeout(adminTimer);
+    }
+
     if (process.env.NODE_ENV === 'test') return;
 
     const timer = window.setTimeout(() => {
-      setStage('calibration');
+      setStageWithRef('calibration');
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [stage]);
+  }, [stage, isAdmin]);
 
   const handleToggleMic = () => {
     const audioTracks = cameraStreamRef.current?.getAudioTracks() ?? [];
@@ -331,61 +350,184 @@ export default function InterviewEntryPage() {
   };
 
   useEffect(() => {
-    if (!['calibration', 'interview'].includes(stage) || !cameraVideoRef.current || !cameraPreview || isAdmin) return;
-    cameraVideoRef.current.srcObject = cameraPreview;
-    void cameraVideoRef.current.play();
-  }, [cameraPreview, stage, isAdmin]);
+    if (!cameraVideoRef.current) return;
+    const stream = cameraStream || cameraPreview;
+    if (!stream || isAdmin) return;
+    if (cameraVideoRef.current.srcObject !== stream) {
+      cameraVideoRef.current.srcObject = stream;
+    }
+    void cameraVideoRef.current.play()?.catch(() => {});
+  }, [cameraStream, cameraPreview, stage, isAdmin]);
 
+  // ─── Shared frame-capture helper ─────────────────────────────────────────
+  // Extracted so both the calibration and interview effects can reuse it.
+  const startFaceFrameCapture = (
+    worker: Worker,
+    videoElement: HTMLVideoElement | null,
+  ): (() => void) => {
+    let frameRequest = 0;
+    let lastFrameAt = 0;
+
+    const captureFrame = async (timestamp: number) => {
+      if (timestamp - lastFrameAt >= 125 && videoElement) {
+        if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+            frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+          }
+          return;
+        }
+        lastFrameAt = timestamp;
+        try {
+          const bitmap = await createImageBitmap(videoElement);
+          worker.postMessage({ type: 'frame', bitmap, timestamp }, [bitmap]);
+        } catch (err) {
+          setFaceTrackingStatus('error');
+          setFaceTrackingError(err instanceof Error ? err.message : 'Camera frame could not be read.');
+        }
+      }
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        frameRequest = videoElement?.requestVideoFrameCallback(captureFrame) || 0;
+      }
+    };
+
+    const captureTimer = window.setInterval(() => {
+      if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) void captureFrame(performance.now());
+    }, 125);
+
+    const startTimer = window.setTimeout(() => {
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && videoElement) {
+        frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearInterval(captureTimer);
+      if (frameRequest && videoElement?.cancelVideoFrameCallback) {
+        videoElement.cancelVideoFrameCallback(frameRequest);
+      }
+    };
+  };
+
+  // ─── Effect A: Calibration-only face worker ───────────────────────────────
+  // Runs only during the 'calibration' stage. Sends init → start_calibration,
+  // accumulates baseline samples, and transitions to 'interview' on completion.
+  // This worker is terminated immediately when calibration finishes so that
+  // Effect B can start a fresh worker with the baseline already set.
   useEffect(() => {
-    if (!['calibration', 'interview'].includes(stage) || isAdmin) return;
+    if (stage !== 'calibration') return;
 
     if (typeof Worker === 'undefined') {
-      const unsupportedTimer = window.setTimeout(() => {
+      window.setTimeout(() => {
         setFaceTrackingStatus('error');
         setFaceTrackingError('This browser does not support the face tracking worker.');
       }, 0);
-      return () => window.clearTimeout(unsupportedTimer);
+      return;
     }
 
-    const worker = new Worker(new URL('../../../lib/ai-interview/face-calibration.worker.ts', import.meta.url));
+    const worker = new Worker(
+      new URL('../../../lib/ai-interview/face-calibration.worker.ts', import.meta.url),
+    );
     faceWorkerRef.current = worker;
+    let stopCapture: (() => void) | null = null;
 
     worker.onmessage = (event: MessageEvent<{ type: string; message?: string; sampleCount?: number; baseline?: CandidateBaseline } & ExtendedFaceTrackingResult>) => {
-      const message = event.data;
-      if (message.type === 'ready') {
+      const msg = event.data;
+
+      if (msg.type === 'ready') {
         setFaceTrackingStatus('tracking');
-        if (stage === 'calibration') {
-          worker.postMessage({ type: 'start_calibration' });
+        // Begin sending frames & immediately start calibration collection
+        stopCapture = startFaceFrameCapture(worker, cameraVideoRef.current);
+        worker.postMessage({ type: 'start_calibration' });
+        return;
+      }
+
+      if (msg.type === 'calibration_progress') {
+        setCalibrationProgress(msg.sampleCount ?? 0);
+        return;
+      }
+
+      if (msg.type === 'calibration_complete') {
+        // Persist baseline so the interview worker can load it immediately
+        if (msg.baseline) {
+          baselineRef.current = msg.baseline;
         }
+        // Stop capture and terminate — Effect B will spin up its own worker
+        stopCapture?.();
+        worker.terminate();
+        faceWorkerRef.current = null;
+        setStageWithRef('interview');
         return;
       }
 
-      if (message.type === 'calibration_progress') {
-        setCalibrationProgress(message.sampleCount ?? 0);
-        return;
-      }
-
-      if (message.type === 'calibration_complete') {
-        if (message.baseline) {
-          baselineRef.current = message.baseline;
-          worker.postMessage({ type: 'set_baseline', baseline: message.baseline });
-        }
-        setStage('interview');
-        return;
-      }
-
-      if (message.type === 'error') {
+      if (msg.type === 'error') {
         setFaceTrackingStatus('error');
-        setFaceTrackingError(message.message || 'Face tracking model failed to load.');
+        setFaceTrackingError(msg.message || 'Face tracking model failed to load.');
         return;
       }
 
-      if (message.type === 'result') {
-        const hasFace = Boolean(message.facePresent);
+      // 'result' messages during calibration: only update face-detected indicator,
+      // never trigger proctoring alerts (baseline doesn't exist yet).
+      if (msg.type === 'result') {
+        setFaceDetected(Boolean(msg.facePresent));
+      }
+    };
+
+    worker.postMessage({ type: 'init' });
+
+    return () => {
+      stopCapture?.();
+      worker.terminate();
+      faceWorkerRef.current = null;
+    };
+  }, [stage]);
+
+  // ─── Effect B: Interview proctoring face worker ───────────────────────────
+  // Runs only during the 'interview' stage. Loads the face model, immediately
+  // sends the baseline captured during calibration, then processes every
+  // 'result' frame for proctoring violations.
+  // Because this effect only mounts when stage === 'interview', there is NO
+  // stale-closure issue — stageRef.current is always 'interview' here.
+  useEffect(() => {
+    if (stage !== 'interview') return;
+
+    if (typeof Worker === 'undefined') return;
+
+    const worker = new Worker(
+      new URL('../../../lib/ai-interview/face-calibration.worker.ts', import.meta.url),
+    );
+    faceWorkerRef.current = worker;
+    let stopCapture: (() => void) | null = null;
+
+    worker.onmessage = (event: MessageEvent<{ type: string; message?: string } & ExtendedFaceTrackingResult>) => {
+      const msg = event.data;
+
+      if (msg.type === 'ready') {
+        setFaceTrackingStatus('tracking');
+        // Restore the baseline computed during calibration so the worker
+        // can immediately use relative gaze offsets instead of absolutes.
+        if (baselineRef.current) {
+          worker.postMessage({ type: 'set_baseline', baseline: baselineRef.current });
+        }
+        stopCapture = startFaceFrameCapture(worker, cameraVideoRef.current);
+        return;
+      }
+
+      if (msg.type === 'error') {
+        setFaceTrackingStatus('error');
+        setFaceTrackingError(msg.message || 'Face tracking model failed to load.');
+        return;
+      }
+
+      if (msg.type === 'result') {
+        const hasFace = Boolean(msg.facePresent);
         setFaceDetected(hasFace);
 
-        // Run proctoring time tracker for warning debouncing & time windows
-        const trackerStatus = proctorTrackerRef.current.processResult(message, Date.now());
+        // stageRef always reflects current stage — no stale closure possible.
+        if (stageRef.current !== 'interview') return;
+
+        // ── Proctoring time tracker: debounces & counts violations ──
+        const trackerStatus = proctorTrackerRef.current.processResult(msg, Date.now());
 
         if (trackerStatus.shouldTriggerWarning) {
           setWarningToast({
@@ -394,7 +536,6 @@ export default function InterviewEntryPage() {
             reason: trackerStatus.reason,
           });
 
-          // Upload evidence snapshot & log event
           void captureEvidenceSnapshot(trackerStatus.category);
           fetch('/api/interview/events', {
             method: 'POST',
@@ -408,23 +549,28 @@ export default function InterviewEntryPage() {
           }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
 
           if (trackerStatus.warningCount >= 3) {
-            terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+            if (!terminatingRef.current) {
+              terminatingRef.current = true;
+              setTimeout(() => {
+                terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+              }, 3000);
+            }
           }
         }
 
-        if (message.alert === 'warning') {
+        if (msg.alert === 'warning') {
           setFaceTrackingStatus('tracking');
           setFaceTrackingError(
-            message.lookingAway || message.headTurnedAway
+            msg.lookingAway || msg.headTurnedAway
               ? 'Candidate attention looks unstable.'
-              : message.readingSuspected
+              : msg.readingSuspected
                 ? 'Reading off-screen suspected.'
                 : 'Eyes appear closed or attention is drifting.',
           );
           return;
         }
 
-        if (message.alert === 'error') {
+        if (msg.alert === 'error') {
           setFaceTrackingStatus('error');
           setFaceTrackingError('Face tracking could not detect a valid face in the frame.');
           return;
@@ -436,51 +582,239 @@ export default function InterviewEntryPage() {
 
     worker.postMessage({ type: 'init' });
 
-    let frameRequest = 0;
-    let lastFrameAt = 0;
-    const videoElement = cameraVideoRef.current;
-    const captureFrame = async (timestamp: number) => {
-      if (timestamp - lastFrameAt >= 125 && videoElement) {
-        if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-          if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-            frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
-          }
-          return;
-        }
-        lastFrameAt = timestamp;
-        try {
-          const bitmap = await createImageBitmap(videoElement);
-          worker.postMessage({ type: 'frame', bitmap, timestamp }, [bitmap]);
-        } catch (error) {
-          setFaceTrackingStatus('error');
-          setFaceTrackingError(error instanceof Error ? error.message : 'Camera frame could not be read.');
-        }
-      }
-      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-        frameRequest = videoElement?.requestVideoFrameCallback(captureFrame) || 0;
-      }
-    };
-
-    const beginCapture = () => {
-      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && videoElement) {
-        frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
-      }
-    };
-    const captureTimer = window.setInterval(() => {
-      if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) void captureFrame(performance.now());
-    }, 125);
-    const startTimer = window.setTimeout(beginCapture, 250);
-
     return () => {
-      window.clearTimeout(startTimer);
-      window.clearInterval(captureTimer);
-      if (frameRequest && videoElement?.cancelVideoFrameCallback) {
-        videoElement.cancelVideoFrameCallback(frameRequest);
-      }
+      stopCapture?.();
       worker.terminate();
       faceWorkerRef.current = null;
     };
-  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- worker uses stable refs and initializers
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- uses stable refs; terminateInterview uses terminatedRef
+
+  // ─── Object Detection Worker ──────────────────────────────────────────────
+  // Only start during the live interview — not during calibration.
+  // Starting during calibration wastes resources and may log false object
+  // warnings before the candidate has even reached the interview screen.
+  useEffect(() => {
+    if (stage !== 'interview') return;
+    if (typeof Worker === 'undefined') {
+      console.warn('[ObjectDetection] Web Workers not supported in this browser environment');
+      return;
+    }
+
+    console.log('%c[ObjectDetection] Initializing Object Detection Worker in stage: interview...', 'color: #06b6d4; font-weight: bold;');
+    const worker = new Worker(
+      new URL('../../../lib/ai-interview/object-detection.worker.ts', import.meta.url),
+    );
+    objectWorkerRef.current = worker;
+    let frameTimerRef: number | null = null;
+    let frameCount = 0;
+
+    worker.onerror = (err) => {
+      console.warn('%c[ObjectDetection Error] Worker runtime exception:', 'color: #ef4444; font-weight: bold;', err);
+    };
+
+    worker.onmessage = (event: MessageEvent<{ type: string; detections?: DetectedObjectEvent[]; message?: string }>) => {
+      const msg = event.data;
+
+      if (msg.type === 'error') {
+        console.warn('%c[ObjectDetection Error]', 'color: #ef4444; font-weight: bold;', msg.message);
+        return;
+      }
+
+      // ── Model ready: start sending frames NOW (not before) ──
+      if (msg.type === 'ready') {
+        console.log('%c[ObjectDetection] ✅ Worker model is READY. Starting camera frame capture loop (350ms)...', 'color: #10b981; font-weight: bold;');
+        frameTimerRef = window.setInterval(() => {
+          const video = cameraVideoRef.current;
+          if (!video) {
+            return;
+          }
+          if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+            return;
+          }
+          createImageBitmap(video)
+            .then((bitmap) => {
+              frameCount += 1;
+              if (frameCount % 10 === 1) {
+                console.log(`[ObjectDetection] Captured frame #${frameCount} (${video.videoWidth}x${video.videoHeight}), running inference...`);
+              }
+              worker.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
+            })
+            .catch((err) => {
+              console.warn('[ObjectDetection] Frame capture error:', err);
+            });
+        }, 350); // 350ms — real-time responsive object detection
+        return;
+      }
+
+      if (msg.type !== 'result' || !msg.detections) return;
+
+      // ── Log raw detections for debugging ──
+      if (msg.detections.length > 0) {
+        console.log(
+          '%c[ObjectDetection] 🚨 DETECTIONS IN FRAME:',
+          'color: #f59e0b; font-weight: bold; font-size: 13px;',
+          msg.detections.map((d) => `${d.label} (${(d.confidence * 100).toFixed(0)}%)`),
+        );
+      }
+
+      const nowMs = Date.now();
+      const seenSubKeys = new Set<string>();
+
+      for (const detection of msg.detections) {
+        const rule = detection.rule;
+        if (!rule) continue;
+
+        const subKey = rule.object; // e.g. 'phone', 'earbuds', 'book', 'second_screen'
+        seenSubKeys.add(subKey);
+        missingFramesRef.current.set(subKey, 0);
+
+        const trackerStatus = proctorTrackerRef.current.processGenericEvent(
+          rule.category,
+          subKey,
+          rule.reason,
+          rule.thresholdMs,
+          5000, // 5s debounce between repeated warnings for same object
+          nowMs,
+        );
+
+        if (trackerStatus.shouldTriggerWarning) {
+          console.warn(
+            `%c[ObjectDetection] ⚠️ PROCTORING ALERT #${trackerStatus.warningCount}: ${trackerStatus.reason}`,
+            'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
+          );
+
+          setWarningToast({
+            show: true,
+            count: trackerStatus.warningCount,
+            reason: trackerStatus.reason,
+          });
+
+          // Auto-dismiss warning toast after 5 seconds if not dismissed manually
+          window.setTimeout(() => {
+            setWarningToast((prev) => (prev.count === trackerStatus.warningCount ? { ...prev, show: false } : prev));
+          }, 5000);
+
+          // Evidence snapshot + DB event
+          void captureEvidenceSnapshot(rule.category);
+          fetch('/api/interview/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              interviewId,
+              category: rule.category,
+              severity: rule.severity,
+              confidence: detection.confidence,
+              meta: {
+                object: rule.object,
+                confidence: detection.confidence,
+                boundingBox: detection.boundingBox,
+                warningCount: trackerStatus.warningCount,
+              },
+            }),
+          }).catch((err) => console.warn('[object-event] fetch failed:', err));
+
+          if (trackerStatus.warningCount >= 3) {
+            if (!terminatingRef.current) {
+              terminatingRef.current = true;
+              setTimeout(() => {
+                terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+              }, 3000);
+            }
+          }
+        }
+      }
+
+      // Clear timers for objects not seen after a 2-frame grace period
+      const allObjectSubKeys = Object.values(OBJECT_RULES).map((r) => r.object);
+      for (const subKey of allObjectSubKeys) {
+        if (!seenSubKeys.has(subKey)) {
+          const missCount = (missingFramesRef.current.get(subKey) || 0) + 1;
+          missingFramesRef.current.set(subKey, missCount);
+          if (missCount >= 2) {
+            proctorTrackerRef.current.clearGenericKey('object_detected', subKey);
+          }
+        }
+      }
+    };
+
+    console.log('[ObjectDetection] Sending init to worker');
+    worker.postMessage({ type: 'init' });
+    // NOTE: frame timer is started inside the 'ready' handler above — NOT here.
+    // This prevents frames being dropped while the COCO-SSD model is still loading.
+
+    return () => {
+      if (frameTimerRef) window.clearInterval(frameTimerRef);
+      worker.terminate();
+      objectWorkerRef.current = null;
+    };
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- worker uses stable refs
+
+  // ─── Background Voice Detection ───────────────────────────────────────────
+  useEffect(() => {
+    if (stage !== 'interview') return;
+    const stream = cameraStreamRef.current;
+    if (!stream) return;
+
+    const detector = new VoiceDetector({
+      noiseThreshold: 0.04,
+      sustainedMs: 3000,
+      debounceMs: 20000,
+      onBackgroundVoice: ({ duration_ms, rms_level }) => {
+        const trackerStatus = proctorTrackerRef.current.processGenericEvent(
+          'background_voice',
+          'voice',
+          'Background voice or noise detected. Ensure you are in a quiet environment.',
+          0, // threshold already handled by VoiceDetector internally
+          20000,
+        );
+
+        if (trackerStatus.shouldTriggerWarning) {
+          setWarningToast({
+            show: true,
+            count: trackerStatus.warningCount,
+            reason: 'Background voice or noise detected. Ensure you are in a quiet environment.',
+          });
+
+          fetch('/api/interview/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              interviewId,
+              category: 'background_voice',
+              severity: 'warning',
+              meta: { duration_ms, rms_level, warningCount: trackerStatus.warningCount },
+            }),
+          }).catch((err) => console.warn('[voice-event] fetch failed:', err));
+
+          if (trackerStatus.warningCount >= 3) {
+            if (!terminatingRef.current) {
+              terminatingRef.current = true;
+              setTimeout(() => {
+                terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+              }, 3000);
+            }
+          }
+        }
+      },
+    });
+
+    detector.start(stream);
+    voiceDetectorRef.current = detector;
+
+    return () => {
+      detector.stop();
+      voiceDetectorRef.current = null;
+    };
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- uses stable refs
+
+  // ── Auto-dismiss warning toast after 4 seconds ──
+  useEffect(() => {
+    if (!warningToast.show) return;
+    const timer = window.setTimeout(() => {
+      setWarningToast((prev) => ({ ...prev, show: false }));
+    }, 4000);
+    return () => window.clearTimeout(timer);
+  }, [warningToast.show, warningToast.count]);
 
   useEffect(() => {
     if (stage !== 'interview' || durationSecondsRef.current <= 0) return;
@@ -489,14 +823,16 @@ export default function InterviewEntryPage() {
       setDurationSeconds((remaining) => {
         if (remaining <= 1) {
           window.clearInterval(timer);
-          terminateInterview('The interview time has ended.');
+          completedRef.current = true;
+          stopAllMedia();
+          setStageWithRef('completed');
           return 0;
         }
         return durationSecondsRef.current;
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- timer uses a stable ref
+  }, [stage]);
 
   useProctoringWatchdog({
     active: !isAdmin && ['ready', 'calibration', 'interview'].includes(stage),
@@ -508,9 +844,23 @@ export default function InterviewEntryPage() {
   if (stage === 'calibration') {
     return (
       <main className="min-h-screen bg-[#f8f9fa] flex items-center justify-center relative">
-        <video ref={cameraVideoRef} muted playsInline className="hidden"> {/* NOSONAR */}
-          <track kind="captions" />
-        </video>
+        <video
+          ref={cameraVideoRef}
+          autoPlay
+          muted
+          playsInline
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            right: 0,
+            width: '320px',
+            height: '240px',
+            opacity: 0.001,
+            pointerEvents: 'none',
+            zIndex: -50,
+          }}
+        />
         <CalibrationModal
           calibrationProgress={calibrationProgress}
           onComplete={() => setStage('interview')}
@@ -540,6 +890,22 @@ export default function InterviewEntryPage() {
 
   if (stage === 'terminated') {
     return <TerminatedInterview terminationReason={terminationReason} />;
+  }
+
+  if (stage === 'completed') {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 text-center space-y-4">
+          <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+          </div>
+          <h1 className="text-2xl font-bold text-zinc-900">Interview complete</h1>
+          <p className="text-sm text-zinc-500 leading-relaxed">
+            Thank you. Your responses and assessment data have been submitted. You may close this window now.
+          </p>
+        </div>
+      </main>
+    );
   }
 
   if (stage === 'ready') {
@@ -591,7 +957,7 @@ export default function InterviewEntryPage() {
       <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
         {/* Warning Toast Banner */}
         {warningToast.show && (
-          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-lg w-full px-4 animate-in slide-in-from-top duration-300">
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
             <div className="bg-amber-500 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-amber-400">
               <div className="flex items-center space-x-3">
                 <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
@@ -613,8 +979,11 @@ export default function InterviewEntryPage() {
           </div>
         )}
 
-        <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1fr_280px]">
-          <section className="rounded-2xl border border-zinc-100 bg-white p-8 shadow-card">
+        {/* ── Side-by-side layout: Question card left, camera right ── */}
+        <div className="mx-auto max-w-6xl grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+
+          {/* Question Card */}
+          <section className="md:col-span-7 lg:col-span-8 rounded-2xl border border-zinc-100 bg-white p-8 shadow-card">
             <div className="mb-8 flex items-center justify-between border-b border-zinc-100 pb-5">
               <div>
                 <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Interview question</p>
@@ -686,57 +1055,46 @@ export default function InterviewEntryPage() {
               )}
             </div>
           </section>
-          <aside className="space-y-4">
-            <div className="overflow-hidden rounded-2xl border border-zinc-100 bg-zinc-900 shadow-card flex flex-col">
-              <div className="relative">
-                <video ref={cameraVideoRef} muted playsInline className="aspect-video w-full object-cover"> {/* NOSONAR */}
-                  <track kind="captions" />
-                </video>
-                <div className="absolute top-2 left-2 bg-black/50 px-2 py-1 rounded text-[10px] text-white font-bold uppercase tracking-wider">
-                  You {isAdmin ? '(Admin)' : ''}
-                </div>
+
+          {/* Camera Panel — sticky on the right, side-by-side to question */}
+          <div className="md:col-span-5 lg:col-span-4 space-y-4 md:sticky md:top-6">
+            <div className="rounded-2xl border border-zinc-100 bg-zinc-900 shadow-card p-4 space-y-3">
+              <div className="flex items-center justify-between text-xs text-zinc-300 font-semibold px-1">
+                <span className="flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-zinc-400" />
+                  Live Video
+                </span>
+                <span className={[
+                  'text-[10px] font-semibold flex items-center gap-1.5 px-2 py-0.5 rounded-full',
+                  faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-900/80 text-emerald-300' : 'bg-amber-900/80 text-amber-300',
+                ].join(' ')}>
+                  <span className={[
+                    'inline-block w-1.5 h-1.5 rounded-full',
+                    faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-300',
+                  ].join(' ')} />
+                  {faceTrackingStatus === 'loading' && 'Face loading…'}
+                  {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
+                  {faceTrackingStatus === 'error' && 'Tracking unavailable'}
+                </span>
               </div>
 
-              {remoteStream ? (
-                <div className="relative border-t border-zinc-800">
-                  <video ref={remoteVideoRef} playsInline className="aspect-video w-full object-cover"> {/* NOSONAR */}
-                    <track kind="captions" />
-                  </video>
-                  <div className="absolute top-2 left-2 bg-[#34c4f2]/90 px-2 py-1 rounded text-[10px] text-zinc-900 font-bold uppercase tracking-wider">
-                    {isAdmin ? 'Candidate' : 'Admin'}
-                  </div>
-                </div>
-              ) : (
-                <div className="aspect-video w-full bg-zinc-800 flex items-center justify-center border-t border-zinc-700">
-                  <span className="text-xs text-zinc-500 font-semibold">
-                    {isAdmin ? 'Waiting for candidate...' : 'Admin not in session'}
-                  </span>
-                </div>
-              )}
+              <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" videoRef={cameraVideoRef} />
 
-              <div className="flex items-center justify-between p-3 text-xs font-semibold text-white">
-                <span>Camera and microphone active</span>
-                {!isAdmin && (
-                  <span className={faceTrackingStatus === 'tracking' && faceDetected ? 'text-emerald-400' : 'text-amber-300'}>
-                    {faceTrackingStatus === 'loading' && 'Face loading'}
-                    {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
-                    {faceTrackingStatus === 'error' && 'Tracking unavailable'}
-                  </span>
-                )}
-                {isAdmin && (
-                  <span className="text-[#34c4f2]">Admin Proctoring Bypassed</span>
-                )}
-              </div>
+              <MeetingControlBar micOn={micOn} onToggleMic={handleToggleMic} settingsEnabled={false} />
             </div>
-            {!isAdmin && faceTrackingStatus === 'error' && faceTrackingError && (
+
+            {/* Inline alerts below camera */}
+            {faceTrackingError && (
               <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-xs leading-relaxed text-red-700">
+                <strong className="block mb-1 font-semibold text-red-800">Alert</strong>
                 {faceTrackingError}
               </div>
             )}
             <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800">
               Keep this tab open and keep your camera, microphone, and screen share active.
             </div>
-          </aside>
+          </div>
+
         </div>
       </main>
     );

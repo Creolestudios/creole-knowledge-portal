@@ -23,12 +23,12 @@ const bankRows = [
 ];
 
 const extraction: ExtractionResult = {
-  candidateProfile: { name: 'Jane', extractedSkills: [], domains: [] },
-  jdRequirements: { mustHaveSkills: [], niceToHaveSkills: [], keyResponsibilities: [] },
+  candidateProfile: { name: 'Jane', extractedSkills: ['React', 'TypeScript'], domains: ['Web'] },
+  jdRequirements: { mustHaveSkills: ['React'], niceToHaveSkills: [], keyResponsibilities: [] },
   analysis: {
     matchPercentage: 80,
-    matchedKeywords: [],
-    missingKeywords: [],
+    matchedKeywords: ['React', 'TypeScript'],
+    missingKeywords: ['Node.js'],
     resumeOnlyKeywords: [],
     skillGapSummary: '',
     keyStrengths: [],
@@ -41,7 +41,30 @@ describe('QuestionBankSelector', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: true, json: async () => ({ questions: bankRows }) }),
+      vi.fn().mockImplementation((url: string) => {
+        if (typeof url === 'string' && url.includes('generate-questions')) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              questions: [
+                {
+                  question_text: 'How do you structure React state for scale?',
+                  category: 'technical',
+                  difficulty: 'medium',
+                  intent: 'State Management',
+                },
+                {
+                  question_text: 'How do you approach debugging complex TypeScript generics?',
+                  category: 'technical',
+                  difficulty: 'hard',
+                  intent: 'Type Safety',
+                },
+              ],
+            }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ questions: bankRows }) });
+      }),
     );
     mockCreateSession.mockReset();
   });
@@ -58,7 +81,7 @@ describe('QuestionBankSelector', () => {
     expect(screen.queryByText('Introduce yourself.')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText('hr'));
-    expect(screen.getByText('Introduce yourself.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Introduce yourself.')).toBeInTheDocument());
     expect(screen.getByText('What matters to you?')).toBeInTheDocument();
   });
 
@@ -66,8 +89,9 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={extraction} onComplete={vi.fn()} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '6' } }); // 4 tech + 2 hr
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '2' } });
     fireEvent.click(screen.getByText('hr'));
+    await waitFor(() => expect(screen.getByText('Introduce yourself.')).toBeInTheDocument());
 
     const generateButton = screen.getByText('Generate Interview Link');
     expect(generateButton).toBeDisabled();
@@ -87,8 +111,10 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={lowMatchExtraction} onComplete={vi.fn()} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '5' } }); // 4 tech + 1 hr
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '1' } });
     fireEvent.click(screen.getByText('hr'));
+    await waitFor(() => expect(screen.getByText('Introduce yourself.')).toBeInTheDocument());
+
     fireEvent.click(screen.getByText('Introduce yourself.'));
 
     const generateButton = screen.getByText('Generate Interview Link');
@@ -111,17 +137,20 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={extraction} onComplete={onComplete} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '5' } }); // 4 tech + 1 hr
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '1' } });
     fireEvent.click(screen.getByText('hr'));
+    await waitFor(() => expect(screen.getByText('Introduce yourself.')).toBeInTheDocument());
+
     fireEvent.click(screen.getByText('Introduce yourself.'));
 
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith(sessionResult));
     expect(mockCreateSession).toHaveBeenCalledWith(extraction, 30, {
-      questionCount: 5,
+      questionCount: 1,
       similarityConfirmed: false,
-      questionBankIds: expect.arrayContaining(['b1', 'dynamic-tech-1', 'dynamic-tech-2', 'dynamic-tech-3', 'dynamic-tech-4']),
+      questionBankIds: ['b1'],
+      customQuestions: [],
     });
   });
 
@@ -131,13 +160,48 @@ describe('QuestionBankSelector', () => {
     render(<QuestionBankSelector extraction={extraction} onComplete={vi.fn()} onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
 
-    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '5' } }); // 4 tech + 1 hr
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '1' } });
     fireEvent.click(screen.getByText('hr'));
+    await waitFor(() => expect(screen.getByText('Introduce yourself.')).toBeInTheDocument());
+
     fireEvent.click(screen.getByText('Introduce yourself.'));
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
     await waitFor(() =>
       expect(screen.getByText('Creating the interview link & passcode failed: db down')).toBeInTheDocument(),
+    );
+  });
+
+  it('counts a custom question toward the configured total', async () => {
+    mockCreateSession.mockResolvedValue({
+      extraction,
+      session: { id: 's1' },
+      questions: [],
+      invite: {},
+    });
+
+    render(<QuestionBankSelector extraction={extraction} onComplete={vi.fn()} onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText('hr')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByLabelText(/Total question count/i), { target: { value: '1' } });
+    fireEvent.change(screen.getByPlaceholderText('Write any other question...'), {
+      target: { value: 'How would you handle a production incident?' },
+    });
+    fireEvent.click(screen.getByText('Add question'));
+
+    const generateButton = screen.getByText('Generate Interview Link');
+    await waitFor(() => expect(generateButton).not.toBeDisabled());
+    fireEvent.click(generateButton);
+
+    await waitFor(() =>
+      expect(mockCreateSession).toHaveBeenCalledWith(
+        extraction,
+        30,
+        expect.objectContaining({
+          questionCount: 1,
+          customQuestions: ['How would you handle a production incident?'],
+        }),
+      ),
     );
   });
 });
