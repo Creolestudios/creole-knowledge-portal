@@ -75,26 +75,34 @@ export async function POST(
 
     const durationMinutes = reqBody.duration_minutes || reqBody.durationMinutes || session.duration_minutes;
     const targetQuestions = reqBody.total_questions || reqBody.totalQuestions;
-    const questionBankIds: string[] = Array.isArray(reqBody.question_bank_ids)
+    const rawQuestionBankIds: string[] = Array.isArray(reqBody.question_bank_ids)
       ? reqBody.question_bank_ids.filter((v: unknown): v is string => typeof v === 'string')
       : [];
+    // "dynamic-tech-*" are client-side placeholder IDs for the always-included technical
+    // questions (generated below, not stored in the bank) — not real hr_question_bank rows.
+    const questionBankIds = rawQuestionBankIds.filter((id) => !id.startsWith('dynamic-tech-'));
+    const isManualSelection = rawQuestionBankIds.length > 0;
 
     let questions: InterviewQuestion[];
 
-    if (questionBankIds.length > 0) {
+    if (isManualSelection) {
       // Admin explicitly selected exact questions from the reusable bank —
       // use those snapshots as-is instead of asking the LLM to generate.
-      const { data: selectedRows, error: bankErr } = await supabaseAdmin
-        .from('hr_question_bank')
-        .select('*')
-        .in('id', questionBankIds)
-        .eq('is_active', true);
+      let selectedRows: any[] = [];
+      if (questionBankIds.length > 0) {
+        const { data, error: bankErr } = await supabaseAdmin
+          .from('hr_question_bank')
+          .select('*')
+          .in('id', questionBankIds)
+          .eq('is_active', true);
 
-      if (bankErr) {
-        return NextResponse.json({ error: bankErr.message }, { status: 500 });
+        if (bankErr) {
+          return NextResponse.json({ error: bankErr.message }, { status: 500 });
+        }
+        selectedRows = data || [];
       }
 
-      const rowsById = new Map((selectedRows || []).map((row) => [row.id, row]));
+      const rowsById = new Map(selectedRows.map((row) => [row.id, row]));
       const perQuestionSeconds = durationMinutes
         ? Math.max(60, Math.round((durationMinutes * 60) / questionBankIds.length))
         : 120;
@@ -119,7 +127,7 @@ export async function POST(
         })
         .filter((q): q is InterviewQuestion & { question_bank_id: string } => q !== null);
 
-      if (questions.length === 0 && questionBankIds.length > 0 && !questionBankIds.some(id => id.startsWith('dynamic-tech'))) {
+      if (questions.length === 0 && questionBankIds.length > 0) {
         return NextResponse.json(
           { error: 'None of the selected question-bank IDs are active or found.' },
           { status: 400 }

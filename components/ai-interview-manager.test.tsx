@@ -65,7 +65,6 @@ describe('AIInterviewManager', () => {
           candidate_name: 'Jane Doe',
           candidate_email: 'jane@example.com',
           job_title: 'Frontend Engineer',
-          access_code: '123456',
           status: 'pending',
           expires_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
@@ -270,19 +269,21 @@ describe('AIInterviewManager', () => {
   });
 
   it('opens a link + passcode popup when a recent interview name is clicked, and closes it', async () => {
-    global.fetch = mockFetchOnce({
-      interviews: [
-        {
-          id: 'i1',
-          candidate_name: 'Jane Doe',
-          candidate_email: 'jane@example.com',
-          job_title: 'Frontend Engineer',
-          access_code: '123456',
-          status: 'pending',
-          expires_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-        },
-      ],
+    global.fetch = mockFetchByUrl({
+      '/api/admin/ai-interviews': {
+        interviews: [
+          {
+            id: 'i1',
+            candidate_name: 'Jane Doe',
+            candidate_email: 'jane@example.com',
+            job_title: 'Frontend Engineer',
+            status: 'pending',
+            expires_at: null,
+            created_at: new Date().toISOString(),
+          },
+        ],
+      },
+      '/api/interviews/i1/invite': { invite_url: 'http://localhost/assess/tok', passcode: '123456' },
     }) as any;
 
     render(<AIInterviewManager />);
@@ -290,26 +291,28 @@ describe('AIInterviewManager', () => {
     fireEvent.click(nameButton);
 
     expect(await screen.findByText('123456')).toBeInTheDocument();
-    expect(screen.getByText(/\/interview\/i1/)).toBeInTheDocument();
+    expect(screen.getByText(/\/assess\/tok/)).toBeInTheDocument();
 
     fireEvent.click(document.getElementById('interview-link-modal-close')!);
     await waitFor(() => expect(screen.queryByText('123456')).not.toBeInTheDocument());
   });
 
   it('copies the link and passcode from the popup', async () => {
-    global.fetch = mockFetchOnce({
-      interviews: [
-        {
-          id: 'i1',
-          candidate_name: null,
-          candidate_email: null,
-          job_title: null,
-          access_code: '654321',
-          status: 'pending',
-          expires_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-        },
-      ],
+    global.fetch = mockFetchByUrl({
+      '/api/admin/ai-interviews': {
+        interviews: [
+          {
+            id: 'i1',
+            candidate_name: null,
+            candidate_email: null,
+            job_title: null,
+            status: 'pending',
+            expires_at: null,
+            created_at: new Date().toISOString(),
+          },
+        ],
+      },
+      '/api/interviews/i1/invite': { invite_url: 'http://localhost/assess/tok', passcode: '654321' },
     }) as any;
 
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -318,10 +321,11 @@ describe('AIInterviewManager', () => {
     render(<AIInterviewManager />);
     fireEvent.click(await screen.findByText('Unnamed candidate'));
 
+    await screen.findByText('654321');
     fireEvent.click(document.getElementById('interview-link-modal-copy-code')!);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('654321'));
 
     fireEvent.click(document.getElementById('interview-link-modal-copy-link')!);
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/interview/i1')));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('http://localhost/assess/tok'));
   });
 });

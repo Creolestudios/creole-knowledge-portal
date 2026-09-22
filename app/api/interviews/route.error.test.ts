@@ -30,6 +30,7 @@ const { state, mockFrom } = vi.hoisted(() => {
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: { from: mockFrom },
+  requireAdminUser: vi.fn().mockResolvedValue({ userId: 'admin-1' }),
 }));
 
 describe('POST/GET /api/interviews error branches', () => {

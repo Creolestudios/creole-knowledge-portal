@@ -5,10 +5,16 @@ const mockRequireAdminUser = vi.fn();
 const mockUpload = vi.fn();
 const mockRemove = vi.fn();
 const mockSingle = vi.fn();
-const mockSelect = vi.fn(() => ({ single: mockSingle }));
-const mockInsert = vi.fn(() => ({ select: mockSelect }));
-const mockEq = vi.fn();
-const mockOrder = vi.fn();
+const mockInsertSelect = vi.fn(() => ({ single: mockSingle }));
+const mockInsert = vi.fn(() => ({ select: mockInsertSelect }));
+// GET builds a chain: select().eq().order().order().limit() — the list
+// query result resolves on the final .limit() call.
+const mockLimit = vi.fn();
+const listQuery: any = {
+  eq: vi.fn(() => listQuery),
+  order: vi.fn(() => listQuery),
+  limit: (...args: any[]) => mockLimit(...args),
+};
 
 vi.mock('@/lib/supabase/admin', () => ({
   requireAdminUser: () => mockRequireAdminUser(),
@@ -21,10 +27,7 @@ vi.mock('@/lib/supabase/admin', () => ({
     },
     from: vi.fn().mockReturnValue({
       insert: (...args: any[]) => mockInsert(...args),
-      select: (...args: any[]) => {
-        mockSelect(...args);
-        return { eq: mockEq };
-      },
+      select: () => listQuery,
     }),
   },
 }));
@@ -45,7 +48,6 @@ function makeRequest(fields: { resume?: File | null; jd?: File | null; jdText?: 
 describe('POST /api/admin/ai-interviews', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockEq.mockReturnValue({ order: mockOrder });
   });
 
   it('returns 401 when not an admin', async () => {
@@ -165,7 +167,6 @@ describe('POST /api/admin/ai-interviews', () => {
 describe('GET /api/admin/ai-interviews', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockEq.mockReturnValue({ order: mockOrder });
   });
 
   it('returns 401 when not an admin', async () => {
@@ -174,19 +175,60 @@ describe('GET /api/admin/ai-interviews', () => {
     expect(res.status).toBe(401);
   });
 
-  it('lists interviews for the calling admin', async () => {
+  it('lists interviews from interview_sessions, flattening the latest invite', async () => {
     mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
-    mockOrder.mockResolvedValue({ data: [{ id: 'i1' }], error: null });
+    mockLimit.mockResolvedValue({
+      data: [
+        {
+          id: 'i1',
+          candidate_name: 'Jane Doe',
+          candidate_email: 'jane@example.com',
+          parsed_jd: { jobTitle: 'Frontend Engineer' },
+          status: 'questions_generated',
+          created_at: '2026-09-20T00:00:00.000Z',
+          interview_invites: [{ status: 'active', expires_at: '2026-09-25T00:00:00.000Z', created_at: '2026-09-21T00:00:00.000Z' }],
+        },
+        {
+          id: 'i2',
+          candidate_name: 'No Invite Yet',
+          candidate_email: null,
+          parsed_jd: {},
+          status: 'draft',
+          created_at: '2026-09-19T00:00:00.000Z',
+          interview_invites: [],
+        },
+      ],
+      error: null,
+    });
 
     const res = await GET();
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.interviews).toEqual([{ id: 'i1' }]);
+    expect(body.interviews).toEqual([
+      {
+        id: 'i1',
+        candidate_name: 'Jane Doe',
+        candidate_email: 'jane@example.com',
+        job_title: 'Frontend Engineer',
+        status: 'active',
+        expires_at: '2026-09-25T00:00:00.000Z',
+        created_at: '2026-09-20T00:00:00.000Z',
+      },
+      {
+        id: 'i2',
+        candidate_name: 'No Invite Yet',
+        candidate_email: null,
+        job_title: null,
+        status: 'draft',
+        expires_at: null,
+        created_at: '2026-09-19T00:00:00.000Z',
+      },
+    ]);
   });
 
   it('returns 500 when the query fails', async () => {
     mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
-    mockOrder.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    mockLimit.mockResolvedValue({ data: null, error: { message: 'boom' } });
 
     const res = await GET();
     expect(res.status).toBe(500);

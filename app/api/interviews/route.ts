@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { requireAdminUser, supabaseAdmin } from '@/lib/supabase/admin';
 
 export async function POST(req: NextRequest) {
   try {
+    const admin = await requireAdminUser();
+    if (!admin) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     let candidate_name = '';
     let candidate_email = '';
     let candidate_phone = '';
@@ -68,6 +73,7 @@ export async function POST(req: NextRequest) {
         duration_minutes: durationMinutes,
         similarity_confirmed: similarityConfirmed,
         status: 'draft',
+        created_by: admin.userId,
       })
       .select()
       .single();

@@ -41,7 +41,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(
     new Set(['dynamic-tech-1', 'dynamic-tech-2', 'dynamic-tech-3', 'dynamic-tech-4'])
   );
-  const [questionCount, setQuestionCount] = useState(10);
+  const [questionCount, setQuestionCount] = useState(4);
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [similarityConfirmed, setSimilarityConfirmed] = useState(false);
 

@@ -5,6 +5,7 @@ vi.mock('@google/genai', () => {
     GoogleGenAI: class GoogleGenAI {
       static mockError = false;
       static mockMalformed = false;
+      static mockResponseText: string | null = null;
       models = {
         generateContent: vi.fn().mockImplementation(() => {
           if (GoogleGenAI.mockError) {
@@ -12,6 +13,9 @@ vi.mock('@google/genai', () => {
               return Promise.resolve({ text: 'Not a JSON' });
             }
             return Promise.reject(new Error('API Error'));
+          }
+          if (GoogleGenAI.mockResponseText) {
+            return Promise.resolve({ text: GoogleGenAI.mockResponseText });
           }
           return Promise.resolve({
             text: '[{"question_text":"Gemini generated question?","question_type":"behavioral","category":"teamwork","difficulty":"medium","required_skills":["Teamwork"],"intent":"Test intent"}]'
@@ -88,6 +92,18 @@ describe('question-generator', () => {
     for (let i = 0; i < questions.length; i++) {
       expect(questions[i].question_order).toBe(i + 1);
     }
+  });
+
+  it('generates 4 distinct technical questions in the local fallback, not duplicates', () => {
+    const questions = generateQuestionsLocalFallback(sampleProfile, sampleJd, sampleAnalysis, {
+      targetQuestions: 4,
+      categoryCounts: { technical: 4 },
+      includeMandatoryHr: false,
+    });
+    expect(questions.length).toBe(4);
+    expect(questions.every((q) => q.category === 'technical')).toBe(true);
+    const uniqueTexts = new Set(questions.map((q) => q.question_text));
+    expect(uniqueTexts.size).toBe(4);
   });
 
   it('returns the exact questions selected from the question bank', async () => {
@@ -194,7 +210,7 @@ describe('question-generator', () => {
     // @ts-ignore
     GoogleGenAI.mockError = true;
     GoogleGenAI.mockMalformed = false;
-    
+
     const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
       targetQuestions: 1,
       categoryCounts: { teamwork: 1 },
@@ -202,5 +218,38 @@ describe('question-generator', () => {
     });
     expect(result.length).toBe(1);
     expect(result[0].question_text).not.toBe('Gemini generated question?');
+  });
+
+  it('falls back to local (distinct) questions when Gemini repeats the same technical question', async () => {
+    process.env.GEMINI_API_KEY = 'mock-key';
+    const { GoogleGenAI } = await import('@google/genai');
+    // @ts-ignore
+    GoogleGenAI.mockError = false;
+    // @ts-ignore
+    GoogleGenAI.mockMalformed = false;
+    const duplicateTechnical = Array.from({ length: 4 }, () => ({
+      question_text: 'Tell us about a technical project.',
+      question_type: 'role_specific',
+      category: 'technical',
+      difficulty: 'medium',
+      required_skills: ['Technical Depth'],
+      intent: 'Assess technical depth.',
+    }));
+    // @ts-ignore
+    GoogleGenAI.mockResponseText = JSON.stringify(duplicateTechnical);
+
+    const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
+      targetQuestions: 4,
+      categoryCounts: { technical: 4 },
+      includeMandatoryHr: false,
+    });
+
+    expect(result.length).toBe(4);
+    expect(result.every((q) => q.category === 'technical')).toBe(true);
+    const uniqueTexts = new Set(result.map((q) => q.question_text));
+    expect(uniqueTexts.size).toBe(4);
+
+    // @ts-ignore
+    GoogleGenAI.mockResponseText = null;
   });
 });

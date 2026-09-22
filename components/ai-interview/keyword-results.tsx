@@ -332,55 +332,6 @@ function InterviewLinkAndQuestions({ result }: { result: SessionGenerationResult
         </span>
       </div>
 
-      {/* INTERVIEW LINK & PASSCODE */}
-      <div className="p-6 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl space-y-4">
-        <h3 className="text-lg font-bold text-slate-100">Interview Link &amp; Passcode</h3>
-        <p className="text-xs text-slate-400">
-          Share the link and passcode below with the candidate. The link expires at{' '}
-          {invite.expires_at ? new Date(invite.expires_at).toLocaleString() : 'N/A'}.
-        </p>
-
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
-            <Link2 className="w-4 h-4 text-blue-400 shrink-0" />
-            <input
-              id="keyword-results-invite-link"
-              readOnly
-              value={invite.invite_url || ''}
-              className="flex-1 bg-transparent text-sm text-slate-200 outline-none"
-            />
-            <button
-              id="keyword-results-copy-link"
-              type="button"
-              onClick={() => handleCopy(invite.invite_url || '', 'link')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700"
-            >
-              {copiedField === 'link' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedField === 'link' ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
-            <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
-            <input
-              id="keyword-results-invite-passcode"
-              readOnly
-              value={invite.passcode || ''}
-              className="flex-1 bg-transparent text-sm font-mono tracking-widest text-slate-200 outline-none"
-            />
-            <button
-              id="keyword-results-copy-passcode"
-              type="button"
-              onClick={() => handleCopy(invite.passcode || '', 'passcode')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700"
-            >
-              {copiedField === 'passcode' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedField === 'passcode' ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-        </div>
-      </div>
-
       {/* THE QUESTIONS THAT WERE ACTUALLY GENERATED & STORED */}
       <div className="p-6 bg-slate-900/80 border border-slate-800 rounded-2xl space-y-6 shadow-xl">
         <h3 className="text-xl font-bold text-slate-100">
@@ -446,6 +397,56 @@ function InterviewLinkAndQuestions({ result }: { result: SessionGenerationResult
               )}
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* INTERVIEW LINK & PASSCODE — shown last so it's right where the admin
+          finishes reading, with no need to scroll back up to find it. */}
+      <div className="p-6 bg-emerald-500/5 border border-emerald-500/30 rounded-2xl space-y-4">
+        <h3 className="text-lg font-bold text-slate-100">Interview Link &amp; Passcode</h3>
+        <p className="text-xs text-slate-400">
+          Share the link and passcode below with the candidate. The link expires at{' '}
+          {invite.expires_at ? new Date(invite.expires_at).toLocaleString() : 'N/A'}.
+        </p>
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
+            <Link2 className="w-4 h-4 text-blue-400 shrink-0" />
+            <input
+              id="keyword-results-invite-link"
+              readOnly
+              value={invite.invite_url || ''}
+              className="flex-1 bg-transparent text-sm text-slate-200 outline-none"
+            />
+            <button
+              id="keyword-results-copy-link"
+              type="button"
+              onClick={() => handleCopy(invite.invite_url || '', 'link')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700"
+            >
+              {copiedField === 'link' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedField === 'link' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 p-3 bg-slate-950/60 border border-slate-800 rounded-xl">
+            <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />
+            <input
+              id="keyword-results-invite-passcode"
+              readOnly
+              value={invite.passcode || ''}
+              className="flex-1 bg-transparent text-sm font-mono tracking-widest text-slate-200 outline-none"
+            />
+            <button
+              id="keyword-results-copy-passcode"
+              type="button"
+              onClick={() => handleCopy(invite.passcode || '', 'passcode')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 rounded-lg border border-slate-700"
+            >
+              {copiedField === 'passcode' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedField === 'passcode' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

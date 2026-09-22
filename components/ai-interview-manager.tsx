@@ -43,6 +43,9 @@ export default function AIInterviewManager() {
   const [interviews, setInterviews] = useState<IInterviewSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [selectedInterview, setSelectedInterview] = useState<IInterviewSummary | null>(null);
+  const [selectedInvite, setSelectedInvite] = useState<{ link: string; passcode: string } | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [modalCopied, setModalCopied] = useState<'link' | 'code' | null>(null);
 
   const fetchInterviews = useCallback(async () => {
@@ -164,8 +167,38 @@ export default function AIInterviewManager() {
 
   const copyModalValue = (value: string, kind: 'link' | 'code') => copyValue(value, kind, setModalCopied);
 
-  const interviewLinkFor = (interviewId: string) =>
-    typeof window !== 'undefined' ? `${window.location.origin}/interview/${interviewId}` : `/interview/${interviewId}`;
+  /**
+   * The invite passcode is hashed at rest (see /api/interviews/[id]/invite) and
+   * can't be recovered once shown — so reopening a candidate's link mints a
+   * brand new invite (fresh token + passcode) rather than trying to redisplay
+   * one that no longer exists in plaintext.
+   */
+  const openInterview = async (interview: IInterviewSummary) => {
+    setSelectedInterview(interview);
+    setSelectedInvite(null);
+    setInviteError(null);
+    setInviteLoading(true);
+    try {
+      const res = await fetch(`/api/interviews/${interview.id}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to generate an interview link.');
+      setSelectedInvite({ link: json.invite_url, passcode: json.passcode });
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : 'Failed to generate an interview link.');
+    } finally {
+      setInviteLoading(false);
+    }
+  };
+
+  const closeInterviewModal = () => {
+    setSelectedInterview(null);
+    setSelectedInvite(null);
+    setInviteError(null);
+  };
 
   // Editing the resume/JD after an analysis clears it, so a stale analysis
   // never gets attached to a different candidate's documents.
@@ -385,14 +418,16 @@ export default function AIInterviewManager() {
                   <button
                     id={`interview-row-name-${iv.id}`}
                     type="button"
-                    onClick={() => setSelectedInterview(iv)}
+                    onClick={() => void openInterview(iv)}
                     className="font-bold text-zinc-800 hover:text-[#34c4f2] hover:underline text-left transition-colors"
                   >
                     {iv.candidate_name || 'Unnamed candidate'}{' '}
                     {iv.job_title && <span className="text-zinc-400 font-normal">— {iv.job_title}</span>}
                   </button>
                   <p className="text-zinc-400 text-xs font-mono">
-                    Code: {iv.access_code} · Expires {new Date(iv.expires_at).toLocaleDateString()}
+                    {iv.expires_at
+                      ? `Expires ${new Date(iv.expires_at).toLocaleDateString()}`
+                      : 'No link generated yet'}
                   </p>
                 </div>
                 <span
@@ -416,7 +451,7 @@ export default function AIInterviewManager() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/50 px-4"
-            onClick={() => setSelectedInterview(null)}
+            onClick={closeInterviewModal}
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.96 }}
@@ -438,46 +473,60 @@ export default function AIInterviewManager() {
                 <button
                   id="interview-link-modal-close"
                   type="button"
-                  onClick={() => setSelectedInterview(null)}
+                  onClick={closeInterviewModal}
                   className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
-                <Link2 className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                <span className="flex-1 truncate text-zinc-700 font-mono text-xs">
-                  {interviewLinkFor(selectedInterview.id)}
-                </span>
-                <button
-                  id="interview-link-modal-copy-link"
-                  type="button"
-                  onClick={() => copyModalValue(interviewLinkFor(selectedInterview.id), 'link')}
-                  className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
-                >
-                  {modalCopied === 'link' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
+              {inviteLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-zinc-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Generating a fresh interview link...
+                </div>
+              ) : inviteError ? (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-lg text-red-500 text-xs">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{inviteError}</span>
+                </div>
+              ) : selectedInvite ? (
+                <>
+                  <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
+                    <Link2 className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                    <span className="flex-1 truncate text-zinc-700 font-mono text-xs">
+                      {selectedInvite.link}
+                    </span>
+                    <button
+                      id="interview-link-modal-copy-link"
+                      type="button"
+                      onClick={() => copyModalValue(selectedInvite.link, 'link')}
+                      className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
+                    >
+                      {modalCopied === 'link' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
 
-              <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
-                <KeyRound className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                <span className="flex-1 font-mono text-lg font-black tracking-[0.3em] text-zinc-900">
-                  {selectedInterview.access_code}
-                </span>
-                <button
-                  id="interview-link-modal-copy-code"
-                  type="button"
-                  onClick={() => copyModalValue(selectedInterview.access_code, 'code')}
-                  className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
-                >
-                  {modalCopied === 'code' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
+                  <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
+                    <KeyRound className="w-4 h-4 text-zinc-400 flex-shrink-0" />
+                    <span className="flex-1 font-mono text-lg font-black tracking-[0.3em] text-zinc-900">
+                      {selectedInvite.passcode}
+                    </span>
+                    <button
+                      id="interview-link-modal-copy-code"
+                      type="button"
+                      onClick={() => copyModalValue(selectedInvite.passcode, 'code')}
+                      className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
+                    >
+                      {modalCopied === 'code' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    </button>
+                  </div>
 
-              <p className="text-xs text-zinc-400">
-                Expires {new Date(selectedInterview.expires_at).toLocaleString()} · Status: {selectedInterview.status}
-              </p>
+                  <p className="text-xs text-zinc-400">
+                    This passcode is only shown once — share it with the candidate now.
+                  </p>
+                </>
+              ) : null}
             </motion.div>
           </motion.div>
         )}

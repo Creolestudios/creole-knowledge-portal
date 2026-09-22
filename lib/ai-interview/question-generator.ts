@@ -265,9 +265,30 @@ export function generateQuestionsLocalFallback(
       'Evaluate alignment with organizational culture and team dynamics.',
     ],
     [
-      `Based on your resume, you have experience with ${matchedSkills[0] || 'various technologies'}. Could you elaborate on a complex project where you utilized these skills, and describe the specific technical challenges you overcame?`,
+      profile?.projectHighlights?.length
+        ? `You mentioned working on "${profile.projectHighlights[0]}". Could you walk us through your specific role in that project and describe the most significant technical challenge you overcame?`
+        : `Based on your resume, you have experience with ${matchedSkills[0] || 'various technologies'}. Could you elaborate on a complex project where you utilized these skills, and describe the specific technical challenges you overcame?`,
       'role_specific', 'technical', 'medium', ['Technical Depth', 'Experience'],
       'Gauge depth of technical knowledge and practical application based on past work.',
+    ],
+    // Extra technical angles so 4 technical slots (the number the admin flow
+    // always requests) don't all reuse the single template above and come
+    // out word-for-word identical — see categoryCounts['technical'] in
+    // generateInterviewQuestions.
+    [
+      `What technical decision or trade-off have you made recently involving ${matchedSkills[0] || 'your core stack'}, and what led you to that choice?`,
+      'role_specific', 'technical', 'medium', ['Technical Judgment', 'Trade-offs'],
+      'Assess technical decision-making and trade-off reasoning.',
+    ],
+    [
+      `Tell us about a bug or production issue you diagnosed and fixed. What was your debugging approach?`,
+      'role_specific', 'technical', 'medium', ['Debugging', 'Problem Solving'],
+      'Evaluate systematic troubleshooting ability.',
+    ],
+    [
+      `This role also involves ${missingSkills[0] || 'additional technologies'}. How would your experience with ${matchedSkills[0] || 'your current stack'} transfer, and what would you need to learn?`,
+      'role_specific', 'technical', 'medium', ['Technical Adaptability', 'Learning Agility'],
+      'Assess how technical depth in known skills transfers to skill gaps.',
     ],
   ];
 
@@ -276,12 +297,22 @@ export function generateQuestionsLocalFallback(
   );
 
   const generatedHrQuestions: InterviewQuestion[] = [];
+  const categoryUseCount: Record<string, number> = {};
 
   for (let i = 0; i < requiredGeneratedCount; i++) {
     const requestedCategory = fallbackCategories[i] || INTERVIEW_CATEGORIES[i % INTERVIEW_CATEGORIES.length];
-    const template = baseHrTemplates.find((item) => item.category === requestedCategory)
-      || baseHrTemplates[i % baseHrTemplates.length];
-    const cycleSuffix = i >= baseHrTemplates.length ? ` (Perspective ${Math.floor(i / baseHrTemplates.length) + 1})` : '';
+    const categoryTemplates = baseHrTemplates.filter((item) => item.category === requestedCategory);
+    const useIndex = categoryUseCount[requestedCategory] || 0;
+    categoryUseCount[requestedCategory] = useIndex + 1;
+
+    const template = categoryTemplates.length > 0
+      ? categoryTemplates[useIndex % categoryTemplates.length]
+      : baseHrTemplates[i % baseHrTemplates.length];
+    // Once every variant for this category has been used once, the next
+    // full cycle gets a "(Perspective N)" suffix instead of repeating text.
+    const cycleSuffix = categoryTemplates.length > 0 && useIndex >= categoryTemplates.length
+      ? ` (Perspective ${Math.floor(useIndex / categoryTemplates.length) + 1})`
+      : '';
 
     generatedHrQuestions.push({
       question_text: `${template.text}${cycleSuffix}`,
@@ -347,10 +378,10 @@ export async function generateInterviewQuestions(
   const selectedHrQuestions = options?.includeMandatoryHr === false ? [] : hrQuestions;
   const requiredAiCount = Math.max(0, targetTotalCount - selectedHrQuestions.length);
   
-  // Guarantee exactly 4 technical questions
+  // Guarantee exactly 4 technical questions (capped to whatever the requested total can fit)
   const categoryCounts: Record<string, number> = { ...(options?.categoryCounts || {}) };
-  categoryCounts['technical'] = 4;
-  
+  categoryCounts['technical'] = Math.min(4, requiredAiCount);
+
   // Distribute remaining question count among other categories if not explicitly provided
   let currentSum = Object.values(categoryCounts).reduce((a, b) => a + b, 0);
   if (currentSum < requiredAiCount) {
@@ -374,42 +405,63 @@ export async function generateInterviewQuestions(
 
   try {
     const ai = new GoogleGenAI({ apiKey });
+    const projectHighlights = profile.projectHighlights?.length
+      ? profile.projectHighlights.join('; ')
+      : 'No specific projects listed in resume.';
+    const candidateName = profile.name || 'the candidate';
+
     const prompt = `You are an experienced HR recruiter and hiring manager.
 
 Candidate profile:
+- Name: ${candidateName}
 - Experience: ${profile.yearsOfExperience || 0} years
+- Domains: ${profile.domains?.join(', ') || 'not specified'}
 - Matched skills: ${analysis.matchedKeywords.join(', ')}
 - Skill gaps: ${analysis.missingKeywords.join(', ')}
+- Project highlights (from resume): ${projectHighlights}
 
 Job description:
 - Role: ${jd.jobTitle || 'the position'}
+- Seniority level: ${jd.seniorityLevel || 'not specified'}
 - Must-have skills: ${jd.mustHaveSkills.join(', ')}
+- Key responsibilities: ${jd.keyResponsibilities?.join('; ') || 'not specified'}
 - Interview duration: ${options?.durationMinutes || 'administrator-defined'} minutes
 
-Generate EXACTLY ${requiredAiCount} generalized questions for these categories: ${Object.keys(categoryCounts).join(', ')}.
+Generate EXACTLY ${requiredAiCount} questions for these categories: ${Object.keys(categoryCounts).join(', ')}.
 Honor these exact category counts: ${JSON.stringify(categoryCounts)}.
+Every question must be personalized to THIS candidate's actual experience level, seniority, and project history above —
+do not write generic questions that would apply to any candidate. Reference specific projects, years of experience, or
+responsibilities by name wherever the data above provides them.
+
 Focus on HR, behavioral, experience overview, role alignment, project experience, teamwork, adaptability, conflict resolution, work preferences, career vision, culture fit, and technical experience.
-For the 'technical' category questions (you must generate exactly 4), focus on gauging their past work, language proficiency, and depth of knowledge based on their resume and projects. Do NOT ask deep coding (like writing code algorithms), system design, or low-level architecture questions. DO ask about their practical experience with the skills they claim (${analysis.matchedKeywords.join(', ')}).
+
+For the 'technical' category questions (you must generate exactly 4):
+- Ground each question in one of the candidate's specific project highlights listed above whenever available (name the
+  project or the work described, do not just name a skill).
+- Vary the angle across the 4 questions: e.g. one on their role/contribution in a named project, one on a technical
+  decision or trade-off they made, one on a challenge/bug they overcame in a specific project, one on how their depth
+  with a claimed skill (${analysis.matchedKeywords.join(', ')}) applies to this role's responsibilities.
+- Scale depth and phrasing to their seniority (${jd.seniorityLevel || 'their experience level'}) and years of experience
+  (${profile.yearsOfExperience || 0}).
+- If no project highlights are available, fall back to asking about practical experience with their claimed skills, but
+  still keep it specific to their years of experience and the role's responsibilities rather than generic.
+- Do NOT ask deep coding (like writing code algorithms), system design, or low-level architecture questions.
 
 Return only a JSON array. Each item must contain question_text, question_type, category, difficulty, required_skills, intent, time_limit_sec, and weight.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
-      config: { responseMimeType: 'application/json', temperature: 0.2 },
+      config: { responseMimeType: 'application/json', temperature: 0.6 },
     });
-    console.log('TRACE: response:', response);
 
     const cleanedText = (response.text || '').replace(/```json\n?|\n?```/g, '').trim();
-    console.log('TRACE: cleanedText:', cleanedText);
     if (!cleanedText) {
-      console.log('TRACE: falling back due to empty cleanedText');
       return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
     }
 
     const rawParsed = JSON.parse(cleanedText);
     if (!Array.isArray(rawParsed) || rawParsed.length < requiredAiCount) {
-      console.log('TRACE: falling back due to invalid rawParsed');
       return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
     }
 
@@ -436,16 +488,29 @@ Return only a JSON array. Each item must contain question_text, question_type, c
         })
       : aiQuestions;
 
-    if (selectedAiQuestions.length !== requiredAiCount) {
-      console.log('FALLBACK TRIGGERED IN IF CONDITION! requested:', requiredAiCount, 'got:', selectedAiQuestions.length);
+    // Gemini is told to "vary the angle" across same-category questions (e.g. the 4
+    // technical ones) but doesn't always comply — sparse candidate/JD data in
+    // particular tends to make it repeat itself. Nothing upstream checks for that,
+    // so a same-category repeat previously went straight to the candidate. Treat
+    // it as a bad response and fall back to the local generator, which guarantees
+    // distinct wording per category (see generateQuestionsLocalFallback).
+    const hasDuplicateWithinCategory = (() => {
+      const seen = new Set<string>();
+      for (const q of selectedAiQuestions) {
+        const key = `${q.category.toLowerCase()}::${q.question_text.trim().toLowerCase()}`;
+        if (seen.has(key)) return true;
+        seen.add(key);
+      }
+      return false;
+    })();
+
+    if (selectedAiQuestions.length !== requiredAiCount || hasDuplicateWithinCategory) {
       return generateQuestionsLocalFallback(profile, jd, analysis, { ...options, categoryCounts }, selectedHrQuestions);
     }
 
-    const assembled = assembleQuestionSet(selectedAiQuestions, selectedHrQuestions).slice(0, targetTotalCount || undefined);
-    console.log('RETURNING ASSEMBLED:', JSON.stringify(assembled));
-    return assembled;
+    return assembleQuestionSet(selectedAiQuestions, selectedHrQuestions).slice(0, targetTotalCount || undefined);
   } catch (error) {
-    console.log('CRITICAL ERROR IN GEMINI PATH:', error);
+    console.error('[AI Interview] Gemini question generation failed:', error);
     return generateQuestionsLocalFallback(profile, jd, analysis, { ...options, categoryCounts }, selectedHrQuestions);
   }
 }

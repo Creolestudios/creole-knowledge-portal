@@ -129,6 +129,13 @@ export async function POST(req: Request) {
  * GET /api/admin/ai-interviews
  *
  * Admin-only. Lists interviews created by the calling admin, most recent first.
+ *
+ * Interviews are created against `interview_sessions` (see POST /api/interviews +
+ * the question-bank-selection flow), not the legacy `ai_interviews` table this
+ * route used to read from — that mismatch was why newly created interviews never
+ * showed up here. The invite's passcode is hashed at rest and can't be
+ * re-displayed, so only its status/expiry are surfaced; the admin gets a fresh
+ * link + passcode by generating a new invite from the interview detail view.
  */
 export async function GET() {
   const admin = await requireAdminUser();
@@ -137,15 +144,30 @@ export async function GET() {
   }
 
   const { data, error } = await supabaseAdmin
-    .from('ai_interviews')
-    .select('id, candidate_name, candidate_email, job_title, access_code, status, expires_at, created_at')
+    .from('interview_sessions')
+    .select('id, candidate_name, candidate_email, parsed_jd, status, created_at, interview_invites(status, expires_at, created_at)')
     .eq('created_by', admin.userId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .order('created_at', { foreignTable: 'interview_invites', ascending: false })
+    .limit(1, { foreignTable: 'interview_invites' });
 
   if (error) {
     console.error('[ai-interviews] list failed:', error.message);
     return NextResponse.json({ error: 'Failed to load interviews' }, { status: 500 });
   }
 
-  return NextResponse.json({ interviews: data });
+  const interviews = (data || []).map((row: any) => {
+    const invite = row.interview_invites?.[0] ?? null;
+    return {
+      id: row.id,
+      candidate_name: row.candidate_name,
+      candidate_email: row.candidate_email,
+      job_title: row.parsed_jd?.jobTitle ?? null,
+      status: invite?.status ?? row.status,
+      expires_at: invite?.expires_at ?? null,
+      created_at: row.created_at,
+    };
+  });
+
+  return NextResponse.json({ interviews });
 }

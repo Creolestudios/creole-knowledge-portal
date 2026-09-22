@@ -35,6 +35,7 @@ import { ProctoringInstructions } from '@/components/ai-interview/proctoring-ins
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 import { createClient } from '@/lib/supabase/client';
 import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
+import { useAnswerRecorder } from '@/lib/ai-interview/use-answer-recorder';
 
 export default function InterviewEntryPage() {
   const params = useParams();
@@ -77,7 +78,9 @@ export default function InterviewEntryPage() {
 
       if (profile?.role === 'admin') {
         setIsAdmin(true);
-        setStage('instructions');
+        // An admin never needs the passcode gate — force them past it even if
+        // they had already started typing a code before this check resolved.
+        setStage((current) => (current === 'passcode' ? 'instructions' : current));
       }
     };
     initAdmin();
@@ -112,6 +115,31 @@ export default function InterviewEntryPage() {
       void remoteVideoRef.current.play().catch(console.warn);
     }
   }, [remoteStream, stage]);
+
+  const { status: answerRecorderStatus, startRecording, stopAndUpload, cancelRecording } =
+    useAnswerRecorder(interviewId, cameraStream);
+  const [finalAnswerSubmitted, setFinalAnswerSubmitted] = useState(false);
+
+  // Only the candidate is recorded — never the admin interviewer's side of the call.
+  const recordingQuestionId =
+    stage === 'interview' && !isAdmin ? questions[currentQuestion]?.id : undefined;
+
+  useEffect(() => {
+    if (!recordingQuestionId) return;
+    startRecording(recordingQuestionId);
+    return () => cancelRecording();
+  }, [recordingQuestionId, startRecording, cancelRecording]);
+
+  const goToQuestion = async (nextIndex: number) => {
+    await stopAndUpload();
+    setFinalAnswerSubmitted(false);
+    setCurrentQuestion(nextIndex);
+  };
+
+  const submitFinalAnswer = async () => {
+    await stopAndUpload();
+    setFinalAnswerSubmitted(true);
+  };
 
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
@@ -602,25 +630,60 @@ export default function InterviewEntryPage() {
               {question.category.replaceAll('_', ' ')}
             </p>
             <h2 className="text-2xl font-semibold leading-relaxed text-zinc-900">{question.question_text}</h2>
-            <div className="mt-10 flex justify-between gap-3">
+            {!isAdmin && (
+              <div
+                id="answer-recording-status"
+                className="mt-8 flex items-center gap-2 text-xs font-bold uppercase tracking-widest"
+              >
+                {answerRecorderStatus === 'recording' && (
+                  <>
+                    <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-red-600">Recording your answer</span>
+                  </>
+                )}
+                {answerRecorderStatus === 'saving' && (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />
+                    <span className="text-zinc-500">Saving your answer</span>
+                  </>
+                )}
+                {answerRecorderStatus === 'unsupported' && (
+                  <span className="text-amber-600">Answer recording is unavailable in this browser</span>
+                )}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-between gap-3">
               <button
                 id="previous-interview-question"
                 type="button"
-                disabled={currentQuestion === 0}
-                onClick={() => setCurrentQuestion((index) => Math.max(0, index - 1))}
+                disabled={currentQuestion === 0 || answerRecorderStatus === 'saving'}
+                onClick={() => goToQuestion(currentQuestion - 1)}
                 className="rounded-xl border border-zinc-200 px-4 py-3 text-sm font-semibold text-zinc-700 disabled:opacity-40"
               >
                 Previous
               </button>
-              <button
-                id="next-interview-question"
-                type="button"
-                disabled={currentQuestion === questions.length - 1}
-                onClick={() => setCurrentQuestion((index) => Math.min(questions.length - 1, index + 1))}
-                className="rounded-xl bg-[#34c4f2] px-5 py-3 text-sm font-bold text-zinc-900 disabled:opacity-40"
-              >
-                Next question
-              </button>
+              {!isAdmin && currentQuestion === questions.length - 1 ? (
+                <button
+                  id="submit-final-interview-answer"
+                  type="button"
+                  disabled={finalAnswerSubmitted || answerRecorderStatus === 'saving'}
+                  onClick={submitFinalAnswer}
+                  className="rounded-xl bg-[#34c4f2] px-5 py-3 text-sm font-bold text-zinc-900 disabled:opacity-40"
+                >
+                  {finalAnswerSubmitted ? 'Answer submitted' : 'Submit final answer'}
+                </button>
+              ) : (
+                <button
+                  id="next-interview-question"
+                  type="button"
+                  disabled={currentQuestion === questions.length - 1 || answerRecorderStatus === 'saving'}
+                  onClick={() => goToQuestion(currentQuestion + 1)}
+                  className="rounded-xl bg-[#34c4f2] px-5 py-3 text-sm font-bold text-zinc-900 disabled:opacity-40"
+                >
+                  Next question
+                </button>
+              )}
             </div>
           </section>
           <aside className="space-y-4">

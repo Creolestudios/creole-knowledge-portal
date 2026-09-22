@@ -2,24 +2,39 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './route';
 import { NextRequest } from 'next/server';
 
-const { mockSupabaseAdmin } = vi.hoisted(() => {
+const { mockSupabaseAdmin, mockRequireAdminUser } = vi.hoisted(() => {
   return {
     mockSupabaseAdmin: {
       from: vi.fn().mockReturnThis(),
       insert: vi.fn().mockReturnThis(),
       select: vi.fn().mockReturnThis(),
       single: vi.fn(),
-    }
+    },
+    mockRequireAdminUser: vi.fn(),
   };
 });
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: mockSupabaseAdmin,
+  requireAdminUser: mockRequireAdminUser,
 }));
 
 describe('POST /api/interviews', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
+  });
+
+  it('returns 401 when not an admin', async () => {
+    mockRequireAdminUser.mockResolvedValue(null);
+    const req = new NextRequest('http://localhost:3000/api/interviews', {
+      method: 'POST',
+      body: JSON.stringify({ candidate_name: 'Test User' }),
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(401);
   });
 
   it('handles multipart/form-data successfully', async () => {
@@ -54,6 +69,7 @@ describe('POST /api/interviews', () => {
     expect(insertArgs.candidate_name).toBe('Test User');
     expect(insertArgs.resume_storage_path).toContain('resume.pdf');
     expect(insertArgs.jd_storage_path).toContain('jd.pdf');
+    expect(insertArgs.created_by).toBe('admin-1');
   });
 
   it('handles supabase insertion error', async () => {

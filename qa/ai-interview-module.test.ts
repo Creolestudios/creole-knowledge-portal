@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockRequireAdminUser, mockUpload, mockRemove, mockSingle, mockInsert, mockEq, mockOrder } = vi.hoisted(() => {
+const { mockRequireAdminUser, mockUpload, mockRemove, mockSingle, mockInsert, mockEq, mockOrder, mockLimit } = vi.hoisted(() => {
   const mockSingle = vi.fn();
   const mockSelect = vi.fn(() => ({ single: mockSingle }));
   return {
@@ -20,6 +20,7 @@ const { mockRequireAdminUser, mockUpload, mockRemove, mockSingle, mockInsert, mo
     mockInsert: vi.fn(() => ({ select: mockSelect })),
     mockEq: vi.fn(),
     mockOrder: vi.fn(),
+    mockLimit: vi.fn(),
   };
 });
 
@@ -46,17 +47,31 @@ vi.mock('@/lib/supabase/admin', () => ({
         return {
           insert: (...args: any[]) => mockInsert(...args),
           select: (cols: string) => {
-            // GET listing path: .select().eq().order()
-            // POST verify path:  .select().eq().single()
+            // POST verify path: .select().eq().single()
             return {
               eq: (...args: any[]) => {
                 mockEq(...args);
-                return { order: mockOrder, single: mockVerifySingle };
+                return { single: mockVerifySingle };
               },
             };
           },
           update: (...args: any[]) => mockVerifyUpdate(...args),
         };
+      }
+      if (table === 'interview_sessions') {
+        // GET listing path: .select().eq().order().order().limit()
+        const listQuery: any = {
+          eq: (...args: any[]) => {
+            mockEq(...args);
+            return listQuery;
+          },
+          order: (...args: any[]) => {
+            mockOrder(...args);
+            return listQuery;
+          },
+          limit: (...args: any[]) => mockLimit(...args),
+        };
+        return { select: () => listQuery };
       }
       return {};
     }),
@@ -94,7 +109,6 @@ function makeVerifyRequest(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockEq.mockReturnValue({ order: mockOrder, single: mockVerifySingle });
 });
 
 // ---------------------------------------------------------------------------
@@ -282,7 +296,13 @@ describe('AI Interview listing — admin API', () => {
 
   it('TC-18 Returns the interviews created by the calling admin', async () => {
     mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
-    mockOrder.mockResolvedValue({ data: [{ id: 'i1' }, { id: 'i2' }], error: null });
+    mockLimit.mockResolvedValue({
+      data: [
+        { id: 'i1', candidate_name: 'A', candidate_email: null, parsed_jd: {}, status: 'draft', created_at: '', interview_invites: [] },
+        { id: 'i2', candidate_name: 'B', candidate_email: null, parsed_jd: {}, status: 'draft', created_at: '', interview_invites: [] },
+      ],
+      error: null,
+    });
 
     const res = await listInterviews();
     expect(res.status).toBe(200);
@@ -291,7 +311,7 @@ describe('AI Interview listing — admin API', () => {
 
   it('TC-19 Database error while listing returns 500', async () => {
     mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
-    mockOrder.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    mockLimit.mockResolvedValue({ data: null, error: { message: 'boom' } });
 
     const res = await listInterviews();
     expect(res.status).toBe(500);

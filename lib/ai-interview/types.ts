@@ -190,9 +190,8 @@ export interface IInterviewSummary {
   candidate_name: string | null;
   candidate_email: string | null;
   job_title: string | null;
-  access_code: string;
-  status: InterviewStatus;
-  expires_at: string;
+  status: string;
+  expires_at: string | null;
   created_at: string;
 }
 
