@@ -29,11 +29,11 @@ describe('object-detection module', () => {
     expect(results).toHaveLength(0);
   });
 
-  it('detects tracked objects above minimum confidence (0.28) and filters below', () => {
+  it('detects tracked objects above minimum confidence and filters below', () => {
     const rawDetections = [
       { class: 'cell phone', score: 0.52, bbox: [100, 120, 80, 140] as [number, number, number, number] },
       { class: 'book', score: 0.45, bbox: [50, 80, 120, 90] as [number, number, number, number] },
-      { class: 'remote', score: 0.20, bbox: [10, 20, 30, 40] as [number, number, number, number] }, // Below 0.28
+      { class: 'remote', score: 0.10, bbox: [10, 20, 30, 40] as [number, number, number, number] }, // Below threshold
     ];
 
     const results = filterTrackedObjects(rawDetections);

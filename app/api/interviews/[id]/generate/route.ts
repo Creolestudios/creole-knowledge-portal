@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import {
   generateInterviewQuestions,
   DEFAULT_MANDATORY_HR_QUESTIONS,
+  resolveDynamicQuestionTimeSec,
 } from '@/lib/ai-interview/question-generator';
 import {
   CandidateProfile,
@@ -120,9 +121,12 @@ export async function POST(
 
       const rowsById = new Map((selectedRows || []).map((row) => [row.id, row]));
       const totalSelected = dbBankIds.length + Math.max(dynamicQuestionsInput.length, dynamicTechIds.length) + customQuestions.length;
-      const perQuestionSeconds = durationMinutes
-        ? Math.max(60, Math.round((durationMinutes * 60) / Math.max(1, totalSelected)))
-        : 120;
+
+      // Total HR time is allocated as a whole by Admin / HR; Technical question time is decided dynamically by AI along with each question
+      const totalHrMinutes = Number(reqBody.hr_total_minutes) || Number(reqBody.hr_question_minutes) || 2;
+      const totalHrSeconds = Math.max(30, Math.round(totalHrMinutes * 60));
+      const hrQuestionCount = Math.max(1, dbBankIds.length + customQuestions.length || 1);
+      const perHrQuestionSec = Math.max(30, Math.round(totalHrSeconds / hrQuestionCount));
 
       const bankQuestions = dbBankIds
         .map((bankId, idx) => {
@@ -137,7 +141,7 @@ export async function POST(
             required_skills: row.required_skills || [],
             intent: row.intent || row.title,
             question_order: idx + 1,
-            time_limit_sec: perQuestionSeconds,
+            time_limit_sec: perHrQuestionSec,
             is_mandatory_hr: !!row.is_mandatory,
             is_custom: false,
             weight: row.is_mandatory ? 5 : 10,
@@ -147,19 +151,26 @@ export async function POST(
 
       let dynamicTechQuestions: InterviewQuestion[] = [];
       if (dynamicQuestionsInput.length > 0) {
-        dynamicTechQuestions = dynamicQuestionsInput.map((dq, idx) => ({
-          question_text: dq.question_text || dq.text,
-          question_type: 'technical' as QuestionType,
-          category: 'technical',
-          difficulty: normalizeDifficulty(dq.difficulty || 'medium'),
-          required_skills: Array.isArray(dq.required_skills) ? dq.required_skills : (analysis.matchedKeywords?.slice(0, 3) || []),
-          intent: dq.intent || dq.title || 'Technical Competency',
-          question_order: bankQuestions.length + idx + 1,
-          time_limit_sec: perQuestionSeconds,
-          is_mandatory_hr: false,
-          is_custom: false,
-          weight: 10,
-        }));
+        dynamicTechQuestions = dynamicQuestionsInput.map((dq, idx) => {
+          const diff = normalizeDifficulty(dq.difficulty || 'medium');
+          const dynamicTimeSec = resolveDynamicQuestionTimeSec(
+            { difficulty: diff, category: 'technical', time_limit_sec: dq.time_limit_sec },
+            { hrMinutes: totalHrMinutes }
+          );
+          return {
+            question_text: dq.question_text || dq.text,
+            question_type: 'technical' as QuestionType,
+            category: 'technical',
+            difficulty: diff,
+            required_skills: Array.isArray(dq.required_skills) ? dq.required_skills : (analysis.matchedKeywords?.slice(0, 3) || []),
+            intent: dq.intent || dq.title || 'Technical Competency',
+            question_order: bankQuestions.length + idx + 1,
+            time_limit_sec: dynamicTimeSec,
+            is_mandatory_hr: false,
+            is_custom: false,
+            weight: 10,
+          };
+        });
       } else if (dynamicTechIds.length > 0) {
         const generatedTech = await generateInterviewQuestions(
           profile,
@@ -172,17 +183,24 @@ export async function POST(
             includeMandatoryHr: false,
           }
         );
-        dynamicTechQuestions = generatedTech.map((item, idx) => ({
-          ...item,
-          question_type: 'technical' as QuestionType,
-          category: 'technical',
-          difficulty: normalizeDifficulty(item.difficulty),
-          question_order: bankQuestions.length + idx + 1,
-          time_limit_sec: perQuestionSeconds,
-          is_mandatory_hr: false,
-          is_custom: false,
-          weight: 10,
-        }));
+        dynamicTechQuestions = generatedTech.map((item, idx) => {
+          const diff = normalizeDifficulty(item.difficulty);
+          const dynamicTimeSec = resolveDynamicQuestionTimeSec(
+            { difficulty: diff, category: 'technical', time_limit_sec: item.time_limit_sec },
+            { hrMinutes: totalHrMinutes }
+          );
+          return {
+            ...item,
+            question_type: 'technical' as QuestionType,
+            category: 'technical',
+            difficulty: diff,
+            question_order: bankQuestions.length + idx + 1,
+            time_limit_sec: dynamicTimeSec,
+            is_mandatory_hr: false,
+            is_custom: false,
+            weight: 10,
+          };
+        });
       }
 
       const authoredQuestions: InterviewQuestion[] = customQuestions.map((questionText, idx) => ({
@@ -193,7 +211,7 @@ export async function POST(
         required_skills: [],
         intent: 'Admin-authored question for this candidate.',
         question_order: bankQuestions.length + dynamicTechQuestions.length + idx + 1,
-        time_limit_sec: perQuestionSeconds,
+        time_limit_sec: perHrQuestionSec,
         is_mandatory_hr: false,
         is_custom: true,
         weight: 10,
@@ -226,6 +244,10 @@ export async function POST(
           tq.question_type = normalizeQuestionType(tq.question_type, 'technical');
           tq.difficulty = normalizeDifficulty(tq.difficulty);
           tq.question_order = questions.length + i + 1;
+          tq.time_limit_sec = resolveDynamicQuestionTimeSec(
+            { difficulty: tq.difficulty, category: 'technical', time_limit_sec: tq.time_limit_sec },
+            { hrMinutes: totalHrMinutes }
+          );
         });
 
         questions = [...questions, ...technicalQuestions];
@@ -289,10 +311,17 @@ export async function POST(
       return NextResponse.json({ error: insertErr.message }, { status: 500 });
     }
 
+    const totalDurationSec = (createdQuestions || []).reduce(
+      (acc: number, q: { time_limit_sec?: number }) => acc + (q.time_limit_sec || 0),
+      0
+    );
+    const calculatedMinutes = totalDurationSec > 0 ? Math.ceil(totalDurationSec / 60) : durationMinutes;
+
     await supabaseAdmin
       .from('interview_sessions')
       .update({
         status: 'questions_generated',
+        duration_minutes: calculatedMinutes,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id);

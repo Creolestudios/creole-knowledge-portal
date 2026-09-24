@@ -32,6 +32,8 @@ import {
   generateInterviewQuestions,
   calculateQuestionCount,
   QUESTION_BANK,
+  getDynamicQuestionTimeLimitSec,
+  resolveDynamicQuestionTimeSec,
 } from './question-generator';
 import { CandidateProfile, JDRequirements, KeywordMatchAnalysis } from './types';
 
@@ -194,9 +196,8 @@ describe('question-generator', () => {
   it('generates questions using Gemini API when key is present', async () => {
     process.env.GEMINI_API_KEY = 'mock-key';
     const { GoogleGenAI } = await import('@google/genai');
-    // @ts-ignore
-    GoogleGenAI.mockError = false;
-    GoogleGenAI.mockMalformed = false;
+    (GoogleGenAI as any).mockError = false;
+    (GoogleGenAI as any).mockMalformed = false;
 
     const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
       targetQuestions: 1,
@@ -211,9 +212,8 @@ describe('question-generator', () => {
   it('falls back to local when Gemini API returns malformed JSON', async () => {
     process.env.GEMINI_API_KEY = 'mock-key';
     const { GoogleGenAI } = await import('@google/genai');
-    // @ts-ignore
-    GoogleGenAI.mockError = true;
-    GoogleGenAI.mockMalformed = true;
+    (GoogleGenAI as any).mockError = true;
+    (GoogleGenAI as any).mockMalformed = true;
     
     const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
       targetQuestions: 1,
@@ -227,9 +227,8 @@ describe('question-generator', () => {
   it('falls back to local when Gemini API throws an error', async () => {
     process.env.GEMINI_API_KEY = 'mock-key';
     const { GoogleGenAI } = await import('@google/genai');
-    // @ts-ignore
-    GoogleGenAI.mockError = true;
-    GoogleGenAI.mockMalformed = false;
+    (GoogleGenAI as any).mockError = true;
+    (GoogleGenAI as any).mockMalformed = false;
 
     const result = await generateInterviewQuestions(sampleProfile, sampleJd, sampleAnalysis, undefined, {
       targetQuestions: 1,
@@ -243,10 +242,8 @@ describe('question-generator', () => {
   it('falls back to local (distinct) questions when Gemini repeats the same technical question', async () => {
     process.env.GEMINI_API_KEY = 'mock-key';
     const { GoogleGenAI } = await import('@google/genai');
-    // @ts-ignore
-    GoogleGenAI.mockError = false;
-    // @ts-ignore
-    GoogleGenAI.mockMalformed = false;
+    (GoogleGenAI as any).mockError = false;
+    (GoogleGenAI as any).mockMalformed = false;
     const duplicateTechnical = Array.from({ length: 4 }, () => ({
       question_text: 'Tell us about a technical project.',
       question_type: 'role_specific',
@@ -271,5 +268,55 @@ describe('question-generator', () => {
 
     // @ts-ignore
     GoogleGenAI.mockResponseText = null;
+  });
+
+  describe('dynamic question time limits', () => {
+    it('calculates dynamic time limits based on difficulty for technical questions', () => {
+      // AI-decided baseline for technical questions: 180s (easy), 240s (medium), 300s (hard)
+      expect(getDynamicQuestionTimeLimitSec('easy', 'technical')).toBe(180); // 3 mins
+      expect(getDynamicQuestionTimeLimitSec('medium', 'technical')).toBe(240); // 4 mins
+      expect(getDynamicQuestionTimeLimitSec('hard', 'technical')).toBe(300); // 5 mins
+    });
+
+    it('calculates dynamic time limits for HR questions based on hrMinutes decided by Admin/HR', () => {
+      expect(getDynamicQuestionTimeLimitSec('easy', 'hr', { hrMinutes: 1 })).toBe(45);
+      expect(getDynamicQuestionTimeLimitSec('medium', 'hr', { hrMinutes: 1 })).toBe(60);
+      expect(getDynamicQuestionTimeLimitSec('hard', 'hr', { hrMinutes: 1 })).toBe(75);
+
+      expect(getDynamicQuestionTimeLimitSec('medium', 'hr', { hrMinutes: 2 })).toBe(120);
+    });
+
+    it('honors AI dynamically decided time limits for technical questions directly without hardcoding', () => {
+      // AI dynamically decided 170 seconds for a specific technical question
+      const resolved = resolveDynamicQuestionTimeSec(
+        { difficulty: 'easy', category: 'technical', time_limit_sec: 170 },
+        { hrMinutes: 1 }
+      );
+      expect(resolved).toBe(170);
+
+      // Falls back to difficulty scaling when time_limit_sec is missing
+      const resolvedDiff = resolveDynamicQuestionTimeSec(
+        { difficulty: 'hard', category: 'technical' },
+        { hrMinutes: 1 }
+      );
+      expect(resolvedDiff).toBe(300);
+    });
+
+    it('assigns dynamic time limits to fallback technical questions across difficulties', () => {
+      const questions = generateQuestionsLocalFallback(sampleProfile, sampleJd, sampleAnalysis, {
+        targetQuestions: 4,
+        categoryCounts: { technical: 4 },
+        includeMandatoryHr: false,
+      });
+
+      expect(questions.length).toBe(4);
+      const timeLimits = questions.map((q) => q.time_limit_sec);
+      // Fallback questions should have varied dynamic time limits (e.g. 180s, 240s, 300s)
+      const uniqueTimeLimits = new Set(timeLimits);
+      expect(uniqueTimeLimits.size).toBeGreaterThan(1);
+      expect(timeLimits.some((t) => t === 180)).toBe(true); // easy
+      expect(timeLimits.some((t) => t === 240)).toBe(true); // medium
+      expect(timeLimits.some((t) => t === 300)).toBe(true); // hard
+    });
   });
 });

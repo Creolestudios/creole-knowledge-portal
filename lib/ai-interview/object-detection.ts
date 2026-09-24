@@ -55,29 +55,51 @@ export const OBJECT_RULES: Record<string, ObjectRule> = {
     object: 'book',
     severity: 'warning',
     thresholdMs: 0,
-    reason: 'Reading material detected. External notes are not permitted.',
+    reason: 'Reading material or notes detected. External aids are not permitted.',
   },
   tv: {
     category: 'object_detected',
     object: 'second_screen',
     severity: 'warning',
     thresholdMs: 0,
-    reason: 'Additional screen detected in frame.',
+    reason: 'Additional screen or monitor detected in frame.',
   },
   laptop: {
     category: 'object_detected',
     object: 'second_screen',
     severity: 'warning',
     thresholdMs: 0,
-    reason: 'Additional screen detected in frame.',
+    reason: 'Additional laptop or screen detected in frame.',
   },
   remote: {
     category: 'object_detected',
     object: 'remote',
     severity: 'error',
     thresholdMs: 0,
-    reason: 'Remote or unauthorized device detected.',
+    reason: 'Remote or unauthorized electronic device detected.',
   },
+  tablet: {
+    category: 'object_detected',
+    object: 'tablet',
+    severity: 'error',
+    thresholdMs: 0,
+    reason: 'Tablet or mobile device detected in frame.',
+  },
+};
+
+/**
+ * Per-class confidence thresholds to ensure small or subtle items (headphones, books)
+ * are detected accurately without being discarded.
+ */
+export const CLASS_CONFIDENCE_THRESHOLDS: Record<string, number> = {
+  'cell phone': 0.22,
+  phone: 0.22,
+  headphones: 0.16,
+  book: 0.16,
+  laptop: 0.20,
+  tv: 0.20,
+  remote: 0.18,
+  tablet: 0.20,
 };
 
 export interface DetectedObjectEvent {
@@ -92,14 +114,18 @@ export interface DetectedObjectEvent {
 
 /**
  * Filters raw COCO-SSD detections to only those we care about,
- * above a minimum confidence threshold.
+ * using per-class sensitivity thresholds so books and headphones are accurately detected.
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
-  minConfidence = 0.28,
+  defaultMinConfidence = 0.20,
 ): DetectedObjectEvent[] {
   return detections
-    .filter((d) => d.score >= minConfidence && d.class in OBJECT_RULES)
+    .filter((d) => {
+      if (!(d.class in OBJECT_RULES)) return false;
+      const threshold = CLASS_CONFIDENCE_THRESHOLDS[d.class] ?? defaultMinConfidence;
+      return d.score >= threshold;
+    })
     .map((d) => ({
       label: d.class,
       confidence: d.score,
@@ -107,3 +133,4 @@ export function filterTrackedObjects(
       rule: OBJECT_RULES[d.class],
     }));
 }
+

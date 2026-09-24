@@ -13,15 +13,18 @@ export const runtime = 'nodejs';
  * session cannot be resumed by refreshing and re-submitting the same
  * passcode, and records the violation in `interview_events` for the report.
  *
- * Body: { reason: string }
+ * Body: { reason: string, warningCounts?: { face: number, object: number, voice: number } }
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ token: string }> }
+  { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
   const body = await req.json().catch(() => null);
   const reason = (body?.reason as string | undefined)?.trim();
+  const warningCounts = body?.warningCounts as
+    | { face: number; object: number; voice: number }
+    | undefined;
 
   if (!reason) {
     return NextResponse.json({ error: 'Reason is required' }, { status: 400 });
@@ -36,6 +39,17 @@ export async function POST(
 
   const now = new Date().toISOString();
 
+  const sessionUpdate: Record<string, unknown> = {
+    status: 'cancelled',
+    updated_at: now,
+  };
+
+  if (warningCounts) {
+    sessionUpdate.face_warning_count = warningCounts.face;
+    sessionUpdate.object_warning_count = warningCounts.object;
+    sessionUpdate.voice_warning_count = warningCounts.voice;
+  }
+
   await Promise.all([
     supabaseAdmin
       .from('interview_invites')
@@ -43,15 +57,18 @@ export async function POST(
       .eq('id', invite.id),
     supabaseAdmin
       .from('interview_sessions')
-      .update({ status: 'cancelled', updated_at: now })
+      .update(sessionUpdate)
       .eq('id', invite.session_id),
     supabaseAdmin.from('interview_events').insert({
       session_id: invite.session_id,
       event_type: 'proctoring_violation',
+      category: 'proctoring_violation',
       severity: 'critical',
-      metadata: { reason },
+      metadata: { reason, warningCounts },
+      meta: { reason, warningCounts },
     }),
   ]);
 
   return NextResponse.json({ terminated: true, session_id: invite.session_id });
 }
+

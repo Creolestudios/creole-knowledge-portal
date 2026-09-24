@@ -28,6 +28,8 @@ import {
 } from '@/lib/ai-interview/face-tracking';
 import { OBJECT_RULES, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
+import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
+import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
 
 type Stage = 'passcode' | 'instructions' | 'permissions' | 'ready' | 'calibration' | 'interview' | 'completed' | 'terminated';
 
@@ -60,6 +62,7 @@ export default function CandidateAssessmentPage() {
   };
 
   const [passcode, setPasscode] = useState('');
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +72,10 @@ export default function CandidateAssessmentPage() {
   const [answerText, setAnswerText] = useState('');
   const [savingAnswer, setSavingAnswer] = useState(false);
   const questionStartedAtRef = useRef<number>(0);
-  const firstKeystrokeAtRef = useRef<number | null>(null);
+  const firstSpeechAtRef = useRef<number | null>(null);
+
+  const [questionRemainingSec, setQuestionRemainingSec] = useState<number>(0);
+  const questionRemainingSecRef = useRef<number>(0);
 
   const [cameraGranted, setCameraGranted] = useState(false);
   const [screenGranted, setScreenGranted] = useState(false);
@@ -120,7 +126,11 @@ export default function CandidateAssessmentPage() {
   };
 
   const notifyTermination = (reason: string) => {
-    const payload = JSON.stringify({ reason });
+    const counts = proctorTrackerRef.current.getWarningCounts();
+    const payload = JSON.stringify({
+      reason,
+      warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+    });
     const url = `/api/assess/${token}/terminate`;
     if (navigator.sendBeacon) {
       const sent = navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
@@ -193,11 +203,23 @@ export default function CandidateAssessmentPage() {
         return;
       }
 
-      setQuestions(json.questions ?? []);
+      if (json.session_id) {
+        setSessionId(json.session_id);
+      }
+      const questionsList = json.questions ?? [];
+      setQuestions(questionsList);
       setCandidateName(json.candidate_name ?? null);
-      const configuredMinutes = Number(json.duration_minutes) || 15;
-      setDurationSeconds(configuredMinutes * 60);
-      durationSecondsRef.current = configuredMinutes * 60;
+
+      const sumQuestionSeconds = questionsList.reduce(
+        (acc: number, q: { time_limit_sec?: number }) => acc + (q.time_limit_sec || 0),
+        0
+      );
+      const configuredTotalSeconds = sumQuestionSeconds > 0
+        ? sumQuestionSeconds
+        : (Number(json.duration_minutes) || 15) * 60;
+
+      setDurationSeconds(configuredTotalSeconds);
+      durationSecondsRef.current = configuredTotalSeconds;
       setStageWithRef('instructions');
     } catch (err) {
       console.error('[assess] verify failed:', err);
@@ -294,18 +316,52 @@ export default function CandidateAssessmentPage() {
     return () => window.clearTimeout(timer);
   }, [warningToast.show, warningToast.count]);
 
-  // ── Countdown timer for interview duration ──
+  // ── Sync question timer on question index or stage change ──
+  // Ref updated synchronously; setState deferred to avoid react-hooks/set-state-in-effect.
+  useEffect(() => {
+    if (stage === 'interview' && questions[currentIndex]) {
+      const qSec = questions[currentIndex].time_limit_sec || 120;
+      questionRemainingSecRef.current = qSec;
+      window.setTimeout(() => setQuestionRemainingSec(qSec), 0);
+    }
+  }, [currentIndex, stage, questions]);
+
+  // ── Countdown timer for interview duration & current question ──
   useEffect(() => {
     if (stage !== 'interview' || durationSecondsRef.current <= 0) return;
     const timer = window.setInterval(() => {
+      // 1. Overall interview duration countdown
       durationSecondsRef.current -= 1;
       setDurationSeconds((remaining) => {
         if (remaining <= 1) {
           window.clearInterval(timer);
-          void handleSubmitAnswerRef.current();
+          completedRef.current = true;
+          stopAllMedia();
+          const counts = proctorTrackerRef.current.getWarningCounts();
+          fetch(`/api/assess/${token}/complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+            }),
+          }).catch((err) => console.warn('[assess] complete call failed:', err));
+          setStageWithRef('completed');
           return 0;
         }
         return durationSecondsRef.current;
+      });
+
+      // 2. Per-question timer countdown
+      setQuestionRemainingSec((prevQ) => {
+        if (prevQ <= 1) {
+          // Question time elapsed: auto-submit and move to next question
+          if (handleSubmitAnswerRef.current) {
+            void handleSubmitAnswerRef.current();
+          }
+          return 0;
+        }
+        questionRemainingSecRef.current = prevQ - 1;
+        return prevQ - 1;
       });
     }, 1000);
     return () => window.clearInterval(timer);
@@ -754,22 +810,96 @@ export default function CandidateAssessmentPage() {
     return () => window.clearTimeout(timer);
   }, [warningToast.show, warningToast.count]);
 
-  const currentQuestion = questions[currentIndex];
+  // ── Real-time Speech-to-Text & Audio Voice Guard ──
+  const handleUnauthorizedVoice = (info: { reason: string; confidence: number }) => {
+    if (!sessionId) return;
+    const trackerStatus = proctorTrackerRef.current.processGenericEvent(
+      'voice',
+      'unauthorized_voice',
+      'Unauthorized secondary or external AI voice detected.',
+      1000,
+      Date.now()
+    );
 
-  const handleAnswerChange = (value: string) => {
-    if (firstKeystrokeAtRef.current === null && value.length > 0) {
-      firstKeystrokeAtRef.current = Date.now();
+    if (trackerStatus.shouldTriggerWarning) {
+      setWarningToast({
+        show: true,
+        count: trackerStatus.warningCount,
+        reason: trackerStatus.reason,
+      });
+
+      void captureEvidenceSnapshot('unauthorized_voice');
+
+      fetch('/api/interview/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewId: sessionId,
+          category: 'unauthorized_voice',
+          severity: 'warning',
+          confidence: info.confidence,
+          meta: { warningCount: trackerStatus.warningCount, reason: info.reason },
+        }),
+      }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
+
+      if (trackerStatus.warningCount >= 3 && !terminatingRef.current) {
+        terminatingRef.current = true;
+        setTimeout(() => {
+          terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+        }, 3000);
+      }
     }
-    setAnswerText(value);
   };
+
+  useAudioVoiceGuard({
+    interviewId: sessionId || '',
+    stream: cameraStream,
+    isAiSpeaking: false,
+    isCandidateTurn: stage === 'interview',
+    onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
+    takeSnapshot: async () => {
+      await captureEvidenceSnapshot('unauthorized_voice');
+      return null;
+    },
+  });
+
+  const { interimText, startTurn, completeTurn } = useRealtimeTranscript({
+    interviewId: sessionId || '',
+    currentQuestionOrd: currentIndex + 1,
+    isCandidateTurn: stage === 'interview',
+    onTranscriptLine: (line) => {
+      if (firstSpeechAtRef.current === null && line.text.trim().length > 0) {
+        firstSpeechAtRef.current = Date.now();
+      }
+      if (line.isFinal) {
+        setAnswerText((prev) => (prev ? `${prev} ${line.text}` : line.text));
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (firstSpeechAtRef.current === null && interimText.trim().length > 0) {
+      firstSpeechAtRef.current = Date.now();
+    }
+  }, [interimText]);
+
+  useEffect(() => {
+    if (stage === 'interview') {
+      startTurn();
+    }
+  }, [currentIndex, stage, startTurn]);
+
+  const currentQuestion = questions[currentIndex];
 
   const handleSubmitAnswer = async () => {
     if (!currentQuestion) return;
     setSavingAnswer(true);
 
+    await completeTurn();
+
     const totalTimeTakenSec = (Date.now() - questionStartedAtRef.current) / 1000;
-    const timeToFirstResponseSec = firstKeystrokeAtRef.current
-      ? (firstKeystrokeAtRef.current - questionStartedAtRef.current) / 1000
+    const timeToFirstResponseSec = firstSpeechAtRef.current
+      ? (firstSpeechAtRef.current - questionStartedAtRef.current) / 1000
       : totalTimeTakenSec;
 
     try {
@@ -792,7 +922,14 @@ export default function CandidateAssessmentPage() {
       if (isLastQuestion) {
         completedRef.current = true;
         try {
-          await fetch(`/api/assess/${token}/complete`, { method: 'POST' });
+          const counts = proctorTrackerRef.current.getWarningCounts();
+          await fetch(`/api/assess/${token}/complete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+            }),
+          });
         } catch (completeErr) {
           console.warn('[assess] complete call failed:', completeErr);
         }
@@ -800,7 +937,7 @@ export default function CandidateAssessmentPage() {
         setStageWithRef('completed');
       } else {
         setAnswerText('');
-        firstKeystrokeAtRef.current = null;
+        firstSpeechAtRef.current = null;
         questionStartedAtRef.current = Date.now();
         setCurrentIndex((idx) => idx + 1);
       }
@@ -872,6 +1009,10 @@ export default function CandidateAssessmentPage() {
   if (stage === 'interview') {
     const minutes = Math.floor(durationSeconds / 60).toString().padStart(2, '0');
     const seconds = (durationSeconds % 60).toString().padStart(2, '0');
+    const qMinutes = Math.floor(questionRemainingSec / 60).toString().padStart(2, '0');
+    const qSeconds = ((questionRemainingSec % 60) || 0).toString().padStart(2, '0');
+    const hasGivenAnswer = answerText.trim().length > 0 || interimText.trim().length > 0;
+    const answerWordCount = (answerText ? answerText.trim().split(/\s+/).filter(Boolean).length : 0) + (interimText ? interimText.trim().split(/\s+/).filter(Boolean).length : 0);
 
     return (
       <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
@@ -912,16 +1053,34 @@ export default function CandidateAssessmentPage() {
                   {currentQuestion?.category?.replaceAll('_', ' ')}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+                {/* Per-Question Countdown Timer as mentioned for each question */}
+                <div
+                  id="assess-question-timer-badge"
+                  className={`rounded-xl px-3 py-1.5 text-xs sm:text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${
+                    questionRemainingSec <= 30
+                      ? 'bg-red-600 text-white animate-pulse'
+                      : 'bg-blue-600 text-white'
+                  }`}
+                  aria-label="Time remaining for this specific question"
+                  title="Time remaining for this specific question"
+                >
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Question: {qMinutes}:{qSeconds}</span>
+                </div>
+
+                {/* Overall Interview Countdown Timer */}
                 <div
                   id="assess-timer-badge"
-                  className="rounded-xl bg-zinc-900 px-3.5 py-2 text-base font-black tabular-nums text-white flex items-center gap-2 shadow-sm"
-                  aria-label="Remaining time"
+                  className="rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-bold tabular-nums text-zinc-300 flex items-center gap-1.5 shadow-sm"
+                  aria-label="Overall interview remaining time"
+                  title="Overall interview remaining time"
                 >
-                  <Clock className="w-4 h-4 text-[#34c4f2]" />
+                  <span className="text-zinc-500">Total:</span>
                   <span>{minutes}:{seconds}</span>
                 </div>
-                <span className="rounded-xl bg-zinc-100 px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-zinc-700">
+
+                <span className="rounded-xl bg-zinc-100 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-700">
                   {currentQuestion?.difficulty || 'Medium'}
                 </span>
               </div>
@@ -935,14 +1094,62 @@ export default function CandidateAssessmentPage() {
 
             <h2 className="text-xl font-bold leading-relaxed text-zinc-900">{currentQuestion?.question_text}</h2>
 
-            <textarea
-              id="assess-answer-textarea"
-              value={answerText}
-              onChange={(e) => handleAnswerChange(e.target.value)}
-              rows={8}
-              placeholder="Type your answer here..."
-              className="w-full text-sm p-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
-            />
+            {/* Voice-Only Answer Capture Panel (Writing session removed) */}
+            <div className="rounded-2xl border border-zinc-200 bg-gradient-to-b from-zinc-50/80 to-white p-5 space-y-4 shadow-sm">
+              <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                  </span>
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                    <Mic className="w-3.5 h-3.5 text-emerald-600" />
+                    Voice Only • Real-time Speech Detection
+                  </span>
+                </div>
+                {answerWordCount > 0 ? (
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">
+                    {answerWordCount} {answerWordCount === 1 ? 'word' : 'words'} captured
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-medium text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                    Awaiting voice answer
+                  </span>
+                )}
+              </div>
+
+              {/* Real-time speech transcription stream */}
+              <div
+                id="assess-voice-transcript-box"
+                className="min-h-[140px] max-h-[220px] overflow-y-auto rounded-xl bg-white p-4 border border-zinc-200 text-sm leading-relaxed text-zinc-800 shadow-inner"
+              >
+                {answerText || interimText ? (
+                  <p className="whitespace-pre-wrap">
+                    {answerText && <span>{answerText} </span>}
+                    {interimText && (
+                      <span className="text-blue-600 italic font-medium animate-pulse">
+                        {interimText}...
+                      </span>
+                    )}
+                  </p>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center text-zinc-400 py-6 space-y-1.5">
+                    <Mic className="w-8 h-8 text-zinc-300 animate-pulse" />
+                    <p className="text-sm font-semibold text-zinc-600">Speak your answer aloud</p>
+                    <p className="text-xs text-zinc-400 max-w-sm">
+                      Your answer is captured strictly through your microphone in real time. The Next Question button unlocks as soon as you speak.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {interimText && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700 animate-pulse">
+                  <span className="h-2 w-2 rounded-full bg-blue-500 shrink-0" />
+                  <span className="italic">Listening: &quot;{interimText}&quot;</span>
+                </div>
+              )}
+            </div>
 
             {error && (
               <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
@@ -955,15 +1162,21 @@ export default function CandidateAssessmentPage() {
               id="assess-submit-answer"
               type="button"
               onClick={handleSubmitAnswer}
-              disabled={savingAnswer || answerText.trim().length === 0}
-              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
+              disabled={savingAnswer || !hasGivenAnswer}
+              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
             >
               {savingAnswer ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  <span>{currentIndex >= questions.length - 1 ? 'Finish Interview' : 'Next Question'}</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <span>
+                    {!hasGivenAnswer
+                      ? 'Speak your answer to enable next question'
+                      : currentIndex >= questions.length - 1
+                      ? 'Finish Interview'
+                      : 'Next Question'}
+                  </span>
+                  {hasGivenAnswer && <ArrowRight className="w-4 h-4" />}
                 </>
               )}
             </button>

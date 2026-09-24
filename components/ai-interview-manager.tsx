@@ -14,6 +14,7 @@ import {
   ClipboardPaste,
   X,
 } from 'lucide-react';
+import Link from 'next/link';
 import type { IInterviewSummary } from '@/lib/ai-interview/types';
 import type { ExtractionResult, SessionGenerationResult } from '@/lib/ai-interview/types';
 import { KeywordAnalysisOverview, KeywordResults } from '@/components/ai-interview/keyword-results';
@@ -22,6 +23,9 @@ import { QuestionBankSelector } from '@/components/ai-interview/question-bank-se
 const STATUS_BADGE_STYLES: Record<string, string> = {
   completed: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   expired: 'bg-red-50 text-red-500 border-red-100',
+  terminated: 'bg-red-50 text-red-600 border-red-100',
+  in_progress: 'bg-blue-50 text-blue-600 border-blue-100',
+  ready: 'bg-amber-50 text-amber-600 border-amber-100',
 };
 const DEFAULT_STATUS_BADGE_STYLE = 'bg-zinc-50 text-zinc-500 border-zinc-100';
 
@@ -431,13 +435,25 @@ export default function AIInterviewManager() {
                       : 'No link generated yet'}
                   </p>
                 </div>
-                <span
-                  className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${
-                    STATUS_BADGE_STYLES[iv.status] ?? DEFAULT_STATUS_BADGE_STYLE
-                  }`}
-                >
-                  {iv.status}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded border ${
+                      STATUS_BADGE_STYLES[iv.status] ?? DEFAULT_STATUS_BADGE_STYLE
+                    }`}
+                  >
+                    {iv.status}
+                  </span>
+                  {(iv.status === 'completed' || iv.status === 'terminated' || iv.status === 'in_progress') && (
+                    <Link
+                      id={`view-report-${iv.id}`}
+                      href={`/admin/reports/${iv.id}`}
+                      className="px-3 py-1.5 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      View Report
+                    </Link>
+                  )}
+                </div>
               </div>
             ))}
           </div>

@@ -41,6 +41,9 @@ export interface SessionSelectionOptions {
   questionBankIds?: string[];
   customQuestions?: string[];
   dynamicQuestions?: InterviewQuestion[];
+  hrTotalMinutes?: number;
+  hrQuestionMinutes?: number;
+  techQuestionMinutes?: number;
 }
 
 /**
@@ -79,6 +82,8 @@ export async function createInterviewSessionWithInvite(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       duration_minutes: durationMinutes,
+      hr_total_minutes: options.hrTotalMinutes ?? options.hrQuestionMinutes,
+      hr_question_minutes: options.hrTotalMinutes ?? options.hrQuestionMinutes,
       question_bank_ids: options.questionBankIds,
       custom_questions: options.customQuestions,
       dynamic_questions: options.dynamicQuestions,

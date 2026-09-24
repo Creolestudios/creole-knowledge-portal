@@ -264,10 +264,34 @@ export function analyzeFaceMetrics(
   };
 }
 
+export interface WarningCounts {
+  face: number;
+  object: number;
+  voice: number;
+  total: number;
+}
+
 export class ProctoringTimeTracker {
   private categoryStartTime: Map<string, number> = new Map();
   private lastWarningTime: Map<string, number> = new Map();
-  private warningCount = 0;
+  private faceWarningCount = 0;
+  private objectWarningCount = 0;
+  private voiceWarningCount = 0;
+
+  /** Backward-compatible getter — total across all three types */
+  public get warningCount(): number {
+    return this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount;
+  }
+
+  /** Returns individual counts per warning type */
+  public getWarningCounts(): WarningCounts {
+    return {
+      face: this.faceWarningCount,
+      object: this.objectWarningCount,
+      voice: this.voiceWarningCount,
+      total: this.warningCount,
+    };
+  }
 
   public processResult(
     result: ExtendedFaceTrackingResult,
@@ -319,7 +343,7 @@ export class ProctoringTimeTracker {
 
       if (timeSinceLast >= debounceMs) {
         this.lastWarningTime.set(currentCategory, nowMs);
-        this.warningCount += 1;
+        this.faceWarningCount += 1;
 
         let reason = 'Keep your eyes on the screen during the interview.';
         if (currentCategory === 'no_face') reason = 'No face detected in webcam frame.';
@@ -379,7 +403,14 @@ export class ProctoringTimeTracker {
       if (timeSinceLast >= debounceMs) {
         this.lastWarningTime.set(key, nowMs);
         this.categoryStartTime.delete(key); // reset after trigger
-        this.warningCount += 1;
+        // Route increment to the correct per-type counter
+        if (category === 'object_detected') {
+          this.objectWarningCount += 1;
+        } else if (category === 'background_voice') {
+          this.voiceWarningCount += 1;
+        } else {
+          this.faceWarningCount += 1;
+        }
 
         return {
           shouldTriggerWarning: true,
@@ -408,7 +439,9 @@ export class ProctoringTimeTracker {
   public reset(): void {
     this.categoryStartTime.clear();
     this.lastWarningTime.clear();
-    this.warningCount = 0;
+    this.faceWarningCount = 0;
+    this.objectWarningCount = 0;
+    this.voiceWarningCount = 0;
   }
 }
 

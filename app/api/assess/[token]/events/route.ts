@@ -1,39 +1,49 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { validateActiveAssessToken } from '@/lib/ai-interview/assess-utils';
 
 export const runtime = 'nodejs';
 
 /**
- * POST /api/interview/events
+ * POST /api/assess/[token]/events
  *
- * Public endpoint. Logs real-time proctoring events (gaze_away, reading_suspected, no_face, multi_face, etc.)
- * into the interview_events table and broadcasts via Supabase Realtime to the HR monitoring dashboard.
+ * Public endpoint. Logs real-time proctoring events from the candidate-facing
+ * /assess/[token] page into interview_events and broadcasts via Supabase
+ * Realtime to the HR monitoring dashboard.
  *
- * Body: { interviewId: string, category: string, severity?: string, confidence?: number, snapshotPath?: string, meta?: Record<string, unknown> }
+ * Body: { category: string, severity?: string, confidence?: number, snapshotPath?: string, meta?: Record<string, unknown> }
  */
-export async function POST(req: Request) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ token: string }> },
+) {
+  const { token } = await params;
   const body = await req.json().catch(() => null);
-  const interviewId = body?.interviewId as string | undefined;
+
   const category = body?.category as string | undefined;
   const severity = (body?.severity as string) || 'info';
   const confidence = typeof body?.confidence === 'number' ? body.confidence : 1.0;
   const snapshotPath = body?.snapshotPath as string | undefined;
   const meta = body?.meta || {};
 
-  if (!interviewId || !category) {
-    return NextResponse.json({ error: 'interviewId and category are required' }, { status: 400 });
+  if (!category) {
+    return NextResponse.json({ error: 'category is required' }, { status: 400 });
   }
+
+  // Resolve session_id from invite token (don't block on expired status for event logging)
+  const { invite, errorResponse } = await validateActiveAssessToken(token, false);
+  if (errorResponse || !invite) return errorResponse;
 
   const tsMs = Date.now();
 
   const { data: eventData, error } = await supabaseAdmin
     .from('interview_events')
     .insert({
-      session_id: interviewId,
+      session_id: invite.session_id,
       // Columns from 20260918120000 migration (event_type / metadata)
       event_type: category,
       metadata: meta,
-      // Columns from 20260918000000 + 20260923000000 migration (category / meta / ts_ms etc.)
+      // Columns from 20260923000000 migration (category / meta / ts_ms etc.)
       ts_ms: tsMs,
       category,
       severity,
@@ -45,18 +55,18 @@ export async function POST(req: Request) {
     .single();
 
   if (error) {
-    console.error('[interview-events] DB insert failed:', error);
+    console.error('[assess-events] DB insert failed:', error);
   }
 
   // Supabase Realtime broadcast to HR live monitoring channel
   try {
-    const channel = supabaseAdmin.channel(`interview-monitor:${interviewId}`);
+    const channel = supabaseAdmin.channel(`interview-monitor:${invite.session_id}`);
     await channel.subscribe();
     await channel.send({
       type: 'broadcast',
       event: 'proctoring_event',
       payload: {
-        interviewId,
+        sessionId: invite.session_id,
         category,
         severity,
         confidence,
@@ -67,7 +77,7 @@ export async function POST(req: Request) {
     });
     await supabaseAdmin.removeChannel(channel);
   } catch (rtErr) {
-    console.warn('[interview-events] Realtime broadcast warning:', rtErr);
+    console.warn('[assess-events] Realtime broadcast warning:', rtErr);
   }
 
   return NextResponse.json({ success: true, event: eventData });

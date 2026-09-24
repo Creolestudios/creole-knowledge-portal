@@ -18,6 +18,7 @@ import {
   Home,
   ShieldAlert,
   UploadCloud,
+  FileText,
 } from 'lucide-react';
 
 import UserManagement from '@/components/user-management';
@@ -256,6 +257,14 @@ export default function AdminDashboard() {
           >
             <UploadCloud className="w-5 h-5" />
             <span>AI Interview</span>
+          </button>
+
+          <button
+            onClick={() => router.push('/admin/reports')}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          >
+            <FileText className="w-5 h-5" />
+            <span>Interview Reports</span>
           </button>
 
           <div className="h-px bg-zinc-200 dark:bg-zinc-800 my-4" />

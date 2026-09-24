@@ -91,6 +91,78 @@ export const QUESTION_BANK: QuestionBankItem[] = [
 ];
 
 /**
+ * Calculates dynamic time limit (in seconds) for an interview question:
+ * - For HR questions: Time limit is decided by Admin / HR.
+ * - For Technical questions: Time limit is dynamically decided by AI according to question difficulty/complexity (180s easy, 240s medium, 300s hard).
+ */
+export function getDynamicQuestionTimeLimitSec(
+  difficulty: QuestionDifficulty | string = 'medium',
+  category: string = 'technical',
+  baseMinutes?: { hrMinutes?: number } | number
+): number {
+  const normCategory = (category || '').toLowerCase();
+  const normDiff = (difficulty || '').toLowerCase();
+
+  const isHr = normCategory === 'hr' || normCategory === 'behavioral' || normCategory === 'culture_fit' || normCategory === 'custom';
+
+  if (isHr) {
+    const hrBase = typeof baseMinutes === 'number' ? baseMinutes : (baseMinutes?.hrMinutes || 1);
+    const baseSec = Math.max(30, Math.round(hrBase * 60));
+    if (normDiff === 'easy') return Math.max(30, Math.round(baseSec * 0.75));
+    if (normDiff === 'hard') return Math.max(baseSec, Math.round(baseSec * 1.25));
+    return baseSec;
+  }
+
+  // Technical questions: Dynamically AI-decided according to question difficulty & complexity
+  if (normDiff === 'easy') {
+    return 180; // 3 mins
+  } else if (normDiff === 'hard') {
+    return 300; // 5 mins
+  } else {
+    return 240; // 4 mins
+  }
+}
+
+/**
+ * Resolves the question's final time limit in seconds:
+ * - For HR questions: strictly honors the Admin/HR configured minutes.
+ * - For Technical questions: uses the AI's dynamically decided time_limit_sec for that question.
+ */
+export function resolveDynamicQuestionTimeSec(
+  question: { difficulty?: string; category?: string; time_limit_sec?: number },
+  options: { hrMinutes: number; techMinutes?: number }
+): number {
+  const normCategory = (question.category || '').toLowerCase();
+  const isHr = normCategory === 'hr' || normCategory === 'behavioral' || normCategory === 'custom';
+
+  if (isHr) {
+    // HR Question: Time is decided by Admin / HR
+    return Math.max(30, Math.round(options.hrMinutes * 60));
+  }
+
+  // Technical Question: Time is dynamically decided by AI according to the question
+  if (
+    typeof question.time_limit_sec === 'number' &&
+    Number.isFinite(question.time_limit_sec) &&
+    question.time_limit_sec >= 60 &&
+    question.time_limit_sec <= 600
+  ) {
+    // AI-decided time limit for this question
+    return question.time_limit_sec;
+  }
+
+  // Fallback based on question difficulty when AI omitted specific seconds
+  const diff = (question.difficulty || 'medium').toLowerCase();
+  if (diff === 'easy') {
+    return 180; // 3 mins
+  } else if (diff === 'hard') {
+    return 300; // 5 mins
+  } else {
+    return 240; // 4 mins
+  }
+}
+
+/**
  * Calculates the total number of interview questions from administrator input.
  */
 export function calculateQuestionCount(options?: QuestionGeneratorOptions): number {
@@ -125,7 +197,7 @@ function buildQuestionsFromSelection(
     ...question,
     question_type: normalizeQuestionType(question.question_type, question.category),
     difficulty: normalizeDifficulty(question.difficulty),
-    time_limit_sec: 150,
+    time_limit_sec: getDynamicQuestionTimeLimitSec(question.difficulty, question.category),
     is_mandatory_hr: false,
     is_custom: false,
     question_bank_id: question.id,
@@ -140,7 +212,7 @@ function buildQuestionsFromSelection(
     difficulty: 'medium' as QuestionDifficulty,
     required_skills: [] as string[],
     intent: 'Admin-authored question for this candidate.',
-    time_limit_sec: 150,
+    time_limit_sec: 120,
     is_mandatory_hr: false,
     is_custom: true,
     question_bank_id: null,
@@ -317,12 +389,12 @@ export function generateQuestionsLocalFallback(
     ],
     [
       `Tell us about a bug or production issue you diagnosed and fixed. What was your debugging approach?`,
-      'role_specific', 'technical', 'medium', ['Debugging', 'Problem Solving'],
+      'role_specific', 'technical', 'hard', ['Debugging', 'Problem Solving'],
       'Evaluate systematic troubleshooting ability.',
     ],
     [
       `This role also involves ${missingSkills[0] || 'additional technologies'}. How would your experience with ${matchedSkills[0] || 'your current stack'} transfer, and what would you need to learn?`,
-      'role_specific', 'technical', 'medium', ['Technical Adaptability', 'Learning Agility'],
+      'role_specific', 'technical', 'easy', ['Technical Adaptability', 'Learning Agility'],
       'Assess how technical depth in known skills transfers to skill gaps.',
     ],
   ];
@@ -349,14 +421,21 @@ export function generateQuestionsLocalFallback(
       ? ` (Perspective ${Math.floor(useIndex / categoryTemplates.length) + 1})`
       : '';
 
+    const normDifficulty = normalizeDifficulty(template.difficulty);
+    const dynamicTimeSec = getDynamicQuestionTimeLimitSec(
+      normDifficulty,
+      template.category,
+      options?.durationMinutes ? { hrMinutes: 1 } : undefined
+    );
+
     generatedHrQuestions.push({
       question_text: `${template.text}${cycleSuffix}`,
       question_type: normalizeQuestionType(template.type, template.category),
       category: template.category,
-      difficulty: normalizeDifficulty(template.difficulty),
+      difficulty: normDifficulty,
       required_skills: template.skills,
       intent: template.intent,
-      time_limit_sec: 150,
+      time_limit_sec: dynamicTimeSec,
       is_mandatory_hr: false,
       question_order: i + 3,
       weight: 10,
@@ -480,6 +559,10 @@ For the 'technical' category questions (you must generate exactly 4):
   (${profile.yearsOfExperience || 0}).
 - If no project highlights are available, fall back to asking about practical experience with their claimed skills, but
   still keep it specific to their years of experience and the role's responsibilities rather than generic.
+- Assign a DYNAMIC time limit (time_limit_sec) according to the question's complexity, depth, and difficulty:
+  * Easy technical question (conceptual, overview, basic experience): 150 - 180 seconds (2.5 to 3 minutes)
+  * Medium technical question (trade-off, workflow, implementation details): 210 - 240 seconds (3.5 to 4 minutes)
+  * Hard technical question (complex challenge, debugging incident, architectural decision): 270 - 300 seconds (4.5 to 5 minutes)
 - Do NOT ask deep coding (like writing code algorithms), system design, or low-level architecture questions.
 
 Return only a JSON array. Each item must contain:
@@ -489,7 +572,7 @@ Return only a JSON array. Each item must contain:
 - difficulty: must be strictly one of: "easy", "medium", "hard"
 - required_skills: string[]
 - intent: string
-- time_limit_sec: integer seconds (e.g. 150)
+- time_limit_sec: integer seconds dynamically decided by you based on this specific question's depth, scope, and technical complexity (e.g. 150-180 for easy conceptual, 210-240 for medium trade-off, 270-300 for hard technical challenge)
 - weight: integer between 1 and 100 (e.g. 10)`;
 
     const response = await ai.models.generateContent({
@@ -508,18 +591,24 @@ Return only a JSON array. Each item must contain:
       return generateQuestionsLocalFallback(profile, jd, analysis, options, selectedHrQuestions);
     }
 
-    const aiQuestions: InterviewQuestion[] = rawParsed.slice(0, requiredAiCount).map((item, idx) => ({
-      question_text: item.question_text || `Tell us about your experience relevant to the ${jd.jobTitle || 'role'}.`,
-      question_type: normalizeQuestionType(item.question_type, item.category),
-      category: item.category || 'experience_overview',
-      difficulty: normalizeDifficulty(item.difficulty),
-      required_skills: Array.isArray(item.required_skills) ? item.required_skills : ['Communication'],
-      intent: item.intent || 'Evaluate candidate experience and alignment.',
-      question_order: idx + 1,
-      time_limit_sec: normalizeInteger(item.time_limit_sec, 150, 30),
-      is_mandatory_hr: false,
-      weight: normalizeInteger(item.weight, 10, 1),
-    }));
+    const aiQuestions: InterviewQuestion[] = rawParsed.slice(0, requiredAiCount).map((item, idx) => {
+      const diff = normalizeDifficulty(item.difficulty);
+      const cat = item.category || 'technical';
+      const defaultSec = getDynamicQuestionTimeLimitSec(diff, cat);
+
+      return {
+        question_text: item.question_text || `Tell us about your experience relevant to the ${jd.jobTitle || 'role'}.`,
+        question_type: normalizeQuestionType(item.question_type, item.category),
+        category: cat,
+        difficulty: diff,
+        required_skills: Array.isArray(item.required_skills) ? item.required_skills : ['Communication'],
+        intent: item.intent || 'Evaluate candidate experience and alignment.',
+        question_order: idx + 1,
+        time_limit_sec: normalizeInteger(item.time_limit_sec, defaultSec, 30),
+        is_mandatory_hr: false,
+        weight: normalizeInteger(item.weight, 10, 1),
+      };
+    });
 
     const requestedCategoryEntries = Object.entries(categoryCounts).filter(([, count]) => count > 0);
     const selectedAiQuestions = requestedCategoryEntries.length > 0

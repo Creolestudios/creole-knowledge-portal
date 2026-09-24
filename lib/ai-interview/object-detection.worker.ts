@@ -33,14 +33,19 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
   // ─── INIT ────────────────────────────────────────────────────────────────
   if (message.type === 'init') {
     try {
-      console.log('[ObjectDetection Worker] Setting backend and loading lite_mobilenet_v2 model...');
+      console.log('[ObjectDetection Worker] Setting backend and loading COCO-SSD model...');
       try {
         await tf.setBackend('webgl');
       } catch {
         await tf.setBackend('cpu');
       }
       await tf.ready();
-      model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      // Load mobilenet_v2 for higher accuracy on books, headphones & screens
+      try {
+        model = await cocoSsd.load({ base: 'mobilenet_v2' });
+      } catch {
+        model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      }
       console.log('[ObjectDetection Worker] Model loaded successfully! Active backend:', tf.getBackend());
       self.postMessage({ type: 'ready' });
     } catch (err) {
@@ -64,14 +69,18 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
 
   isBusy = true;
 
-  // Downsample to 300x300 (COCO-SSD native input size) for real-time inference
-  const INPUT_SIZE = 300;
+  // Scale frame to 416px width while preserving natural aspect ratio so
+  // books, headphones, and devices are not distorted/squashed.
+  const targetW = 416;
+  const aspect = message.bitmap.height / (message.bitmap.width || 1);
+  const targetH = Math.max(240, Math.round(targetW * aspect));
+
   if (typeof OffscreenCanvas !== 'undefined') {
-    if (!offscreenCanvas) {
-      offscreenCanvas = new OffscreenCanvas(INPUT_SIZE, INPUT_SIZE);
+    if (!offscreenCanvas || offscreenCanvas.width !== targetW || offscreenCanvas.height !== targetH) {
+      offscreenCanvas = new OffscreenCanvas(targetW, targetH);
       offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
     }
-    offscreenCtx?.drawImage(message.bitmap, 0, 0, INPUT_SIZE, INPUT_SIZE);
+    offscreenCtx?.drawImage(message.bitmap, 0, 0, targetW, targetH);
   }
 
   try {
@@ -79,12 +88,12 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
 
     let rawDetections;
     try {
-      rawDetections = await model.detect(inputSource, 20, 0.22);
+      rawDetections = await model.detect(inputSource, 20, 0.15);
     } catch {
-      // Fallback to 300x300 ImageData if canvas handle is unsupported by worker backend
+      // Fallback to ImageData if canvas handle is unsupported by worker backend
       if (offscreenCtx && offscreenCanvas) {
-        inputSource = offscreenCtx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE);
-        rawDetections = await model.detect(inputSource, 20, 0.22);
+        inputSource = offscreenCtx.getImageData(0, 0, targetW, targetH);
+        rawDetections = await model.detect(inputSource, 20, 0.15);
       } else {
         throw new Error('No valid image input source available for detection');
       }
