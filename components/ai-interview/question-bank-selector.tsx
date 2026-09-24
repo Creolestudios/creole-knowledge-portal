@@ -50,6 +50,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [questionCount, setQuestionCount] = useState(1);
+  const [durationMinutes, setDurationMinutes] = useState(30);
   const [hrTotalMinutes, setHrTotalMinutes] = useState(2);
   const [similarityConfirmed, setSimilarityConfirmed] = useState(false);
   const [customQuestions, setCustomQuestions] = useState<string[]>([]);
@@ -164,13 +165,23 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
     try {
       setStatusMessage('Generating 4 dynamic technical questions with AI & creating session...');
 
-      const result = await createInterviewSessionWithInvite(extraction, totalDurationMinutes, {
+      const optionsPayload: {
+        questionCount: number;
+        similarityConfirmed: boolean;
+        questionBankIds: string[];
+        customQuestions: string[];
+        hrTotalMinutes?: number;
+      } = {
         questionCount,
         similarityConfirmed,
         questionBankIds: Array.from(selectedQuestionIds),
         customQuestions,
-        hrTotalMinutes,
-      });
+      };
+      if (hrTotalMinutes !== 2) {
+        optionsPayload.hrTotalMinutes = hrTotalMinutes;
+      }
+
+      const result = await createInterviewSessionWithInvite(extraction, durationMinutes, optionsPayload);
       setStatusMessage(`Interview link ready — ${result.questions.length} questions saved successfully.`);
       onComplete(result);
     } catch (err: unknown) {
@@ -236,7 +247,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <label className="flex flex-col gap-1 text-xs font-medium text-slate-400">
               <span className="flex items-center justify-between">
-                <span>HR Questions to Pick</span>
+                <span>Total question count (HR Questions to Pick)</span>
                 <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">Admin Decided</span>
               </span>
               <input

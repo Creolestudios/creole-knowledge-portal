@@ -1073,8 +1073,8 @@ export default function CandidateAssessmentPage() {
                 <div
                   id="assess-timer-badge"
                   className="rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-bold tabular-nums text-zinc-300 flex items-center gap-1.5 shadow-sm"
-                  aria-label="Overall interview remaining time"
-                  title="Overall interview remaining time"
+                  aria-label="Remaining time"
+                  title="Remaining time"
                 >
                   <span className="text-zinc-500">Total:</span>
                   <span>{minutes}:{seconds}</span>
@@ -1094,7 +1094,7 @@ export default function CandidateAssessmentPage() {
 
             <h2 className="text-xl font-bold leading-relaxed text-zinc-900">{currentQuestion?.question_text}</h2>
 
-            {/* Voice-Only Answer Capture Panel (Writing session removed) */}
+            {/* Voice-Only Answer Capture Panel */}
             <div className="rounded-2xl border border-zinc-200 bg-gradient-to-b from-zinc-50/80 to-white p-5 space-y-4 shadow-sm">
               <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
                 <div className="flex items-center gap-2">
@@ -1104,7 +1104,7 @@ export default function CandidateAssessmentPage() {
                   </span>
                   <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
                     <Mic className="w-3.5 h-3.5 text-emerald-600" />
-                    Voice Only • Real-time Speech Detection
+                    Voice Detection & Speech-to-Text
                   </span>
                 </div>
                 {answerWordCount > 0 ? (
@@ -1137,7 +1137,7 @@ export default function CandidateAssessmentPage() {
                     <Mic className="w-8 h-8 text-zinc-300 animate-pulse" />
                     <p className="text-sm font-semibold text-zinc-600">Speak your answer aloud</p>
                     <p className="text-xs text-zinc-400 max-w-sm">
-                      Your answer is captured strictly through your microphone in real time. The Next Question button unlocks as soon as you speak.
+                      Your answer is captured through your microphone in real time. You can also edit or type your answer below.
                     </p>
                   </div>
                 )}
@@ -1150,6 +1150,15 @@ export default function CandidateAssessmentPage() {
                 </div>
               )}
             </div>
+
+            <textarea
+              id="assess-answer-textarea"
+              value={answerText}
+              onChange={(e) => setAnswerText(e.target.value)}
+              rows={4}
+              placeholder="Type your answer here..."
+              className="w-full text-sm p-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+            />
 
             {error && (
               <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
@@ -1169,14 +1178,8 @@ export default function CandidateAssessmentPage() {
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <>
-                  <span>
-                    {!hasGivenAnswer
-                      ? 'Speak your answer to enable next question'
-                      : currentIndex >= questions.length - 1
-                      ? 'Finish Interview'
-                      : 'Next Question'}
-                  </span>
-                  {hasGivenAnswer && <ArrowRight className="w-4 h-4" />}
+                  <span>{currentIndex >= questions.length - 1 ? 'Finish Interview' : 'Next Question'}</span>
+                  <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>

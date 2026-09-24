@@ -47,6 +47,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/ai-interview/question-generator', () => ({
   DEFAULT_MANDATORY_HR_QUESTIONS: [],
+  resolveDynamicQuestionTimeSec: vi.fn((q?: any) => q?.time_limit_sec || 120),
   generateInterviewQuestions: vi.fn(async () => [
     {
       question_text: 'Generated Q',
