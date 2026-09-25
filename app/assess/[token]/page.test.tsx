@@ -266,9 +266,6 @@ describe('CandidateAssessmentPage', () => {
       json: async () => ({ error: 'Session expired' }),
     });
 
-    fireEvent.change(screen.getByPlaceholderText('Type your answer here...'), {
-      target: { value: 'My answer' },
-    });
     fireEvent.click(screen.getByRole('button', { name: /Finish Interview/ }));
 
     await waitFor(() => expect(screen.getByText('Session expired')).toBeInTheDocument());
@@ -368,9 +365,6 @@ describe('CandidateAssessmentPage', () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ saved: true }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ completed: true }) });
 
-    fireEvent.change(screen.getByPlaceholderText('Type your answer here...'), {
-      target: { value: 'My answer' },
-    });
     fireEvent.click(screen.getByRole('button', { name: /Finish Interview/ }));
 
     await waitFor(() => expect(screen.getByText('Interview complete')).toBeInTheDocument());

@@ -9,7 +9,7 @@
  * warningCount — same counter as face-tracking alerts.
  */
 
-export type ObjectAlertSeverity = 'warning' | 'error';
+export type ObjectAlertSeverity = 'warning';
 
 export interface ObjectRule {
   /** Proctoring category emitted on alert */
@@ -32,14 +32,14 @@ export const OBJECT_RULES: Record<string, ObjectRule> = {
   'cell phone': {
     category: 'object_detected',
     object: 'phone',
-    severity: 'error',
+    severity: 'warning',
     thresholdMs: 0,
     reason: 'Mobile phone detected in frame. External devices are not permitted.',
   },
   phone: {
     category: 'object_detected',
     object: 'phone',
-    severity: 'error',
+    severity: 'warning',
     thresholdMs: 0,
     reason: 'Mobile phone detected in frame. External devices are not permitted.',
   },
@@ -74,32 +74,48 @@ export const OBJECT_RULES: Record<string, ObjectRule> = {
   remote: {
     category: 'object_detected',
     object: 'remote',
-    severity: 'error',
+    severity: 'warning',
     thresholdMs: 0,
     reason: 'Remote or unauthorized electronic device detected.',
   },
   tablet: {
     category: 'object_detected',
     object: 'tablet',
-    severity: 'error',
+    severity: 'warning',
     thresholdMs: 0,
     reason: 'Tablet or mobile device detected in frame.',
+  },
+  mouse: {
+    category: 'object_detected',
+    object: 'device',
+    severity: 'warning',
+    thresholdMs: 0,
+    reason: 'Unauthorized electronic device detected.',
+  },
+  keyboard: {
+    category: 'object_detected',
+    object: 'device',
+    severity: 'warning',
+    thresholdMs: 0,
+    reason: 'External keypad or device detected.',
   },
 };
 
 /**
- * Per-class confidence thresholds to ensure small or subtle items (headphones, books)
+ * Per-class confidence thresholds to ensure small or subtle items (headphones, books, phones)
  * are detected accurately without being discarded.
  */
 export const CLASS_CONFIDENCE_THRESHOLDS: Record<string, number> = {
-  'cell phone': 0.22,
-  phone: 0.22,
-  headphones: 0.16,
-  book: 0.16,
-  laptop: 0.20,
-  tv: 0.20,
-  remote: 0.18,
-  tablet: 0.20,
+  'cell phone': 0.10,
+  phone: 0.10,
+  headphones: 0.10,
+  book: 0.12,
+  laptop: 0.14,
+  tv: 0.14,
+  remote: 0.12,
+  tablet: 0.10,
+  mouse: 0.12,
+  keyboard: 0.14,
 };
 
 export interface DetectedObjectEvent {
@@ -114,11 +130,11 @@ export interface DetectedObjectEvent {
 
 /**
  * Filters raw COCO-SSD detections to only those we care about,
- * using per-class sensitivity thresholds so books and headphones are accurately detected.
+ * using per-class sensitivity thresholds so devices and objects are accurately detected.
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
-  defaultMinConfidence = 0.20,
+  defaultMinConfidence = 0.10,
 ): DetectedObjectEvent[] {
   return detections
     .filter((d) => {

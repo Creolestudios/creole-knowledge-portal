@@ -24,6 +24,7 @@ interface SpeechRecognitionEventLike extends Event {
 interface SpeechRecognitionInstance extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
+  maxAlternatives?: number;
   lang: string;
   start: () => void;
   stop: () => void;
@@ -108,6 +109,27 @@ export function useRealtimeTranscript({
     [interviewId]
   );
 
+  // Safely restarts the speech recognition engine with a clean audio session
+  const restartRecognition = useCallback(() => {
+    const rec = recognitionRef.current;
+    if (!rec) return;
+    try {
+      rec.abort();
+    } catch {
+      // ignore
+    }
+    window.setTimeout(() => {
+      if (isCandidateTurnRef.current && recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+          setIsListening(true);
+        } catch {
+          // already started or transitioning
+        }
+      }
+    }, 70);
+  }, []);
+
   // Starts real-time listening for a question turn
   const startTurn = useCallback(() => {
     turnStartTimeRef.current = Date.now();
@@ -119,14 +141,21 @@ export function useRealtimeTranscript({
     setAccumulatedText('');
     setInterimText('');
 
-    if (!recognitionRef.current) return;
+    restartRecognition();
+  }, [restartRecognition]);
+
+  // Explicit manual trigger for the candidate to start speaking if recognition stopped
+  const startListening = useCallback(() => {
+    const rec = recognitionRef.current;
+    if (!rec) return;
     try {
-      recognitionRef.current.start();
+      rec.start();
       setIsListening(true);
     } catch {
-      // recognition may already be running
+      // If already active or in another state, cycle it cleanly
+      restartRecognition();
     }
-  }, []);
+  }, [restartRecognition]);
 
   // Completes a turn: flushes the full accumulated answer as ONE transcript row and saves turn metrics.
   const completeTurn = useCallback(
@@ -170,6 +199,11 @@ export function useRealtimeTranscript({
     [interviewId, persistFullAnswer]
   );
 
+  const onTranscriptLineRef = useRef(onTranscriptLine);
+  useEffect(() => {
+    onTranscriptLineRef.current = onTranscriptLine;
+  }, [onTranscriptLine]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -183,7 +217,9 @@ export function useRealtimeTranscript({
     const recognition = new SpeechRec();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'en-US';
+    recognition.maxAlternatives = 1;
+    const browserLang = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
+    recognition.lang = browserLang && browserLang.startsWith('en') ? browserLang : 'en-US';
 
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
       if (!isCandidateTurnRef.current) return;
@@ -208,7 +244,7 @@ export function useRealtimeTranscript({
               : trimmed;
             accumulatedTextRef.current = next;
             setAccumulatedText(next);
-            onTranscriptLine?.({ text: trimmed, isFinal: true });
+            onTranscriptLineRef.current?.({ text: trimmed, isFinal: true });
 
             // Check if there was a pause since the last final chunk (>800ms)
             if (lastFinalTimestampRef.current > 0 && now - lastFinalTimestampRef.current > 800) {
@@ -224,22 +260,29 @@ export function useRealtimeTranscript({
 
       setInterimText(currentInterim);
       if (currentInterim) {
-        onTranscriptLine?.({ text: currentInterim, isFinal: false });
+        onTranscriptLineRef.current?.({ text: currentInterim, isFinal: false });
       }
     };
 
-    recognition.onerror = () => {
-      // Auto-recover or ignore transient audio capture aborts
+    recognition.onerror = (e: any) => {
+      if (e?.error === 'not-allowed') {
+        setIsListening(false);
+      }
     };
 
     recognition.onend = () => {
-      // If candidate turn is still active, restart listener
+      // If candidate turn is still active, restart listener cleanly after a short pause
       if (isCandidateTurnRef.current) {
-        try {
-          recognition.start();
-        } catch {
-          // ignore
-        }
+        window.setTimeout(() => {
+          if (isCandidateTurnRef.current && recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+              setIsListening(true);
+            } catch {
+              // ignore
+            }
+          }
+        }, 150);
       } else {
         setIsListening(false);
       }
@@ -255,7 +298,26 @@ export function useRealtimeTranscript({
       }
       recognitionRef.current = null;
     };
-  }, [onTranscriptLine]);
+  }, []);
+
+  useEffect(() => {
+    if (isCandidateTurn) {
+      const timer = window.setTimeout(() => {
+        startListening();
+      }, 0);
+      return () => window.clearTimeout(timer);
+    } else {
+      try {
+        recognitionRef.current?.stop();
+      } catch {
+        // ignore
+      }
+      const timer = window.setTimeout(() => {
+        setIsListening(false);
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [isCandidateTurn, startListening]);
 
   return {
     isSupported,
@@ -263,6 +325,7 @@ export function useRealtimeTranscript({
     interimText,
     accumulatedText,
     startTurn,
+    startListening,
     completeTurn,
   };
 }

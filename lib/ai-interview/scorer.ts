@@ -59,19 +59,21 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
 
   const ai = new GoogleGenAI({ apiKey });
 
-  // 1. Fetch session, questions, transcript, turn metrics, and warnings
+  // 1. Fetch session, questions, transcript, turn metrics, warnings, and answers
   const [
     { data: session },
     { data: questions },
     { data: rawTranscripts },
     { data: turnMetrics },
     { data: warningEvents },
+    { data: rawAnswers },
   ] = await Promise.all([
     supabaseAdmin.from('interview_sessions').select('*').eq('id', sessionId).single(),
-    supabaseAdmin.from('interview_questions').select('*').eq('session_id', sessionId).order('order_index', { ascending: true }),
+    supabaseAdmin.from('interview_questions').select('*').eq('session_id', sessionId),
     supabaseAdmin.from('interview_transcript').select('*').eq('session_id', sessionId).order('ts_ms', { ascending: true }),
     supabaseAdmin.from('interview_turn_metrics').select('*').eq('session_id', sessionId),
     supabaseAdmin.from('interview_events').select('*').eq('session_id', sessionId).eq('severity', 'warning'),
+    supabaseAdmin.from('interview_answers').select('*').eq('session_id', sessionId),
   ]);
 
   if (!session) {
@@ -81,10 +83,18 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
   const transcriptList = rawTranscripts || [];
   const metricsList = turnMetrics || [];
   const warningsList = warningEvents || [];
+  const answersList = rawAnswers || [];
 
-  // Check voice warnings count
+  // Check warnings count across all categories continuously
   const voiceWarningCount = (session.voice_warning_count || 0) +
-    warningsList.filter((w) => w.category === 'unauthorized_voice' || w.category === 'bg_voice').length;
+    warningsList.filter((w) => w.category === 'unauthorized_voice' || w.category === 'bg_voice' || w.category === 'background_voice').length;
+  const faceWarningCount = warningsList.filter((w) =>
+    ['gaze_away', 'no_face', 'multi_face', 'reading_suspected'].includes(w.category)
+  ).length;
+  const objectWarningCount = warningsList.filter((w) =>
+    ['object_detected', 'cell_phone', 'notes_detected'].includes(w.category)
+  ).length;
+  const totalWarningCount = warningsList.length;
 
   // STRICT REQUIREMENT: Isolate ONLY candidate speech.
   // Quarantines any lines tagged as unauthorized_voice or flagged.
@@ -93,6 +103,9 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
   );
 
   const fullCandidateText = candidateUtterances.map((u) => u.text).join(' ');
+  const fullAnswersText = answersList.map((a) => a.transcript || '').filter(Boolean).join(' ');
+  const combinedCandidateText = fullCandidateText.trim() ? fullCandidateText : fullAnswersText;
+  const answerByQuestionId = new Map(answersList.map((ans) => [ans.question_id, (ans.transcript || '').trim()]));
 
   // 2. Compute local objective metrics from turn_metrics or candidate utterances
   let totalWordCount = 0;
@@ -113,7 +126,7 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
     avgLatencyMs = Math.round(latencySum / metricsList.length);
   } else {
     // Fallback: estimate from candidate text if turn_metrics are empty
-    totalWordCount = fullCandidateText.split(/\s+/).filter(Boolean).length;
+    totalWordCount = combinedCandidateText.split(/\s+/).filter(Boolean).length;
     totalSpeechMs = Math.max(1000, totalWordCount * 400); // estimate ~150 wpm
   }
 
@@ -128,25 +141,33 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
 
   // 3. Evaluate Questions & Competencies (Gemini Flash)
   const questionScores: CompetencyScoreItem[] = [];
-  const questionList = questions || [];
+  const questionList = [...(questions || [])].sort((a, b) => {
+    const ordA = a.question_order ?? a.order_index ?? 0;
+    const ordB = b.question_order ?? b.order_index ?? 0;
+    return ordA - ordB;
+  });
 
   for (let idx = 0; idx < questionList.length; idx++) {
     const q = questionList[idx];
-    const ord = q.order_index ?? idx + 1;
+    const ord = q.question_order ?? q.order_index ?? idx + 1;
 
-    // Filter candidate speech specifically answering this question
+    // Direct answer from interview_answers takes top priority
+    const directAnswer = answerByQuestionId.get(q.id)?.trim() || '';
+
+    // Filter candidate speech specifically answering this question from transcript
     const qTranscripts = candidateUtterances.filter(
-      (t) => t.question_ord === ord || t.question_ord === null
+      (t) => t.question_ord === ord
     );
-    const qAnswerText = qTranscripts.map((t) => t.text).join('\n') || fullCandidateText;
+    const transcriptAnswer = qTranscripts.map((t) => t.text).join('\n').trim();
+    const qAnswerText = directAnswer || transcriptAnswer;
 
     if (!qAnswerText.trim()) {
       questionScores.push({
         ord,
         competency: q.competency || 'General Competency',
         score: 1,
-        confidence: 0.5,
-        justification: 'Candidate provided no answer or audio was absent.',
+        confidence: 0.9,
+        justification: 'Candidate provided no answer or audio was absent for this question.',
         evidence: [],
       });
       continue;
@@ -220,7 +241,7 @@ Return JSON ONLY:
   let fluencyCefr: 'A2' | 'B1' | 'B2' | 'C1' | 'C2' = 'B2';
   let fluencyBreakdown: Record<string, unknown> = {};
 
-  if (fullCandidateText.trim()) {
+  if (combinedCandidateText.trim()) {
     const fluencyPrompt = `
 Assess the candidate's spoken English from their interview transcript.
 IMPORTANT:
@@ -233,7 +254,7 @@ IMPORTANT:
 
 CANDIDATE UTTERANCES:
 """
-${fullCandidateText}
+${combinedCandidateText}
 """
 
 Return JSON ONLY:
@@ -314,13 +335,13 @@ Return JSON ONLY:
   let recommendation: 'strong_yes' | 'yes' | 'maybe' | 'no' = 'yes';
   let recommendationRationale = '';
 
-  // Hard guards based on Voice Warnings & Termination
-  if (session.status === 'terminated' || voiceWarningCount >= 3) {
+  // Continuous 3-warning rule: any 3 proctoring warnings (face, object, voice)
+  if (session.status === 'terminated' || totalWarningCount >= 3) {
     recommendation = 'no';
-    recommendationRationale = `Interview terminated due to ${voiceWarningCount} voice / proctoring violations.`;
-  } else if (voiceWarningCount >= 1) {
+    recommendationRationale = `Interview terminated due to continuous proctoring violations (${totalWarningCount} warnings: ${voiceWarningCount} voice, ${faceWarningCount} face, ${objectWarningCount} object).`;
+  } else if (totalWarningCount >= 1) {
     recommendation = 'maybe';
-    recommendationRationale = `Candidate demonstrated competence (Cognitive: ${cognitiveComposite}/100, Fluency: ${finalFluencyScore}/100), but received ${voiceWarningCount} unauthorized voice warning(s). Human HR audit recommended.`;
+    recommendationRationale = `Candidate demonstrated competence (Cognitive: ${cognitiveComposite}/100, Fluency: ${finalFluencyScore}/100), but received ${totalWarningCount} proctoring warning(s) (${voiceWarningCount} voice, ${faceWarningCount} face, ${objectWarningCount} object). Human HR audit recommended.`;
   } else if (cognitiveComposite >= 80 && finalFluencyScore >= 75) {
     recommendation = isLanguageSwitched ? 'yes' : 'strong_yes';
     recommendationRationale = isLanguageSwitched
@@ -336,6 +357,57 @@ Return JSON ONLY:
     recommendationRationale = `Adequate baseline performance (${cognitiveComposite}/100), but technical depth or communication requires further evaluation.`;
   }
 
+  // 6b. Generate 2-3 Follow-Up Recommendations for Round 2 based on weak spots
+  let followUpRecommendations: string[] = [];
+  try {
+    const weakQuestions = questionScores.filter((qs) => qs.score <= 3);
+    const weakContext = weakQuestions.length > 0
+      ? weakQuestions.map((qs) => `- Competency: ${qs.competency} (Score: ${qs.score}/5): ${qs.justification}`).join('\n')
+      : '- Candidate performed solidly across baseline questions. Probe advanced architecture, scalability tradeoffs, and edge case resilience.';
+
+    const followUpPrompt = `
+You are a Senior Technical Hiring Lead.
+Candidate evaluation:
+${weakContext}
+
+Based on the candidate's answers and weak spots or gaps identified above, generate exactly 2 to 3 practical, deep-dive technical follow-up questions for the human interviewer in Round 2.
+Return JSON ONLY:
+{
+  "follow_up_recommendations": [
+    "Technical question 1...",
+    "Technical question 2...",
+    "Technical question 3..."
+  ]
+}
+`.trim();
+
+    const followUpRes = await ai.models.generateContent({
+      model: SCORING_MODEL,
+      contents: followUpPrompt,
+      config: { responseMimeType: 'application/json' },
+    });
+
+    const parsedFollowUp = JSON.parse(cleanJson(followUpRes.text || '{}'));
+    if (Array.isArray(parsedFollowUp.follow_up_recommendations) && parsedFollowUp.follow_up_recommendations.length > 0) {
+      followUpRecommendations = parsedFollowUp.follow_up_recommendations.slice(0, 3);
+    }
+  } catch (err) {
+    console.warn('[scorer] Follow-up questions generation fallback:', err);
+  }
+
+  if (followUpRecommendations.length === 0) {
+    followUpRecommendations = [
+      'Can you walk through how you would architect this system for high availability and handle cascading service failures?',
+      'What was the most challenging performance bottleneck in your previous production system, and how did you profile and resolve it?',
+      'How would you handle eventual consistency and schema migrations in high-throughput data pipelines?',
+    ];
+  }
+
+  const enrichedFluencyBreakdown = {
+    ...fluencyBreakdown,
+    follow_up_recommendations: followUpRecommendations,
+  };
+
   // 7. Persist to interview_reports
   const reportPayload = {
     session_id: sessionId,
@@ -344,7 +416,7 @@ Return JSON ONLY:
     clarity_subscore: claritySubscore,
     fluency_score: finalFluencyScore,
     fluency_cefr: fluencyCefr,
-    fluency_breakdown: fluencyBreakdown,
+    fluency_breakdown: enrichedFluencyBreakdown,
     local_metrics: localFluencyResult,
     competency_scores: questionScores,
     recommendation,

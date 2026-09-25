@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import {
   KeyRound,
@@ -49,12 +49,13 @@ export default function InterviewEntryPage() {
   const interviewId = params?.id as string;
 
   const [stage, setStage] = useState<Stage>('passcode');
-  // Keep stageRef in sync with every stage transition so worker callbacks
-  // always read the current stage without closure staleness.
-  const setStageWithRef = (next: Stage) => {
+  // Always reflects the latest stage so worker callbacks never
+  // capture a stale value from their closure.
+  const stageRef = useRef<Stage>(stage);
+  const setStageWithRef = useCallback((next: Stage) => {
     stageRef.current = next;
     setStage(next);
-  };
+  }, []);
 
   const [accessCode, setAccessCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -74,6 +75,7 @@ export default function InterviewEntryPage() {
   const [faceTrackingStatus, setFaceTrackingStatus] = useState<'loading' | 'tracking' | 'error'>('loading');
   const [faceTrackingError, setFaceTrackingError] = useState<string | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [isMouthMoving, setIsMouthMoving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const supabase = createClient();
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -133,16 +135,188 @@ export default function InterviewEntryPage() {
     useAnswerRecorder(interviewId, cameraStream);
   const [finalAnswerSubmitted, setFinalAnswerSubmitted] = useState(false);
 
+
+
+  const [currentSpokenText, setCurrentSpokenText] = useState('');
+  const [questionRemainingSec, setQuestionRemainingSec] = useState(0);
+  const questionRemainingSecRef = useRef(0);
+  // Prevents double-firing goToQuestion (e.g. timer + button click at the same time).
+  const goingToNextRef = useRef(false);
+
+  const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
+    if (line.isFinal) {
+      setCurrentSpokenText((prev) => (prev ? `${prev} ${line.text}` : line.text));
+    }
+  }, []);
+
+  const { interimText, startTurn, completeTurn } = useRealtimeTranscript({
+    interviewId,
+    currentQuestionOrd: currentQuestion + 1,
+    isCandidateTurn: stage === 'interview' && !isAdmin,
+    onTranscriptLine: handleTranscriptLine,
+  });
+
+  // Only the candidate is recorded — never the admin interviewer's side of the call.
+  const recordingQuestionId =
+    stage === 'interview' && !isAdmin ? questions[currentQuestion]?.id : undefined;
+
+  useEffect(() => {
+    if (!recordingQuestionId) return;
+    startRecording(recordingQuestionId);
+    startTurn();
+    return () => cancelRecording();
+  }, [recordingQuestionId, startRecording, cancelRecording, startTurn]);
+
+  // Sync question timer on current question or stage change.
+  // Using setTimeout to defer setState avoids the react-hooks/set-state-in-effect lint rule;
+  // the ref is updated synchronously so the interval always reads the right value.
+  useEffect(() => {
+    if (stage === 'interview' && questions[currentQuestion]) {
+      const qSec = questions[currentQuestion].time_limit_sec || 120;
+      questionRemainingSecRef.current = qSec;
+      window.setTimeout(() => setQuestionRemainingSec(qSec), 0);
+    }
+  }, [currentQuestion, stage, questions]);
+
+  const goToQuestion = (nextIndex: number) => {
+    if (goingToNextRef.current) return;
+    goingToNextRef.current = true;
+
+    // Advance the UI immediately — do NOT await slow async operations here.
+    const hadAnswer = currentSpokenText.trim().length > 0 || (interimText && interimText.trim().length > 0);
+
+    setFinalAnswerSubmitted(false);
+    setCurrentSpokenText('');
+    setCurrentQuestion(nextIndex);
+
+    // Fire-and-forget: persist metrics + upload audio in the background.
+    // If the candidate gave no answer, cancel recording to avoid uploading silent audio.
+    if (hadAnswer) {
+      void completeTurn().catch((err) =>
+        console.warn('[interview] completeTurn error:', err)
+      );
+      void stopAndUpload().catch((err) =>
+        console.warn('[interview] stopAndUpload error:', err)
+      );
+    } else {
+      cancelRecording();
+      void completeTurn().catch((err) =>
+        console.warn('[interview] completeTurn error:', err)
+      );
+    }
+
+    // Reset guard after the state update has propagated.
+    window.setTimeout(() => {
+      goingToNextRef.current = false;
+    }, 500);
+  };
+
+  const submitFinalAnswer = async () => {
+    const hadAnswer = currentSpokenText.trim().length > 0 || (interimText && interimText.trim().length > 0);
+    if (hadAnswer) {
+      await completeTurn();
+      await stopAndUpload();
+    } else {
+      cancelRecording();
+      await completeTurn();
+    }
+    setFinalAnswerSubmitted(true);
+    // Trigger scoring pass on complete
+    fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch((err) => {
+      console.warn('[interview] Scoring trigger error:', err);
+    });
+  };
+
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const durationSecondsRef = useRef(0);
+  const terminatedRef = useRef(false);
+  const completedRef = useRef(false);
+  const terminatingRef = useRef(false);
+  const faceWorkerRef = useRef<Worker | null>(null);
+  const objectWorkerRef = useRef<Worker | null>(null);
+  const voiceDetectorRef = useRef<VoiceDetector | null>(null);
+  const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
+  const baselineRef = useRef<CandidateBaseline | null>(null);
+  const missingFramesRef = useRef<Map<string, number>>(new Map());
+
+  const stopAllMedia = useCallback(() => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    screenStreamRef.current = null;
+    setCameraStream(null);
+  }, []);
+
+  const notifyTermination = useCallback((reason: string) => {
+    const counts = proctorTrackerRef.current.getWarningCounts();
+    const payload = JSON.stringify({
+      interviewId,
+      reason,
+      warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+    });
+    if (navigator.sendBeacon) {
+      const sent = navigator.sendBeacon(
+        '/api/interview/terminate',
+        new Blob([payload], { type: 'application/json' }),
+      );
+      if (sent) return;
+    }
+    fetch('/api/interview/terminate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: true,
+    }).catch((err) => console.error('[interview-entry] terminate notify failed:', err));
+  }, [interviewId]);
+
+  const terminateInterview = useCallback((reason: string) => {
+    if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
+    terminatedRef.current = true;
+    stopAllMedia();
+    notifyTermination(reason);
+    setTerminationReason(reason);
+    setStageWithRef('terminated');
+  }, [notifyTermination, stopAllMedia, setStageWithRef]);
+
+  const captureEvidenceSnapshot = useCallback(async (category: string) => {
+    if (!cameraVideoRef.current) return;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = cameraVideoRef.current.videoWidth || 640;
+      canvas.height = cameraVideoRef.current.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(cameraVideoRef.current, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const formData = new FormData();
+        formData.append('interviewId', interviewId);
+        formData.append('category', category);
+        formData.append('file', blob, 'snapshot.jpg');
+        await fetch('/api/interview/snapshots', {
+          method: 'POST',
+          body: formData,
+        }).catch((err) => console.warn('[snapshot] upload failed:', err));
+      }, 'image/jpeg', 0.8);
+    } catch (err) {
+      console.warn('[snapshot] capture exception:', err);
+    }
+  }, [interviewId]);
+
   // ── Real-time Speech-to-Text & Audio Voice Guard ──
-  const handleUnauthorizedVoice = (info: { reason: string; confidence: number }) => {
-    // eslint-disable-next-line react-hooks/purity -- Date.now() is called inside an event handler, not during render.
+  const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number }) => {
+    if (stageRef.current !== 'interview' || terminatingRef.current) return;
     const nowMs = Date.now();
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
-      'voice',
       'unauthorized_voice',
-      'Unauthorized secondary or external AI voice detected.',
-      1000,
-      nowMs
+      'voice',
+      info.reason,
+      0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
+      4000,
+      nowMs,
     );
 
     if (trackerStatus.shouldTriggerWarning) {
@@ -173,13 +347,14 @@ export default function InterviewEntryPage() {
         }, 3000);
       }
     }
-  };
+  }, [interviewId, captureEvidenceSnapshot, terminateInterview]);
 
   useAudioVoiceGuard({
     interviewId,
     stream: cameraStream,
     isAiSpeaking: false,
     isCandidateTurn: stage === 'interview' && !isAdmin,
+    isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     takeSnapshot: async () => {
       await captureEvidenceSnapshot('unauthorized_voice');
@@ -187,167 +362,11 @@ export default function InterviewEntryPage() {
     },
   });
 
-  const [currentSpokenText, setCurrentSpokenText] = useState('');
-  const [questionRemainingSec, setQuestionRemainingSec] = useState(0);
-  const questionRemainingSecRef = useRef(0);
-  // Prevents double-firing goToQuestion (e.g. timer + button click at the same time).
-  const goingToNextRef = useRef(false);
-
-  const { interimText, startTurn, completeTurn } = useRealtimeTranscript({
-    interviewId,
-    currentQuestionOrd: currentQuestion + 1,
-    isCandidateTurn: stage === 'interview' && !isAdmin,
-    onTranscriptLine: (line) => {
-      if (line.isFinal) {
-        setCurrentSpokenText((prev) => (prev ? `${prev} ${line.text}` : line.text));
-      }
-    },
-  });
-
-  // Only the candidate is recorded — never the admin interviewer's side of the call.
-  const recordingQuestionId =
-    stage === 'interview' && !isAdmin ? questions[currentQuestion]?.id : undefined;
-
-  useEffect(() => {
-    if (!recordingQuestionId) return;
-    startRecording(recordingQuestionId);
-    startTurn();
-    return () => cancelRecording();
-  }, [recordingQuestionId, startRecording, cancelRecording, startTurn]);
-
-  // Sync question timer on current question or stage change.
-  // Using setTimeout to defer setState avoids the react-hooks/set-state-in-effect lint rule;
-  // the ref is updated synchronously so the interval always reads the right value.
-  useEffect(() => {
-    if (stage === 'interview' && questions[currentQuestion]) {
-      const qSec = questions[currentQuestion].time_limit_sec || 120;
-      questionRemainingSecRef.current = qSec;
-      window.setTimeout(() => setQuestionRemainingSec(qSec), 0);
-    }
-  }, [currentQuestion, stage, questions]);
-
-  const goToQuestion = (nextIndex: number) => {
-    if (goingToNextRef.current) return;
-    goingToNextRef.current = true;
-
-    // Advance the UI immediately — do NOT await slow async operations here.
-    setFinalAnswerSubmitted(false);
-    setCurrentSpokenText('');
-    setCurrentQuestion(nextIndex);
-
-    // Fire-and-forget: persist metrics + upload audio in the background.
-    // The MediaRecorder is stopped now so no audio is lost; the upload just
-    // completes after the UI has already moved on.
-    void completeTurn().catch((err) =>
-      console.warn('[interview] completeTurn error:', err)
-    );
-    void stopAndUpload().catch((err) =>
-      console.warn('[interview] stopAndUpload error:', err)
-    );
-
-    // Reset guard after the state update has propagated.
-    window.setTimeout(() => {
-      goingToNextRef.current = false;
-    }, 500);
-  };
-
-  const submitFinalAnswer = async () => {
-    await completeTurn();
-    await stopAndUpload();
-    setFinalAnswerSubmitted(true);
-    // Trigger scoring pass on complete
-    fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch((err) => {
-      console.warn('[interview] Scoring trigger error:', err);
-    });
-  };
-
-  const cameraStreamRef = useRef<MediaStream | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
-  const durationSecondsRef = useRef(0);
-  const terminatedRef = useRef(false);
-  const completedRef = useRef(false);
-  const terminatingRef = useRef(false);
-  const faceWorkerRef = useRef<Worker | null>(null);
-  const objectWorkerRef = useRef<Worker | null>(null);
-  const voiceDetectorRef = useRef<VoiceDetector | null>(null);
-  const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
-  const baselineRef = useRef<CandidateBaseline | null>(null);
-  const missingFramesRef = useRef<Map<string, number>>(new Map());
-  // Always reflects the latest stage so worker message handlers never
-  // capture a stale value from their closure.
-  const stageRef = useRef<Stage>(stage);
-
-  const stopAllMedia = () => {
-    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
-    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
-    cameraStreamRef.current = null;
-    screenStreamRef.current = null;
-    setCameraStream(null);
-  };
-
-  const notifyTermination = (reason: string) => {
-    const counts = proctorTrackerRef.current.getWarningCounts();
-    const payload = JSON.stringify({
-      interviewId,
-      reason,
-      warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
-    });
-    if (navigator.sendBeacon) {
-      const sent = navigator.sendBeacon(
-        '/api/interview/terminate',
-        new Blob([payload], { type: 'application/json' }),
-      );
-      if (sent) return;
-    }
-    fetch('/api/interview/terminate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload,
-      keepalive: true,
-    }).catch((err) => console.error('[interview-entry] terminate notify failed:', err));
-  };
-
-  const terminateInterview = (reason: string) => {
-    if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
-    terminatedRef.current = true;
-    stopAllMedia();
-    notifyTermination(reason);
-    setTerminationReason(reason);
-    setStageWithRef('terminated');
-  };
-
-  const captureEvidenceSnapshot = async (category: string) => {
-    if (!cameraVideoRef.current) return;
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = cameraVideoRef.current.videoWidth || 640;
-      canvas.height = cameraVideoRef.current.videoHeight || 480;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(cameraVideoRef.current, 0, 0, canvas.width, canvas.height);
-
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const formData = new FormData();
-        formData.append('interviewId', interviewId);
-        formData.append('category', category);
-        formData.append('file', blob, 'snapshot.jpg');
-        await fetch('/api/interview/snapshots', {
-          method: 'POST',
-          body: formData,
-        }).catch((err) => console.warn('[snapshot] upload failed:', err));
-      }, 'image/jpeg', 0.8);
-    } catch (err) {
-      console.warn('[snapshot] capture exception:', err);
-    }
-  };
-
   useEffect(() => {
     return () => {
       stopAllMedia();
     };
-  }, []);
+  }, [stopAllMedia]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -463,7 +482,7 @@ export default function InterviewEntryPage() {
       setStageWithRef('calibration');
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [stage, isAdmin]);
+  }, [stage, isAdmin, setStageWithRef]);
 
   const handleToggleMic = () => {
     const audioTracks = cameraStreamRef.current?.getAudioTracks() ?? [];
@@ -605,7 +624,7 @@ export default function InterviewEntryPage() {
       worker.terminate();
       faceWorkerRef.current = null;
     };
-  }, [stage]);
+  }, [stage, setStageWithRef]);
 
   // ─── Effect B: Interview proctoring face worker ───────────────────────────
   // Runs only during the 'interview' stage. Loads the face model, immediately
@@ -647,9 +666,10 @@ export default function InterviewEntryPage() {
       if (msg.type === 'result') {
         const hasFace = Boolean(msg.facePresent);
         setFaceDetected(hasFace);
+        setIsMouthMoving(Boolean(msg.mouthMoving));
 
         // stageRef always reflects current stage — no stale closure possible.
-        if (stageRef.current !== 'interview') return;
+        if (stageRef.current !== 'interview' || terminatingRef.current) return;
 
         // ── Proctoring time tracker: debounces & counts violations ──
         const trackerStatus = proctorTrackerRef.current.processResult(msg, Date.now());
@@ -747,7 +767,7 @@ export default function InterviewEntryPage() {
 
       // ── Model ready: start sending frames NOW (not before) ──
       if (msg.type === 'ready') {
-        console.log('%c[ObjectDetection] ✅ Worker model is READY. Starting camera frame capture loop (350ms)...', 'color: #10b981; font-weight: bold;');
+        console.log('%c[ObjectDetection] ✅ Worker model is READY. Starting camera frame capture loop (250ms)...', 'color: #10b981; font-weight: bold;');
         frameTimerRef = window.setInterval(() => {
           const video = cameraVideoRef.current;
           if (!video) {
@@ -760,18 +780,18 @@ export default function InterviewEntryPage() {
             .then((bitmap) => {
               frameCount += 1;
               if (frameCount % 10 === 1) {
-                console.log(`[ObjectDetection] Captured frame #${frameCount} (${video.videoWidth}x${video.videoHeight}), running inference...`);
+                console.log(`[ObjectDetection] Captured frame #${frameCount} (${bitmap.width}x${bitmap.height}), running inference...`);
               }
               worker.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
             })
             .catch((err) => {
               console.warn('[ObjectDetection] Frame capture error:', err);
             });
-        }, 350); // 350ms — real-time responsive object detection
+        }, 250); // 250ms — real-time responsive object detection
         return;
       }
 
-      if (msg.type !== 'result' || !msg.detections) return;
+      if (msg.type !== 'result' || !msg.detections || terminatingRef.current) return;
 
       // ── Log raw detections for debugging ──
       if (msg.detections.length > 0) {
@@ -874,70 +894,12 @@ export default function InterviewEntryPage() {
     };
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- worker uses stable refs
 
-  // ─── Background Voice Detection ───────────────────────────────────────────
-  useEffect(() => {
-    if (stage !== 'interview') return;
-    const stream = cameraStreamRef.current;
-    if (!stream) return;
-
-    const detector = new VoiceDetector({
-      noiseThreshold: 0.04,
-      sustainedMs: 3000,
-      debounceMs: 20000,
-      onBackgroundVoice: ({ duration_ms, rms_level }) => {
-        const trackerStatus = proctorTrackerRef.current.processGenericEvent(
-          'background_voice',
-          'voice',
-          'Background voice or noise detected. Ensure you are in a quiet environment.',
-          0, // threshold already handled by VoiceDetector internally
-          20000,
-        );
-
-        if (trackerStatus.shouldTriggerWarning) {
-          setWarningToast({
-            show: true,
-            count: trackerStatus.warningCount,
-            reason: 'Background voice or noise detected. Ensure you are in a quiet environment.',
-          });
-
-          fetch('/api/interview/events', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              interviewId,
-              category: 'background_voice',
-              severity: 'warning',
-              meta: { duration_ms, rms_level, warningCount: trackerStatus.warningCount },
-            }),
-          }).catch((err) => console.warn('[voice-event] fetch failed:', err));
-
-          if (trackerStatus.warningCount >= 3) {
-            if (!terminatingRef.current) {
-              terminatingRef.current = true;
-              setTimeout(() => {
-                terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
-              }, 3000);
-            }
-          }
-        }
-      },
-    });
-
-    detector.start(stream);
-    voiceDetectorRef.current = detector;
-
-    return () => {
-      detector.stop();
-      voiceDetectorRef.current = null;
-    };
-  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- uses stable refs
-
-  // ── Auto-dismiss warning toast after 4 seconds ──
+  // ── Auto-dismiss warning toast after 5 seconds ──
   useEffect(() => {
     if (!warningToast.show) return;
     const timer = window.setTimeout(() => {
       setWarningToast((prev) => ({ ...prev, show: false }));
-    }, 4000);
+    }, 5000);
     return () => window.clearTimeout(timer);
   }, [warningToast.show, warningToast.count]);
 

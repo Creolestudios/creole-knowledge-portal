@@ -21,7 +21,8 @@ export async function POST(
   const body = await req.json().catch(() => null);
 
   const category = body?.category as string | undefined;
-  const severity = (body?.severity as string) || 'info';
+  const rawSeverity = (body?.severity as string) || 'warning';
+  const severity = rawSeverity === 'error' ? 'warning' : rawSeverity;
   const confidence = typeof body?.confidence === 'number' ? body.confidence : 1.0;
   const snapshotPath = body?.snapshotPath as string | undefined;
   const meta = body?.meta || {};

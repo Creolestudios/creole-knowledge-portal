@@ -7,6 +7,7 @@ export interface VoiceGuardOptions {
   stream: MediaStream | null;
   isAiSpeaking: boolean;
   isCandidateTurn: boolean;
+  isCandidateMouthMoving?: boolean;
   onUnauthorizedVoiceDetected: (info: { reason: string; confidence: number }) => void;
   takeSnapshot?: () => Promise<string | null>;
 }
@@ -24,6 +25,7 @@ export function useAudioVoiceGuard({
   stream,
   isAiSpeaking,
   isCandidateTurn,
+  isCandidateMouthMoving,
   onUnauthorizedVoiceDetected,
   takeSnapshot,
 }: VoiceGuardOptions) {
@@ -33,8 +35,10 @@ export function useAudioVoiceGuard({
   const animFrameRef = useRef<number | null>(null);
 
   const lastWarningTimeRef = useRef<number>(0);
+  const actualSpeakerEnergyRef = useRef<number>(45);
   const isAiSpeakingRef = useRef<boolean>(isAiSpeaking);
   const isCandidateTurnRef = useRef<boolean>(isCandidateTurn);
+  const isCandidateMouthMovingRef = useRef<boolean>(isCandidateMouthMoving ?? false);
 
   useEffect(() => {
     isAiSpeakingRef.current = isAiSpeaking;
@@ -44,11 +48,15 @@ export function useAudioVoiceGuard({
     isCandidateTurnRef.current = isCandidateTurn;
   }, [isCandidateTurn]);
 
+  useEffect(() => {
+    isCandidateMouthMovingRef.current = isCandidateMouthMoving ?? false;
+  }, [isCandidateMouthMoving]);
+
   const triggerVoiceWarning = useCallback(
     async (reason: string, confidence: number) => {
       const now = Date.now();
-      // Debounce voice warnings: max 1 per 7 seconds
-      if (now - lastWarningTimeRef.current < 7000) return;
+      // Debounce voice warnings: max 1 per 6 seconds
+      if (now - lastWarningTimeRef.current < 6000) return;
       lastWarningTimeRef.current = now;
 
       onUnauthorizedVoiceDetected({ reason, confidence });
@@ -93,6 +101,16 @@ export function useAudioVoiceGuard({
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      const resumeAudio = () => {
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+      };
+      window.addEventListener('click', resumeAudio, { once: true });
+
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.8;
@@ -160,37 +178,58 @@ export function useAudioVoiceGuard({
           consecutiveSuspiciousFrames = 0;
           consecutiveAiFrames = 0;
         } else if (isCandidateTurnRef.current) {
-          // 2. AI / Synthetic voice detection:
-          // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 2.8) while speech energy is active (> 50)
-          if (avgSpeechEnergy > 50 && avgFlux < 2.8 && frameCount > 30) {
+          // Track actual candidate speech level when candidate mouth is moving and speaking
+          if (isCandidateMouthMovingRef.current && avgSpeechEnergy > 20) {
+            actualSpeakerEnergyRef.current = actualSpeakerEnergyRef.current * 0.92 + avgSpeechEnergy * 0.08;
+            if (actualSpeakerEnergyRef.current < 35) {
+              actualSpeakerEnergyRef.current = 35;
+            }
+          }
+
+          const actualSpeakerLevel = actualSpeakerEnergyRef.current;
+
+          // 2. AI / Synthetic voice detection during interview:
+          // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 2.0) while speech energy is active (> 35)
+          const isAiVoice = avgSpeechEnergy > 35 && avgFlux < 2.0 && frameCount > 25;
+          if (isAiVoice) {
             consecutiveAiFrames++;
-            if (consecutiveAiFrames > 35) { // ~1 second of sustained robotic/synthetic voice
+            if (consecutiveAiFrames > 25) {
               consecutiveAiFrames = 0;
               const confidence = Math.min(0.95, 0.75 + (avgSpeechEnergy / 255) * 0.2);
-              triggerVoiceWarning('AI or synthetic voice detected. Only natural candidate voice is allowed.', confidence);
+              triggerVoiceWarning('AI voice detected during interview. Only natural candidate voice is allowed.', confidence);
             }
           } else {
             consecutiveAiFrames = Math.max(0, consecutiveAiFrames - 1);
           }
 
-          // 3. Secondary human voice detection:
-          // Multiple non-harmonic energy peaks (two distinct voices talking simultaneously)
-          const isDualSpeaker =
-            secondaryPeakEnergy > 60 &&
-            peakEnergy > 75 &&
-            Math.abs(peakBin - secondaryPeakBin) > 3 &&
-            peakBin % secondaryPeakBin !== 0 &&
-            secondaryPeakBin % peakBin !== 0;
+          // 3. Background Voice Detection:
+          // Only show warning if the background voice is HIGHER than the actual speaker.
+          // Lower background voices (whispers, ambient murmur, quiet background chatter) are ignored.
+          const isBackgroundVoiceWhileSilent =
+            !isCandidateMouthMovingRef.current &&
+            avgSpeechEnergy > actualSpeakerLevel &&
+            peakEnergy > actualSpeakerLevel * 1.15 &&
+            avgFlux > 1.2;
 
-          if (isDualSpeaker || avgSpeechEnergy > 68) {
+          // Dual speaker: Overlapping voice only triggers if secondary voice is higher than speaker
+          const isDualSpeakerLouder =
+            isCandidateMouthMovingRef.current &&
+            Math.abs(peakBin - secondaryPeakBin) >= 2 &&
+            secondaryPeakEnergy > actualSpeakerLevel * 1.1 &&
+            secondaryPeakEnergy >= peakEnergy * 0.9 &&
+            avgFlux > 1.2;
+
+          const isBgVoiceHigherThanSpeaker = !isAiVoice && (isBackgroundVoiceWhileSilent || isDualSpeakerLouder);
+
+          if (isBgVoiceHigherThanSpeaker) {
             consecutiveSuspiciousFrames++;
-            // If sustained for ~1.2 seconds (~36 frames)
-            if (consecutiveSuspiciousFrames > 36) {
+            // If sustained for >= 12 frames (~200ms of active louder speech)
+            if (consecutiveSuspiciousFrames >= 12) {
               consecutiveSuspiciousFrames = 0;
-              const confidence = Math.min(0.95, 0.72 + (avgSpeechEnergy / 255) * 0.23);
-              const reason = isDualSpeaker
-                ? 'Multiple distinct voices detected in room.'
-                : 'Unauthorized background or secondary voice detected.';
+              const confidence = Math.min(0.95, 0.75 + (avgSpeechEnergy / 255) * 0.2);
+              const reason = isDualSpeakerLouder
+                ? 'Background voice louder than speaker detected.'
+                : 'Background voice louder than candidate detected.';
               triggerVoiceWarning(reason, confidence);
             }
           } else {

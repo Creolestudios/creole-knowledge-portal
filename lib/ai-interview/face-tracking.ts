@@ -27,6 +27,7 @@ export type ExtendedFaceTrackingResult = FaceTrackingResult & {
   numFaces: number;
   multiFaceDetected: boolean;
   readingSuspected: boolean;
+  mouthMoving: boolean;
   relativeYaw: number;
   relativePitch: number;
   irisRatioOffset: number;
@@ -127,6 +128,7 @@ export function analyzeFaceMetrics(
       ? Math.hypot(leftEye.x - rightEye.x, leftEye.y - rightEye.y)
       : 0;
 
+  const completeSideGaze = Math.max(lookLeft, lookRight);
   const sideGaze = Math.max(lookLeft, lookRight, lookUp);
   const irisRatios = computeIrisRatio(landmarks);
 
@@ -139,20 +141,22 @@ export function analyzeFaceMetrics(
     irisRatioOffset = (leftDiffX + leftDiffY + rightDiffX + rightDiffY) / 4;
   }
 
-  const lookingAway = facePresent && (sideGaze > 0.65 || eyeDistance < 0.12 || irisRatioOffset > 0.35);
+  // Only trigger lookingAway when candidate completely shifts gaze left or right away from screen (or up)
+  // Reading questions on-screen naturally produces modest horizontal movements (0.2-0.45), so we use a high threshold (0.68)
+  const lookingAway = facePresent && (completeSideGaze > 0.68 || lookUp > 0.68 || eyeDistance < 0.08 || irisRatioOffset > 0.35);
 
   const { yaw, pitch } = getHeadYaw(matrix ?? []);
   const relativeYaw = baseline ? yaw - baseline.yaw : yaw;
   const relativePitch = baseline ? pitch - baseline.pitch : pitch;
 
-  const headTurnedAway = facePresent && (Math.abs(relativeYaw) > 25 || Math.abs(relativePitch) > 20);
+  const headTurnedAway = facePresent && (Math.abs(relativeYaw) > 25 || Math.abs(relativePitch) > 22);
 
-  // Reading suspected: Head is frontal, but eyes point down or side continuously
+  // Reading on screen is expected behavior. Only flag if eyes point completely down off-screen (e.g. lap/desk)
   const readingSuspected =
     facePresent &&
     !headTurnedAway &&
     !lookingAway &&
-    (lookDown > 0.45 || (lookLeft > 0.4 && lookRight > 0.4) || irisRatioOffset > 0.25);
+    lookDown > 0.75;
 
   const eyeConfidence = clamp(
     1 - Math.max(leftBlink, rightBlink, sideGaze, lookDown, eyeDistance < 0.12 ? 0.7 : 0),
@@ -162,6 +166,10 @@ export function analyzeFaceMetrics(
 
   const eyeContactPct = facePresent && !lookingAway && !headTurnedAway && !readingSuspected ? 1 : 0;
   const blinkRate = (leftBlink + rightBlink) / 2;
+
+  const jawOpen = toScore(blendshapes ?? [], ['jawOpen']);
+  const mouthPucker = toScore(blendshapes ?? [], ['mouthPucker', 'mouthFunnel', 'mouthRollLower', 'mouthRollUpper']);
+  const mouthMoving = facePresent && (jawOpen > 0.08 || mouthPucker > 0.12);
 
   const expression: ExpressionMetrics = {
     smileScore,
@@ -181,6 +189,7 @@ export function analyzeFaceMetrics(
       numFaces: 0,
       multiFaceDetected: false,
       readingSuspected: false,
+      mouthMoving: false,
       relativeYaw: 0,
       relativePitch: 0,
       irisRatioOffset: 0,
@@ -200,6 +209,7 @@ export function analyzeFaceMetrics(
       numFaces,
       multiFaceDetected: true,
       readingSuspected: false,
+      mouthMoving,
       relativeYaw,
       relativePitch,
       irisRatioOffset,
@@ -219,6 +229,7 @@ export function analyzeFaceMetrics(
       numFaces: 1,
       multiFaceDetected: false,
       readingSuspected,
+      mouthMoving,
       relativeYaw,
       relativePitch,
       irisRatioOffset,
@@ -238,6 +249,7 @@ export function analyzeFaceMetrics(
       numFaces: 1,
       multiFaceDetected: false,
       readingSuspected: true,
+      mouthMoving,
       relativeYaw,
       relativePitch,
       irisRatioOffset,
@@ -256,6 +268,7 @@ export function analyzeFaceMetrics(
     numFaces: 1,
     multiFaceDetected: false,
     readingSuspected: false,
+    mouthMoving,
     relativeYaw,
     relativePitch,
     irisRatioOffset,
@@ -274,13 +287,14 @@ export interface WarningCounts {
 export class ProctoringTimeTracker {
   private categoryStartTime: Map<string, number> = new Map();
   private lastWarningTime: Map<string, number> = new Map();
+  private noneFrameCount = 0;
   private faceWarningCount = 0;
   private objectWarningCount = 0;
   private voiceWarningCount = 0;
 
-  /** Backward-compatible getter — total across all three types */
+  /** Backward-compatible getter — total across all three types (capped strictly at 3) */
   public get warningCount(): number {
-    return this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount;
+    return Math.min(3, this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount);
   }
 
   /** Returns individual counts per warning type */
@@ -289,7 +303,7 @@ export class ProctoringTimeTracker {
       face: this.faceWarningCount,
       object: this.objectWarningCount,
       voice: this.voiceWarningCount,
-      total: this.warningCount,
+      total: Math.min(3, this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount),
     };
   }
 
@@ -297,10 +311,10 @@ export class ProctoringTimeTracker {
     result: ExtendedFaceTrackingResult,
     nowMs: number = Date.now(),
     options: {
-      gazeAwayThresholdMs?: number; // default 2000ms
-      readingThresholdMs?: number; // default 2000ms
-      noFaceThresholdMs?: number; // default 3000ms
-      multiFaceThresholdMs?: number; // default 2000ms
+      gazeAwayThresholdMs?: number; // default 1200ms
+      readingThresholdMs?: number; // default 1200ms
+      noFaceThresholdMs?: number; // default 1000ms
+      multiFaceThresholdMs?: number; // default 1500ms
       debounceMs?: number; // default 5000ms
     } = {},
   ): {
@@ -309,10 +323,14 @@ export class ProctoringTimeTracker {
     warningCount: number;
     reason: string;
   } {
+    if (this.warningCount >= 3) {
+      return { shouldTriggerWarning: false, category: 'none', warningCount: 3, reason: '' };
+    }
+
     const {
-      gazeAwayThresholdMs = 2000,
-      readingThresholdMs = 2000,
-      noFaceThresholdMs = 3000,
+      gazeAwayThresholdMs = 3000,
+      readingThresholdMs = 4500,
+      noFaceThresholdMs = 1500,
       multiFaceThresholdMs = 2000,
       debounceMs = 5000,
     } = options;
@@ -320,12 +338,16 @@ export class ProctoringTimeTracker {
     const currentCategory = result.category;
 
     if (currentCategory === 'none') {
-      this.categoryStartTime.clear();
+      this.noneFrameCount += 1;
+      if (this.noneFrameCount >= 2) {
+        this.categoryStartTime.clear();
+      }
       return { shouldTriggerWarning: false, category: 'none', warningCount: this.warningCount, reason: '' };
     }
+    this.noneFrameCount = 0;
 
     // Determine required threshold
-    let requiredMs = 2000;
+    let requiredMs = 1200;
     if (currentCategory === 'no_face') requiredMs = noFaceThresholdMs;
     else if (currentCategory === 'multi_face') requiredMs = multiFaceThresholdMs;
     else if (currentCategory === 'gaze_away') requiredMs = gazeAwayThresholdMs;
@@ -342,6 +364,9 @@ export class ProctoringTimeTracker {
       const timeSinceLast = lastTrigger === undefined ? Infinity : nowMs - lastTrigger;
 
       if (timeSinceLast >= debounceMs) {
+        if (this.warningCount >= 3) {
+          return { shouldTriggerWarning: false, category: currentCategory, warningCount: 3, reason: '' };
+        }
         this.lastWarningTime.set(currentCategory, nowMs);
         this.faceWarningCount += 1;
 
@@ -367,6 +392,7 @@ export class ProctoringTimeTracker {
    *
    * Object and voice warnings are counted in the SAME warningCount as face events.
    * There is no separate counter — all proctoring alerts share one unified count.
+   * Max warnings is strictly 3.
    *
    * @param category  e.g. 'object_detected' | 'background_voice'
    * @param subKey    differentiates objects within a category (e.g. 'phone', 'book')
@@ -388,6 +414,10 @@ export class ProctoringTimeTracker {
     warningCount: number;
     reason: string;
   } {
+    if (this.warningCount >= 3) {
+      return { shouldTriggerWarning: false, category, warningCount: 3, reason: '' };
+    }
+
     const key = `${category}:${subKey}`;
 
     if (!this.categoryStartTime.has(key)) {
@@ -401,12 +431,15 @@ export class ProctoringTimeTracker {
       const timeSinceLast = lastTrigger === undefined ? Infinity : nowMs - lastTrigger;
 
       if (timeSinceLast >= debounceMs) {
+        if (this.warningCount >= 3) {
+          return { shouldTriggerWarning: false, category, warningCount: 3, reason: '' };
+        }
         this.lastWarningTime.set(key, nowMs);
         this.categoryStartTime.delete(key); // reset after trigger
         // Route increment to the correct per-type counter
         if (category === 'object_detected') {
           this.objectWarningCount += 1;
-        } else if (category === 'background_voice') {
+        } else if (category === 'background_voice' || category === 'unauthorized_voice') {
           this.voiceWarningCount += 1;
         } else {
           this.faceWarningCount += 1;
