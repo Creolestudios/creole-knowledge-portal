@@ -137,20 +137,26 @@ Analyzes camera frames using a TensorFlow.js background worker:
 
 ### C. Real-Time Audio & Voice Guard (`useAudioVoiceGuard`)
 Continuous acoustic frequency analysis using Web Audio API across the speech band (300 Hz – 3,400 Hz):
-1. **AI / Synthetic Voice Detection**:
-   - TTS generators and AI voice changers produce unnaturally flat spectral flux ($< 2.0$) while speech energy is active ($> 35$).
-   - Triggers when sustained for **~400 ms (25 frames)**.
+1. **Speech Matching via Lip/Facial Movement & Audio Activity**:
+   - Compares speech band energy ($300\text{ Hz} - 3400\text{ Hz}$) with candidate facial movement (`isCandidateMouthMoving`).
+   - **Case (1) User speaking while another voice is present (Dual Speaker)**:
+     - Detects distinct secondary formant peaks ($\Delta\text{bin} \ge 3$) with significant energy while candidate speaks.
+     - *Reason*: `"Background voice louder than speaker detected."` or `"Secondary voice detected while speaking."`
+   - **Case (2) User silent but speech detected**:
+     - Candidate's lips are stationary while active speech energy ($\ge 38$) is present.
+     - *Reason*: `"Background voice detected while candidate was silent."` or `"Background voice louder than candidate detected."`
+2. **AI / Synthetic Voice Detection**:
+   - Detects unnaturally flat spectral flux ($< 2.0$) with sustained speech energy ($> 50$).
    - *Reason*: `"AI voice detected during interview. Only natural candidate voice is allowed."`
-2. **Louder Background Voice Detection**:
-   - Tracks candidate's actual speaking baseline level while candidate mouth is moving.
-   - If a background voice speaks that is **louder than the candidate** ($> \text{speakerLevel} \times 1.15$), it triggers after **~200 ms (12 frames)**.
-   - **Whispers, distant murmurs, and quiet ambient background sounds are ignored**.
-   - *Reason*: `"Background voice louder than candidate detected."`
-3. **Dual Speaker Overlap**:
-   - Detects distinct secondary harmonic peaks while candidate is talking that exceed baseline energy.
-4. **AI Turn Muting**:
-   - Completely silenced while the system / AI interviewer is speaking.
-- **Cooldown**: 4.0-second debounce between voice warnings.
+3. **Music Detection**:
+   - Detects high harmonic tonality ($\text{tonality ratio} \ge 2.8$) across musical frequency bands ($470\text{ Hz} - 6100\text{ Hz}$) sustained across frames.
+   - *Reason*: `"Background music detected."`
+4. **Keyboard Typing Sounds Detection**:
+   - Detects sharp transient attacks in high-frequency band ($2.3\text{ kHz} - 10.3\text{ kHz}$) and clusters $\ge 3$ keystroke impulses in a rolling 1.8-second window.
+   - *Reason*: `"Keyboard typing sounds detected."`
+5. **Noise Filtering & Cooldown**:
+   - Mild environmental noise, quiet room tone, and low-level ambient hiss ($< 35$ energy) are safely ignored.
+   - Cooldown debounce prevents alert spam while AI interviewer prompt muting prevents echo false positives.
 
 ### D. System Watchdog (`useProctoringWatchdog`)
 - Checks hardware and media integrity every 1.5 seconds.

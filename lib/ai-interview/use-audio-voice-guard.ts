@@ -132,15 +132,18 @@ export function useAudioVoiceGuard({
 
       let consecutiveSuspiciousFrames = 0;
       let consecutiveAiFrames = 0;
+      let consecutiveMusicFrames = 0;
+      let prevHighBandEnergy = 0;
+      const recentTypingTimestamps: number[] = [];
       let frameCount = 0;
 
       const checkAudio = () => {
         if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
         frameCount++;
+        const nowMs = Date.now();
 
-        // Calculate average energy in speech frequency band (approx 300Hz - 3400Hz)
-        // With fftSize 512 at 48kHz, each bin is ~93.75Hz. Speech is bins 3 to 36.
+        // Speech band (bins 3 to 36, ~300Hz - 3400Hz)
         let speechEnergySum = 0;
         let peakEnergy = 0;
         let peakBin = 0;
@@ -169,21 +172,44 @@ export function useAudioVoiceGuard({
             secondaryPeakBin = i;
           }
 
-          // Cache for next frame
           prevDataArray[i] = val;
         }
 
         const avgSpeechEnergy = speechEnergySum / (endBin - startBin);
         const avgFlux = spectralFlux / (endBin - startBin);
 
+        // Music frequency band (bins 5 to 65, ~470Hz - 6100Hz)
+        let musicEnergySum = 0;
+        let musicPeakEnergy = 0;
+        const musicStartBin = 5;
+        const musicEndBin = Math.min(65, bufferLength);
+        for (let i = musicStartBin; i < musicEndBin; i++) {
+          const val = dataArray[i];
+          musicEnergySum += val;
+          if (val > musicPeakEnergy) musicPeakEnergy = val;
+        }
+        const avgMusicEnergy = musicEnergySum / (musicEndBin - musicStartBin);
+        const musicTonality = musicPeakEnergy / (avgMusicEnergy + 0.001);
+
+        // Typing / Transient click frequency band (bins 25 to 110, ~2.3kHz - 10.3kHz)
+        let highBandEnergySum = 0;
+        const highStartBin = 25;
+        const highEndBin = Math.min(110, bufferLength);
+        for (let i = highStartBin; i < highEndBin; i++) {
+          highBandEnergySum += dataArray[i];
+        }
+        const highBandEnergy = highBandEnergySum / (highEndBin - highStartBin);
+
         // State check:
-        // 1. If AI system prompt is speaking OR during the 35-second cooldown window after a voice warning,
-        // suppress and freeze frame accumulation so warnings have genuine spacing
-        if (isAiSpeakingRef.current || (lastWarningTimeRef.current > 0 && Date.now() - lastWarningTimeRef.current < 35000)) {
+        // 1. If AI system prompt is speaking OR during the cooldown window after a warning,
+        // suppress frame accumulation
+        if (isAiSpeakingRef.current || (lastWarningTimeRef.current > 0 && nowMs - lastWarningTimeRef.current < 25000)) {
           consecutiveSuspiciousFrames = 0;
           consecutiveAiFrames = 0;
+          consecutiveMusicFrames = 0;
+          recentTypingTimestamps.length = 0;
         } else if (isCandidateTurnRef.current) {
-          // Track actual candidate speech level when candidate mouth is moving and speaking
+          // Track candidate's own speech level when mouth is moving
           if (isCandidateMouthMovingRef.current && avgSpeechEnergy > 20) {
             actualSpeakerEnergyRef.current = actualSpeakerEnergyRef.current * 0.92 + avgSpeechEnergy * 0.08;
             if (actualSpeakerEnergyRef.current < 35) {
@@ -192,10 +218,46 @@ export function useAudioVoiceGuard({
           }
 
           const actualSpeakerLevel = actualSpeakerEnergyRef.current;
+          const isSilent = !isCandidateMouthMovingRef.current;
 
-          // 2. AI / Synthetic voice detection during interview:
+          // Reading grace period for ambient background sounds
+          const isReadingGracePeriod =
+            candidateTurnStartedAtRef.current > 0 &&
+            nowMs - candidateTurnStartedAtRef.current < readingGracePeriodMsRef.current;
+
+          // ── TYPING SOUND DETECTION ─────────────────────────────────────────
+          // Sharp transient attack in high frequency band followed by rapid decay
+          const typingTransientAttack = highBandEnergy - prevHighBandEnergy > 16 && highBandEnergy >= 35;
+          if (typingTransientAttack) {
+            recentTypingTimestamps.push(nowMs);
+            // Retain keystrokes within a 1.8-second rolling window
+            while (recentTypingTimestamps.length > 0 && nowMs - recentTypingTimestamps[0] > 1800) {
+              recentTypingTimestamps.shift();
+            }
+            if (recentTypingTimestamps.length >= 3) {
+              recentTypingTimestamps.length = 0;
+              const confidence = Math.min(0.92, 0.78 + (highBandEnergy / 255) * 0.15);
+              triggerVoiceWarning('Keyboard typing sounds detected.', confidence);
+            }
+          }
+          prevHighBandEnergy = highBandEnergy;
+
+          // ── MUSIC DETECTION ────────────────────────────────────────────────
+          // High harmonic tonality (tonality ratio >= 2.8) and sustained energy
+          const isMusic = avgMusicEnergy >= 38 && musicTonality >= 2.8 && !isReadingGracePeriod;
+          if (isMusic) {
+            consecutiveMusicFrames++;
+            if (consecutiveMusicFrames >= 30) {
+              consecutiveMusicFrames = 0;
+              const confidence = Math.min(0.92, 0.75 + (avgMusicEnergy / 255) * 0.2);
+              triggerVoiceWarning('Background music detected.', confidence);
+            }
+          } else {
+            consecutiveMusicFrames = Math.max(0, consecutiveMusicFrames - 1);
+          }
+
+          // ── AI / SYNTHETIC VOICE DETECTION ─────────────────────────────────
           // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 2.0) while speech energy is active (> 50)
-          // Raised from 35 → 50 to avoid false triggers from quiet background sounds
           const isAiVoice = avgSpeechEnergy > 50 && avgFlux < 2.0 && frameCount > 25;
           if (isAiVoice) {
             consecutiveAiFrames++;
@@ -208,41 +270,43 @@ export function useAudioVoiceGuard({
             consecutiveAiFrames = Math.max(0, consecutiveAiFrames - 1);
           }
 
-          // Reading grace period: allow candidate initial peaceful time to read questions without background voice warnings
-          const isReadingGracePeriod =
-            candidateTurnStartedAtRef.current > 0 &&
-            Date.now() - candidateTurnStartedAtRef.current < readingGracePeriodMsRef.current;
+          // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
+          // Mild environmental noise (< 35 speech energy and < 45 peak) is ignored.
+          const isClearSpeech = avgSpeechEnergy >= 38 && peakEnergy >= 48;
 
-          // Only show warning if the background voice is clearly LOUDER than the candidate.
-          // Thresholds raised to avoid triggering on room noise, fans, distant TV, or quiet ambient speech.
+          // (2) Candidate is NOT speaking (mouth not moving), but speech is active in background
           const isBackgroundVoiceWhileSilent =
             !isReadingGracePeriod &&
-            !isCandidateMouthMovingRef.current &&
-            avgSpeechEnergy > Math.max(65, actualSpeakerLevel) &&
-            peakEnergy > Math.max(78, actualSpeakerLevel * 1.25) &&
-            avgFlux > 2.0;
+            isSilent &&
+            isClearSpeech &&
+            avgFlux >= 2.0;
 
-          // Dual speaker: Overlapping voice only triggers if secondary voice is significantly louder than speaker
-          // Raised coefficient 1.1 → 1.25 to ignore nearby quiet talking or background murmur
-          const isDualSpeakerLouder =
-            isCandidateMouthMovingRef.current &&
+          // (1) Candidate IS speaking (mouth moving), but another voice is present (dual speaker)
+          const isDualSpeakerPresent =
+            !isSilent &&
             Math.abs(peakBin - secondaryPeakBin) >= 3 &&
-            secondaryPeakEnergy > actualSpeakerLevel * 1.25 &&
-            secondaryPeakEnergy >= peakEnergy * 0.9 &&
-            avgFlux > 2.0;
+            secondaryPeakEnergy > Math.min(actualSpeakerLevel * 0.9, 45) &&
+            secondaryPeakEnergy >= peakEnergy * 0.65 &&
+            avgFlux >= 2.0;
 
-          const isBgVoiceHigherThanSpeaker = !isAiVoice && (isBackgroundVoiceWhileSilent || isDualSpeakerLouder);
+          const isBgVoiceDetected = !isAiVoice && !isMusic && (isBackgroundVoiceWhileSilent || isDualSpeakerPresent);
 
-          if (isBgVoiceHigherThanSpeaker) {
+          if (isBgVoiceDetected) {
             consecutiveSuspiciousFrames++;
-            // If sustained for >= 30 frames (~500ms of clearly louder speech before triggering)
-            // Raised from 20 → 30 to avoid false positives from brief noise spikes
+            // Sustained speech frames (~450-500ms before triggering alert)
             if (consecutiveSuspiciousFrames >= 30) {
               consecutiveSuspiciousFrames = 0;
               const confidence = Math.min(0.95, 0.75 + (avgSpeechEnergy / 255) * 0.2);
-              const reason = isDualSpeakerLouder
-                ? 'Background voice louder than speaker detected.'
-                : 'Background voice louder than candidate detected.';
+              let reason: string;
+              if (isDualSpeakerPresent) {
+                reason = secondaryPeakEnergy > actualSpeakerLevel * 1.2
+                  ? 'Background voice louder than speaker detected.'
+                  : 'Secondary voice detected while speaking.';
+              } else {
+                reason = avgSpeechEnergy > actualSpeakerLevel * 1.1
+                  ? 'Background voice louder than candidate detected.'
+                  : 'Background voice detected while candidate was silent.';
+              }
               triggerVoiceWarning(reason, confidence);
             }
           } else {

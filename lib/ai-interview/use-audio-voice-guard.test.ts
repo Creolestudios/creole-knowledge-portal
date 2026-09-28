@@ -194,4 +194,201 @@ describe('useAudioVoiceGuard', () => {
 
     expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
   });
+
+  it('triggers warning when secondary voice is present while user is speaking (dual speaker)', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 40 + ((i * 2 + frame * 3) % 15);
+      }
+      // Primary speaker formant peak
+      arr[10] = 75;
+      // Secondary speaker distinct formant peak (frequency separation >= 3 bins)
+      arr[20] = 80;
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-5',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: true, // User is speaking!
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 55; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: expect.stringMatching(/Background voice louder than speaker detected\.|Secondary voice detected while speaking\./),
+      })
+    );
+  });
+
+  it('triggers warning when user is not speaking but background speech is detected', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 42 + ((i + frame * 4) % 18);
+      }
+      arr[12] = 60;
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-6',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false, // User is silent!
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 55; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: expect.stringMatching(/Background voice detected while candidate was silent\.|Background voice louder than candidate detected\./),
+      })
+    );
+  });
+
+  it('does NOT trigger warning when user is speaking naturally alone', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 40 + ((i + frame) % 10);
+      }
+      arr[12] = 65; // Single speaker peak, no secondary peak
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-7',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: true, // Mouth moves matching speech
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 50; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
+  });
+
+  it('triggers warning when background music is detected', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // High harmonic tonality across musical band (bins 5 to 65) with sustained peak
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 5; i < 65; i++) {
+        arr[i] = 38;
+      }
+      arr[25] = 120; // High tonality peak (120 / ~39 > 3.0)
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-8',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 45; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background music detected.',
+      })
+    );
+  });
+
+  it('triggers warning when keyboard typing sounds are detected', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // High-frequency transient spikes on frames 5, 15, and 25 (simulating keystrokes)
+      if (frame === 5 || frame === 15 || frame === 25) {
+        for (let i = 25; i < 110; i++) {
+          arr[i] = 70;
+        }
+      } else {
+        arr.fill(10);
+      }
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-9',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 35; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Keyboard typing sounds detected.',
+      })
+    );
+  });
 });
