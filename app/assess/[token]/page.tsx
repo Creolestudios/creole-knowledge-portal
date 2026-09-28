@@ -850,9 +850,11 @@ export default function CandidateAssessmentPage() {
 
   const currentQuestion = questions[currentIndex];
 
-  const handleSubmitAnswer = () => {
+  const handleSubmitAnswer = async () => {
     if (!currentQuestion || isSubmittingAnswerRef.current) return;
     isSubmittingAnswerRef.current = true;
+    setSavingAnswer(true);
+    setError(null);
 
     // Capture all values synchronously before any state changes
     const questionId = currentQuestion.id;
@@ -871,63 +873,54 @@ export default function CandidateAssessmentPage() {
 
     const isLastQuestion = currentIndex >= questions.length - 1;
 
-    // ── OPTIMISTIC UI: advance immediately, no spinner, no await ──
-    if (isLastQuestion) {
-      completedRef.current = true;
-      stopAllMedia();
-      setStageWithRef('completed');
-    } else {
-      // Show next question instantly
-      firstSpeechAtRef.current = null;
-      questionStartedAtRef.current = Date.now();
-      setAnswerText('');
-      setCurrentIndex((idx) => idx + 1);
-    }
-
-    // ── BACKGROUND: save answer + transcript + metrics ──
-    // None of these await calls block the UI transition above.
-    void (async () => {
-      // Fire STT finalization in parallel — does not block navigation
+    try {
       void completeTurn();
 
-      try {
-        const answerRes = await fetch(`/api/assess/${token}/answer`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            question_id: questionId,
-            transcript: finalAnswer,
-            time_to_first_response_sec: timeToFirstResponseSec,
-            total_time_taken_sec: totalTimeTakenSec,
-          }),
-        });
+      const answerRes = await fetch(`/api/assess/${token}/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question_id: questionId,
+          transcript: finalAnswer,
+          time_to_first_response_sec: timeToFirstResponseSec,
+          total_time_taken_sec: totalTimeTakenSec,
+        }),
+      });
 
-        if (!answerRes.ok) {
-          const answerJson = await answerRes.json().catch(() => null);
-          // Non-blocking error — candidate already sees the next question
-          console.error('[assess] background answer save failed:', answerJson?.error);
-          setError(`Answer save failed: ${answerJson?.error ?? 'server error'}. Your response may not have been recorded.`);
-        }
-      } catch (err) {
-        console.error('[assess] background answer save error:', err);
-        // Show non-blocking error — don't interrupt the interview flow
-        setError('Answer could not be saved. Please check your connection.');
+      if (!answerRes?.ok) {
+        const answerJson = await answerRes?.json?.().catch(() => null);
+        throw new Error(answerJson?.error ?? 'Failed to save your answer.');
       }
 
       if (isLastQuestion) {
-        // Complete call — also fire-and-forget
+        completedRef.current = true;
         const counts = proctorTrackerRef.current.getWarningCounts();
-        fetch(`/api/assess/${token}/complete`, {
+        await fetch(`/api/assess/${token}/complete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
           }),
-        }).catch((completeErr) => console.warn('[assess] complete call failed:', completeErr));
-      }
+        }).catch((completeErr) => {
+          console.warn('[assess] complete call failed:', completeErr);
+          return null;
+        });
 
+        stopAllMedia();
+        setStageWithRef('completed');
+      } else {
+        firstSpeechAtRef.current = null;
+        questionStartedAtRef.current = Date.now();
+        setAnswerText('');
+        setCurrentIndex((idx) => idx + 1);
+      }
+    } catch (err) {
+      console.error('[assess] failed to save answer:', err);
+      setError(err instanceof Error ? err.message : 'Failed to save your answer. Please try again.');
+    } finally {
+      setSavingAnswer(false);
       isSubmittingAnswerRef.current = false;
-    })();
+    }
   };
 
 
