@@ -40,9 +40,9 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
         await tf.setBackend('cpu');
       }
       await tf.ready();
-      // Load lite_mobilenet_v2 for fast load and high-fps real-time inference
+      // Load full mobilenet_v2 COCO-SSD model for accurate detection of phones, books, and devices
       try {
-        model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+        model = await cocoSsd.load({ base: 'mobilenet_v2' });
       } catch {
         model = await cocoSsd.load();
       }
@@ -72,11 +72,10 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
   try {
     let rawDetections;
 
-    // Fast, lightweight resolution: 320px width preserving natural aspect ratio
-    // This reduces pixel count from 2M to ~60K (30x faster), allowing model.detect to run in < 15ms.
-    const targetW = 320;
+    // Use 640px resolution to preserve sharp edges and features of handheld phones and books
+    const targetW = 640;
     const aspect = message.bitmap.height / (message.bitmap.width || 1);
-    const targetH = Math.max(180, Math.round(targetW * aspect));
+    const targetH = Math.max(360, Math.round(targetW * aspect));
 
     if (typeof OffscreenCanvas !== 'undefined') {
       if (!offscreenCanvas || offscreenCanvas.width !== targetW || offscreenCanvas.height !== targetH) {
@@ -85,13 +84,17 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
       }
       if (offscreenCtx && offscreenCanvas) {
         offscreenCtx.drawImage(message.bitmap, 0, 0, targetW, targetH);
-        const imgData = offscreenCtx.getImageData(0, 0, targetW, targetH);
-        rawDetections = await model.detect(imgData, 20, 0.08);
+        try {
+          rawDetections = await model.detect(offscreenCanvas as unknown as HTMLCanvasElement, 20, 0.05);
+        } catch {
+          const imgData = offscreenCtx.getImageData(0, 0, targetW, targetH);
+          rawDetections = await model.detect(imgData, 20, 0.05);
+        }
       }
     }
 
     if (!rawDetections) {
-      rawDetections = await model.detect(message.bitmap as unknown as ImageData, 20, 0.08);
+      rawDetections = await model.detect(message.bitmap as unknown as ImageData, 20, 0.05);
     }
 
     const detections: DetectedObjectEvent[] = filterTrackedObjects(rawDetections);

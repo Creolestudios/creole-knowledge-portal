@@ -15,18 +15,29 @@ export const supabaseAdmin = createClient(
  * Returns the user's ID on success, or `null` if unauthorized.
  */
 export async function requireAdminUser(): Promise<{ userId: string } | null> {
-  const supabase = await createServerSupabaseClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-  if (!user) return null;
+    if (authError) {
+      console.error('[requireAdminUser] Auth error:', authError.message);
+      return null;
+    }
 
-  const { data: callingProfile, error: callError } = await supabaseAdmin
-    .from('user_profiles')
-    .select('role')
-    .eq('user_id', user.id)
-    .single();
+    if (!user) return null;
 
-  if (callError || callingProfile?.role !== 'admin') return null;
+    const { data: callingProfile, error: callError } = await supabaseAdmin
+      .from('user_profiles')
+      .select('role')
+      .eq('user_id', user.id)
+      .single();
 
-  return { userId: user.id };
+    if (callError || callingProfile?.role !== 'admin') return null;
+
+    return { userId: user.id };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[requireAdminUser] Unexpected error (possible Supabase connectivity issue):', msg);
+    return null;
+  }
 }

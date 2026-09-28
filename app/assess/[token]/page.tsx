@@ -765,7 +765,7 @@ export default function CandidateAssessmentPage() {
       'voice',
       info.reason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
-      4000,
+      15000,
       nowMs,
     );
 
@@ -804,6 +804,8 @@ export default function CandidateAssessmentPage() {
     interviewId: sessionId || '',
     stream: cameraStream,
     isAiSpeaking: false,
+    // Guard is active during the entire interview stage. The optimistic UI means
+    // there's no longer a 1-4s blocking window; transitions are instant.
     isCandidateTurn: stage === 'interview',
     isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
@@ -811,6 +813,7 @@ export default function CandidateAssessmentPage() {
       await captureEvidenceSnapshot('unauthorized_voice');
       return null;
     },
+    readingGracePeriodMs: 8000,
   });
 
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
@@ -847,67 +850,86 @@ export default function CandidateAssessmentPage() {
 
   const currentQuestion = questions[currentIndex];
 
-  const handleSubmitAnswer = async () => {
+  const handleSubmitAnswer = () => {
     if (!currentQuestion || isSubmittingAnswerRef.current) return;
     isSubmittingAnswerRef.current = true;
-    setSavingAnswer(true);
 
-    await completeTurn();
-
+    // Capture all values synchronously before any state changes
+    const questionId = currentQuestion.id;
     const totalTimeTakenSec = (Date.now() - questionStartedAtRef.current) / 1000;
     const timeToFirstResponseSec = firstSpeechAtRef.current
       ? (firstSpeechAtRef.current - questionStartedAtRef.current) / 1000
       : totalTimeTakenSec;
 
-    const finalAnswer = (answerText ? (interimText ? `${answerText.trim()} ${interimText.trim()}` : answerText.trim()) : interimText.trim()).trim();
+    // Merge confirmed + in-flight interim text immediately
+    const finalAnswer = (answerText
+      ? interimText
+        ? `${answerText.trim()} ${interimText.trim()}`
+        : answerText.trim()
+      : interimText.trim()
+    ).trim();
 
-    try {
-      const answerRes = await fetch(`/api/assess/${token}/answer`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question_id: currentQuestion.id,
-          transcript: finalAnswer,
-          time_to_first_response_sec: timeToFirstResponseSec,
-          total_time_taken_sec: totalTimeTakenSec,
-        }),
-      });
-      if (!answerRes.ok) {
-        const answerJson = await answerRes.json().catch(() => null);
-        throw new Error(answerJson?.error ?? 'Failed to save your answer.');
-      }
+    const isLastQuestion = currentIndex >= questions.length - 1;
 
-      const isLastQuestion = currentIndex >= questions.length - 1;
-      if (isLastQuestion) {
-        completedRef.current = true;
-        try {
-          const counts = proctorTrackerRef.current.getWarningCounts();
-          await fetch(`/api/assess/${token}/complete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
-            }),
-          });
-        } catch (completeErr) {
-          console.warn('[assess] complete call failed:', completeErr);
-        }
-        stopAllMedia();
-        setStageWithRef('completed');
-      } else {
-        setAnswerText('');
-        firstSpeechAtRef.current = null;
-        questionStartedAtRef.current = Date.now();
-        setCurrentIndex((idx) => idx + 1);
-      }
-    } catch (err) {
-      console.error('[assess] failed to save answer:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save your answer. Please try again.');
-    } finally {
-      setSavingAnswer(false);
-      isSubmittingAnswerRef.current = false;
+    // ── OPTIMISTIC UI: advance immediately, no spinner, no await ──
+    if (isLastQuestion) {
+      completedRef.current = true;
+      stopAllMedia();
+      setStageWithRef('completed');
+    } else {
+      // Show next question instantly
+      firstSpeechAtRef.current = null;
+      questionStartedAtRef.current = Date.now();
+      setAnswerText('');
+      setCurrentIndex((idx) => idx + 1);
     }
+
+    // ── BACKGROUND: save answer + transcript + metrics ──
+    // None of these await calls block the UI transition above.
+    void (async () => {
+      // Fire STT finalization in parallel — does not block navigation
+      void completeTurn();
+
+      try {
+        const answerRes = await fetch(`/api/assess/${token}/answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question_id: questionId,
+            transcript: finalAnswer,
+            time_to_first_response_sec: timeToFirstResponseSec,
+            total_time_taken_sec: totalTimeTakenSec,
+          }),
+        });
+
+        if (!answerRes.ok) {
+          const answerJson = await answerRes.json().catch(() => null);
+          // Non-blocking error — candidate already sees the next question
+          console.error('[assess] background answer save failed:', answerJson?.error);
+          setError(`Answer save failed: ${answerJson?.error ?? 'server error'}. Your response may not have been recorded.`);
+        }
+      } catch (err) {
+        console.error('[assess] background answer save error:', err);
+        // Show non-blocking error — don't interrupt the interview flow
+        setError('Answer could not be saved. Please check your connection.');
+      }
+
+      if (isLastQuestion) {
+        // Complete call — also fire-and-forget
+        const counts = proctorTrackerRef.current.getWarningCounts();
+        fetch(`/api/assess/${token}/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+          }),
+        }).catch((completeErr) => console.warn('[assess] complete call failed:', completeErr));
+      }
+
+      isSubmittingAnswerRef.current = false;
+    })();
   };
+
 
   useEffect(() => {
     handleSubmitAnswerRef.current = handleSubmitAnswer;
@@ -1162,23 +1184,17 @@ export default function CandidateAssessmentPage() {
               id="assess-submit-answer"
               type="button"
               onClick={handleSubmitAnswer}
-              disabled={savingAnswer || !hasGivenAnswer}
+              disabled={!hasGivenAnswer}
               className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm cursor-pointer"
             >
-              {savingAnswer ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <>
-                  <span>
-                    {!hasGivenAnswer
-                      ? 'Speak your answer to continue'
-                      : currentIndex >= questions.length - 1
-                      ? 'Finish Interview'
-                      : 'Next Question'}
-                  </span>
-                  <ArrowRight className="w-4 h-4" />
-                </>
-              )}
+              <span>
+                {!hasGivenAnswer
+                  ? 'Speak your answer to continue'
+                  : currentIndex >= questions.length - 1
+                  ? 'Finish Interview'
+                  : 'Next Question'}
+              </span>
+              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 

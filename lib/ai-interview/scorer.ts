@@ -6,14 +6,23 @@ import {
   combineFluencyScores,
   calculateCognitiveComposite,
 } from './fluency-calculator';
+import { ensureAllQuestionsAnswered } from './answers';
+import { saveInterviewReport } from './report-store';
 
-const SCORING_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+// Model priority list for scoring — tries each in order, falls back on 429/503/404/quota exhaustion.
+const SCORING_MODELS = [
+  ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-flash',
+];
 
 export interface ScoreInterviewOptions {
   sessionId: string;
 }
 
-interface CompetencyScoreItem {
+export interface CompetencyScoreItem {
   ord: number;
   competency: string;
   score: number; // 1 - 5
@@ -23,23 +32,78 @@ interface CompetencyScoreItem {
   bluff_suspected?: boolean;
 }
 
-interface FluencyEvaluationResult {
-  cefr: 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-  sub: {
-    grammar: { band: number; notes: string };
-    vocabulary: { band: number; notes: string };
-    coherence: { band: number; notes: string };
-    fluency: { band: number; notes: string };
-  };
-  evidenceQuotes: string[];
-  summary: string;
-}
-
 /**
  * Strips markdown code block wrappers from JSON string.
  */
 function cleanJson(raw: string): string {
   return raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+}
+
+// In-memory cooldown tracker to avoid hammering models that returned 429/RESOURCE_EXHAUSTED
+const exhaustedModelsUntil = new Map<string, number>();
+
+/**
+ * Calls generateContent with automatic model fallback on 429 / 503 errors.
+ * Tries each model in SCORING_MODELS until one succeeds.
+ */
+async function generateWithFallback(
+  ai: GoogleGenAI,
+  prompt: string,
+  responseMimeType: 'application/json' | 'text/plain' = 'application/json',
+): Promise<string> {
+  const errors: string[] = [];
+  const now = Date.now();
+
+  for (const model of SCORING_MODELS) {
+    const cooldown = exhaustedModelsUntil.get(model) || 0;
+    if (now < cooldown) {
+      continue;
+    }
+
+    try {
+      const res = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: { responseMimeType },
+      });
+      return res.text || '';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isQuotaOrUnavailable =
+        msg.includes('429') ||
+        msg.includes('503') ||
+        msg.includes('404') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('overloaded') ||
+        msg.includes('NOT_FOUND') ||
+        msg.includes('not found') ||
+        msg.includes('no longer available') ||
+        msg.includes('not supported');
+      errors.push(`[${model}] ${msg.slice(0, 120)}`);
+      if (!isQuotaOrUnavailable) throw err; // non-retriable — propagate immediately
+      // Mark on cooldown for 2 minutes so subsequent calls in this session don't wait on it
+      exhaustedModelsUntil.set(model, Date.now() + 120_000);
+      console.warn(`[scorer] Model ${model} unavailable (${msg.slice(0, 80)}), trying next...`);
+    }
+  }
+
+  // If all were skipped due to cooldown, try each once more
+  for (const model of SCORING_MODELS) {
+    try {
+      const res = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: { responseMimeType },
+      });
+      exhaustedModelsUntil.delete(model);
+      return res.text || '';
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`[${model}-retry] ${msg.slice(0, 120)}`);
+    }
+  }
+
+  throw new Error(`All scoring models exhausted. Errors:\n${errors.join('\n')}`);
 }
 
 /**
@@ -58,6 +122,9 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
   }
 
   const ai = new GoogleGenAI({ apiKey });
+
+  // Ensure any unanswered questions have a blank answer row recorded
+  await ensureAllQuestionsAnswered(sessionId);
 
   // 1. Fetch session, questions, transcript, turn metrics, warnings, and answers
   const [
@@ -86,15 +153,23 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
   const answersList = rawAnswers || [];
 
   // Check warnings count across all categories continuously
-  const voiceWarningCount = (session.voice_warning_count || 0) +
-    warningsList.filter((w) => w.category === 'unauthorized_voice' || w.category === 'bg_voice' || w.category === 'background_voice').length;
-  const faceWarningCount = warningsList.filter((w) =>
-    ['gaze_away', 'no_face', 'multi_face', 'reading_suspected'].includes(w.category)
-  ).length;
-  const objectWarningCount = warningsList.filter((w) =>
-    ['object_detected', 'cell_phone', 'notes_detected'].includes(w.category)
-  ).length;
-  const totalWarningCount = warningsList.length;
+  const rawVoiceCount =
+    session.voice_warning_count !== undefined && session.voice_warning_count !== null
+      ? session.voice_warning_count
+      : warningsList.filter((w) => w.category === 'unauthorized_voice' || w.category === 'bg_voice' || w.category === 'background_voice').length;
+  const rawFaceCount =
+    session.face_warning_count !== undefined && session.face_warning_count !== null
+      ? session.face_warning_count
+      : warningsList.filter((w) => ['gaze_away', 'no_face', 'multi_face', 'reading_suspected'].includes(w.category)).length;
+  const rawObjectCount =
+    session.object_warning_count !== undefined && session.object_warning_count !== null
+      ? session.object_warning_count
+      : warningsList.filter((w) => ['object_detected', 'cell_phone', 'notes_detected'].includes(w.category)).length;
+
+  const voiceWarningCount = Math.min(3, Math.max(0, rawVoiceCount));
+  const faceWarningCount = Math.min(3, Math.max(0, rawFaceCount));
+  const objectWarningCount = Math.min(3, Math.max(0, rawObjectCount));
+  const totalWarningCount = Math.min(3, voiceWarningCount + faceWarningCount + objectWarningCount);
 
   // STRICT REQUIREMENT: Isolate ONLY candidate speech.
   // Quarantines any lines tagged as unauthorized_voice or flagged.
@@ -176,8 +251,8 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
     const compPrompt = `
 You are scoring an interview answer for a technical role.
 QUESTION: ${q.question_text || q.text}
-INTENDED COMPETENCY: ${q.competency || 'Role Competency'}
-DIFFICULTY (1-5): ${q.difficulty_level || 3}
+INTENDED COMPETENCY: ${q.category || q.intent || q.competency || 'Role Competency'}
+DIFFICULTY: ${q.difficulty || q.difficulty_level || 3}
 
 CANDIDATE'S VERBATIM ANSWER:
 """
@@ -202,13 +277,8 @@ Return JSON ONLY:
 `.trim();
 
     try {
-      const compRes = await ai.models.generateContent({
-        model: SCORING_MODEL,
-        contents: compPrompt,
-        config: { responseMimeType: 'application/json' },
-      });
-
-      const parsed = JSON.parse(cleanJson(compRes.text || '{}'));
+      const compText = await generateWithFallback(ai, compPrompt);
+      const parsed = JSON.parse(cleanJson(compText));
       // Grounding validation: verify quote exists in candidate's text
       const validEvidence = (parsed.evidence || []).filter((ev: { quote: string }) =>
         typeof ev.quote === 'string' && qAnswerText.toLowerCase().includes(ev.quote.toLowerCase())
@@ -273,13 +343,8 @@ Return JSON ONLY:
 `.trim();
 
     try {
-      const fluencyRes = await ai.models.generateContent({
-        model: SCORING_MODEL,
-        contents: fluencyPrompt,
-        config: { responseMimeType: 'application/json' },
-      });
-
-      const parsedFluency = JSON.parse(cleanJson(fluencyRes.text || '{}'));
+      const fluencyText = await generateWithFallback(ai, fluencyPrompt);
+      const parsedFluency = JSON.parse(cleanJson(fluencyText));
       if (parsedFluency.cefr) {
         fluencyCefr = parsedFluency.cefr;
         const sub = parsedFluency.sub;
@@ -302,6 +367,13 @@ Return JSON ONLY:
       console.warn('[scorer] Fluency evaluation error, using local fallback:', err);
       fluencyModelScore = localFluencyResult.localFluencyScore;
     }
+  } else {
+    // No candidate transcript available (session terminated before answering).
+    // Use deterministic local fallback so the report is always populated.
+    console.warn('[scorer] No candidate transcript found. Applying local fluency fallback for session:', sessionId);
+    fluencyModelScore = localFluencyResult.localFluencyScore;
+    fluencyCefr = 'B2';
+    fluencyBreakdown = { summary: 'No candidate speech detected. Session ended before answers were recorded.' };
   }
 
   // Combine Local + Model Fluency
@@ -328,7 +400,9 @@ Return JSON ONLY:
   if (voiceWarningCount > 0) {
     flags.push(`unauthorized_voice_warnings_${voiceWarningCount}`);
   }
-  if (session.status === 'terminated') {
+  // 'cancelled' is the status set by the assess terminate route; treat same as 'terminated'
+  const isSessionTerminated = session.status === 'terminated' || session.status === 'cancelled';
+  if (isSessionTerminated) {
     flags.push('interview_terminated');
   }
 
@@ -336,7 +410,7 @@ Return JSON ONLY:
   let recommendationRationale = '';
 
   // Continuous 3-warning rule: any 3 proctoring warnings (face, object, voice)
-  if (session.status === 'terminated' || totalWarningCount >= 3) {
+  if (isSessionTerminated || totalWarningCount >= 3) {
     recommendation = 'no';
     recommendationRationale = `Interview terminated due to continuous proctoring violations (${totalWarningCount} warnings: ${voiceWarningCount} voice, ${faceWarningCount} face, ${objectWarningCount} object).`;
   } else if (totalWarningCount >= 1) {
@@ -381,13 +455,8 @@ Return JSON ONLY:
 }
 `.trim();
 
-    const followUpRes = await ai.models.generateContent({
-      model: SCORING_MODEL,
-      contents: followUpPrompt,
-      config: { responseMimeType: 'application/json' },
-    });
-
-    const parsedFollowUp = JSON.parse(cleanJson(followUpRes.text || '{}'));
+    const followUpText = await generateWithFallback(ai, followUpPrompt);
+    const parsedFollowUp = JSON.parse(cleanJson(followUpText));
     if (Array.isArray(parsedFollowUp.follow_up_recommendations) && parsedFollowUp.follow_up_recommendations.length > 0) {
       followUpRecommendations = parsedFollowUp.follow_up_recommendations.slice(0, 3);
     }
@@ -408,7 +477,7 @@ Return JSON ONLY:
     follow_up_recommendations: followUpRecommendations,
   };
 
-  // 7. Persist to interview_reports
+  // 7. Persist to interview_reports and resilient event store
   const reportPayload = {
     session_id: sessionId,
     cognitive_composite: cognitiveComposite,
@@ -425,17 +494,7 @@ Return JSON ONLY:
     rubric_version: 'v1',
   };
 
-  const { data: existingReport } = await supabaseAdmin
-    .from('interview_reports')
-    .select('id')
-    .eq('session_id', sessionId)
-    .maybeSingle();
-
-  if (existingReport) {
-    await supabaseAdmin.from('interview_reports').update(reportPayload).eq('id', existingReport.id);
-  } else {
-    await supabaseAdmin.from('interview_reports').insert(reportPayload);
-  }
+  await saveInterviewReport(reportPayload);
 
   return {
     cognitiveComposite,

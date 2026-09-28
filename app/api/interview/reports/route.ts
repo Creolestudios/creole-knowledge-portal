@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getInterviewReports } from '@/lib/ai-interview/report-store';
+import { scoreInterviewSession } from '@/lib/ai-interview/scorer';
 
 export const runtime = 'nodejs';
 
@@ -26,14 +28,18 @@ export async function GET() {
       return NextResponse.json({ reports: [] });
     }
 
-    // Fetch matching reports for all session IDs in one query
+    // Fetch matching reports for all session IDs in one query (checks table + fallback event store)
     const sessionIds = sessions.map((s) => s.id);
-    const { data: reports } = await supabaseAdmin
-      .from('interview_reports')
-      .select('session_id, cognitive_composite, fluency_score, fluency_cefr, recommendation, recommendation_rationale, flags, competency_scores, rubric_version')
-      .in('session_id', sessionIds);
+    const reportMap = await getInterviewReports(sessionIds);
 
-    const reportMap = new Map((reports || []).map((r) => [r.session_id, r]));
+    // Auto-trigger scoring in background for any completed session without a report
+    for (const s of sessions) {
+      if (s.status === 'completed' && !reportMap.has(s.id)) {
+        scoreInterviewSession({ sessionId: s.id }).catch((err) => {
+          console.warn(`[interview-reports] Background auto-score for ${s.id} failed:`, err);
+        });
+      }
+    }
 
     const merged = sessions.map((s) => {
       const report = reportMap.get(s.id) ?? null;

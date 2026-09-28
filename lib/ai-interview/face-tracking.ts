@@ -141,15 +141,14 @@ export function analyzeFaceMetrics(
     irisRatioOffset = (leftDiffX + leftDiffY + rightDiffX + rightDiffY) / 4;
   }
 
-  // Only trigger lookingAway when candidate completely shifts gaze left or right away from screen (or up)
-  // Reading questions on-screen naturally produces modest horizontal movements (0.2-0.45), so we use a high threshold (0.68)
-  const lookingAway = facePresent && (completeSideGaze > 0.68 || lookUp > 0.68 || eyeDistance < 0.08 || irisRatioOffset > 0.35);
+  // Trigger lookingAway when candidate shifts gaze left or right (0.52), up (0.55), or deviates from calibrated baseline
+  const lookingAway = facePresent && (completeSideGaze > 0.52 || lookUp > 0.55 || (eyeDistance > 0 && eyeDistance < 0.08) || irisRatioOffset > 0.28);
 
   const { yaw, pitch } = getHeadYaw(matrix ?? []);
   const relativeYaw = baseline ? yaw - baseline.yaw : yaw;
   const relativePitch = baseline ? pitch - baseline.pitch : pitch;
 
-  const headTurnedAway = facePresent && (Math.abs(relativeYaw) > 25 || Math.abs(relativePitch) > 22);
+  const headTurnedAway = facePresent && (Math.abs(relativeYaw) > 20 || Math.abs(relativePitch) > 18);
 
   // Reading on screen is expected behavior. Only flag if eyes point completely down off-screen (e.g. lap/desk)
   const readingSuspected =
@@ -328,9 +327,9 @@ export class ProctoringTimeTracker {
     }
 
     const {
-      gazeAwayThresholdMs = 3000,
+      gazeAwayThresholdMs = 1500,
       readingThresholdMs = 4500,
-      noFaceThresholdMs = 1500,
+      noFaceThresholdMs = 4500,
       multiFaceThresholdMs = 2000,
       debounceMs = 5000,
     } = options;

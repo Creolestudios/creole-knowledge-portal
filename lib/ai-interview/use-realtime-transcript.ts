@@ -90,7 +90,7 @@ export function useRealtimeTranscript({
   // Called only once per question (inside completeTurn) to avoid fragmented storage.
   const persistFullAnswer = useCallback(
     async (text: string) => {
-      if (!interviewId || !text || !text.trim()) return;
+      if (!interviewId) return;
       try {
         await fetch(`/api/interview/${interviewId}/transcript`, {
           method: 'POST',
@@ -98,7 +98,7 @@ export function useRealtimeTranscript({
           body: JSON.stringify({
             questionOrd: currentQuestionOrdRef.current,
             speaker: 'candidate',
-            text: text.trim(),
+            text: (text || '').trim(),
             tsMs: Date.now(),
           }),
         });

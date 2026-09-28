@@ -10,6 +10,7 @@ export interface VoiceGuardOptions {
   isCandidateMouthMoving?: boolean;
   onUnauthorizedVoiceDetected: (info: { reason: string; confidence: number }) => void;
   takeSnapshot?: () => Promise<string | null>;
+  readingGracePeriodMs?: number;
 }
 
 /**
@@ -28,6 +29,7 @@ export function useAudioVoiceGuard({
   isCandidateMouthMoving,
   onUnauthorizedVoiceDetected,
   takeSnapshot,
+  readingGracePeriodMs = 0,
 }: VoiceGuardOptions) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -39,60 +41,61 @@ export function useAudioVoiceGuard({
   const isAiSpeakingRef = useRef<boolean>(isAiSpeaking);
   const isCandidateTurnRef = useRef<boolean>(isCandidateTurn);
   const isCandidateMouthMovingRef = useRef<boolean>(isCandidateMouthMoving ?? false);
+  const candidateTurnStartedAtRef = useRef<number>(0);
+  const readingGracePeriodMsRef = useRef<number>(readingGracePeriodMs);
 
   useEffect(() => {
     isAiSpeakingRef.current = isAiSpeaking;
   }, [isAiSpeaking]);
 
   useEffect(() => {
+    if (isCandidateTurn && candidateTurnStartedAtRef.current === 0) {
+      candidateTurnStartedAtRef.current = Date.now();
+    } else if (!isCandidateTurn) {
+      candidateTurnStartedAtRef.current = 0;
+    }
     isCandidateTurnRef.current = isCandidateTurn;
   }, [isCandidateTurn]);
+
+  useEffect(() => {
+    readingGracePeriodMsRef.current = readingGracePeriodMs;
+  }, [readingGracePeriodMs]);
 
   useEffect(() => {
     isCandidateMouthMovingRef.current = isCandidateMouthMoving ?? false;
   }, [isCandidateMouthMoving]);
 
+  const onUnauthorizedVoiceDetectedRef = useRef(onUnauthorizedVoiceDetected);
+  const takeSnapshotRef = useRef(takeSnapshot);
+
+  useEffect(() => {
+    onUnauthorizedVoiceDetectedRef.current = onUnauthorizedVoiceDetected;
+    takeSnapshotRef.current = takeSnapshot;
+  });
+
   const triggerVoiceWarning = useCallback(
     async (reason: string, confidence: number) => {
       const now = Date.now();
-      // Debounce voice warnings: max 1 per 6 seconds
-      if (now - lastWarningTimeRef.current < 6000) return;
+      // Debounce voice warnings: enforce a 35-second cooldown between consecutive
+      // voice detection alerts (30-40 second break as required).
+      if (now - lastWarningTimeRef.current < 35000) return;
       lastWarningTimeRef.current = now;
 
-      onUnauthorizedVoiceDetected({ reason, confidence });
+      onUnauthorizedVoiceDetectedRef.current({ reason, confidence });
 
       // Capture snapshot if available
-      let snapshotPath: string | null = null;
-      if (takeSnapshot) {
+      if (takeSnapshotRef.current) {
         try {
-          snapshotPath = await takeSnapshot();
+          await takeSnapshotRef.current();
         } catch (e) {
           console.warn('[voice-guard] Snapshot capture error:', e);
         }
       }
-
-      // Log to /api/interview/events for proctoring audit
-      try {
-        await fetch('/api/interview/events', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            interviewId,
-            category: 'unauthorized_voice',
-            severity: 'warning',
-            confidence,
-            snapshotPath,
-            meta: {
-              reason,
-              timestamp: now,
-            },
-          }),
-        });
-      } catch (err) {
-        console.warn('[voice-guard] Event logging error:', err);
-      }
+      // Note: We deliberately do NOT fetch /api/interview/events here because
+      // onUnauthorizedVoiceDetected delegate handles proctor strikes & event logging in page.tsx.
+      // This prevents storing duplicate rows for the same alert.
     },
-    [interviewId, onUnauthorizedVoiceDetected, takeSnapshot]
+    []
   );
 
   useEffect(() => {
@@ -113,7 +116,8 @@ export function useAudioVoiceGuard({
 
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.8;
+      // Lower smoothing so brief noise spikes decay quickly and don't accumulate
+      analyser.smoothingTimeConstant = 0.6;
 
       const source = ctx.createMediaStreamSource(stream);
       source.connect(analyser);
@@ -173,8 +177,9 @@ export function useAudioVoiceGuard({
         const avgFlux = spectralFlux / (endBin - startBin);
 
         // State check:
-        // 1. If AI system prompt is speaking, suppress everything
-        if (isAiSpeakingRef.current) {
+        // 1. If AI system prompt is speaking OR during the 35-second cooldown window after a voice warning,
+        // suppress and freeze frame accumulation so warnings have genuine spacing
+        if (isAiSpeakingRef.current || (lastWarningTimeRef.current > 0 && Date.now() - lastWarningTimeRef.current < 35000)) {
           consecutiveSuspiciousFrames = 0;
           consecutiveAiFrames = 0;
         } else if (isCandidateTurnRef.current) {
@@ -189,8 +194,9 @@ export function useAudioVoiceGuard({
           const actualSpeakerLevel = actualSpeakerEnergyRef.current;
 
           // 2. AI / Synthetic voice detection during interview:
-          // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 2.0) while speech energy is active (> 35)
-          const isAiVoice = avgSpeechEnergy > 35 && avgFlux < 2.0 && frameCount > 25;
+          // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 2.0) while speech energy is active (> 50)
+          // Raised from 35 → 50 to avoid false triggers from quiet background sounds
+          const isAiVoice = avgSpeechEnergy > 50 && avgFlux < 2.0 && frameCount > 25;
           if (isAiVoice) {
             consecutiveAiFrames++;
             if (consecutiveAiFrames > 25) {
@@ -202,29 +208,36 @@ export function useAudioVoiceGuard({
             consecutiveAiFrames = Math.max(0, consecutiveAiFrames - 1);
           }
 
-          // 3. Background Voice Detection:
-          // Only show warning if the background voice is HIGHER than the actual speaker.
-          // Lower background voices (whispers, ambient murmur, quiet background chatter) are ignored.
-          const isBackgroundVoiceWhileSilent =
-            !isCandidateMouthMovingRef.current &&
-            avgSpeechEnergy > actualSpeakerLevel &&
-            peakEnergy > actualSpeakerLevel * 1.15 &&
-            avgFlux > 1.2;
+          // Reading grace period: allow candidate initial peaceful time to read questions without background voice warnings
+          const isReadingGracePeriod =
+            candidateTurnStartedAtRef.current > 0 &&
+            Date.now() - candidateTurnStartedAtRef.current < readingGracePeriodMsRef.current;
 
-          // Dual speaker: Overlapping voice only triggers if secondary voice is higher than speaker
+          // Only show warning if the background voice is clearly LOUDER than the candidate.
+          // Thresholds raised to avoid triggering on room noise, fans, distant TV, or quiet ambient speech.
+          const isBackgroundVoiceWhileSilent =
+            !isReadingGracePeriod &&
+            !isCandidateMouthMovingRef.current &&
+            avgSpeechEnergy > Math.max(65, actualSpeakerLevel) &&
+            peakEnergy > Math.max(78, actualSpeakerLevel * 1.25) &&
+            avgFlux > 2.0;
+
+          // Dual speaker: Overlapping voice only triggers if secondary voice is significantly louder than speaker
+          // Raised coefficient 1.1 → 1.25 to ignore nearby quiet talking or background murmur
           const isDualSpeakerLouder =
             isCandidateMouthMovingRef.current &&
-            Math.abs(peakBin - secondaryPeakBin) >= 2 &&
-            secondaryPeakEnergy > actualSpeakerLevel * 1.1 &&
+            Math.abs(peakBin - secondaryPeakBin) >= 3 &&
+            secondaryPeakEnergy > actualSpeakerLevel * 1.25 &&
             secondaryPeakEnergy >= peakEnergy * 0.9 &&
-            avgFlux > 1.2;
+            avgFlux > 2.0;
 
           const isBgVoiceHigherThanSpeaker = !isAiVoice && (isBackgroundVoiceWhileSilent || isDualSpeakerLouder);
 
           if (isBgVoiceHigherThanSpeaker) {
             consecutiveSuspiciousFrames++;
-            // If sustained for >= 12 frames (~200ms of active louder speech)
-            if (consecutiveSuspiciousFrames >= 12) {
+            // If sustained for >= 30 frames (~500ms of clearly louder speech before triggering)
+            // Raised from 20 → 30 to avoid false positives from brief noise spikes
+            if (consecutiveSuspiciousFrames >= 30) {
               consecutiveSuspiciousFrames = 0;
               const confidence = Math.min(0.95, 0.75 + (avgSpeechEnergy / 255) * 0.2);
               const reason = isDualSpeakerLouder

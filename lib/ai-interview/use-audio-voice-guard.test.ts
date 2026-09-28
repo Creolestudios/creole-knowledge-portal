@@ -89,14 +89,14 @@ describe('useAudioVoiceGuard', () => {
   it('triggers warning when background voice is HIGHER than the actual speaker', () => {
     const onUnauthorizedVoiceDetected = vi.fn();
 
-    // Fill with louder energy (e.g. 80, higher than speaker baseline 45) and varied spectral flux
+    // Fill with louder energy (e.g. 70-95, higher than speaker baseline 45) and continuous spectral flux
     let frame = 0;
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
       frame++;
       for (let i = 3; i < 36; i++) {
-        arr[i] = (frame % 2 === 0 ? 80 : 60);
+        arr[i] = 70 + ((i * 3 + frame * 5) % 25);
       }
-      arr[15] = 95; // peak energy
+      arr[15] = 110; // peak energy
     });
 
     renderHook(() =>
@@ -106,12 +106,13 @@ describe('useAudioVoiceGuard', () => {
         isAiSpeaking: false,
         isCandidateTurn: true,
         isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
         onUnauthorizedVoiceDetected,
       })
     );
 
-    // Run enough frames for sustained speech
-    for (let f = 0; f < 30; f++) {
+    // Run enough frames for warmup (25 frames) + sustained speech (>= 30 frames)
+    for (let f = 0; f < 65; f++) {
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
@@ -129,10 +130,10 @@ describe('useAudioVoiceGuard', () => {
   it('triggers warning when AI voice is detected during interview', () => {
     const onUnauthorizedVoiceDetected = vi.fn();
 
-    // Flat spectral flux (< 2.0) with speech energy (> 35) simulates synthetic / AI voice
+    // Flat spectral flux (< 2.0) with speech energy (> 50) simulates synthetic / AI voice
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
       for (let i = 3; i < 36; i++) {
-        arr[i] = 50; // perfectly constant across frames = flux 0
+        arr[i] = 75; // perfectly constant across frames = flux 0, energy > 50
       }
     });
 
@@ -143,6 +144,7 @@ describe('useAudioVoiceGuard', () => {
         isAiSpeaking: false,
         isCandidateTurn: true,
         isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
         onUnauthorizedVoiceDetected,
       })
     );

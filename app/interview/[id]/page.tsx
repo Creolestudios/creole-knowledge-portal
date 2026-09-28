@@ -190,7 +190,9 @@ export default function InterviewEntryPage() {
     setCurrentQuestion(nextIndex);
 
     // Fire-and-forget: persist metrics + upload audio in the background.
-    // If the candidate gave no answer, cancel recording to avoid uploading silent audio.
+    // If the candidate gave no answer, cancel recording to avoid uploading silent audio,
+    // but save a blank answer record so all questions have an entry.
+    const currentQ = questions[currentQuestion];
     if (hadAnswer) {
       void completeTurn().catch((err) =>
         console.warn('[interview] completeTurn error:', err)
@@ -203,6 +205,13 @@ export default function InterviewEntryPage() {
       void completeTurn().catch((err) =>
         console.warn('[interview] completeTurn error:', err)
       );
+      if (currentQ?.id) {
+        void fetch(`/api/interview/${interviewId}/answers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId: currentQ.id, transcript: '' }),
+        }).catch((err) => console.warn('[interview] Failed to save blank answer:', err));
+      }
     }
 
     // Reset guard after the state update has propagated.
@@ -213,12 +222,20 @@ export default function InterviewEntryPage() {
 
   const submitFinalAnswer = async () => {
     const hadAnswer = currentSpokenText.trim().length > 0 || (interimText && interimText.trim().length > 0);
+    const currentQ = questions[currentQuestion];
     if (hadAnswer) {
       await completeTurn();
       await stopAndUpload();
     } else {
       cancelRecording();
       await completeTurn();
+      if (currentQ?.id) {
+        await fetch(`/api/interview/${interviewId}/answers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId: currentQ.id, transcript: '' }),
+        }).catch((err) => console.warn('[interview] Failed to save blank answer:', err));
+      }
     }
     setFinalAnswerSubmitted(true);
     // Trigger scoring pass on complete
@@ -315,7 +332,7 @@ export default function InterviewEntryPage() {
       'voice',
       info.reason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
-      4000,
+      15000,
       nowMs,
     );
 
@@ -360,6 +377,7 @@ export default function InterviewEntryPage() {
       await captureEvidenceSnapshot('unauthorized_voice');
       return null;
     },
+    readingGracePeriodMs: 8000,
   });
 
   useEffect(() => {
@@ -483,6 +501,8 @@ export default function InterviewEntryPage() {
     }, 3000);
     return () => window.clearTimeout(timer);
   }, [stage, isAdmin, setStageWithRef]);
+
+
 
   const handleToggleMic = () => {
     const audioTracks = cameraStreamRef.current?.getAudioTracks() ?? [];

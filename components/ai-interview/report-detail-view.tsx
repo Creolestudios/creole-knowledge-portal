@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   AlertTriangle,
@@ -243,8 +244,29 @@ export function ReportDetailView({
   totalWarnings,
   followUpQuestions,
 }: ReportDetailViewProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'hr' | 'technical' | 'transcript'>('hr');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportGenError, setReportGenError] = useState<string | null>(null);
+
+  const handleGenerateReport = useCallback(async () => {
+    setIsGeneratingReport(true);
+    setReportGenError(null);
+    try {
+      const res = await fetch(`/api/interview/${session.id}/score`, { method: 'POST' });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        throw new Error(json?.error || `Scoring failed (${res.status})`);
+      }
+      // Refresh server component data
+      router.refresh();
+    } catch (err) {
+      setReportGenError(err instanceof Error ? err.message : 'Failed to generate report.');
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  }, [session.id, router]);
 
   const rawStatus = session.status || 'in_progress';
   const isTerminated = rawStatus === 'terminated' || rawStatus === 'cancelled';
@@ -401,22 +423,51 @@ export function ReportDetailView({
                 )}
               </div>
               {/* Score gauges */}
-              <div className="flex items-center gap-6 flex-shrink-0 bg-zinc-50 border border-zinc-200 rounded-xl px-6 py-4">
-                <ScoreGauge value={report?.cognitive_composite ?? null} color="#1689aa" label="Technical Depth" />
-                <ScoreGauge value={report?.fluency_score ?? null} color="#34c4f2" label="Communication" />
+              <div className="flex flex-col items-end gap-3 flex-shrink-0">
+                <div className="flex items-center gap-6 bg-zinc-50 border border-zinc-200 rounded-xl px-6 py-4">
+                  <ScoreGauge value={report?.cognitive_composite ?? null} color="#1689aa" label="Technical Depth" />
+                  <ScoreGauge value={report?.fluency_score ?? null} color="#34c4f2" label="Communication" />
+                </div>
+                {/* Show refresh button if scores are null despite report existing */}
+                {(report?.cognitive_composite === null || report?.cognitive_composite === undefined
+                  || report?.fluency_score === null || report?.fluency_score === undefined) && (
+                  <button
+                    type="button"
+                    onClick={handleGenerateReport}
+                    disabled={isGeneratingReport}
+                    className="text-xs font-bold px-4 py-2 rounded-xl bg-[#34c4f2] text-zinc-900 hover:bg-[#2db0db] disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-2"
+                  >
+                    {isGeneratingReport ? '⏳ Generating…' : '🔄 Refresh Scores'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-zinc-200 shadow-card p-6">
-            <div className="flex items-center gap-4">
-              <Clock className="w-8 h-8 text-zinc-400" />
-              <div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+              <Clock className="w-8 h-8 text-zinc-400 flex-shrink-0" />
+              <div className="flex-1">
                 <h2 className="text-lg font-bold text-zinc-900">Evaluation Pending</h2>
                 <p className="text-xs text-zinc-500 mt-0.5">
-                  Candidate session recorded. AI scoring evaluation is underway or can be triggered below.
+                  Scoring runs automatically after the session ends. If scores are missing, click Generate Report.
                 </p>
+                {reportGenError && (
+                  <p className="text-xs text-red-600 mt-1 font-medium">{reportGenError}</p>
+                )}
               </div>
+              <button
+                type="button"
+                onClick={handleGenerateReport}
+                disabled={isGeneratingReport}
+                className="px-5 py-2.5 rounded-xl bg-[#34c4f2] text-zinc-900 text-xs font-black hover:bg-[#2db0db] disabled:opacity-50 transition-all shadow-lg shadow-[#34c4f2]/20 flex items-center gap-2 cursor-pointer flex-shrink-0"
+              >
+                {isGeneratingReport ? (
+                  <><span className="inline-block w-3.5 h-3.5 border-2 border-zinc-900/30 border-t-zinc-900 rounded-full animate-spin" />Generating…</>
+                ) : (
+                  <>⚡ Generate Report</>
+                )}
+              </button>
             </div>
           </div>
         )}

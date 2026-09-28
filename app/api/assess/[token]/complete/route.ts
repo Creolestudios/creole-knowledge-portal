@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { validateActiveAssessToken } from '@/lib/ai-interview/assess-utils';
 import { scoreInterviewSession } from '@/lib/ai-interview/scorer';
+import { ensureAllQuestionsAnswered } from '@/lib/ai-interview/answers';
 
 export const runtime = 'nodejs';
 
@@ -55,6 +56,9 @@ export async function POST(
       .update(sessionUpdate)
       .eq('id', invite.session_id),
   ]);
+
+  // Ensure all questions have an answer recorded (blank if unanswered)
+  await ensureAllQuestionsAnswered(invite.session_id);
 
   // Trigger post-interview scoring in background
   scoreInterviewSession({ sessionId: invite.session_id }).catch((err) => {

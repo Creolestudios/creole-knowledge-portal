@@ -198,9 +198,13 @@ ${jdText || '(See attached JD file)'}
 
   contents.push(prompt);
 
-  // Model priority list — first working model wins.
-  // gemini-2.5-flash-lite is deprecated; replaced with gemini-3.5-flash-lite.
-  const modelsToTry = ['gemini-3.6-flash', 'gemini-3.1-pro-preview', 'gemini-3.5-flash-lite'];
+  const modelsToTry = [
+    ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-flash-latest',
+    'gemini-2.5-flash',
+  ];
   const maxAttemptsPerModel = 3;
 
   for (const modelName of modelsToTry) {

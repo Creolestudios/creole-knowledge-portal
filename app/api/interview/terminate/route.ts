@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { ensureAllQuestionsAnswered } from '@/lib/ai-interview/answers';
+import { scoreInterviewSession } from '@/lib/ai-interview/scorer';
 
 export const runtime = 'nodejs';
 
@@ -70,6 +72,14 @@ export async function POST(req: Request) {
     .from('interview_sessions')
     .update(sessionUpdate)
     .eq('id', interviewId);
+
+  await ensureAllQuestionsAnswered(interviewId);
+
+  // Trigger post-interview scoring in background — generates fluency, cognitive
+  // composite, and recommendation report even for terminated sessions.
+  scoreInterviewSession({ sessionId: interviewId }).catch((err) => {
+    console.error('[interview-terminate] Background scoring error:', err);
+  });
 
   return NextResponse.json({ terminated: true, interviewId: interview.id });
 }

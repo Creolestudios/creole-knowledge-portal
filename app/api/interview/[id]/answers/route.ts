@@ -31,19 +31,40 @@ export async function POST(
       }
     }
 
-    const formData = await req.formData();
-    const questionId = formData.get('questionId');
-    const file = formData.get('file');
+    const contentType = req.headers.get('content-type') || '';
+    let questionId: string | undefined;
+    let transcript: string | null = null;
+    let storagePath: string | null = null;
+    let durationSec = 0;
+    let audioFile: Blob | null = null;
 
-    if (typeof questionId !== 'string' || !questionId || !(file instanceof Blob)) {
-      return NextResponse.json({ error: 'questionId and an audio file are required.' }, { status: 400 });
+    if (contentType.includes('application/json')) {
+      const body = await req.json().catch(() => null);
+      questionId = (body?.questionId || body?.question_id) as string | undefined;
+      transcript = typeof body?.transcript === 'string' ? body.transcript : '';
+      durationSec = Number(body?.total_time_taken_sec) || 0;
+    } else {
+      const formData = await req.formData();
+      questionId = formData.get('questionId') as string | undefined;
+      const file = formData.get('file');
+      if (file instanceof Blob && file.size > 0) {
+        audioFile = file;
+      } else if (!formData.has('transcript')) {
+        return NextResponse.json({ error: 'questionId and an audio file are required.' }, { status: 400 });
+      } else {
+        transcript = (formData.get('transcript') as string) || '';
+      }
+
+      const startedAtMs = Number(formData.get('startedAtMs'));
+      const endedAtMs = Number(formData.get('endedAtMs'));
+      durationSec =
+        Number.isFinite(startedAtMs) && Number.isFinite(endedAtMs) && endedAtMs > startedAtMs
+          ? (endedAtMs - startedAtMs) / 1000
+          : 0;
     }
 
-    // MediaRecorder reports types like "audio/webm;codecs=opus" — the bucket allows the base type.
-    const mimeType = file.type.split(';')[0].trim();
-    const extension = AUDIO_EXTENSIONS[mimeType];
-    if (!extension) {
-      return NextResponse.json({ error: `Unsupported audio format: ${mimeType || 'unknown'}` }, { status: 415 });
+    if (typeof questionId !== 'string' || !questionId) {
+      return NextResponse.json({ error: 'questionId and an audio file are required.' }, { status: 400 });
     }
 
     const { data: question, error: questionError } = await supabaseAdmin
@@ -57,33 +78,32 @@ export async function POST(
       return NextResponse.json({ error: 'Question does not belong to this interview.' }, { status: 404 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const storagePath = `${id}/${questionId}.${extension}`;
+    if (audioFile) {
+      // MediaRecorder reports types like "audio/webm;codecs=opus" — the bucket allows the base type.
+      const mimeType = audioFile.type.split(';')[0].trim();
+      const extension = AUDIO_EXTENSIONS[mimeType];
+      if (!extension) {
+        return NextResponse.json({ error: `Unsupported audio format: ${mimeType || 'unknown'}` }, { status: 415 });
+      }
 
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from('interview-answer-audio')
-      .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+      const buffer = Buffer.from(await audioFile.arrayBuffer());
+      storagePath = `${id}/${questionId}.${extension}`;
 
-    if (uploadError) {
-      console.error('[interview-answers] audio upload failed:', uploadError.message);
-      return NextResponse.json({ error: 'Could not save the recorded answer.' }, { status: 500 });
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('interview-answer-audio')
+        .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+
+      if (uploadError) {
+        console.error('[interview-answers] audio upload failed:', uploadError.message);
+        return NextResponse.json({ error: 'Could not save the recorded answer.' }, { status: 500 });
+      }
+
+      try {
+        transcript = await transcribeAnswer(buffer, mimeType);
+      } catch (err) {
+        console.error('[interview-answers] transcription failed:', err);
+      }
     }
-
-    // A failed transcription must not lose the recording — store the answer either way and
-    // let it be re-transcribed later from the audio we just saved.
-    let transcript: string | null = null;
-    try {
-      transcript = await transcribeAnswer(buffer, mimeType);
-    } catch (err) {
-      console.error('[interview-answers] transcription failed:', err);
-    }
-
-    const startedAtMs = Number(formData.get('startedAtMs'));
-    const endedAtMs = Number(formData.get('endedAtMs'));
-    const durationSec =
-      Number.isFinite(startedAtMs) && Number.isFinite(endedAtMs) && endedAtMs > startedAtMs
-        ? (endedAtMs - startedAtMs) / 1000
-        : 0;
 
     const answer = {
       session_id: id,

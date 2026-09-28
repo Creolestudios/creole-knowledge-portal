@@ -28,6 +28,12 @@ let calibrationSamples: Array<{
   rightIrisRatio: { x: number; y: number };
 }> = [];
 
+// Persistence buffer to prevent frame drops during eye or head movement
+let consecutiveMissingFrames = 0;
+let lastKnownLandmark: Array<{ x: number; y: number }> | undefined = undefined;
+let lastKnownBlendshapes: Array<{ categoryName?: string; score?: number }> = [];
+let lastKnownMatrix: number[] = [];
+
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
 
@@ -90,10 +96,30 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
   try {
     const result = faceLandmarker.detectForVideo(inputSource, message.timestamp);
-    const numFaces = result.faceLandmarks?.length ?? 0;
-    const landmark = result.faceLandmarks?.[0];
-    const blendshapes = result.faceBlendshapes?.[0]?.categories ?? [];
-    const matrix = result.facialTransformationMatrixes?.[0]?.data ?? [];
+    let numFaces = result.faceLandmarks?.length ?? 0;
+    let landmark = result.faceLandmarks?.[0];
+    let blendshapes = result.faceBlendshapes?.[0]?.categories ?? [];
+    let matrix = result.facialTransformationMatrixes?.[0]?.data ?? [];
+
+    if (landmark && landmark.length > 0) {
+      consecutiveMissingFrames = 0;
+      lastKnownLandmark = landmark;
+      lastKnownBlendshapes = blendshapes;
+      lastKnownMatrix = matrix;
+    } else {
+      consecutiveMissingFrames++;
+      // If the face was present recently (within 3 frames / ~375ms), hold last known face
+      // to avoid false "no face" drops when the user blinks or moves their eyes
+      if (consecutiveMissingFrames <= 3 && lastKnownLandmark) {
+        landmark = lastKnownLandmark;
+        blendshapes = lastKnownBlendshapes;
+        matrix = lastKnownMatrix;
+        numFaces = 1;
+      } else {
+        lastKnownLandmark = undefined;
+      }
+    }
+
     const iris = landmark
       ? [landmark[468], landmark[473]].filter(Boolean).map((point) => ({ x: point.x, y: point.y }))
       : [];

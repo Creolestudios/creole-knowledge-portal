@@ -575,11 +575,27 @@ Return only a JSON array. Each item must contain:
 - time_limit_sec: integer seconds dynamically decided by you based on this specific question's depth, scope, and technical complexity (e.g. 150-180 for easy conceptual, 210-240 for medium trade-off, 270-300 for hard technical challenge)
 - weight: integer between 1 and 100 (e.g. 10)`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: { responseMimeType: 'application/json', temperature: 0.6 },
-    });
+    const modelsToTry = [
+      ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
+      'gemini-3.6-flash',
+      'gemini-3.5-flash',
+      'gemini-flash-latest',
+      'gemini-2.5-flash',
+    ];
+
+    let response: any = null;
+    for (const model of modelsToTry) {
+      try {
+        response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: { responseMimeType: 'application/json', temperature: 0.6 },
+        });
+        if (response?.text) break;
+      } catch (err) {
+        console.warn(`[question-generator] Model ${model} failed, trying fallback:`, err);
+      }
+    }
 
     const cleanedText = (response.text || '').replace(/```json\n?|\n?```/g, '').trim();
     if (!cleanedText) {

@@ -17,13 +17,17 @@ export async function POST(
     const { id } = await params;
     const body = await req.json().catch(() => null);
 
-    if (!id || !body || typeof body.text !== 'string' || !body.text.trim()) {
+    if (!id || !body || typeof body.text !== 'string') {
       return NextResponse.json({ error: 'Valid session ID and text are required.' }, { status: 400 });
     }
 
     const speaker = ['ai', 'candidate', 'unauthorized_voice'].includes(body.speaker)
       ? body.speaker
       : 'candidate';
+
+    if (!body.text.trim() && speaker !== 'candidate') {
+      return NextResponse.json({ error: 'Text cannot be empty for this speaker.' }, { status: 400 });
+    }
 
     const questionOrd = typeof body.questionOrd === 'number' ? body.questionOrd : null;
     const tsMs = typeof body.tsMs === 'number' ? body.tsMs : Date.now();

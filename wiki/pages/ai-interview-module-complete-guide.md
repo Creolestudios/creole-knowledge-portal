@@ -1,0 +1,253 @@
+# Creole AI Interview Module — Complete Technical & Functional Specification
+
+## 1. Executive Summary & Overview
+
+The **Creole AI Interview Module** is an autonomous, end-to-end technical and non-technical interview assessment system designed to evaluate candidate competencies, English language proficiency, and session integrity without requiring human proctor intervention.
+
+### Core Technology Stack
+- **Frontend / Full-Stack**: Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4.
+- **Client-Side ML & Audio Processing**:
+  - MediaPipe FaceMesh Web Worker (face detection, iris ratio, head yaw/pitch).
+  - TensorFlow.js COCO-SSD Worker (object & prohibited device detection).
+  - Web Audio API `AudioContext` & `AnalyserNode` (real-time voice & spectral flux analysis).
+  - Web Speech API (real-time candidate speech recognition & transcription).
+- **Backend & Database**:
+  - Supabase PostgreSQL (`interview_sessions`, `interview_questions`, `interview_answers`, `interview_transcript`, `interview_events`, `interview_reports`).
+  - Supabase Storage (evidence snapshots captured during proctoring violations).
+  - Google Gemini Flash (technical evaluation, CEFR fluency analysis, bluff detection, and Round 2 question generation).
+
+---
+
+## 2. End-to-End Interview Candidate Journey (Flow)
+
+```mermaid
+graph TD
+    A[Magic Invite Link: /assess/[token]] --> B[Stage 1: Passcode Verification]
+    B --> C[Stage 2: Instructions & Device Permissions]
+    C --> D[Stage 3: Ready / Final Confirmation]
+    D --> E[Stage 4: Face & Gaze Calibration]
+    E --> F[Stage 5: Live Question & Answer Loop]
+    F -->|Timer Expiry or 'Next Question'| F
+    F -->|All Questions Completed OR Overall Time Elapsed| G[Stage 6: Completed & Auto-Scoring]
+    F -->|3 Proctoring Violations| H[Stage 7: Auto-Terminated]
+    G --> I[Admin & HR Report Dashboard]
+    H --> I
+```
+
+### Stage 1: Passcode Verification (`passcode`)
+- Candidate accesses `/assess/[token]`.
+- System validates the candidate invite token and requires a 6-digit access passcode.
+- Upon verification, session details, candidate profile, and all assigned questions are loaded into memory.
+
+### Stage 2: Hardware & Permissions Check (`instructions` & `permissions`)
+- The candidate must explicitly grant access to:
+  1. **Webcam**: Used for continuous face, gaze, and object detection.
+  2. **Microphone**: Used for speech-to-text and background voice analysis.
+  3. **Entire Screen Sharing (`getDisplayMedia`)**: Ensures candidate does not open secondary windows or tabs.
+
+### Stage 3: Ready Screen (`ready`)
+- Pre-interview sanity check ensuring active audio/video feeds before proctoring starts.
+
+### Stage 4: Calibration Phase (`calibration`)
+- Uses a background MediaPipe FaceMesh Web Worker to capture **15 baseline samples** of the candidate's natural resting position:
+  - Center iris coordinates (left and right eye).
+  - Head yaw and pitch angles.
+- This baseline calibrates the proctoring engine to the candidate's unique monitor height, camera position, and natural posture, eliminating false positive gaze warnings.
+
+### Stage 5: Live Interview Question Loop (`interview`)
+- **Question Presentation**:
+  - The current question is displayed prominently with difficulty and competency labels.
+  - An individual question countdown timer (`time_limit_sec`, default 120s) ticks down.
+- **Voice-Only Answer Capture**:
+  - Web Speech recognition automatically activates within 120ms of a question appearing.
+  - Spoken words are transcribed and streamed in real time to the candidate's screen.
+  - A manual "Speak / Reset Mic" button is available if the microphone needs re-syncing.
+- **Moving to the Next Question**:
+  - **Manual**: Once speech is detected, the button turns into **"Next Question"** (or **"Finish Interview"** on the last question). Clicking saves the answer and loads the next question.
+  - **Automatic Expiry**: If the question timer reaches `0:00`, the system automatically submits the candidate's current transcription (or a blank record if silent) and transitions to the next question.
+- **Overall Session Timer**:
+  - An overall session timer (e.g. 15 minutes) runs continuously.
+  - If the overall timer expires, all media stops, any open answers are saved, and the interview is submitted immediately.
+
+### Stage 6: Completion & AI Scoring (`completed`)
+- Media streams are revoked.
+- An asynchronous evaluation job (`scoreInterviewSession`) triggers Gemini Flash (`gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-flash-latest`, `gemini-2.5-flash` with automatic quota/error fallback) to score technical depth, English CEFR fluency, cognitive composite, and generate Round 2 questions.
+- Results are saved via `saveInterviewReport` (`lib/ai-interview/report-store.ts`), which writes to `interview_reports` and seamlessly falls back to `interview_events` (`event_type: 'scoring_report'`) if the reports table is missing in the database schema.
+
+### Stage 7: Auto-Termination (`terminated`)
+- If the candidate incurs **3 proctoring strikes**, the session is immediately auto-terminated.
+- The invite status is revoked, reason is recorded in Supabase, and the candidate is locked out of the interview.
+
+---
+
+## 3. Session Integrity & Proctoring Engine
+
+All proctoring rules feed into a **Single Unified Counter** strictly capped at **3 warnings total** before auto-termination.
+
+| Warning # | Action Taken |
+| :--- | :--- |
+| **Warning 1** | On-screen warning toast (auto-dismisses after 5s) + Event logged + Camera snapshot captured. |
+| **Warning 2** | Second on-screen warning toast + Event logged + Camera snapshot captured. |
+| **Warning 3** | Session **auto-terminates immediately**. Final proctoring audit recorded. |
+
+```
+                                  Unified Proctoring Engine
+                                               │
+             ┌─────────────────────────────────┼─────────────────────────────────┐
+             ▼                                 ▼                                 ▼
+   [ Face & Gaze Tracking ]          [ Object & Device Guard ]         [ Voice & Audio Guard ]
+   - No face (1.5s)                  - Mobile phone (0ms)              - AI / Synthetic voice (~400ms)
+   - Multi face (2.0s)               - Headphones / Earbuds (0ms)      - Louder background voice (~200ms)
+   - Looking away / Turn (3.0s)      - Notes / Books (0ms)             - Dual speaker overlap (~200ms)
+   - Reading off-screen (4.5s)       - Second screen / Laptop (0ms)    (Quiet murmurs ignored)
+             └─────────────────────────────────┬─────────────────────────────────┘
+                                               ▼
+                              [ Unified Counter: Max 3 Strikes ]
+                                               │
+                                 Strike 3 ──► Auto-Termination
+```
+
+### A. Face & Gaze Tracking (MediaPipe Web Worker)
+Runs off the main thread at ~8 FPS (125ms intervals):
+1. **No Face Detected (`no_face`)**:
+   - *Threshold*: **1.5 seconds** sustained absence.
+   - *Reason*: `"No face detected in webcam frame."`
+2. **Multiple Faces Detected (`multi_face`)**:
+   - *Threshold*: **2.0 seconds** sustained presence of $\ge 2$ faces.
+   - *Reason*: `"Multiple faces detected in frame."`
+3. **Looking Away / Gaze Deviation (`gaze_away`)**:
+   - *Threshold*: **3.0 seconds** sustained.
+   - *Condition*: Candidate completely shifts gaze off-screen (look left/right/up score $> 0.68$) or turns head away (head yaw $> 25^\circ$ or pitch $> 22^\circ$).
+   - *Reading Safeguard*: Normal horizontal eye movement while reading text on screen (0.2–0.45) is permitted and never flags.
+   - *Reason*: `"Keep your eyes on the screen during the interview."`
+4. **Reading Off-Screen (`reading_suspected`)**:
+   - *Threshold*: **4.5 seconds** sustained downward gaze ($> 0.75$, e.g. looking down at a desk or lap).
+   - *Reason*: `"Suspected reading off-screen."`
+- **Cooldown**: 5.0-second debounce between alerts for the same category.
+
+### B. Object & Unauthorized Device Detection (COCO-SSD Worker)
+Analyzes camera frames using a TensorFlow.js background worker:
+- **Tracked Objects**: Mobile phone, headphones, earbuds, books/notes, laptops, secondary monitors, tablets, external keypads.
+- **Sensitivity & Thresholds**:
+  - Cell phones, earbuds, and headphones trigger with confidence $\ge 10\%$.
+  - Reading materials / books trigger with confidence $\ge 12\%$.
+  - Secondary screens and laptops trigger with confidence $\ge 14\%$.
+  - Response time is **immediate (0 ms sustained delay)** upon detection.
+- **Cooldown**: 5.0-second debounce per detected object type. If the object leaves the camera view for 2 consecutive frames, the timer resets.
+
+### C. Real-Time Audio & Voice Guard (`useAudioVoiceGuard`)
+Continuous acoustic frequency analysis using Web Audio API across the speech band (300 Hz – 3,400 Hz):
+1. **AI / Synthetic Voice Detection**:
+   - TTS generators and AI voice changers produce unnaturally flat spectral flux ($< 2.0$) while speech energy is active ($> 35$).
+   - Triggers when sustained for **~400 ms (25 frames)**.
+   - *Reason*: `"AI voice detected during interview. Only natural candidate voice is allowed."`
+2. **Louder Background Voice Detection**:
+   - Tracks candidate's actual speaking baseline level while candidate mouth is moving.
+   - If a background voice speaks that is **louder than the candidate** ($> \text{speakerLevel} \times 1.15$), it triggers after **~200 ms (12 frames)**.
+   - **Whispers, distant murmurs, and quiet ambient background sounds are ignored**.
+   - *Reason*: `"Background voice louder than candidate detected."`
+3. **Dual Speaker Overlap**:
+   - Detects distinct secondary harmonic peaks while candidate is talking that exceed baseline energy.
+4. **AI Turn Muting**:
+   - Completely silenced while the system / AI interviewer is speaking.
+- **Cooldown**: 4.0-second debounce between voice warnings.
+
+### D. System Watchdog (`useProctoringWatchdog`)
+- Checks hardware and media integrity every 1.5 seconds.
+- Automatically terminates the session if:
+  - The camera or microphone track ends or is muted.
+  - The screen sharing stream is closed by the user.
+  - The browser tab is switched or minimized (`visibilityState === 'hidden'`).
+
+---
+
+## 4. Database Schema & Data Isolation Architecture
+
+To ensure audit accuracy and zero cross-contamination:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        DATA ISOLATION SCHEMA                           │
+├──────────────────────────┬─────────────────────────────────────────────┤
+│ Table                    │ Purpose & Contents                          │
+├──────────────────────────┼─────────────────────────────────────────────┤
+│ interview_sessions       │ Session state, candidate data, strike counts│
+│ interview_questions      │ All system/AI questions generated           │
+│ interview_answers        │ Candidate answers mapped per question       │
+│ interview_transcript     │ EXCLUSIVELY candidate spoken utterances     │
+│ interview_events         │ Proctoring alerts, snapshots, strike logs   │
+│ interview_reports        │ AI evaluation, CEFR, scores, follow-ups     │
+└──────────────────────────┴─────────────────────────────────────────────┘
+```
+
+1. **`interview_transcript`**:
+   - **Exclusively contains candidate speech** (`speaker: 'candidate'`).
+   - Platform questions, AI utterances, and system prompts are strictly quarantined from this table to prevent polluting the evaluation engine.
+2. **`interview_questions`**:
+   - Origin and permanent home of all questions asked in the interview.
+   - Contains question text, category, difficulty, order, and competency.
+3. **`interview_answers`**:
+   - Stores candidate answer transcripts mapped to `question_id`.
+   - Guaranteed coverage: if a question was skipped or timed out, a record with `transcript: ''` is automatically preserved so no question is ever missing.
+4. **`interview_events`**:
+   - Audits every proctoring incident with snapshot image paths and metadata (`warningCount: 1, 2, 3`).
+   - Also serves as the resilient secondary storage fallback for `scoring_report` payloads when `interview_reports` is missing from the database schema.
+5. **`interview_reports`**:
+   - Primary storage for interview reports, cognitive scores, fluency CEFR ratings, and recommendations.
+
+---
+
+## 5. Scoring & Result Evaluation Engine
+
+Triggered asynchronously upon interview completion:
+
+### 1. English Fluency Evaluation
+$$\text{Fluency Score (0–100)} = (45\% \times \text{Local Objective Score}) + (55\% \times \text{AI CEFR Score})$$
+
+- **Local Objective Metrics (45%)**:
+  - **Words Per Minute (30%)**: Optimal target 110–170 WPM.
+  - **Filler Word Ratio (30%)**: Target $< 3\%$ of total words.
+  - **Long Pauses (25%)**: Target $< 4$ pauses ($> 800\text{ms}$) per minute.
+  - **Response Latency (15%)**: Target 300 ms – 1,800 ms.
+- **AI CEFR Rubric (55%)**:
+  - Scored on CEFR levels: **A2, B1, B2, C1, or C2**.
+  - Sub-bands: Grammar & Accuracy, Vocabulary Range, Structured Coherence, Fluency & Flow.
+  - **Language Switch Detection**: Up to **40-point penalty** if non-English speech is detected.
+
+### 2. Technical Competencies (1 to 5 per Question)
+- Evaluated against a 5-point rubric:
+  - **5 (Excellent)**: Senior depth, concrete metrics, edge cases considered.
+  - **4 (Strong)**: Technically sound with minor gaps.
+  - **3 (Adequate)**: Generic or surface-level knowledge.
+  - **2 (Weak)**: Misconceptions.
+  - **1 (Poor / Empty)**: Incorrect, empty, or absent audio.
+- **Verbatim Evidence Grounding**: The AI extracts exact quotes from candidate speech to prove each score.
+- **Bluff Detection**: Buzzword-heavy answers lacking depth are flagged with `bluff_suspected: true`.
+
+### 3. Cognitive Composite (0–100)
+$$\text{Cognitive Composite} = (60\% \times \text{Competency Score}) + (30\% \times \text{Reasoning Subscore}) + (10\% \times \text{Speech Clarity})$$
+
+### 4. Hiring Recommendation Matrix
+- **🌟 Strong Hire (`strong_yes`)**: Cognitive $\ge 80$, Fluency $\ge 75$, CEFR $\ge \text{B2}$, 0 proctoring warnings, no language switching.
+- **✅ Recommended to Hire (`yes`)**: Cognitive $\ge 60$, Fluency $\ge 55$, 0 proctoring warnings.
+- **⚠️ Needs Further Review (`maybe`)**: Adequate scores but 1–2 proctoring warnings OR language switching detected.
+- **❌ Not Recommended (`no`)**: Terminated due to 3 warnings OR severe performance gaps.
+
+### 5. Round 2 Follow-Up Questions
+The AI inspects competencies where the candidate scored $\le 3/5$ and generates **2 to 3 targeted technical follow-up questions** for human interviewers in Round 2.
+
+---
+
+## 6. Admin & HR Reporting Dashboard
+
+Located at `/admin/reports/[id]`:
+- **HR & Non-Technical View**:
+  - CEFR rating & badge.
+  - English communication breakdown (Grammar, Vocabulary, Coherence, Fluency).
+  - Speaking pace (WPM).
+  - **Continuous Warning Counter**: Visual strike tracker (Strike 1, Strike 2, Strike 3) with exact breakdown across Face, Object, and Voice.
+- **Technical Evaluation View**:
+  - Question-by-question score (1–5) with evidence quotes and bluff indicators.
+  - Recommended Round 2 technical deep-dive questions.
+- **Full Transcript View**:
+  - Chronological review of candidate speech answers with timestamps.
