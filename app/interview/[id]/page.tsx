@@ -43,8 +43,20 @@ import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
 import { useAnswerRecorder } from '@/lib/ai-interview/use-answer-recorder';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
+import CandidateAssessmentPage from '@/app/assess/[token]/page';
 
-export default function InterviewEntryPage() {
+export default function InterviewPageWrapper() {
+  const params = useParams();
+  const interviewId = params?.id as string;
+
+  if (interviewId && interviewId !== 'interview-1') {
+    return <CandidateAssessmentPage initialToken={interviewId} />;
+  }
+
+  return <InterviewEntryPage />;
+}
+
+function InterviewEntryPage() {
   const params = useParams();
   const interviewId = params?.id as string;
 
@@ -807,7 +819,7 @@ export default function InterviewEntryPage() {
             .catch((err) => {
               console.warn('[ObjectDetection] Frame capture error:', err);
             });
-        }, 250); // 250ms — real-time responsive object detection
+        }, 150); // 150ms — real-time responsive object detection
         return;
       }
 

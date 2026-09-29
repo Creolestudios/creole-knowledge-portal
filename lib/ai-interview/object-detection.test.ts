@@ -1,11 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { filterTrackedObjects, OBJECT_RULES } from './object-detection';
+import { ProctoringTimeTracker } from './face-tracking';
 
 describe('object-detection module', () => {
   it('defines rules for key unauthorized proctoring objects', () => {
     expect(OBJECT_RULES['cell phone']).toBeDefined();
     expect(OBJECT_RULES['cell phone'].object).toBe('phone');
-    expect(OBJECT_RULES['cell phone'].thresholdMs).toBeGreaterThanOrEqual(0);
+    expect(OBJECT_RULES['cell phone'].thresholdMs).toBe(0);
 
     expect(OBJECT_RULES.headphones).toBeDefined();
     expect(OBJECT_RULES.headphones.object).toBe('earbuds');
@@ -29,11 +30,11 @@ describe('object-detection module', () => {
     expect(results).toHaveLength(0);
   });
 
-  it('detects tracked objects above minimum confidence and filters below', () => {
+  it('detects tracked objects at calibrated responsive confidence', () => {
     const rawDetections = [
-      { class: 'cell phone', score: 0.75, bbox: [100, 120, 80, 140] as [number, number, number, number] },
-      { class: 'book', score: 0.65, bbox: [50, 80, 120, 90] as [number, number, number, number] },
-      { class: 'remote', score: 0.20, bbox: [10, 20, 30, 40] as [number, number, number, number] }, // Below threshold
+      { class: 'cell phone', score: 0.35, bbox: [100, 120, 80, 140] as [number, number, number, number] },
+      { class: 'book', score: 0.30, bbox: [50, 80, 120, 90] as [number, number, number, number] },
+      { class: 'remote', score: 0.10, bbox: [10, 20, 30, 40] as [number, number, number, number] }, // Below threshold
     ];
 
     const results = filterTrackedObjects(rawDetections);
@@ -43,4 +44,30 @@ describe('object-detection module', () => {
     expect(results[1].label).toBe('book');
     expect(results[1].rule?.object).toBe('book');
   });
+
+  it('enforces thresholdMs === 0 for immediate proctoring alert triggers', () => {
+    for (const [key, rule] of Object.entries(OBJECT_RULES)) {
+      expect(rule.thresholdMs, `Expected ${key} thresholdMs to be 0 for instant warning`).toBe(0);
+    }
+  });
+
+  it('triggers proctoring warning immediately on first detection frame when thresholdMs is 0', () => {
+    const tracker = new ProctoringTimeTracker();
+    const phoneRule = OBJECT_RULES['cell phone'];
+    const now = Date.now();
+
+    const result = tracker.processGenericEvent(
+      phoneRule.category,
+      phoneRule.object,
+      phoneRule.reason,
+      phoneRule.thresholdMs, // 0ms
+      5000,
+      now,
+    );
+
+    expect(result.shouldTriggerWarning).toBe(true);
+    expect(result.warningCount).toBe(1);
+    expect(result.reason).toContain('Mobile phone detected');
+  });
 });
+

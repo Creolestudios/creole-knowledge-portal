@@ -33,91 +33,90 @@ export const OBJECT_RULES: Record<string, ObjectRule> = {
     category: 'object_detected',
     object: 'phone',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Mobile phone detected in frame. External devices are not permitted.',
   },
   phone: {
     category: 'object_detected',
     object: 'phone',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Mobile phone detected in frame. External devices are not permitted.',
   },
   headphones: {
     category: 'object_detected',
     object: 'earbuds',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Earbuds or headphones detected. Audio aids are not permitted.',
   },
   book: {
     category: 'object_detected',
     object: 'book',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Reading material or notes detected. External aids are not permitted.',
   },
   tv: {
     category: 'object_detected',
     object: 'second_screen',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Additional screen or monitor detected in frame.',
   },
   laptop: {
     category: 'object_detected',
     object: 'second_screen',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Additional laptop or screen detected in frame.',
   },
   remote: {
     category: 'object_detected',
     object: 'remote',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Remote or unauthorized electronic device detected.',
   },
   tablet: {
     category: 'object_detected',
     object: 'tablet',
     severity: 'warning',
-    thresholdMs: 8000,
+    thresholdMs: 0,
     reason: 'Tablet or mobile device detected in frame.',
   },
   mouse: {
     category: 'object_detected',
     object: 'device',
     severity: 'warning',
-    thresholdMs: 10000,
+    thresholdMs: 0,
     reason: 'Unauthorized electronic device detected.',
   },
   keyboard: {
     category: 'object_detected',
     object: 'device',
     severity: 'warning',
-    thresholdMs: 10000,
+    thresholdMs: 0,
     reason: 'External keypad or device detected.',
   },
 };
 
 /**
  * Per-class confidence thresholds.
- * Raised significantly from 0.08 to prevent misclassification of backgrounds,
- * reflections, clothing patterns, or furniture as phones/devices.
- * Object must be clearly and unambiguously visible at this confidence to count.
+ * Calibrated for instant detection of prohibited items (phones, books, devices)
+ * without latency when an object enters the camera view.
  */
 export const CLASS_CONFIDENCE_THRESHOLDS: Record<string, number> = {
-  'cell phone': 0.60,
-  phone: 0.60,
-  headphones: 0.55,
-  book: 0.55,
-  laptop: 0.60,
-  tv: 0.60,
-  remote: 0.60,
-  tablet: 0.60,
-  mouse: 0.65,
-  keyboard: 0.65,
+  'cell phone': 0.22,
+  phone: 0.22,
+  headphones: 0.25,
+  book: 0.22,
+  laptop: 0.28,
+  tv: 0.28,
+  remote: 0.25,
+  tablet: 0.25,
+  mouse: 0.30,
+  keyboard: 0.30,
 };
 
 export interface DetectedObjectEvent {

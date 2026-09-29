@@ -185,7 +185,7 @@ describe('AI Interview Module API Endpoints', () => {
     const json = await res.json();
 
     expect(res.status).toBe(200);
-    expect(json.invite_url).toContain('/assess/');
+    expect(json.invite_url).toContain('/interview/');
     expect(json.passcode).toBe('123456');
   });
 

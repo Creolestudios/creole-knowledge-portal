@@ -136,7 +136,7 @@ describe('Admin create-interview form — UI scenarios', () => {
       extraction: extractionPayload,
       session: { id: 's1', status: 'questions_generated' },
       questions: [{ id: 'q1', question_text: 'Introduce yourself.' }],
-      invite: { invite_url: 'http://x/assess/tok', passcode: '987654' },
+      invite: { invite_url: 'http://x/interview/tok', passcode: '987654' },
     });
 
     render(<AIInterviewManager />);
@@ -157,7 +157,7 @@ describe('Admin create-interview form — UI scenarios', () => {
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
     expect(await screen.findByDisplayValue('987654')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('http://x/assess/tok')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('http://x/interview/tok')).toBeInTheDocument();
   });
 
   it('TC-UI-07 A backend validation error from analysis is surfaced to the admin verbatim', async () => {

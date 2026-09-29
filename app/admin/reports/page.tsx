@@ -7,13 +7,8 @@ import {
   FileText,
   CheckCircle2,
   XCircle,
-  AlertTriangle,
   RefreshCw,
   Search,
-  ThumbsUp,
-  ThumbsDown,
-  HelpCircle,
-  Star,
   ChevronRight,
   Users,
   Loader2,
@@ -32,6 +27,7 @@ interface ReportSummary {
   cognitiveScore: number | null;
   fluencyScore: number | null;
   fluencyCefr: string | null;
+  terminationReason: string | null;
   recommendation: 'strong_yes' | 'yes' | 'maybe' | 'no' | null;
   recommendationRationale: string | null;
   flags: string[];
@@ -40,29 +36,6 @@ interface ReportSummary {
   objectWarnings: number;
   hasReport: boolean;
 }
-
-const REC_CONFIG = {
-  strong_yes: {
-    label: 'Strong Hire',
-    light: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    icon: Star,
-  },
-  yes: {
-    label: 'Recommended',
-    light: 'bg-[#34c4f2]/10 text-[#1689aa] border-[#34c4f2]/30',
-    icon: ThumbsUp,
-  },
-  maybe: {
-    label: 'Needs Review',
-    light: 'bg-amber-50 text-amber-700 border-amber-200',
-    icon: HelpCircle,
-  },
-  no: {
-    label: 'Not Recommended',
-    light: 'bg-red-50 text-red-700 border-red-200',
-    icon: ThumbsDown,
-  },
-} as const;
 
 function ScoreRing({ value, color }: { value: number | null; color: string }) {
   const pct = value ?? 0;
@@ -96,6 +69,7 @@ type RecFilter = 'all' | 'strong_yes' | 'yes' | 'maybe' | 'no' | 'pending';
 export default function InterviewReportsPage() {
   const [reports, setReports] = useState<ReportSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [openingId, setOpeningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<FilterType>('all');
@@ -262,15 +236,21 @@ export default function InterviewReportsPage() {
         ) : (
           <div className="space-y-3">
             {filtered.map((r) => {
-              const rec = r.recommendation;
-              const recCfg = rec ? REC_CONFIG[rec] : null;
-              const totalWarnings = r.voiceWarnings + r.faceWarnings + r.objectWarnings;
               const isTerminated = r.status === 'terminated';
+              const isOpening = openingId === r.id;
 
               return (
-                <Link key={r.id} href={`/admin/reports/${r.id}`}
-                  className="group block bg-white rounded-2xl border border-zinc-200 shadow-card hover:border-[#34c4f2]/50 hover:shadow-lg transition-all duration-200">
-                  <div className="p-5 flex flex-col md:flex-row md:items-center gap-5">
+                <Link
+                  key={r.id}
+                  href={`/admin/reports/${r.id}`}
+                  onClick={() => setOpeningId(r.id)}
+                  className={`group block bg-white rounded-2xl border shadow-card transition-all duration-200 ${
+                    isOpening
+                      ? 'border-[#34c4f2] ring-2 ring-[#34c4f2]/20 bg-zinc-50/50'
+                      : 'border-zinc-200 hover:border-[#34c4f2]/50 hover:shadow-lg'
+                  }`}
+                >
+                  <div className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-5">
 
                     {/* Identity */}
                     <div className="flex-1 min-w-0">
@@ -302,77 +282,53 @@ export default function InterviewReportsPage() {
                       <p className="text-xs text-zinc-500 font-medium">
                         {new Date(r.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
-                      {r.flags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {r.flags.map((f) => (
-                            <span key={f} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-2 py-0.5 font-bold">
-                              {f.replaceAll('_', ' ')}
-                            </span>
-                          ))}
+
+                      {/* Termination reason shown on main page */}
+                      {isTerminated && r.terminationReason && (
+                        <div className="mt-2.5 flex items-start gap-2 bg-red-50/90 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-800">
+                          <ShieldAlert className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                          <p className="font-semibold leading-relaxed">
+                            <span className="font-black text-red-900">Termination Reason: </span>
+                            {r.terminationReason}
+                          </p>
                         </div>
                       )}
                     </div>
 
-                    {/* Scores */}
-                    {r.hasReport ? (
-                      <div className="flex items-center gap-5 flex-shrink-0">
-                        <div className="text-center">
-                          <ScoreRing value={r.cognitiveScore} color="#1689aa" />
-                          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-1">Cognitive</p>
-                        </div>
-                        <div className="text-center">
-                          <ScoreRing value={r.fluencyScore} color="#34c4f2" />
-                          <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-1">Fluency</p>
-                        </div>
-                        {r.fluencyCefr && (
+                    {/* Scores (Cognitive and Fluency only) & Action Arrow */}
+                    <div className="flex items-center gap-6 flex-shrink-0">
+                      {r.hasReport ? (
+                        <div className="flex items-center gap-5">
                           <div className="text-center">
-                            <div className="w-16 h-16 flex items-center justify-center">
-                              <span className="text-2xl font-black text-[#1689aa]">{r.fluencyCefr}</span>
-                            </div>
-                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">CEFR</p>
+                            <ScoreRing value={r.cognitiveScore} color="#1689aa" />
+                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-1">Cognitive</p>
                           </div>
-                        )}
-                        {totalWarnings > 0 && (
-                          <div className="flex flex-col items-center gap-1">
-                            <div className="flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl px-3 py-1.5">
-                              <AlertTriangle className="w-4 h-4" />
-                              <span className="text-sm font-black">{totalWarnings}</span>
-                            </div>
-                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Warnings</p>
+                          <div className="text-center">
+                            <ScoreRing value={r.fluencyScore} color="#34c4f2" />
+                            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-1">Fluency</p>
                           </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-zinc-500 text-xs font-bold flex-shrink-0 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3">
-                        <Loader2 className="w-4 h-4 text-[#34c4f2] animate-spin" /> Scoring pending
-                      </div>
-                    )}
-
-                    {/* Verdict */}
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      {recCfg ? (
-                        <div className={`px-4 py-2.5 rounded-xl border text-xs font-black flex items-center gap-2 ${recCfg.light}`}>
-                          <recCfg.icon className="w-4 h-4" />
-                          {recCfg.label}
                         </div>
                       ) : (
-                        <div className="px-4 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50 text-xs font-bold text-zinc-400">
-                          No verdict yet
+                        <div className="flex items-center gap-2 text-zinc-500 text-xs font-bold flex-shrink-0 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3">
+                          <Loader2 className="w-4 h-4 text-[#34c4f2] animate-spin" /> Scoring pending
                         </div>
                       )}
-                      <ChevronRight className="w-5 h-5 text-zinc-300 group-hover:text-[#34c4f2] group-hover:translate-x-0.5 transition-all" />
+
+                      {/* Arrow / Loading Symbol */}
+                      <div className="flex items-center justify-center min-w-[40px]">
+                        {isOpening ? (
+                          <div className="p-2.5 rounded-xl text-[#1689aa] bg-[#34c4f2]/10 border border-[#34c4f2]/30 flex items-center gap-1.5 shadow-sm">
+                            <Loader2 className="w-5 h-5 text-[#34c4f2] animate-spin" />
+                            <span className="text-[11px] font-bold text-zinc-700 hidden sm:inline">Opening…</span>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 rounded-xl text-zinc-400 group-hover:text-[#34c4f2] group-hover:bg-[#34c4f2]/10 transition-all">
+                            <ChevronRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  {/* Plain-English summary strip */}
-                  {r.recommendationRationale && (
-                    <div className="border-t border-zinc-100 px-5 py-3 bg-zinc-50/70 rounded-b-2xl">
-                      <p className="text-xs text-zinc-700 leading-relaxed line-clamp-2">
-                        <span className="font-bold text-zinc-900">Summary: </span>
-                        {r.recommendationRationale}
-                      </p>
-                    </div>
-                  )}
                 </Link>
               );
             })}

@@ -122,7 +122,8 @@ export function analyzeFaceMetrics(
   const smileScore = (smileLeft + smileRight) / 2;
   const stressScore = (browDownLeft + browDownRight + mouthPressLeft + mouthPressRight) / 4;
 
-  const eyesClosed = facePresent && (leftBlink > 0.75 || rightBlink > 0.75);
+  const isBlinking = leftBlink > 0.45 || rightBlink > 0.45;
+  const eyesClosed = facePresent && isBlinking;
   const eyeDistance =
     leftEye && rightEye
       ? Math.hypot(leftEye.x - rightEye.x, leftEye.y - rightEye.y)
@@ -133,7 +134,7 @@ export function analyzeFaceMetrics(
   const irisRatios = computeIrisRatio(landmarks);
 
   let irisRatioOffset = 0;
-  if (baseline) {
+  if (baseline && !isBlinking) {
     const leftDiffX = Math.abs(irisRatios.leftIrisRatio.x - baseline.leftIrisRatio.x);
     const leftDiffY = Math.abs(irisRatios.leftIrisRatio.y - baseline.leftIrisRatio.y);
     const rightDiffX = Math.abs(irisRatios.rightIrisRatio.x - baseline.rightIrisRatio.x);
@@ -141,8 +142,9 @@ export function analyzeFaceMetrics(
     irisRatioOffset = (leftDiffX + leftDiffY + rightDiffX + rightDiffY) / 4;
   }
 
-  // Trigger lookingAway when candidate shifts gaze left or right (0.52), up (0.55), or deviates from calibrated baseline
-  const lookingAway = facePresent && (completeSideGaze > 0.52 || lookUp > 0.55 || (eyeDistance > 0 && eyeDistance < 0.08) || irisRatioOffset > 0.28);
+  // Trigger lookingAway when candidate shifts gaze left or right (0.55), up (0.60), or deviates from calibrated baseline.
+  // CRITICAL: NEVER count natural eye blinks as eye movement or gaze away!
+  const lookingAway = facePresent && !isBlinking && (completeSideGaze > 0.55 || lookUp > 0.60 || irisRatioOffset > 0.30);
 
   const { yaw, pitch } = getHeadYaw(matrix ?? []);
   const relativeYaw = baseline ? yaw - baseline.yaw : yaw;
@@ -151,11 +153,13 @@ export function analyzeFaceMetrics(
   const headTurnedAway = facePresent && (Math.abs(relativeYaw) > 20 || Math.abs(relativePitch) > 18);
 
   // Reading on screen is expected behavior. Only flag if eyes point completely down off-screen (e.g. lap/desk)
+  // Blinking must never trigger reading suspected
   const readingSuspected =
     facePresent &&
+    !isBlinking &&
     !headTurnedAway &&
     !lookingAway &&
-    lookDown > 0.75;
+    lookDown > 0.78;
 
   const eyeConfidence = clamp(
     1 - Math.max(leftBlink, rightBlink, sideGaze, lookDown, eyeDistance < 0.12 ? 0.7 : 0),
@@ -259,7 +263,7 @@ export function analyzeFaceMetrics(
 
   return {
     facePresent: true,
-    eyesClosed: false,
+    eyesClosed,
     lookingAway: false,
     headTurnedAway: false,
     eyeConfidence,

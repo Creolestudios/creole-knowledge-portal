@@ -68,7 +68,7 @@ export async function POST(
     if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
       baseUrl = `http://${baseUrl}`;
     }
-    const inviteUrl = `${baseUrl}/assess/${rawToken}`;
+    const inviteUrl = `${baseUrl}/interview/${rawToken}`;
 
     return NextResponse.json({
       invite_id: invite.id,

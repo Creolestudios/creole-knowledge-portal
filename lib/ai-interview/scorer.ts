@@ -307,11 +307,17 @@ Return JSON ONLY:
   }
 
   // 4. Evaluate CEFR English Fluency (Gemini Flash)
-  let fluencyModelScore = 70;
-  let fluencyCefr: 'A2' | 'B1' | 'B2' | 'C1' | 'C2' = 'B2';
+  let fluencyModelScore = 0;
+  let fluencyCefr: 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | null = null;
   let fluencyBreakdown: Record<string, unknown> = {};
+  let finalFluencyScore = 0;
+  let cognitiveComposite = 0;
+  let reasoningSubscore = 0;
+  let claritySubscore = 0;
 
-  if (combinedCandidateText.trim()) {
+  const hasCandidateSpeech = Boolean(combinedCandidateText.trim());
+
+  if (hasCandidateSpeech) {
     const fluencyPrompt = `
 Assess the candidate's spoken English from their interview transcript.
 IMPORTANT:
@@ -360,36 +366,38 @@ Return JSON ONLY:
           fluencyModelScore = Math.max(20, fluencyModelScore - penalty);
         }
       } else {
+        fluencyCefr = 'B2';
         fluencyModelScore = mapCefrToScore(fluencyCefr);
       }
       fluencyBreakdown = parsedFluency as unknown as Record<string, unknown>;
     } catch (err) {
       console.warn('[scorer] Fluency evaluation error, using local fallback:', err);
       fluencyModelScore = localFluencyResult.localFluencyScore;
+      fluencyCefr = 'B2';
     }
+
+    finalFluencyScore = combineFluencyScores(
+      localFluencyResult.localFluencyScore,
+      fluencyModelScore
+    );
+
+    const competencyAvg = questionScores.length > 0
+      ? questionScores.reduce((acc, curr) => acc + curr.score, 0) / questionScores.length
+      : 0;
+
+    reasoningSubscore = Math.min(100, Math.round(competencyAvg * 20));
+    claritySubscore = localFluencyResult.localFluencyScore;
+    cognitiveComposite = calculateCognitiveComposite(competencyAvg, reasoningSubscore, claritySubscore);
   } else {
-    // No candidate transcript available (session terminated before answering).
-    // Use deterministic local fallback so the report is always populated.
-    console.warn('[scorer] No candidate transcript found. Applying local fluency fallback for session:', sessionId);
-    fluencyModelScore = localFluencyResult.localFluencyScore;
-    fluencyCefr = 'B2';
-    fluencyBreakdown = { summary: 'No candidate speech detected. Session ended before answers were recorded.' };
+    // Candidate has NOT given any answers or speech: Fluency and Cognitive are strictly 0!
+    console.warn('[scorer] Candidate provided no answers/speech. Setting fluency and cognitive scores to 0 for session:', sessionId);
+    finalFluencyScore = 0;
+    cognitiveComposite = 0;
+    reasoningSubscore = 0;
+    claritySubscore = 0;
+    fluencyCefr = null;
+    fluencyBreakdown = { summary: 'No candidate speech detected. No answers were submitted.' };
   }
-
-  // Combine Local + Model Fluency
-  const finalFluencyScore = combineFluencyScores(
-    localFluencyResult.localFluencyScore,
-    fluencyModelScore
-  );
-
-  // 5. Compute Cognitive Composite
-  const competencyAvg = questionScores.length > 0
-    ? questionScores.reduce((acc, curr) => acc + curr.score, 0) / questionScores.length
-    : 3;
-
-  const reasoningSubscore = Math.min(100, Math.round(competencyAvg * 20));
-  const claritySubscore = localFluencyResult.localFluencyScore;
-  const cognitiveComposite = calculateCognitiveComposite(competencyAvg, reasoningSubscore, claritySubscore);
 
   // 6. Recommendation & Integrity Penalties
   const flags: string[] = [];

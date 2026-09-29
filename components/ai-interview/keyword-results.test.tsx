@@ -44,7 +44,7 @@ function makeResult(overrides: Partial<SessionGenerationResult> = {}): SessionGe
       max_alerts: 3,
       allowed_modes: ['interview'],
       expires_at: '2026-09-05T00:00:00Z',
-      invite_url: 'https://example.com/assess/tok',
+      invite_url: 'https://example.com/interview/tok',
       passcode: '123456',
     } as any,
     ...overrides,
@@ -62,7 +62,7 @@ describe('KeywordResults', () => {
     render(<KeywordResults result={makeResult()} onReset={vi.fn()} />);
 
     expect(screen.getByText(/1 interview question generated and/)).toBeInTheDocument();
-    expect(screen.getByDisplayValue('https://example.com/assess/tok')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('https://example.com/interview/tok')).toBeInTheDocument();
     expect(screen.getByDisplayValue('123456')).toBeInTheDocument();
   });
 
@@ -81,7 +81,7 @@ describe('KeywordResults', () => {
     render(<KeywordResults result={makeResult()} onReset={vi.fn()} />);
 
     fireEvent.click(document.getElementById('keyword-results-copy-link')!);
-    expect(writeText).toHaveBeenCalledWith('https://example.com/assess/tok');
+    expect(writeText).toHaveBeenCalledWith('https://example.com/interview/tok');
 
     fireEvent.click(document.getElementById('keyword-results-copy-passcode')!);
     expect(writeText).toHaveBeenCalledWith('123456');

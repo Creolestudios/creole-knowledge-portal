@@ -32,7 +32,8 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
   if (!session) notFound();
 
   let report = initialReport;
-  if (!report && session.status === 'completed') {
+  const isTerminal = session.status === 'completed' || session.status === 'terminated' || session.status === 'cancelled';
+  if (!report && isTerminal) {
     try {
       const scoringResult = await scoreInterviewSession({ sessionId: id });
       report = (scoringResult.report as unknown as typeof initialReport) || null;

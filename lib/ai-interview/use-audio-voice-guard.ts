@@ -134,6 +134,8 @@ export function useAudioVoiceGuard({
       let consecutiveAiFrames = 0;
       let consecutiveMusicFrames = 0;
       let prevHighBandEnergy = 0;
+      let lastKeystrokeFrame = 0;
+      let lastKeystrokeTime = 0;
       const recentTypingTimestamps: number[] = [];
       let frameCount = 0;
 
@@ -193,10 +195,13 @@ export function useAudioVoiceGuard({
 
         // Typing / Transient click frequency band (bins 25 to 110, ~2.3kHz - 10.3kHz)
         let highBandEnergySum = 0;
+        let highBandPeakEnergy = 0;
         const highStartBin = 25;
         const highEndBin = Math.min(110, bufferLength);
         for (let i = highStartBin; i < highEndBin; i++) {
-          highBandEnergySum += dataArray[i];
+          const val = dataArray[i];
+          highBandEnergySum += val;
+          if (val > highBandPeakEnergy) highBandPeakEnergy = val;
         }
         const highBandEnergy = highBandEnergySum / (highEndBin - highStartBin);
 
@@ -208,6 +213,7 @@ export function useAudioVoiceGuard({
           consecutiveAiFrames = 0;
           consecutiveMusicFrames = 0;
           recentTypingTimestamps.length = 0;
+          lastKeystrokeTime = 0;
         } else if (isCandidateTurnRef.current) {
           // Track candidate's own speech level when mouth is moving
           if (isCandidateMouthMovingRef.current && avgSpeechEnergy > 20) {
@@ -226,12 +232,21 @@ export function useAudioVoiceGuard({
             nowMs - candidateTurnStartedAtRef.current < readingGracePeriodMsRef.current;
 
           // ── TYPING SOUND DETECTION ─────────────────────────────────────────
-          // Sharp transient attack in high frequency band followed by rapid decay
-          const typingTransientAttack = highBandEnergy - prevHighBandEnergy > 16 && highBandEnergy >= 35;
+          // Sharp transient attack in high frequency band with audible click peak (>= 65).
+          // Strictly ignored during silence (< 45 avg or < 65 peak) and speech sibilants when candidate mouth is moving.
+          const isCandidateSpeaking = isCandidateMouthMovingRef.current && avgSpeechEnergy >= 40;
+          const isAudibleClick = highBandPeakEnergy >= 65 && highBandEnergy >= 45;
+          const typingTransientAttack =
+            isAudibleClick &&
+            highBandEnergy - prevHighBandEnergy >= 18 &&
+            (!isCandidateSpeaking || highBandPeakEnergy >= 85) &&
+            frameCount - lastKeystrokeFrame >= 4;
+
           if (typingTransientAttack) {
+            lastKeystrokeFrame = frameCount;
             recentTypingTimestamps.push(nowMs);
-            // Retain keystrokes within a 1.8-second rolling window
-            while (recentTypingTimestamps.length > 0 && nowMs - recentTypingTimestamps[0] > 1800) {
+            // Retain keystrokes within a 2.0-second rolling window
+            while (recentTypingTimestamps.length > 0 && nowMs - recentTypingTimestamps[0] > 2000) {
               recentTypingTimestamps.shift();
             }
             if (recentTypingTimestamps.length >= 3) {
@@ -271,32 +286,34 @@ export function useAudioVoiceGuard({
           }
 
           // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
-          // Mild environmental noise (< 35 speech energy and < 45 peak) is ignored.
-          const isClearSpeech = avgSpeechEnergy >= 38 && peakEnergy >= 48;
+          // Mild environmental noise, fans, keyboard clicks, breathing, and low background sounds (< 55) are strictly IGNORED.
+          // Only clear, loud speech (avg >= 58, peak >= 75) is evaluated.
+          const isClearSpeech = avgSpeechEnergy >= 58 && peakEnergy >= 75;
 
-          // (2) Candidate is NOT speaking (mouth not moving), but speech is active in background
+          // (2) Candidate is NOT speaking (mouth not moving), but clear human speech is active in background
           const isBackgroundVoiceWhileSilent =
             !isReadingGracePeriod &&
             isSilent &&
             isClearSpeech &&
-            avgFlux >= 2.0;
+            avgFlux >= 2.2;
 
-          // (1) Candidate IS speaking (mouth moving), but another voice is present (dual speaker)
+          // (1) Candidate IS speaking (mouth moving), but another loud voice is present (dual speaker)
+          // Must have distinct non-formant frequency separation (>= 5 bins) and strong energy exceeding candidate level
           const isDualSpeakerPresent =
             !isSilent &&
-            Math.abs(peakBin - secondaryPeakBin) >= 3 &&
-            secondaryPeakEnergy > Math.min(actualSpeakerLevel * 0.9, 45) &&
-            secondaryPeakEnergy >= peakEnergy * 0.65 &&
-            avgFlux >= 2.0;
+            Math.abs(peakBin - secondaryPeakBin) >= 5 &&
+            secondaryPeakEnergy >= 75 &&
+            secondaryPeakEnergy > actualSpeakerLevel * 1.05 &&
+            avgFlux >= 2.5;
 
           const isBgVoiceDetected = !isAiVoice && !isMusic && (isBackgroundVoiceWhileSilent || isDualSpeakerPresent);
 
           if (isBgVoiceDetected) {
             consecutiveSuspiciousFrames++;
-            // Sustained speech frames (~450-500ms before triggering alert)
-            if (consecutiveSuspiciousFrames >= 30) {
+            // Require sustained speech (~0.8-1.0s at 60fps) before triggering alert to avoid transient sounds
+            if (consecutiveSuspiciousFrames >= 50) {
               consecutiveSuspiciousFrames = 0;
-              const confidence = Math.min(0.95, 0.75 + (avgSpeechEnergy / 255) * 0.2);
+              const confidence = Math.min(0.95, 0.78 + (avgSpeechEnergy / 255) * 0.2);
               let reason: string;
               if (isDualSpeakerPresent) {
                 reason = secondaryPeakEnergy > actualSpeakerLevel * 1.2
@@ -310,7 +327,8 @@ export function useAudioVoiceGuard({
               triggerVoiceWarning(reason, confidence);
             }
           } else {
-            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 1);
+            // Rapid decay: decrease by 4 frames so intermittent noise or pauses don't slowly accumulate
+            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 4);
           }
         }
 

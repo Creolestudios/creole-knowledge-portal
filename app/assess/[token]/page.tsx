@@ -47,9 +47,9 @@ interface AssessQuestion {
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 
-export default function CandidateAssessmentPage() {
+export default function CandidateAssessmentPage({ initialToken }: { initialToken?: string } = {}) {
   const params = useParams();
-  const token = params?.token as string;
+  const token = initialToken || (params?.token as string) || (params?.id as string);
 
   const [stage, setStage] = useState<Stage>('passcode');
 
@@ -319,7 +319,6 @@ export default function CandidateAssessmentPage() {
   }, [warningToast.show, warningToast.count]);
 
   // ── Sync question timer on question index or stage change ──
-  // Ref updated synchronously; setState deferred to avoid react-hooks/set-state-in-effect.
   useEffect(() => {
     if (stage === 'interview' && questions[currentIndex]) {
       const qSec = questions[currentIndex].time_limit_sec || 120;
@@ -328,46 +327,31 @@ export default function CandidateAssessmentPage() {
     }
   }, [currentIndex, stage, questions]);
 
-  // ── Countdown timer for interview duration & current question ──
+  // ── Countdown timer for current question & auto-advancement on time completion ──
   useEffect(() => {
-    if (stage !== 'interview' || durationSecondsRef.current <= 0) return;
+    if (stage !== 'interview') return;
     const timer = window.setInterval(() => {
-      // 1. Overall interview duration countdown
-      durationSecondsRef.current -= 1;
-      setDurationSeconds((remaining) => {
-        if (remaining <= 1) {
-          window.clearInterval(timer);
-          completedRef.current = true;
-          stopAllMedia();
-          const counts = proctorTrackerRef.current.getWarningCounts();
-          fetch(`/api/assess/${token}/complete`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
-            }),
-          }).catch((err) => console.warn('[assess] complete call failed:', err));
-          setStageWithRef('completed');
-          return 0;
-        }
-        return durationSecondsRef.current;
-      });
+      // 1. Overall interview duration tracking
+      if (durationSecondsRef.current > 0) {
+        durationSecondsRef.current -= 1;
+        setDurationSeconds(durationSecondsRef.current);
+      }
 
       // 2. Per-question timer countdown
-      setQuestionRemainingSec((prevQ) => {
-        if (prevQ <= 1) {
-          // Question time elapsed: auto-submit once and move to next question safely
-          if (!isSubmittingAnswerRef.current && handleSubmitAnswerRef.current) {
-            void handleSubmitAnswerRef.current();
-          }
-          return 0;
+      if (questionRemainingSecRef.current <= 1) {
+        questionRemainingSecRef.current = 0;
+        setQuestionRemainingSec(0);
+        // Time is up for this question: auto-advance to next question
+        if (!isSubmittingAnswerRef.current && handleSubmitAnswerRef.current) {
+          void handleSubmitAnswerRef.current();
         }
-        questionRemainingSecRef.current = prevQ - 1;
-        return prevQ - 1;
-      });
+      } else {
+        questionRemainingSecRef.current -= 1;
+        setQuestionRemainingSec(questionRemainingSecRef.current);
+      }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [stage, token, stopAllMedia, setStageWithRef]);
+  }, [stage]);
 
   useProctoringWatchdog({
     active: ['ready', 'calibration', 'interview'].includes(stage),
@@ -652,7 +636,7 @@ export default function CandidateAssessmentPage() {
             .catch((err) => {
               console.warn('[ObjectDetection] Frame capture error:', err);
             });
-        }, 250);
+        }, 150);
         return;
       }
 
@@ -730,7 +714,7 @@ export default function CandidateAssessmentPage() {
         if (!seenSubKeys.has(subKey)) {
           const missCount = (missingFramesRef.current.get(subKey) || 0) + 1;
           missingFramesRef.current.set(subKey, missCount);
-          if (missCount >= 2) {
+          if (missCount >= 5) {
             proctorTrackerRef.current.clearGenericKey('object_detected', subKey);
           }
         }
@@ -887,8 +871,8 @@ export default function CandidateAssessmentPage() {
         }),
       });
 
-      if (!answerRes?.ok) {
-        const answerJson = await answerRes?.json?.().catch(() => null);
+      if (!answerRes.ok) {
+        const answerJson = await answerRes.json().catch(() => null);
         throw new Error(answerJson?.error ?? 'Failed to save your answer.');
       }
 
@@ -909,10 +893,14 @@ export default function CandidateAssessmentPage() {
         stopAllMedia();
         setStageWithRef('completed');
       } else {
+        const nextIdx = currentIndex + 1;
+        const nextQSec = questions[nextIdx]?.time_limit_sec || 120;
         firstSpeechAtRef.current = null;
         questionStartedAtRef.current = Date.now();
+        questionRemainingSecRef.current = nextQSec;
+        setQuestionRemainingSec(nextQSec);
         setAnswerText('');
-        setCurrentIndex((idx) => idx + 1);
+        setCurrentIndex(nextIdx);
       }
     } catch (err) {
       console.error('[assess] failed to save answer:', err);
@@ -1032,30 +1020,20 @@ export default function CandidateAssessmentPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
-                {/* Per-Question Countdown Timer as mentioned for each question */}
+                {/* Per-Question Countdown Timer Only */}
                 <div
-                  id="assess-question-timer-badge"
-                  className={`rounded-xl px-3 py-1.5 text-xs sm:text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${
+                  id="assess-timer-badge"
+                  data-testid="assess-question-timer-badge"
+                  className={`rounded-xl px-3.5 py-1.5 text-xs sm:text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${
                     questionRemainingSec <= 30
                       ? 'bg-red-600 text-white animate-pulse'
                       : 'bg-blue-600 text-white'
                   }`}
-                  aria-label="Time remaining for this specific question"
-                  title="Time remaining for this specific question"
+                  aria-label="Remaining time"
+                  title="Time remaining for this question"
                 >
                   <Clock className="w-3.5 h-3.5" />
-                  <span>Question: {qMinutes}:{qSeconds}</span>
-                </div>
-
-                {/* Overall Interview Countdown Timer */}
-                <div
-                  id="assess-timer-badge"
-                  className="rounded-xl bg-zinc-900 px-3 py-1.5 text-xs font-bold tabular-nums text-zinc-300 flex items-center gap-1.5 shadow-sm"
-                  aria-label="Remaining time"
-                  title="Remaining time"
-                >
-                  <span className="text-zinc-500">Total:</span>
-                  <span>{minutes}:{seconds}</span>
+                  <span>Time: {qMinutes}:{qSeconds}</span>
                 </div>
 
                 <span className="rounded-xl bg-zinc-100 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-700">
@@ -1177,17 +1155,22 @@ export default function CandidateAssessmentPage() {
               id="assess-submit-answer"
               type="button"
               onClick={handleSubmitAnswer}
-              disabled={!hasGivenAnswer}
+              disabled={savingAnswer}
               className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm cursor-pointer"
             >
-              <span>
-                {!hasGivenAnswer
-                  ? 'Speak your answer to continue'
-                  : currentIndex >= questions.length - 1
-                  ? 'Finish Interview'
-                  : 'Next Question'}
-              </span>
-              <ArrowRight className="w-4 h-4" />
+              {savingAnswer ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-zinc-900" />
+                  <span>Submitting…</span>
+                </>
+              ) : (
+                <>
+                  <span>
+                    {currentIndex >= questions.length - 1 ? 'Finish Interview' : 'Next Question'}
+                  </span>
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </div>
 

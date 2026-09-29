@@ -111,8 +111,8 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    // Run enough frames for warmup (25 frames) + sustained speech (>= 30 frames)
-    for (let f = 0; f < 65; f++) {
+    // Run enough frames for warmup (25 frames) + sustained speech (>= 80 frames)
+    for (let f = 0; f < 95; f++) {
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
@@ -202,12 +202,12 @@ describe('useAudioVoiceGuard', () => {
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
       frame++;
       for (let i = 3; i < 36; i++) {
-        arr[i] = 40 + ((i * 2 + frame * 3) % 15);
+        arr[i] = 60 + ((i * 2 + frame * 3) % 15);
       }
       // Primary speaker formant peak
-      arr[10] = 75;
-      // Secondary speaker distinct formant peak (frequency separation >= 3 bins)
-      arr[20] = 80;
+      arr[10] = 78;
+      // Secondary speaker distinct formant peak (frequency separation >= 5 bins, energy >= 75)
+      arr[20] = 85;
     });
 
     renderHook(() =>
@@ -222,7 +222,7 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    for (let f = 0; f < 55; f++) {
+    for (let f = 0; f < 95; f++) {
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
@@ -244,9 +244,9 @@ describe('useAudioVoiceGuard', () => {
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
       frame++;
       for (let i = 3; i < 36; i++) {
-        arr[i] = 42 + ((i + frame * 4) % 18);
+        arr[i] = 62 + ((i + frame * 4) % 18);
       }
-      arr[12] = 60;
+      arr[12] = 82;
     });
 
     renderHook(() =>
@@ -261,7 +261,7 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    for (let f = 0; f < 55; f++) {
+    for (let f = 0; f < 95; f++) {
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
@@ -390,5 +390,40 @@ describe('useAudioVoiceGuard', () => {
         reason: 'Keyboard typing sounds detected.',
       })
     );
+  });
+
+  it('does NOT trigger keyboard typing warning when there is no sound or low ambient noise', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // Silence or normal background ambient room noise with mild fluctuations (15-30)
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = 15 + ((i + frame) % 15);
+      }
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-10',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 50; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
   });
 });

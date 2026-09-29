@@ -72,10 +72,10 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
   try {
     let rawDetections;
 
-    // Use 640px resolution to preserve sharp edges and features of handheld phones and books
-    const targetW = 640;
+    // Use 416px resolution for real-time MobileNet inference (< 60ms) while retaining phone/book edges
+    const targetW = 416;
     const aspect = message.bitmap.height / (message.bitmap.width || 1);
-    const targetH = Math.max(360, Math.round(targetW * aspect));
+    const targetH = Math.max(240, Math.round(targetW * aspect));
 
     if (typeof OffscreenCanvas !== 'undefined') {
       if (!offscreenCanvas || offscreenCanvas.width !== targetW || offscreenCanvas.height !== targetH) {

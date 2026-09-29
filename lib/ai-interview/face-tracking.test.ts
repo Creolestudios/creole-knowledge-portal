@@ -93,6 +93,28 @@ describe('face-tracking module', () => {
     expect(result.category).toBe('reading_suspected');
   });
 
+  it('does NOT count natural eye blinks as gaze_away or eye movement deviation', () => {
+    const landmarks = createMockLandmarks();
+    // Simulate candidate blinking naturally (high eyeBlink blendshapes)
+    const blendshapes = [
+      { categoryName: 'eyeBlinkLeft', score: 0.9 },
+      { categoryName: 'eyeBlinkRight', score: 0.9 },
+      { categoryName: 'eyeLookOutLeft', score: 0.6 }, // blendshape artifact during lid closure
+    ];
+    const identityMatrix = [
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+    ];
+
+    const result = analyzeFaceMetrics(landmarks, blendshapes, identityMatrix);
+    expect(result.eyesClosed).toBe(true);
+    expect(result.lookingAway).toBe(false);
+    expect(result.readingSuspected).toBe(false);
+    expect(result.category).toBe('none');
+  });
+
   describe('ProctoringTimeTracker', () => {
     it('requires sustained violation duration before triggering warning', () => {
       const tracker = new ProctoringTimeTracker();

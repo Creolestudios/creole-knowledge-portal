@@ -28,13 +28,38 @@ export async function GET() {
       return NextResponse.json({ reports: [] });
     }
 
-    // Fetch matching reports for all session IDs in one query (checks table + fallback event store)
+    // Fetch matching reports, violation events, and ai_interviews for all session IDs in parallel
     const sessionIds = sessions.map((s) => s.id);
-    const reportMap = await getInterviewReports(sessionIds);
+    const [reportMap, { data: violationEvents }, { data: aiInterviews }] = await Promise.all([
+      getInterviewReports(sessionIds),
+      supabaseAdmin
+        .from('interview_events')
+        .select('session_id, metadata, meta')
+        .in('session_id', sessionIds)
+        .eq('event_type', 'proctoring_violation'),
+      supabaseAdmin
+        .from('ai_interviews')
+        .select('id, termination_reason')
+        .in('id', sessionIds),
+    ]);
 
-    // Auto-trigger scoring in background for any completed session without a report
+    const violationReasonMap = new Map<string, string>();
+    for (const ev of (violationEvents || [])) {
+      const meta = (ev.metadata || ev.meta) as { reason?: string } | undefined;
+      if (meta?.reason && !violationReasonMap.has(ev.session_id)) {
+        violationReasonMap.set(ev.session_id, meta.reason);
+      }
+    }
+    for (const ai of (aiInterviews || [])) {
+      if (ai.termination_reason && !violationReasonMap.has(ai.id)) {
+        violationReasonMap.set(ai.id, ai.termination_reason);
+      }
+    }
+
+    // Auto-trigger scoring in background for any completed or terminated session without a report
     for (const s of sessions) {
-      if (s.status === 'completed' && !reportMap.has(s.id)) {
+      const isTerminal = s.status === 'completed' || s.status === 'terminated' || s.status === 'cancelled';
+      if (isTerminal && !reportMap.has(s.id)) {
         scoreInterviewSession({ sessionId: s.id }).catch((err) => {
           console.warn(`[interview-reports] Background auto-score for ${s.id} failed:`, err);
         });
@@ -57,6 +82,14 @@ export async function GET() {
       const objectWarnings = s.object_warning_count ?? 0;
       const totalWarnings = voiceWarnings + faceWarnings + objectWarnings;
 
+      const rawReason = violationReasonMap.get(s.id);
+      const terminationReason = isTerminated
+        ? rawReason ||
+          (totalWarnings >= 3
+            ? `Three proctoring warnings issued. Session auto-terminated (${totalWarnings} warnings: ${voiceWarnings} voice, ${faceWarnings} face, ${objectWarnings} object).`
+            : 'Interview terminated due to continuous proctoring violations.')
+        : null;
+
       // Provide clear recommendation even if background scoring hadn't run for a terminated session
       const recommendation =
         report?.recommendation ?? (isTerminated ? 'no' : null);
@@ -64,10 +97,26 @@ export async function GET() {
       const recommendationRationale =
         report?.recommendation_rationale ??
         (isTerminated
-          ? `Interview terminated due to proctoring violation (${totalWarnings} warning${totalWarnings === 1 ? '' : 's'}).`
+          ? terminationReason || `Interview terminated due to proctoring violation (${totalWarnings} warning${totalWarnings === 1 ? '' : 's'}).`
           : null);
 
       const flags = report?.flags ?? (isTerminated ? ['interview_terminated'] : []);
+
+      // Check if candidate actually spoke or answered anything
+      const summaryText = (report?.fluency_breakdown as { summary?: string } | undefined)?.summary || '';
+      const noAnswersGiven =
+        summaryText.toLowerCase().includes('no candidate speech') ||
+        summaryText.toLowerCase().includes('no answers were submitted') ||
+        (Array.isArray(report?.competency_scores) &&
+          report.competency_scores.length > 0 &&
+          report.competency_scores.every((cs: { justification?: string }) =>
+            (cs?.justification || '').toLowerCase().includes('provided no answer') ||
+            (cs?.justification || '').toLowerCase().includes('no answer')
+          ));
+
+      const cognitiveScore = noAnswersGiven ? 0 : (report?.cognitive_composite ?? 0);
+      const fluencyScore = noAnswersGiven ? 0 : (report?.fluency_score ?? 0);
+      const fluencyCefr = noAnswersGiven ? null : (report?.fluency_cefr ?? null);
 
       return {
         id: s.id,
@@ -77,9 +126,10 @@ export async function GET() {
         status: normalizedStatus,
         completedAt: s.updated_at ?? s.created_at,
         // Scores
-        cognitiveScore: report?.cognitive_composite ?? null,
-        fluencyScore: report?.fluency_score ?? null,
-        fluencyCefr: report?.fluency_cefr ?? null,
+        cognitiveScore,
+        fluencyScore,
+        fluencyCefr,
+        terminationReason,
         recommendation,
         recommendationRationale,
         flags,

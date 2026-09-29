@@ -212,7 +212,7 @@ describe('AIInterviewManager', () => {
       extraction: extractionPayload,
       session: { id: 's1', status: 'questions_generated' },
       questions: [{ id: 'q1', question_text: 'Introduce yourself.' }],
-      invite: { invite_url: 'http://localhost/assess/tok', passcode: '654321' },
+      invite: { invite_url: 'http://localhost/interview/tok', passcode: '654321' },
     };
     mockCreateSession.mockResolvedValue(sessionResult);
 
@@ -229,7 +229,7 @@ describe('AIInterviewManager', () => {
     fireEvent.click(screen.getByText('Generate Interview Link'));
 
     expect(await screen.findByDisplayValue('654321')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('http://localhost/assess/tok')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('http://localhost/interview/tok')).toBeInTheDocument();
     expect(screen.getByText('Introduce yourself.')).toBeInTheDocument();
   });
 
@@ -283,7 +283,7 @@ describe('AIInterviewManager', () => {
           },
         ],
       },
-      '/api/interviews/i1/invite': { invite_url: 'http://localhost/assess/tok', passcode: '123456' },
+      '/api/interviews/i1/invite': { invite_url: 'http://localhost/interview/tok', passcode: '123456' },
     }) as any;
 
     render(<AIInterviewManager />);
@@ -291,7 +291,7 @@ describe('AIInterviewManager', () => {
     fireEvent.click(nameButton);
 
     expect(await screen.findByText('123456')).toBeInTheDocument();
-    expect(screen.getByText(/\/assess\/tok/)).toBeInTheDocument();
+    expect(screen.getByText(/\/interview\/tok/)).toBeInTheDocument();
 
     fireEvent.click(document.getElementById('interview-link-modal-close')!);
     await waitFor(() => expect(screen.queryByText('123456')).not.toBeInTheDocument());
@@ -312,7 +312,7 @@ describe('AIInterviewManager', () => {
           },
         ],
       },
-      '/api/interviews/i1/invite': { invite_url: 'http://localhost/assess/tok', passcode: '654321' },
+      '/api/interviews/i1/invite': { invite_url: 'http://localhost/interview/tok', passcode: '654321' },
     }) as any;
 
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -326,6 +326,6 @@ describe('AIInterviewManager', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('654321'));
 
     fireEvent.click(document.getElementById('interview-link-modal-copy-link')!);
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('http://localhost/assess/tok'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('http://localhost/interview/tok'));
   });
 });
