@@ -42,6 +42,8 @@ export interface KeywordMatchAnalysis {
   skillGapSummary: string;
   keyStrengths: string[];
   improvementAreas: string[];
+  apiFailed?: boolean;
+  apiNote?: string;
 }
 
 export interface ExtractionResult {
@@ -49,6 +51,9 @@ export interface ExtractionResult {
   jdRequirements: JDRequirements;
   analysis: KeywordMatchAnalysis;
   extractedAt: string;
+  isFallback?: boolean;
+  apiFailed?: boolean;
+  apiNote?: string;
 }
 
 /**

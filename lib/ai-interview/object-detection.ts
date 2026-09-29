@@ -107,16 +107,16 @@ export const OBJECT_RULES: Record<string, ObjectRule> = {
  * without latency when an object enters the camera view.
  */
 export const CLASS_CONFIDENCE_THRESHOLDS: Record<string, number> = {
-  'cell phone': 0.22,
-  phone: 0.22,
-  headphones: 0.25,
-  book: 0.22,
-  laptop: 0.28,
-  tv: 0.28,
-  remote: 0.25,
-  tablet: 0.25,
-  mouse: 0.30,
-  keyboard: 0.30,
+  'cell phone': 0.18,
+  phone: 0.18,
+  headphones: 0.20,
+  book: 0.18,
+  laptop: 0.22,
+  tv: 0.22,
+  remote: 0.20,
+  tablet: 0.20,
+  mouse: 0.25,
+  keyboard: 0.25,
 };
 
 export interface DetectedObjectEvent {

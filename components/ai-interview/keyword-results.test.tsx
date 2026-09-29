@@ -102,4 +102,28 @@ describe('KeywordResults', () => {
     render(<KeywordResults result={result} onReset={vi.fn()} />);
     expect(screen.getByText(/The AI model quota has finished/)).toBeInTheDocument();
   });
+
+  it('shows API failure note when matchPercentage is 0 and no keywords matched so admin can retry', () => {
+    const result = makeResult({
+      extraction: {
+        candidateProfile: { extractedSkills: [], domains: [] },
+        jdRequirements: { mustHaveSkills: [], niceToHaveSkills: [], keyResponsibilities: [] },
+        analysis: {
+          matchPercentage: 0,
+          matchedKeywords: [],
+          missingKeywords: [],
+          resumeOnlyKeywords: [],
+          skillGapSummary: 'No keywords found.',
+          keyStrengths: [],
+          improvementAreas: [],
+          apiFailed: true,
+          apiNote: 'Note: AI keyword extraction API is not working. Please retry.',
+        },
+        apiFailed: true,
+        extractedAt: '2026-09-01T00:00:00Z',
+      },
+    });
+    render(<KeywordResults result={result} onReset={vi.fn()} />);
+    expect(screen.getByText(/Note: AI Keyword Extraction API is not working or returned 0 keywords/)).toBeInTheDocument();
+  });
 });

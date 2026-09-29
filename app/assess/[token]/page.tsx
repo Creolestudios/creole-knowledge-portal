@@ -112,6 +112,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const terminatingRef = useRef(false);
   const faceWorkerRef = useRef<Worker | null>(null);
   const objectWorkerRef = useRef<Worker | null>(null);
+  const objectWorkerReadyRef = useRef<boolean>(false);
   const voiceDetectorRef = useRef<VoiceDetector | null>(null);
   const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
   const baselineRef = useRef<CandidateBaseline | null>(null);
@@ -589,22 +590,61 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
 
   // ── Object Detection Worker ───────────────────────────────────────────────
   useEffect(() => {
-    if (stage !== 'interview') return;
+    const isProctorStage = ['ready', 'calibration', 'interview'].includes(stage);
+    if (!isProctorStage) {
+      if (objectWorkerRef.current) {
+        objectWorkerRef.current.terminate();
+        objectWorkerRef.current = null;
+        objectWorkerReadyRef.current = false;
+      }
+      return;
+    }
+
     if (typeof Worker === 'undefined') {
       console.warn('[ObjectDetection] Web Workers not supported in this browser environment');
       return;
     }
 
-    console.log('%c[ObjectDetection] Initializing Object Detection Worker in stage: interview...', 'color: #06b6d4; font-weight: bold;');
-    const worker = new Worker(
-      new URL('../../../lib/ai-interview/object-detection.worker.ts', import.meta.url),
-    );
-    objectWorkerRef.current = worker;
+    let worker = objectWorkerRef.current;
+    if (!worker) {
+      console.log(`%c[ObjectDetection] Pre-initializing Object Detection Worker early in stage: ${stage}...`, 'color: #06b6d4; font-weight: bold;');
+      worker = new Worker(
+        new URL('../../../lib/ai-interview/object-detection.worker.ts', import.meta.url),
+      );
+      objectWorkerRef.current = worker;
+      objectWorkerReadyRef.current = false;
+      console.log('[ObjectDetection] Sending init to worker');
+      worker.postMessage({ type: 'init' });
+    }
+
     let frameTimerRef: number | null = null;
     let frameCount = 0;
 
     worker.onerror = (err) => {
       console.warn('%c[ObjectDetection Error] Worker runtime exception:', 'color: #ef4444; font-weight: bold;', err);
+    };
+
+    const startCaptureLoop = () => {
+      if (frameTimerRef !== null) return;
+      console.log('%c[ObjectDetection] ✅ Starting camera frame capture loop (120ms)...', 'color: #10b981; font-weight: bold;');
+      frameTimerRef = window.setInterval(() => {
+        if (stageRef.current !== 'interview') return;
+        const video = cameraVideoRef.current;
+        if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          return;
+        }
+        createImageBitmap(video)
+          .then((bitmap) => {
+            frameCount += 1;
+            if (frameCount % 20 === 1) {
+              console.log(`[ObjectDetection] Captured frame #${frameCount} (${bitmap.width}x${bitmap.height}), running inference...`);
+            }
+            worker?.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
+          })
+          .catch((err) => {
+            console.warn('[ObjectDetection] Frame capture error:', err);
+          });
+      }, 120);
     };
 
     worker.onmessage = (event: MessageEvent<{ type: string; detections?: DetectedObjectEvent[]; message?: string }>) => {
@@ -616,27 +656,11 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
       }
 
       if (msg.type === 'ready') {
-        console.log('%c[ObjectDetection] ✅ Worker model is READY. Starting camera frame capture loop (250ms)...', 'color: #10b981; font-weight: bold;');
-        frameTimerRef = window.setInterval(() => {
-          const video = cameraVideoRef.current;
-          if (!video) {
-            return;
-          }
-          if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-            return;
-          }
-          createImageBitmap(video)
-            .then((bitmap) => {
-              frameCount += 1;
-              if (frameCount % 10 === 1) {
-                console.log(`[ObjectDetection] Captured frame #${frameCount} (${bitmap.width}x${bitmap.height}), running inference...`);
-              }
-              worker.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
-            })
-            .catch((err) => {
-              console.warn('[ObjectDetection] Frame capture error:', err);
-            });
-        }, 150);
+        console.log('%c[ObjectDetection] ✅ Worker model is READY.', 'color: #10b981; font-weight: bold;');
+        objectWorkerReadyRef.current = true;
+        if (stageRef.current === 'interview') {
+          startCaptureLoop();
+        }
         return;
       }
 
@@ -721,13 +745,20 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
       }
     };
 
-    console.log('[ObjectDetection] Sending init to worker');
-    worker.postMessage({ type: 'init' });
+    if (stage === 'interview' && objectWorkerReadyRef.current) {
+      startCaptureLoop();
+    }
 
     return () => {
-      if (frameTimerRef) window.clearInterval(frameTimerRef);
-      worker.terminate();
-      objectWorkerRef.current = null;
+      if (frameTimerRef !== null) {
+        window.clearInterval(frameTimerRef);
+        frameTimerRef = null;
+      }
+      if (stage === 'completed' || stage === 'terminated') {
+        worker?.terminate();
+        objectWorkerRef.current = null;
+        objectWorkerReadyRef.current = false;
+      }
     };
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
 

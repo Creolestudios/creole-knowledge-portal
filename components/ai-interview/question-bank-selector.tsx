@@ -142,6 +142,12 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
   };
 
   const matchPercentage = extraction.analysis.matchPercentage || 0;
+  const isApiFailingOrZero = Boolean(
+    extraction.apiFailed ||
+    extraction.isFallback ||
+    extraction.analysis?.apiFailed ||
+    (matchPercentage === 0 && (extraction.analysis?.matchedKeywords?.length ?? 0) === 0)
+  );
   const isLowMatch = matchPercentage < LOW_MATCH_THRESHOLD;
   const selectedCount = selectedQuestionIds.size + customQuestions.length;
   const countMatches = selectedCount === questionCount;
@@ -218,6 +224,23 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
           </span>
         </div>
       </div>
+
+      {isApiFailingOrZero && (
+        <div
+          id="question-bank-api-warning"
+          className="flex items-start gap-3.5 p-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl text-amber-200 text-sm shadow-md"
+        >
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-amber-200">
+              Note: AI Keyword Extraction API is not working or returned 0 keywords.
+            </p>
+            <p className="text-xs text-amber-300/90 leading-relaxed">
+              {extraction.apiNote || extraction.analysis?.apiNote || 'The keyword extraction API encountered an issue and returned 0 matching keywords. You can go back to retry, or proceed with standard question bank questions.'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {bankError && (
         <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">

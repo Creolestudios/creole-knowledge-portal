@@ -514,7 +514,12 @@ function InterviewEntryPage() {
     return () => window.clearTimeout(timer);
   }, [stage, isAdmin, setStageWithRef]);
 
-
+  useProctoringWatchdog({
+    active: ['ready', 'calibration', 'interview'].includes(stage),
+    cameraStreamRef,
+    screenStreamRef,
+    onViolation: terminateInterview,
+  });
 
   const handleToggleMic = () => {
     const audioTracks = cameraStreamRef.current?.getAudioTracks() ?? [];

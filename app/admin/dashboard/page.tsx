@@ -65,30 +65,53 @@ export default function AdminDashboard() {
   }, [supabase]);
 
   useEffect(() => {
+    let isMounted = true;
+
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/');
-        return;
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (!isMounted) return;
+
+        if (userError || !user) {
+          router.push('/');
+          return;
+        }
+
+        // Fetch user profile role dynamically
+        const { data: profile, error } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('user_id', user.id)
+          .single();
+
+        if (!isMounted) return;
+
+        if (error || !profile || profile.role !== 'admin') {
+          router.push('/');
+          return;
+        }
+
+        setUser(user);
+        fetchSources();
+      } catch (err: unknown) {
+        // Ignore AbortError / Lock stolen if component unmounted or another check superseded it
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes('stole it') || errMsg.includes('AbortError')) {
+          console.warn('[AdminDashboard] Auth lock acquisition superseded:', errMsg);
+          return;
+        }
+        console.error('[AdminDashboard] checkUser failed:', err);
+        if (isMounted) {
+          router.push('/');
+        }
       }
-
-      // Fetch user profile role dynamically
-      const { data: profile, error } = await supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('user_id', user.id)
-        .single();
-
-      if (error || !profile || profile.role !== 'admin') {
-        router.push('/');
-        return;
-      }
-
-      setUser(user);
-      fetchSources();
     };
 
     checkUser();
+
+    return () => {
+      isMounted = false;
+    };
   }, [supabase, router, fetchSources]);
 
   const handleSignOut = async () => {

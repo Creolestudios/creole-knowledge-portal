@@ -40,12 +40,27 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
         await tf.setBackend('cpu');
       }
       await tf.ready();
-      // Load full mobilenet_v2 COCO-SSD model for accurate detection of phones, books, and devices
+      // Load fast lite_mobilenet_v2 COCO-SSD model (~1.8MB vs 15MB) for instant detection
       try {
-        model = await cocoSsd.load({ base: 'mobilenet_v2' });
+        model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
       } catch {
-        model = await cocoSsd.load();
+        try {
+          model = await cocoSsd.load({ base: 'mobilenet_v2' });
+        } catch {
+          model = await cocoSsd.load();
+        }
       }
+
+      // Warmup WebGL shaders with a dummy frame so inference is instantaneous from frame 1
+      if (typeof OffscreenCanvas !== 'undefined') {
+        try {
+          const warmupCanvas = new OffscreenCanvas(320, 240);
+          await model.detect(warmupCanvas as unknown as HTMLCanvasElement, 1, 0.5);
+        } catch {
+          // Warmup silent failover
+        }
+      }
+
       console.log('[ObjectDetection Worker] Model loaded successfully! Active backend:', tf.getBackend());
       self.postMessage({ type: 'ready' });
     } catch (err) {
@@ -72,8 +87,8 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
   try {
     let rawDetections;
 
-    // Use 416px resolution for real-time MobileNet inference (< 60ms) while retaining phone/book edges
-    const targetW = 416;
+    // Use 320px resolution for ultra-fast MobileNet inference (< 15ms) while retaining phone/book edges
+    const targetW = 320;
     const aspect = message.bitmap.height / (message.bitmap.width || 1);
     const targetH = Math.max(240, Math.round(targetW * aspect));
 

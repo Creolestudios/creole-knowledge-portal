@@ -426,4 +426,97 @@ describe('useAudioVoiceGuard', () => {
 
     expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
   });
+
+  it('does NOT trigger keyboard typing warning during loud music with percussion beats', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // Loud music with low-mid bass/chords (bins 3-23)
+      for (let i = 3; i < 24; i++) {
+        arr[i] = 45;
+      }
+      // Percussion / drum transients spiking in high band (bins 25-110) on frames 5, 15, 25
+      if (frame === 5 || frame === 15 || frame === 25) {
+        for (let i = 25; i < 110; i++) {
+          arr[i] = 75;
+        }
+      } else {
+        for (let i = 25; i < 110; i++) {
+          arr[i] = 20;
+        }
+      }
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-11',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 35; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    // Must NOT trigger keyboard typing sounds
+    const typingCalls = onUnauthorizedVoiceDetected.mock.calls.filter(
+      (call) => call[0]?.reason === 'Keyboard typing sounds detected.'
+    );
+    expect(typingCalls).toHaveLength(0);
+  });
+
+  it('does NOT trigger keyboard typing warning during loud broadband ambient noise', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // Loud broadband ambient noise across entire spectrum (fans, traffic, HVAC)
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = 42 + ((i + frame * 3) % 15);
+      }
+      // Periodic spikes
+      if (frame === 5 || frame === 15 || frame === 25) {
+        for (let i = 25; i < 110; i++) {
+          arr[i] = 72;
+        }
+      }
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-12',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 35; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    const typingCalls = onUnauthorizedVoiceDetected.mock.calls.filter(
+      (call) => call[0]?.reason === 'Keyboard typing sounds detected.'
+    );
+    expect(typingCalls).toHaveLength(0);
+  });
 });

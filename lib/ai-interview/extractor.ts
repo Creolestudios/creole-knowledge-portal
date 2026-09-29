@@ -58,7 +58,12 @@ export function extractKeywordsLocalFallback(
         : 'Strong alignment with JD requirements.',
       keyStrengths: matched.slice(0, 5),
       improvementAreas: missing.slice(0, 5),
+      apiFailed: true,
+      apiNote: 'Note: AI keyword extraction API is not working or unavailable. Fallback parser extracted basic keywords. Please retry.',
     },
+    isFallback: true,
+    apiFailed: true,
+    apiNote: 'Note: AI keyword extraction API is not working or unavailable. Fallback parser extracted basic keywords. Please retry.',
     extractedAt: new Date().toISOString(),
   };
 }
@@ -106,7 +111,19 @@ export async function extractKeywordsFromResumeAndJD(
 
   if (!apiKey) {
     console.warn('[AI Interview Extractor] GEMINI_API_KEY missing. Using fallback parser.');
-    return extractKeywordsLocalFallback(resumeText || 'Sample Resume', jdText || 'Sample JD');
+    const fallback = extractKeywordsLocalFallback(resumeText || 'Sample Resume', jdText || 'Sample JD');
+    const missingKeyNote = 'Note: AI keyword extraction API is not working because GEMINI_API_KEY is not configured. Showing 0 or fallback keywords. Please configure the API key and retry.';
+    return {
+      ...fallback,
+      isFallback: true,
+      apiFailed: true,
+      apiNote: missingKeyNote,
+      analysis: {
+        ...fallback.analysis,
+        apiFailed: true,
+        apiNote: missingKeyNote,
+      },
+    };
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -276,29 +293,57 @@ ${jdText || '(See attached JD file)'}
                 ? parsed.jdRequirements.keyResponsibilities
                 : [],
             },
-            analysis: {
-              matchPercentage: normalizeMatchPercentage(
+            analysis: (() => {
+              const matchedKws = Array.isArray(parsed.analysis?.matchedKeywords)
+                ? parsed.analysis.matchedKeywords
+                : [];
+              const missingKws = Array.isArray(parsed.analysis?.missingKeywords)
+                ? parsed.analysis.missingKeywords
+                : [];
+              const normalizedScore = normalizeMatchPercentage(
+                parsed.analysis?.matchPercentage,
+                matchedKws,
+                missingKws
+              );
+              const isZeroKeywords = matchedKws.length === 0 && normalizedScore === 0;
+              const zeroNote = isZeroKeywords
+                ? 'Note: AI keyword extraction API is not working or returned 0 keywords. Please verify document contents and retry.'
+                : undefined;
+
+              return {
+                matchPercentage: normalizedScore,
+                matchedKeywords: matchedKws,
+                missingKeywords: missingKws,
+                resumeOnlyKeywords: Array.isArray(parsed.analysis?.resumeOnlyKeywords)
+                  ? parsed.analysis.resumeOnlyKeywords
+                  : [],
+                skillGapSummary: parsed.analysis?.skillGapSummary || '',
+                keyStrengths: Array.isArray(parsed.analysis?.keyStrengths)
+                  ? parsed.analysis.keyStrengths
+                  : [],
+                improvementAreas: Array.isArray(parsed.analysis?.improvementAreas)
+                  ? parsed.analysis.improvementAreas
+                  : [],
+                apiFailed: isZeroKeywords,
+                apiNote: zeroNote,
+              };
+            })(),
+            apiFailed:
+              (!Array.isArray(parsed.analysis?.matchedKeywords) || parsed.analysis.matchedKeywords.length === 0) &&
+              normalizeMatchPercentage(
                 parsed.analysis?.matchPercentage,
                 Array.isArray(parsed.analysis?.matchedKeywords) ? parsed.analysis.matchedKeywords : [],
                 Array.isArray(parsed.analysis?.missingKeywords) ? parsed.analysis.missingKeywords : []
-              ),
-              matchedKeywords: Array.isArray(parsed.analysis?.matchedKeywords)
-                ? parsed.analysis.matchedKeywords
-                : [],
-              missingKeywords: Array.isArray(parsed.analysis?.missingKeywords)
-                ? parsed.analysis.missingKeywords
-                : [],
-              resumeOnlyKeywords: Array.isArray(parsed.analysis?.resumeOnlyKeywords)
-                ? parsed.analysis.resumeOnlyKeywords
-                : [],
-              skillGapSummary: parsed.analysis?.skillGapSummary || '',
-              keyStrengths: Array.isArray(parsed.analysis?.keyStrengths)
-                ? parsed.analysis.keyStrengths
-                : [],
-              improvementAreas: Array.isArray(parsed.analysis?.improvementAreas)
-                ? parsed.analysis.improvementAreas
-                : [],
-            },
+              ) === 0,
+            apiNote:
+              (!Array.isArray(parsed.analysis?.matchedKeywords) || parsed.analysis.matchedKeywords.length === 0) &&
+              normalizeMatchPercentage(
+                parsed.analysis?.matchPercentage,
+                Array.isArray(parsed.analysis?.matchedKeywords) ? parsed.analysis.matchedKeywords : [],
+                Array.isArray(parsed.analysis?.missingKeywords) ? parsed.analysis.missingKeywords : []
+              ) === 0
+                ? 'Note: AI keyword extraction API is not working or returned 0 keywords. Please verify document contents and retry.'
+                : undefined,
             extractedAt: new Date().toISOString(),
           };
         }
@@ -348,5 +393,17 @@ ${jdText || '(See attached JD file)'}
   }
 
   console.warn('[AI Interview Extractor] All Gemini models failed. Using local keyword fallback.');
-  return extractKeywordsLocalFallback(resumeText || 'Resume', jdText || 'JD');
+  const fallback = extractKeywordsLocalFallback(resumeText || 'Resume', jdText || 'JD');
+  const failureNote = 'Note: AI keyword extraction API is not working (all models failed or daily quota exhausted). Showing 0 or fallback keywords. Please retry.';
+  return {
+    ...fallback,
+    isFallback: true,
+    apiFailed: true,
+    apiNote: failureNote,
+    analysis: {
+      ...fallback.analysis,
+      apiFailed: true,
+      apiNote: failureNote,
+    },
+  };
 }

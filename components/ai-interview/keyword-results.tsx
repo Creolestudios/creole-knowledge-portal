@@ -60,6 +60,12 @@ export function KeywordAnalysisOverview({ extraction, onReset }: KeywordAnalysis
   };
 
   const matchStyle = getMatchColor(matchPercentage);
+  const isApiFailingOrZero = Boolean(
+    extraction.apiFailed ||
+    extraction.isFallback ||
+    analysis.apiFailed ||
+    (matchPercentage === 0 && analysis.matchedKeywords.length === 0)
+  );
 
   const handleCopyKeywords = () => {
     const summaryText = `
@@ -120,6 +126,24 @@ ${analysis.skillGapSummary}
         </div>
       </div>
 
+      {/* API FAILURE / ZERO KEYWORDS ADMIN NOTE */}
+      {isApiFailingOrZero && (
+        <div
+          id="keyword-extraction-api-warning"
+          className="flex items-start gap-3.5 p-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl text-amber-200 text-sm shadow-md"
+        >
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-amber-200 text-sm">
+              Note: AI Keyword Extraction API is not working or returned 0 keywords.
+            </p>
+            <p className="text-xs text-amber-300/90 leading-relaxed">
+              {extraction.apiNote || analysis.apiNote || 'The AI extraction API failed or could not extract keywords. Please click "Analyze Another Pair" to retry.'}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* OVERVIEW CARDS GRID */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* MATCH SCORE CARD */}
@@ -131,6 +155,12 @@ ${analysis.skillGapSummary}
               <span className="text-sm font-medium text-slate-400">JD Fit</span>
             </div>
           </div>
+          {isApiFailingOrZero && (
+            <div className="mt-3 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-xs text-amber-200 font-semibold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Note: API is not working (0 keywords). Please retry.</span>
+            </div>
+          )}
           <p className="text-xs text-slate-300 mt-4 leading-relaxed">
             {analysis.skillGapSummary || 'Analysis completed successfully.'}
           </p>
@@ -192,7 +222,14 @@ ${analysis.skillGapSummary}
           </div>
 
           {analysis.matchedKeywords.length === 0 ? (
-            <p className="text-xs text-slate-500 italic">No direct keyword overlaps detected.</p>
+            <div className="space-y-1.5">
+              <p className="text-xs text-slate-500 italic">No direct keyword overlaps detected.</p>
+              {isApiFailingOrZero && (
+                <p className="text-xs text-amber-400 font-medium">
+                  Note: API is not working or returned 0 keywords. Please retry.
+                </p>
+              )}
+            </div>
           ) : (
             <div className="flex flex-wrap gap-2 pt-2">
               {analysis.matchedKeywords.map((kw, idx) => (
