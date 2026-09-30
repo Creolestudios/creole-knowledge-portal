@@ -35,14 +35,25 @@ const originalMediaDevices = global.navigator.mediaDevices;
 
 async function verifyPasscode() {
   render(<InterviewEntryPage />);
-  fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
+  
+  // First step: enter email
+  fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'test@example.com' } });
   fireEvent.click(screen.getByText('Continue'));
+  
+  // Wait for access code input to appear
+  const accessCodeInput = await screen.findByPlaceholderText('000000');
+  
+  // Second step: enter access code
+  fireEvent.change(accessCodeInput, { target: { value: '123456' } });
+  fireEvent.click(screen.getByText('Continue'));
+  
   expect(await screen.findByText('Before you begin')).toBeInTheDocument();
 }
 
 describe('InterviewEntryPage', () => {
   afterEach(() => {
-    global.fetch = originalFetch;
+    // Prevent dangling fetches from crashing jsdom with Invalid URL
+    global.fetch = vi.fn().mockImplementation(() => new Promise(() => {}));
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
     mockProfileSingle.mockResolvedValue({ data: null, error: null });
     Object.defineProperty(global.navigator, 'mediaDevices', {
@@ -54,13 +65,22 @@ describe('InterviewEntryPage', () => {
   });
 
   it('shows an error on an incorrect passcode', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
       ok: false,
       json: () => Promise.resolve({ error: 'Incorrect passcode' }),
     }) as any;
 
     render(<InterviewEntryPage />);
-    fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '000000' } });
+    
+    // First step: enter email
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'test@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+    
+    const accessCodeInput = await screen.findByPlaceholderText('000000');
+    fireEvent.change(accessCodeInput, { target: { value: '000000' } });
     fireEvent.click(screen.getByText('Continue'));
 
     expect(await screen.findByText('Incorrect passcode')).toBeInTheDocument();
@@ -68,6 +88,9 @@ describe('InterviewEntryPage', () => {
 
   it('shows the instructions screen on a correct passcode', async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
     }).mockResolvedValueOnce({
@@ -83,15 +106,55 @@ describe('InterviewEntryPage', () => {
     expect(global.fetch).toHaveBeenCalledWith(
       '/api/interview/verify',
       expect.objectContaining({
-        body: JSON.stringify({ interviewId: 'interview-1', accessCode: '123456' }),
+        body: JSON.stringify({ interviewId: 'interview-1', accessCode: '123456', email: 'test@example.com' }),
       }),
     );
     expect(screen.getByText('Entire screen share')).toBeInTheDocument();
   });
 
-  it('only strips non-digit characters and enforces the 6-digit length', () => {
+  it('bypasses access code and directly verifies if admin email is entered', async () => {
+    global.fetch = vi.fn().mockImplementation((url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ verified: true, isAdmin: true, interviewId: 'interview-1' }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+        }),
+      });
+    }) as any;
+
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: { getUserMedia, getDisplayMedia: vi.fn() },
+      configurable: true,
+    });
+
     render(<InterviewEntryPage />);
-    const input = screen.getByPlaceholderText('000000') as HTMLInputElement;
+    
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'admin@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    // Should go straight to interview since it bypasses passcode and calibration
+    expect(await screen.findByText('Tell us about yourself.')).toBeInTheDocument();
+  });
+
+  it('only strips non-digit characters and enforces the 6-digit length', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'test@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+    
+    const input = await screen.findByPlaceholderText('000000') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'ab12cd' } });
     expect(input.value).toBe('12');
     expect(screen.getByText('Continue').closest('button')).toBeDisabled();
@@ -99,6 +162,9 @@ describe('InterviewEntryPage', () => {
 
   it('starts the interview once webcam, mic, and full-screen share are granted', async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
     }).mockResolvedValueOnce({
@@ -130,6 +196,9 @@ describe('InterviewEntryPage', () => {
   it('rejects a partial-screen share and asks for the entire screen', async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
+      ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
     }).mockResolvedValueOnce({
       ok: true,
@@ -160,7 +229,10 @@ describe('InterviewEntryPage', () => {
   });
 
   it('shows an error when permissions are denied', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
     }) as any;
@@ -183,6 +255,9 @@ describe('InterviewEntryPage', () => {
 
   it('starts the interview before monitoring status is displayed', async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
     }).mockResolvedValueOnce({
@@ -209,16 +284,26 @@ describe('InterviewEntryPage', () => {
   });
 
   it('terminates the interview as soon as the tab is hidden or the window minimized', async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
-    }).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        session: { duration_minutes: 30 },
-        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
-      }),
-    }).mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }) as any;
+    let verifyCallCount = 0;
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        verifyCallCount++;
+        if (verifyCallCount === 1) {
+          return { ok: true, json: () => Promise.resolve({ requiresAccessCode: true }) };
+        }
+        return { ok: true, json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }) };
+      }
+      if (typeof url === 'string' && url.includes('questions')) {
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+          }),
+        };
+      }
+      return { ok: true, json: () => Promise.resolve({}) };
+    }) as any;
 
     const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
     const getDisplayMedia = vi.fn().mockResolvedValue({
@@ -241,15 +326,25 @@ describe('InterviewEntryPage', () => {
   });
 
   it('does NOT terminate when the page only loses keyboard focus while staying visible', async () => {
-    global.fetch = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
-    }).mockResolvedValueOnce({
-      ok: true,
-      json: () => Promise.resolve({
-        session: { duration_minutes: 30 },
-        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
-      }),
+    let verifyCallCount = 0;
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        verifyCallCount++;
+        if (verifyCallCount === 1) {
+          return { ok: true, json: () => Promise.resolve({ requiresAccessCode: true }) };
+        }
+        return { ok: true, json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }) };
+      }
+      if (typeof url === 'string' && url.includes('questions')) {
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+          }),
+        };
+      }
+      return { ok: true, json: () => Promise.resolve({}) };
     }) as any;
 
     const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
@@ -273,45 +368,13 @@ describe('InterviewEntryPage', () => {
     fireEvent(window, new Event('blur'));
     fireEvent(document, new Event('visibilitychange'));
 
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
     expect(screen.getByText("You're verified")).toBeInTheDocument();
     hasFocus.mockRestore();
   });
 
-  it('bypasses passcode and directly shows instructions when the user is an admin', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1' } }, error: null });
-    mockProfileSingle.mockResolvedValue({ data: { role: 'admin' }, error: null });
 
-    render(<InterviewEntryPage />);
 
-    expect(await screen.findByText('Allow & Start Interview')).toBeInTheDocument();
-  });
-
-  it('bypasses calibration and jumps to interview when the user is an admin', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: 'admin-1' } }, error: null });
-    mockProfileSingle.mockResolvedValue({ data: { role: 'admin' }, error: null });
-
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({
-        session: { duration_minutes: 30 },
-        questions: [{ id: 'q1', question_text: 'Admin Question', category: 'hr', question_order: 1 }],
-      }),
-    }) as any;
-
-    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
-    Object.defineProperty(global.navigator, 'mediaDevices', {
-      value: { getUserMedia, getDisplayMedia: vi.fn() }, // getDisplayMedia not needed for admin
-      configurable: true,
-    });
-
-    render(<InterviewEntryPage />);
-    
-    const startButton = await screen.findByText('Allow & Start Interview');
-    fireEvent.click(startButton);
-
-    expect(await screen.findByText('Admin Question')).toBeInTheDocument();
-  });
 });

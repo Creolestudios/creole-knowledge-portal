@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminUser, supabaseAdmin } from '@/lib/supabase/admin';
 import { normalizeQuestionType, normalizeDifficulty, normalizeInteger } from '@/lib/ai-interview/types';
+import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 
 const DEFAULT_FALLBACK_QUESTIONS = [
   {
@@ -183,101 +184,107 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  if (req.cookies.get('interview_verified_id')?.value !== id) {
-    const adminUser = await requireAdminUser().catch(() => null);
-    if (!adminUser) {
-      return NextResponse.json({ error: 'Interview verification is required.' }, { status: 401 });
+  try {
+    const targetSessionId = (await resolveInterviewSessionId(id)) || id;
+    const verifiedId = req.cookies.get('interview_verified_id')?.value;
+    const verifiedToken = req.cookies.get('interview_verified_token')?.value;
+
+    if (verifiedId !== targetSessionId && verifiedId !== id && verifiedToken !== id) {
+      const adminUser = await requireAdminUser().catch(() => null);
+      if (!adminUser) {
+        return NextResponse.json({ error: 'Interview verification is required.' }, { status: 401 });
+      }
     }
-  }
 
-  // Check that the interview exists in ai_interviews
-  const { data: interview } = await supabaseAdmin
-    .from('ai_interviews')
-    .select('id, status')
-    .eq('id', id)
-    .single();
-
-  if (!interview) {
-    return NextResponse.json({ error: 'Interview not found.' }, { status: 404 });
-  }
-
-  let { data: session, error: sessionError } = await supabaseAdmin
-    .from('interview_sessions')
-    .select('id, duration_minutes, question_count, status')
-    .eq('id', id)
-    .single();
-
-  if (sessionError || !session) {
-    return NextResponse.json({ error: 'Interview session not found.' }, { status: 404 });
-  }
-
-  let { data: questions, error: questionError } = await supabaseAdmin
-    .from('interview_questions')
-    .select('*')
-    .eq('session_id', id)
-    .order('question_order', { ascending: true });
-
-  if (questionError) {
-    return NextResponse.json({ error: questionError.message }, { status: 500 });
-  }
-
-  // Auto-seed default questions if no questions exist yet for this verified interview
-  if (!questions || questions.length === 0) {
-    const defaultDuration =
-      session?.duration_minutes && session.duration_minutes > 0 ? session.duration_minutes : 15;
-
-    await supabaseAdmin
+    // Check that the interview session exists
+    let { data: session } = await supabaseAdmin
       .from('interview_sessions')
-      .upsert({
-        id,
-        question_count: DEFAULT_FALLBACK_QUESTIONS.length,
-        duration_minutes: defaultDuration,
-        status: 'questions_generated',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
+      .select('id, duration_minutes, question_count, status')
+      .eq('id', targetSessionId)
+      .single();
 
-    const seedRes = await insertInterviewQuestions(id, DEFAULT_FALLBACK_QUESTIONS);
-    if (!seedRes.error && seedRes.data) {
-      questions = seedRes.data;
+    const { data: aiInterview } = await supabaseAdmin
+      .from('ai_interviews')
+      .select('id, status')
+      .eq('id', targetSessionId)
+      .single();
+
+    if (!session && !aiInterview) {
+      return NextResponse.json({ error: 'Interview not found.' }, { status: 404 });
+    }
+
+    let { data: questions, error: questionError } = await supabaseAdmin
+      .from('interview_questions')
+      .select('*')
+      .eq('session_id', targetSessionId)
+      .order('question_order', { ascending: true });
+
+    if (questionError) {
+      return NextResponse.json({ error: questionError.message }, { status: 500 });
+    }
+
+    // Auto-seed default questions if no questions exist yet for this verified interview
+    if (!questions || questions.length === 0) {
+      const defaultDuration =
+        session?.duration_minutes && session.duration_minutes > 0 ? session.duration_minutes : 15;
+
+      await supabaseAdmin
+        .from('interview_sessions')
+        .upsert({
+          id,
+          question_count: DEFAULT_FALLBACK_QUESTIONS.length,
+          duration_minutes: defaultDuration,
+          status: 'questions_generated',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+
+      const seedRes = await insertInterviewQuestions(id, DEFAULT_FALLBACK_QUESTIONS);
+      if (!seedRes.error && seedRes.data) {
+        questions = seedRes.data;
+        session = {
+          id,
+          duration_minutes: defaultDuration,
+          question_count: DEFAULT_FALLBACK_QUESTIONS.length,
+          status: 'questions_generated',
+        };
+      }
+    }
+
+    if (!session || !session.duration_minutes || session.duration_minutes <= 0) {
+      const fallbackDuration = 15;
+      await supabaseAdmin
+        .from('interview_sessions')
+        .upsert({
+          id,
+          duration_minutes: fallbackDuration,
+          question_count: questions?.length || 5,
+          status: 'questions_generated',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
       session = {
-        id,
-        duration_minutes: defaultDuration,
-        question_count: DEFAULT_FALLBACK_QUESTIONS.length,
-        status: 'questions_generated',
-      };
-    }
-  }
-
-  if (!session || !session.duration_minutes || session.duration_minutes <= 0) {
-    const fallbackDuration = 15;
-    await supabaseAdmin
-      .from('interview_sessions')
-      .upsert({
         id,
         duration_minutes: fallbackDuration,
         question_count: questions?.length || 5,
         status: 'questions_generated',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
-    session = {
-      id,
-      duration_minutes: fallbackDuration,
-      question_count: questions?.length || 5,
-      status: 'questions_generated',
-    };
+      };
+    }
+
+    if (!questions || questions.length === 0) {
+      return NextResponse.json(
+        { error: 'Interview questions are not ready yet.' },
+        { status: 404 },
+      );
+    }
+
+    const mappedQuestions = questions.map((q: any) => ({
+      ...q,
+      is_custom: q.is_custom ?? (q.category === 'custom' || q.evaluation_rubric?.is_custom === true),
+    }));
+
+    return NextResponse.json({ session, questions: mappedQuestions });
+  } catch (error) {
+    const msg = error instanceof Error ? error.stack : String(error);
+    console.error('API Error in /questions GET:', msg);
+    return NextResponse.json({ error: msg, internalCrash: true }, { status: 500 });
   }
-
-  if (!questions || questions.length === 0) {
-    return NextResponse.json(
-      { error: 'Interview questions are not ready yet.' },
-      { status: 404 },
-    );
-  }
-
-  const mappedQuestions = questions.map((q: any) => ({
-    ...q,
-    is_custom: q.is_custom ?? (q.category === 'custom' || q.evaluation_rubric?.is_custom === true),
-  }));
-
-  return NextResponse.json({ session, questions: mappedQuestions });
 }

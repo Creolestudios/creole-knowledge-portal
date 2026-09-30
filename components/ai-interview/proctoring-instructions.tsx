@@ -96,7 +96,7 @@ export function ProctoringInstructions({
       <button
         id="assess-request-permissions"
         type="button"
-        onClick={onRequestPermissions}
+        onClick={() => onRequestPermissions()}
         disabled={requestingPermissions}
         className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
       >

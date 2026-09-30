@@ -20,7 +20,7 @@ const originalFetch = global.fetch;
 const originalMediaDevices = global.navigator.mediaDevices;
 
 function verifiedFetchMock() {
-  return vi.fn().mockImplementation((url: string) => {
+  return vi.fn().mockImplementation((url: string, init?: any) => {
     if (typeof url === 'string' && url.includes('/questions')) {
       return Promise.resolve({
         ok: true,
@@ -29,6 +29,16 @@ function verifiedFetchMock() {
             session: { duration_minutes: 30 },
             questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
           }),
+      });
+    }
+    let body: any = {};
+    try {
+      body = JSON.parse(init?.body || '{}');
+    } catch {}
+    if (!body.accessCode) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ requiresAccessCode: true }),
       });
     }
     return Promise.resolve({
@@ -40,7 +50,10 @@ function verifiedFetchMock() {
 
 async function goToInstructions() {
   render(<InterviewEntryPage />);
-  fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
+  fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'candidate@example.com' } });
+  fireEvent.click(screen.getByText('Continue'));
+  const accessCodeInput = await screen.findByPlaceholderText('000000');
+  fireEvent.change(accessCodeInput, { target: { value: '123456' } });
   fireEvent.click(screen.getByText('Continue'));
   await screen.findByText('Before you begin');
 }
@@ -96,21 +109,41 @@ afterEach(() => {
 
 describe('Passcode gate', () => {
   it('TC-PROC-01 rejects an incorrect passcode with an inline error', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      json: () => Promise.resolve({ error: 'Incorrect passcode' }),
+    global.fetch = vi.fn().mockImplementation((_url: string, init?: any) => {
+      let body: any = {};
+      try {
+        body = JSON.parse(init?.body || '{}');
+      } catch {}
+      if (!body.accessCode) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ requiresAccessCode: true }),
+        });
+      }
+      return Promise.resolve({
+        ok: false,
+        json: () => Promise.resolve({ error: 'Incorrect passcode' }),
+      });
     }) as any;
 
     render(<InterviewEntryPage />);
-    fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '000000' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    const accessCodeInput = await screen.findByPlaceholderText('000000');
+    fireEvent.change(accessCodeInput, { target: { value: '000000' } });
     fireEvent.click(screen.getByText('Continue'));
 
     expect(await screen.findByText('Incorrect passcode')).toBeInTheDocument();
   });
 
-  it('TC-PROC-02 strips non-digit input and caps at 6 digits, disabling submit until complete', () => {
+  it('TC-PROC-02 strips non-digit input and caps at 6 digits, disabling submit until complete', async () => {
+    global.fetch = verifiedFetchMock();
     render(<InterviewEntryPage />);
-    const input = screen.getByPlaceholderText('000000') as HTMLInputElement;
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    const input = (await screen.findByPlaceholderText('000000')) as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'ab12cd' } });
     expect(input.value).toBe('12');
     expect(screen.getByText('Continue').closest('button')).toBeDisabled();
@@ -188,7 +221,9 @@ describe('Instructions & permissions gate', () => {
       getDisplayMedia: vi.fn().mockRejectedValue(new Error('Permission dismissed')),
     });
     render(<InterviewEntryPage />);
-    fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+    fireEvent.change(await screen.findByPlaceholderText('000000'), { target: { value: '123456' } });
     fireEvent.click(screen.getByText('Continue'));
     await screen.findByText('Before you begin');
 
@@ -208,7 +243,9 @@ describe('Instructions & permissions gate', () => {
       getDisplayMedia: vi.fn().mockRejectedValue(new Error('Permission dismissed')),
     });
     const { unmount } = render(<InterviewEntryPage />);
-    fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+    fireEvent.change(await screen.findByPlaceholderText('000000'), { target: { value: '123456' } });
     fireEvent.click(screen.getByText('Continue'));
     await screen.findByText('Before you begin');
 
@@ -424,7 +461,7 @@ describe('In-session proctoring (ready stage)', () => {
     global.fetch = fetchMock;
 
     render(<InterviewEntryPage />);
-    fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'candidate@example.com' } });
     fireEvent.click(screen.getByText('Continue'));
 
     expect(await screen.findByText('This interview has already ended')).toBeInTheDocument();

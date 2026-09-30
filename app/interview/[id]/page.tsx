@@ -43,20 +43,9 @@ import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
 import { useAnswerRecorder } from '@/lib/ai-interview/use-answer-recorder';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
-import CandidateAssessmentPage from '@/app/assess/[token]/page';
 
-export default function InterviewPageWrapper() {
-  const params = useParams();
-  const interviewId = params?.id as string;
 
-  if (interviewId && interviewId !== 'interview-1') {
-    return <CandidateAssessmentPage initialToken={interviewId} />;
-  }
-
-  return <InterviewEntryPage />;
-}
-
-function InterviewEntryPage() {
+export default function InterviewEntryPage() {
   const params = useParams();
   const interviewId = params?.id as string;
 
@@ -69,7 +58,9 @@ function InterviewEntryPage() {
     setStage(next);
   }, []);
 
+  const [email, setEmail] = useState('');
   const [accessCode, setAccessCode] = useState('');
+  const [showAccessCode, setShowAccessCode] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -92,26 +83,7 @@ function InterviewEntryPage() {
   const supabase = createClient();
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  useEffect(() => {
-    const initAdmin = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
 
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('role')
-        .eq('user_id', user.id)
-        .single();
-
-      if (profile?.role === 'admin') {
-        setIsAdmin(true);
-        // An admin never needs the passcode gate — force them past it even if
-        // they had already started typing a code before this check resolved.
-        setStage((current) => (current === 'passcode' ? 'instructions' : current));
-      }
-    };
-    initAdmin();
-  }, [interviewId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Proctoring & Calibration State
   const [calibrationProgress, setCalibrationProgress] = useState(0);
@@ -407,7 +379,7 @@ function InterviewEntryPage() {
       const res = await fetch('/api/interview/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interviewId, accessCode }),
+        body: JSON.stringify({ interviewId, accessCode: showAccessCode ? accessCode : undefined, email }),
       });
       const json = await res.json();
 
@@ -416,7 +388,17 @@ function InterviewEntryPage() {
         return;
       }
 
-      setStageWithRef('instructions');
+      if (json.requiresAccessCode) {
+        setShowAccessCode(true);
+        return;
+      }
+
+      if (json.isAdmin) {
+        setIsAdmin(true);
+        await requestPermissions(true);
+      } else {
+        setStageWithRef('instructions');
+      }
     } catch (err) {
       console.error('[interview-entry] verify failed:', err);
       setError('Something went wrong. Please try again.');
@@ -429,7 +411,8 @@ function InterviewEntryPage() {
     (cameraStreamRef.current?.getTracks().length ?? 0) > 0 &&
     cameraStreamRef.current!.getTracks().every((track) => track.readyState === 'live');
 
-  const requestPermissions = async () => {
+  const requestPermissions = async (overrideIsAdmin: boolean = false) => {
+    const isAdminUser = isAdmin || overrideIsAdmin;
     setPermissionError(null);
     setRequestingPermissions(true);
 
@@ -442,7 +425,7 @@ function InterviewEntryPage() {
         setCameraGranted(true);
       }
 
-      if (!isAdmin) {
+      if (!isAdminUser) {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const [videoTrack] = screenStream.getVideoTracks();
         const displaySurface = videoTrack?.getSettings().displaySurface;
@@ -483,14 +466,21 @@ function InterviewEntryPage() {
       setDurationSeconds(totalSeconds);
       setFaceTrackingStatus('loading');
       setFaceTrackingError(null);
-      setStageWithRef(isAdmin ? 'interview' : 'ready');
+      setStageWithRef(isAdminUser ? 'interview' : 'ready');
     } catch (err) {
       console.error('[interview-entry] permission request failed:', err);
-      setPermissionError(
-        hasLiveCameraStream()
-          ? 'Screen sharing was cancelled or denied. Please share your entire screen to continue.'
-          : 'Camera, microphone, and full-screen sharing are all required to start this interview.',
-      );
+      const errMsg = err instanceof Error ? err.message : String(err);
+      
+      // If screenGranted was already set to true, the error happened during the API fetch, not screen sharing.
+      if (screenStreamRef.current || isAdminUser) {
+        setPermissionError(`Failed to load interview data: ${errMsg}`);
+      } else {
+        setPermissionError(
+          hasLiveCameraStream()
+            ? `Screen sharing failed (${errMsg}). Please ensure your browser has permission to capture the screen.`
+            : 'Camera, microphone, and full-screen sharing are all required to start this interview.',
+        );
+      }
     } finally {
       setRequestingPermissions(false);
     }
@@ -533,12 +523,16 @@ function InterviewEntryPage() {
   useEffect(() => {
     if (!cameraVideoRef.current) return;
     const stream = cameraStream || cameraPreview;
-    if (!stream || isAdmin) return;
+    if (!stream) return;
     if (cameraVideoRef.current.srcObject !== stream) {
       cameraVideoRef.current.srcObject = stream;
     }
-    void cameraVideoRef.current.play()?.catch(() => {});
-  }, [cameraStream, cameraPreview, stage, isAdmin]);
+    try {
+      void cameraVideoRef.current.play()?.catch(() => {});
+    } catch {
+      // Ignore synchronous jsdom Not Implemented errors
+    }
+  }, [cameraStream, cameraPreview, stage]);
 
   // ─── Shared frame-capture helper ─────────────────────────────────────────
   // Extracted so both the calibration and interview effects can reuse it.
@@ -670,7 +664,7 @@ function InterviewEntryPage() {
   // Because this effect only mounts when stage === 'interview', there is NO
   // stale-closure issue — stageRef.current is always 'interview' here.
   useEffect(() => {
-    if (stage !== 'interview') return;
+    if (stage !== 'interview' || isAdmin) return;
 
     if (typeof Worker === 'undefined') return;
 
@@ -776,7 +770,7 @@ function InterviewEntryPage() {
   // Starting during calibration wastes resources and may log false object
   // warnings before the candidate has even reached the interview screen.
   useEffect(() => {
-    if (stage !== 'interview') return;
+    if (stage !== 'interview' || isAdmin) return;
     if (typeof Worker === 'undefined') {
       console.warn('[ObjectDetection] Web Workers not supported in this browser environment');
       return;
@@ -950,7 +944,9 @@ function InterviewEntryPage() {
           window.clearInterval(timer);
           completedRef.current = true;
           stopAllMedia();
-          fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch(() => {});
+          if (!isAdmin) {
+            fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch(() => {});
+          }
           setStageWithRef('completed');
           return 0;
         }
@@ -964,7 +960,7 @@ function InterviewEntryPage() {
           window.setTimeout(() => {
             setCurrentQuestion((cq) => {
               setQuestions((qs) => {
-                if (!goingToNextRef.current) {
+                if (!goingToNextRef.current && !isAdmin) {
                   if (cq < qs.length - 1) {
                     goToQuestion(cq + 1);
                   } else {
@@ -985,6 +981,20 @@ function InterviewEntryPage() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch questions automatically if entering 'interview' stage (e.g. Admin view) without prior fetch
+  useEffect(() => {
+    if (stage === 'interview' && questions.length === 0) {
+      fetch(`/api/interview/${interviewId}/questions`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data.questions) && data.questions.length > 0) {
+            setQuestions(data.questions);
+          }
+        })
+        .catch(console.warn);
+    }
+  }, [stage, interviewId, questions.length]);
 
   useProctoringWatchdog({
     active: !isAdmin && ['ready', 'calibration', 'interview'].includes(stage),
@@ -1176,9 +1186,11 @@ function InterviewEntryPage() {
               </div>
             </div>
             <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1689aa]">
-              {question.category.replaceAll('_', ' ')}
+              {question?.category ? question.category.replaceAll('_', ' ') : 'General'}
             </p>
-            <h2 className="text-2xl font-semibold leading-relaxed text-zinc-900">{question.question_text}</h2>
+            <h2 className="text-2xl font-semibold leading-relaxed text-zinc-900">
+              {question?.question_text || (isAdmin ? 'Observing live interview session...' : 'Loading question...')}
+            </h2>
             {!isAdmin && (
               <div
                 id="answer-recording-status"
@@ -1309,22 +1321,37 @@ function InterviewEntryPage() {
           <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
             <KeyRound className="w-6 h-6 text-[#34c4f2]" />
           </div>
-          <h1 className="text-xl font-bold text-zinc-900">Enter your passcode</h1>
+          <h1 className="text-xl font-bold text-zinc-900">Join Interview</h1>
           <p className="text-sm text-zinc-500">
-            Enter the 6-digit passcode shared with you to start your interview.
+            Please enter your email and the 6-digit passcode to continue.
           </p>
         </div>
 
-        <input
-          id="interview-access-code"
-          type="text"
-          inputMode="numeric"
-          maxLength={6}
-          value={accessCode}
-          onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
-          placeholder="000000"
-          className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
-        />
+        <div className="space-y-4">
+          <input
+            id="interview-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+            className="w-full text-center text-lg py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+            required
+            disabled={showAccessCode}
+          />
+
+          {showAccessCode && (
+            <input
+              id="interview-access-code"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="000000"
+              className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+            />
+          )}
+        </div>
 
         {error && (
           <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
@@ -1336,7 +1363,7 @@ function InterviewEntryPage() {
         <button
           id="interview-verify-submit"
           type="submit"
-          disabled={submitting || accessCode.length !== 6}
+          disabled={submitting || !email || (showAccessCode && accessCode.length !== 6)}
           className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
         >
           {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Continue</span>}

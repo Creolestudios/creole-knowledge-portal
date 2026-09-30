@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdminUser, supabaseAdmin } from '@/lib/supabase/admin';
 import { transcribeAnswer } from '@/lib/ai-interview/transcribe';
+import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 
 export const runtime = 'nodejs';
 
@@ -23,8 +24,11 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
+    const targetSessionId = (await resolveInterviewSessionId(id)) || id;
+    const verifiedId = req.cookies.get('interview_verified_id')?.value;
+    const verifiedToken = req.cookies.get('interview_verified_token')?.value;
 
-    if (req.cookies.get('interview_verified_id')?.value !== id) {
+    if (verifiedId !== targetSessionId && verifiedId !== id && verifiedToken !== id) {
       const adminUser = await requireAdminUser().catch(() => null);
       if (!adminUser) {
         return NextResponse.json({ error: 'Interview verification is required.' }, { status: 401 });
@@ -71,7 +75,7 @@ export async function POST(
       .from('interview_questions')
       .select('id')
       .eq('id', questionId)
-      .eq('session_id', id)
+      .eq('session_id', targetSessionId)
       .single();
 
     if (questionError || !question) {

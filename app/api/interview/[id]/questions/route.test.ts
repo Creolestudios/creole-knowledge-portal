@@ -173,6 +173,7 @@ describe('GET /api/interview/[id]/questions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRequireAdminUser.mockResolvedValue(null);
+    state.interview = null;
     state.session = { id: 'sess-1', duration_minutes: 30, question_count: 1, status: 'questions_generated' };
     state.sessionSelectError = null;
     state.questions = [{ id: 'q1' }];
@@ -200,6 +201,7 @@ describe('GET /api/interview/[id]/questions', () => {
 
   it('returns 404 when the session is not found', async () => {
     state.session = null;
+    state.interview = null;
     state.sessionSelectError = { message: 'not found' };
     const res = await GET(makeGetRequest('sess-1'), makeParams());
     expect(res.status).toBe(404);

@@ -104,6 +104,10 @@ export function useAudioVoiceGuard({
 
     try {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) {
+        console.warn('[voice-guard] AudioContext not supported in this environment (likely JSDOM). Skipping voice guard.');
+        return;
+      }
       const ctx = new AudioCtx();
       if (ctx.state === 'suspended') {
         ctx.resume().catch(() => {});

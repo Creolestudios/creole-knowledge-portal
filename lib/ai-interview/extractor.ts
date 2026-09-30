@@ -217,12 +217,12 @@ ${jdText || '(See attached JD file)'}
 
   const modelsToTry = [
     ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-flash-latest',
     'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
   ];
-  const maxAttemptsPerModel = 3;
+  const maxAttemptsPerModel = 2;
 
   for (const modelName of modelsToTry) {
     for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
@@ -359,7 +359,11 @@ ${jdText || '(See attached JD file)'}
           errMsg.includes('no longer available') ||
           errMsg.includes('429') ||
           errMsg.includes('RESOURCE_EXHAUSTED') ||
-          errMsg.includes('quota');
+          errMsg.includes('quota') ||
+          errMsg.includes('fetch failed') ||
+          errMsg.includes('Failed to fetch') ||
+          errMsg.includes('ENOTFOUND') ||
+          errMsg.includes('ECONNREFUSED');
 
         // Retry with backoff only for transient server-side errors:
         //   • 500 INTERNAL / 503 UNAVAILABLE → temporary Google infra issue

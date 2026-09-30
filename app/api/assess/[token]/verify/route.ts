@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import {
   hashPasscode,
@@ -58,6 +59,14 @@ export async function POST(
     return NextResponse.json({ error: 'Incorrect passcode' }, { status: 401 });
   }
 
+  if (invite.status === 'in_progress') {
+    const cookieStore = await cookies();
+    const existingCookie = cookieStore.get('assess_verified_token')?.value;
+    if (existingCookie !== token) {
+      return NextResponse.json({ error: 'This assessment is already in progress on another device' }, { status: 403 });
+    }
+  }
+
   const { data: session, error: sessionErr } = await supabaseAdmin
     .from('interview_sessions')
     .select('id, candidate_name, status, duration_minutes')
@@ -101,11 +110,21 @@ export async function POST(
       .eq('id', invite.session_id);
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     verified: true,
     session_id: invite.session_id,
     candidate_name: session.candidate_name,
     duration_minutes: session.duration_minutes || 15,
     questions,
   });
+
+  response.cookies.set('assess_verified_token', token, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 60 * 60 * 4,
+    path: `/api/assess`,
+  });
+
+  return response;
 }

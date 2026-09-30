@@ -71,15 +71,24 @@ export function ResumeJDUploader({
         formData.append('jdFile', jdFile);
       }
 
-      const res = await fetch('/api/ai-interview/extract', {
-        method: 'POST',
-        body: formData,
-      });
+      let res: Response;
+      try {
+        res = await fetch('/api/ai-interview/extract', {
+          method: 'POST',
+          body: formData,
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === 'Failed to fetch' || msg.includes('fetch')) {
+          throw new Error('Network connection error: Failed to reach server. Please verify your connection or server status and try again.');
+        }
+        throw e;
+      }
 
-      const extraction = await res.json();
+      const extraction = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        throw new Error(extraction.error || 'Failed to extract keywords');
+      if (!res.ok || !extraction) {
+        throw new Error(extraction?.error || `Failed to extract keywords (${res.status || 'Server error'}).`);
       }
 
       setStatusMessage(null);

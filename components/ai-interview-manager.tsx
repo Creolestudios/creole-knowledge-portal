@@ -106,10 +106,21 @@ export default function AIInterviewManager() {
       if (jdMode === 'file' && jd) extractForm.append('jdFile', jd);
       else extractForm.append('jdText', jdText.trim());
 
-      const extractRes = await fetch('/api/ai-interview/extract', { method: 'POST', body: extractForm });
-      const extractJson = await extractRes.json();
-      if (!extractRes.ok) {
-        throw new Error(extractJson.error ?? 'Failed to analyze resume and job description.');
+      let extractRes: Response;
+      try {
+        extractRes = await fetch('/api/ai-interview/extract', { method: 'POST', body: extractForm });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg === 'Failed to fetch' || msg.includes('fetch')) {
+          throw new Error('Network connection error: Failed to reach server. Please verify your connection or server status and try again.');
+        }
+        throw e;
+      }
+
+      const extractJson = await extractRes.json().catch(() => null);
+
+      if (!extractRes.ok || !extractJson) {
+        throw new Error(extractJson?.error ?? `Failed to analyze resume and job description (${extractRes.status || 'Server error'}).`);
       }
 
       // Admin-typed candidate/job fields take priority over whatever Gemini

@@ -35,6 +35,13 @@ export async function POST(req: NextRequest) {
           payload.resumeText = (payload.resumeText || '') + '\n' + new TextDecoder().decode(buffer);
         } else {
           payload.resumeFileBase64 = Buffer.from(buffer).toString('base64');
+          if (!payload.resumeText) {
+            const rawDecoded = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+            const extractedWords = rawDecoded.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').match(/[a-zA-Z0-9\s.,#+-]{4,}/g)?.join(' ') || '';
+            if (extractedWords.length > 50) {
+              payload.resumeText = extractedWords;
+            }
+          }
         }
       }
 
@@ -52,6 +59,13 @@ export async function POST(req: NextRequest) {
           payload.jdText = (payload.jdText || '') + '\n' + new TextDecoder().decode(buffer);
         } else {
           payload.jdFileBase64 = Buffer.from(buffer).toString('base64');
+          if (!payload.jdText) {
+            const rawDecoded = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+            const extractedWords = rawDecoded.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').match(/[a-zA-Z0-9\s.,#+-]{4,}/g)?.join(' ') || '';
+            if (extractedWords.length > 50) {
+              payload.jdText = extractedWords;
+            }
+          }
         }
       }
     } else {
