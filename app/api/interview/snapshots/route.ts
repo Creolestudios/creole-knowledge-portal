@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 
 export const runtime = 'nodejs';
 
@@ -20,8 +21,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'interviewId, category, and file are required' }, { status: 400 });
     }
 
+    const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
+
     const timestamp = Date.now();
-    const filename = `${interviewId}/${timestamp}_${category}.jpg`;
+    const filename = `${targetSessionId}/${timestamp}_${category}.jpg`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
     const { data, error } = await supabaseAdmin.storage

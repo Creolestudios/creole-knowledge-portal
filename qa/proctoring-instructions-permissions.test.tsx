@@ -12,6 +12,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'interview-1' }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }));
 
 import InterviewEntryPage from '../app/interview/[id]/page';

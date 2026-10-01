@@ -89,6 +89,7 @@ export interface ReportDetailViewProps {
 }
 
 function starRating(score: number): { filled: number; label: string; color: string } {
+  if (score <= 0) return { filled: 0, label: 'Not Scored', color: 'text-zinc-400' };
   if (score >= 5) return { filled: 5, label: 'Excellent', color: 'text-amber-500' };
   if (score >= 4) return { filled: 4, label: 'Strong', color: 'text-amber-500' };
   if (score >= 3) return { filled: 3, label: 'Adequate', color: 'text-amber-500' };
@@ -737,7 +738,7 @@ export function ReportDetailView({
                       .trim();
                     const candidateAnswer = directAnswer || specificTranscript || '';
 
-                    const score = scoreItem?.score ?? (candidateAnswer ? 3 : 1);
+                    const score = scoreItem?.score ?? (candidateAnswer ? 3 : 0);
                     const { filled, label: starLabel, color: starColor } = starRating(score);
 
                     return (
@@ -908,7 +909,7 @@ export function ReportDetailView({
                       .trim();
                     const candidateAnswer = directAnswer || specificTranscript || '';
 
-                    const score = scoreItem?.score ?? (candidateAnswer ? 3 : 1);
+                    const score = scoreItem?.score ?? (candidateAnswer ? 3 : 0);
                     const { filled, label: starLabel, color: starColor } = starRating(score);
 
                     return (
@@ -1002,51 +1003,84 @@ export function ReportDetailView({
             </div>
 
             <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-              {transcript.length > 0 ? (
-                transcript.map((t) => {
-                  const isCandidate = t.speaker === 'candidate' && !t.is_flagged;
-                  const isUnauthorized = t.speaker === 'unauthorized_voice' || t.is_flagged;
+              {(() => {
+                // Build a lookup: question_ord → answer transcript text for fallback
+                const answerByOrd = new Map<number, string>();
+                answers.forEach((ans, idx) => {
+                  // answers are ordered same as questions (1-indexed)
+                  const ord = idx + 1;
+                  if (ans.transcript?.trim()) answerByOrd.set(ord, ans.transcript.trim());
+                });
 
-                  return (
-                    <div
-                      key={t.id}
-                      className={`rounded-xl p-3.5 text-xs leading-relaxed border ${
-                        isUnauthorized
-                          ? 'bg-red-50 border-red-200 text-red-900'
-                          : isCandidate
-                          ? 'bg-zinc-50 border-zinc-200 text-zinc-900'
-                          : 'bg-zinc-50/50 border-zinc-200/50 text-zinc-500 italic'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-1">
-                        <span className={isUnauthorized ? 'text-red-700' : isCandidate ? 'text-[#1689aa]' : 'text-zinc-400'}>
-                          {isUnauthorized ? '⚠️ Unauthorized Voice' : isCandidate ? '🧑 Candidate' : '🤖 AI Interviewer'}
-                        </span>
-                        {t.ts_ms && (
-                          <span className="text-zinc-400 font-normal">
-                            {new Date(Number(t.ts_ms)).toLocaleTimeString()}
+                // Filter out transcript rows that have no text AND no fallback answer
+                const displayRows = transcript
+                  .map((t) => {
+                    const isCandidate = t.speaker === 'candidate' && !t.is_flagged;
+                    // For candidate rows with empty text, try to fill from answers by question_ord
+                    const resolvedText =
+                      t.text?.trim() ||
+                      (isCandidate && t.question_ord ? answerByOrd.get(t.question_ord) ?? '' : '');
+                    return { ...t, resolvedText };
+                  })
+                  .filter((t) => t.resolvedText.length > 0);
+
+                if (displayRows.length > 0) {
+                  return displayRows.map((t) => {
+                    const isCandidate = t.speaker === 'candidate' && !t.is_flagged;
+                    const isUnauthorized = t.speaker === 'unauthorized_voice' || t.is_flagged;
+
+                    return (
+                      <div
+                        key={t.id}
+                        className={`rounded-xl p-3.5 text-xs leading-relaxed border ${
+                          isUnauthorized
+                            ? 'bg-red-50 border-red-200 text-red-900'
+                            : isCandidate
+                            ? 'bg-zinc-50 border-zinc-200 text-zinc-900'
+                            : 'bg-zinc-50/50 border-zinc-200/50 text-zinc-500 italic'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-1">
+                          <span className={isUnauthorized ? 'text-red-700' : isCandidate ? 'text-[#1689aa]' : 'text-zinc-400'}>
+                            {isUnauthorized ? '⚠️ Unauthorized Voice' : isCandidate ? '🧑 Candidate' : '🤖 AI Interviewer'}
                           </span>
-                        )}
+                          {t.ts_ms && (
+                            <span className="text-zinc-400 font-normal">
+                              {new Date(Number(t.ts_ms)).toLocaleTimeString()}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-medium text-zinc-800">{t.resolvedText}</p>
                       </div>
-                      <p className="font-medium text-zinc-800">{t.text}</p>
-                    </div>
-                  );
-                })
-              ) : answers.length > 0 ? (
-                answers.map((ans, idx) => (
-                  <div key={ans.id} className="rounded-xl p-3.5 text-xs leading-relaxed bg-zinc-50 border border-zinc-200 text-zinc-900">
-                    <p className="text-[10px] font-black uppercase tracking-wider text-[#1689aa] mb-1">
-                      🧑 Candidate Answer {idx + 1}
-                    </p>
-                    <p className="font-medium text-zinc-800">{ans.transcript}</p>
-                  </div>
-                ))
-              ) : (
+                    );
+                  });
+                }
+
+                // Full fallback: no transcript rows at all — render directly from answers
+                if (answers.length > 0) {
+                  return answers
+                    .filter((ans) => ans.transcript?.trim())
+                    .map((ans, idx) => (
+                      <div key={ans.id} className="rounded-xl p-3.5 text-xs leading-relaxed bg-zinc-50 border border-zinc-200 text-zinc-900">
+                        <p className="text-[10px] font-black uppercase tracking-wider text-[#1689aa] mb-1">
+                          🧑 Candidate Answer {idx + 1}
+                        </p>
+                        <p className="font-medium text-zinc-800">{ans.transcript}</p>
+                      </div>
+                    ));
+                }
+
+                return null;
+              })()}
+
+              {/* Empty state — shown only when both transcript and answers are truly empty */}
+              {transcript.length === 0 && answers.length === 0 && (
                 <div className="text-center py-10 text-zinc-500">
                   <p className="text-xs font-bold">No transcript segments recorded</p>
                 </div>
               )}
             </div>
+
           </div>
         )}
 

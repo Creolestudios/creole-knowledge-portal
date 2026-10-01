@@ -2,13 +2,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
-const { mockGetUser, mockProfileSingle, mockEq, mockSelect, mockFrom } = vi.hoisted(() => {
+const { mockGetUser, mockProfileSingle, mockEq, mockSelect, mockFrom, mockPush } = vi.hoisted(() => {
   const mockProfileSingle = vi.fn().mockResolvedValue({ data: null, error: null });
   const mockEq = vi.fn().mockReturnValue({ single: mockProfileSingle });
   const mockSelect = vi.fn().mockReturnValue({ eq: mockEq });
   const mockFrom = vi.fn().mockReturnValue({ select: mockSelect });
   const mockGetUser = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
-  return { mockGetUser, mockProfileSingle, mockEq, mockSelect, mockFrom };
+  const mockPush = vi.fn();
+  return { mockGetUser, mockProfileSingle, mockEq, mockSelect, mockFrom, mockPush };
 });
 
 vi.mock('@/lib/supabase/client', () => ({
@@ -26,6 +27,7 @@ vi.mock('@/lib/supabase/client', () => ({
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'interview-1' }),
+  useRouter: () => ({ push: mockPush, replace: vi.fn(), back: vi.fn() }),
 }));
 
 import InterviewEntryPage from './page';
@@ -376,5 +378,56 @@ describe('InterviewEntryPage', () => {
   });
 
 
+  it('renders Leave button when isAdmin is true and navigates to dashboard on click', async () => {
+    mockPush.mockClear();
 
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/verify')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ verified: true, isAdmin: true, interviewId: 'interview-1' }),
+        });
+      }
+      if (typeof url === 'string' && url.includes('/questions')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [{ id: 'q1', question_text: 'Admin observation question', category: 'general', question_order: 1 }],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
+
+    const stopTrack = vi.fn();
+    const makeTrack = () => ({
+      stop: stopTrack,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      getSettings: () => ({ displaySurface: 'monitor' }),
+    });
+    const fakeStream = {
+      getTracks: () => [makeTrack()],
+      getVideoTracks: () => [makeTrack()],
+      getAudioTracks: () => [makeTrack()],
+    };
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: {
+        getUserMedia: vi.fn().mockResolvedValue(fakeStream),
+        getDisplayMedia: vi.fn().mockResolvedValue(fakeStream),
+      },
+      configurable: true,
+    });
+
+    render(<InterviewEntryPage />);
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'admin@creolestudios.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    const leaveBtn = await screen.findByRole('button', { name: /leave/i });
+    expect(leaveBtn).toBeInTheDocument();
+
+    fireEvent.click(leaveBtn);
+    expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
+  });
 });

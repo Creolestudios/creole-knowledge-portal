@@ -46,6 +46,7 @@ describe('useAudioVoiceGuard', () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -86,10 +87,9 @@ describe('useAudioVoiceGuard', () => {
     expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
   });
 
-  it('triggers warning when background voice is HIGHER than the actual speaker', () => {
+  it('triggers warning when background voice is HIGHER than the actual speaker after 8-10s continuous voice', () => {
     const onUnauthorizedVoiceDetected = vi.fn();
 
-    // Fill with louder energy (e.g. 70-95, higher than speaker baseline 45) and continuous spectral flux
     let frame = 0;
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
       frame++;
@@ -98,6 +98,9 @@ describe('useAudioVoiceGuard', () => {
       }
       arr[15] = 110; // peak energy
     });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
 
     renderHook(() =>
       useAudioVoiceGuard({
@@ -111,31 +114,35 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    // Run enough frames for warmup (25 frames) + sustained speech (>= 80 frames)
-    for (let f = 0; f < 95; f++) {
+    // Simulate 500 frames at ~16.66ms (~8.3s continuous voice)
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
-        cb(performance.now());
+        cb(currentTime);
       }
     }
 
     expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
       expect.objectContaining({
-        reason: 'Background voice louder than candidate detected.',
+        reason: 'Background voice detected',
       })
     );
   });
 
-  it('triggers warning when AI voice is detected during interview', () => {
+  it('triggers warning when AI voice is detected continuously during interview', () => {
     const onUnauthorizedVoiceDetected = vi.fn();
 
-    // Flat spectral flux (< 2.0) with speech energy (> 50) simulates synthetic / AI voice
+    // Flat spectral flux (< 1.8) with speech energy (> 65) simulates synthetic / AI voice
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
       for (let i = 3; i < 36; i++) {
-        arr[i] = 75; // perfectly constant across frames = flux 0, energy > 50
+        arr[i] = 75; // constant across frames = flux 0, energy > 65
       }
     });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
 
     renderHook(() =>
       useAudioVoiceGuard({
@@ -149,18 +156,19 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    // Run 60 frames to exceed AI detection frame threshold
-    for (let f = 0; f < 60; f++) {
+    // Run 500 frames (~8.3s) to satisfy continuous voice requirement
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
-        cb(performance.now());
+        cb(currentTime);
       }
     }
 
     expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
       expect.objectContaining({
-        reason: 'AI voice detected during interview. Only natural candidate voice is allowed.',
+        reason: 'Background voice detected',
       })
     );
   });
@@ -210,6 +218,9 @@ describe('useAudioVoiceGuard', () => {
       arr[20] = 85;
     });
 
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
     renderHook(() =>
       useAudioVoiceGuard({
         interviewId: 'test-5',
@@ -222,17 +233,18 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    for (let f = 0; f < 95; f++) {
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
-        cb(performance.now());
+        cb(currentTime);
       }
     }
 
     expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
       expect.objectContaining({
-        reason: expect.stringMatching(/Background voice louder than speaker detected\.|Secondary voice detected while speaking\./),
+        reason: 'Background voice detected',
       })
     );
   });
@@ -249,6 +261,9 @@ describe('useAudioVoiceGuard', () => {
       arr[12] = 82;
     });
 
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
     renderHook(() =>
       useAudioVoiceGuard({
         interviewId: 'test-6',
@@ -261,17 +276,18 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    for (let f = 0; f < 95; f++) {
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;
-        cb(performance.now());
+        cb(currentTime);
       }
     }
 
     expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
       expect.objectContaining({
-        reason: expect.stringMatching(/Background voice detected while candidate was silent\.|Background voice louder than candidate detected\./),
+        reason: 'Background voice detected',
       })
     );
   });
@@ -518,5 +534,120 @@ describe('useAudioVoiceGuard', () => {
       (call) => call[0]?.reason === 'Keyboard typing sounds detected.'
     );
     expect(typingCalls).toHaveLength(0);
+  });
+
+  it('does NOT trigger warning when background voice is heard for less than 8 seconds', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 70 + ((i * 3 + frame * 5) % 25);
+      }
+      arr[15] = 110;
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-under-8s',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // Run only 240 frames (~4.0s, well below the 8 to 10 second requirement)
+    for (let f = 0; f < 240; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
+  });
+
+  it('triggers a second warning after a break of 10 sec if voice continues to be heard', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 72 + ((i * 2 + frame * 3) % 20);
+      }
+      arr[15] = 105;
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-10s-cooldown',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 1. First continuous voice for 500 frames (~8.3s)
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledTimes(1);
+    expect(onUnauthorizedVoiceDetected).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'Background voice detected' })
+    );
+
+    // 2. Voice continues during the 10-second break (e.g. 300 frames = ~5.0s into cooldown)
+    for (let f = 0; f < 300; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    // Still only 1 warning because 10-second break is active
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledTimes(1);
+
+    // 3. Advance past the 10-second break (remaining 5.5s)
+    currentTime += 5500;
+
+    // 4. Voice continues to be heard continuously for another 8-10s (500 frames)
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    // Now second warning must have triggered
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledTimes(2);
+    expect(onUnauthorizedVoiceDetected).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reason: 'Background voice detected' })
+    );
   });
 });

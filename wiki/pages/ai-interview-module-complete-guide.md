@@ -137,26 +137,21 @@ Analyzes camera frames using a TensorFlow.js background worker:
 
 ### C. Real-Time Audio & Voice Guard (`useAudioVoiceGuard`)
 Continuous acoustic frequency analysis using Web Audio API across the speech band (300 Hz – 3,400 Hz):
-1. **Speech Matching via Lip/Facial Movement & Audio Activity**:
-   - Compares speech band energy ($300\text{ Hz} - 3400\text{ Hz}$) with candidate facial movement (`isCandidateMouthMoving`).
-   - **Case (1) User speaking while another voice is present (Dual Speaker)**:
-     - Detects distinct secondary formant peaks ($\Delta\text{bin} \ge 3$) with significant energy while candidate speaks.
-     - *Reason*: `"Background voice louder than speaker detected."` or `"Secondary voice detected while speaking."`
-   - **Case (2) User silent but speech detected**:
-     - Candidate's lips are stationary while active speech energy ($\ge 38$) is present.
-     - *Reason*: `"Background voice detected while candidate was silent."` or `"Background voice louder than candidate detected."`
-2. **AI / Synthetic Voice Detection**:
-   - Detects unnaturally flat spectral flux ($< 2.0$) with sustained speech energy ($> 50$).
-   - *Reason*: `"AI voice detected during interview. Only natural candidate voice is allowed."`
-3. **Music Detection**:
-   - Detects high harmonic tonality ($\text{tonality ratio} \ge 2.8$) across musical frequency bands ($470\text{ Hz} - 6100\text{ Hz}$) sustained across frames.
-   - *Reason*: `"Background music detected."`
-4. **Keyboard Typing Sounds Detection**:
-   - Detects sharp transient attacks in high-frequency band ($2.3\text{ kHz} - 10.3\text{ kHz}$) and clusters $\ge 3$ keystroke impulses in a rolling 1.8-second window.
-   - *Reason*: `"Keyboard typing sounds detected."`
-5. **Noise Filtering & Cooldown**:
-   - Mild environmental noise, quiet room tone, and low-level ambient hiss ($< 35$ energy) are safely ignored.
-   - Cooldown debounce prevents alert spam while AI interviewer prompt muting prevents echo false positives.
+1. **Generalized Warning Note**:
+   - All voice detections (secondary speaker, human voice while candidate is silent, external/AI voice) display the generalized warning note:
+     > **`"Background voice detected"`**
+2. **Continuous Voice Duration (8 to 10 Seconds)**:
+   - Voice must be detected continuously for **8 to 10 seconds** (`continuousVoiceMs = 8000ms` or equivalent sustained frames) before a warning note is triggered.
+   - Brief or transient noises under 8 seconds are ignored and auto-reset.
+3. **10-Second Break / Cooldown for Subsequent Warnings**:
+   - Enforces a **10-second break** (`cooldownMs = 10000ms`) after any warning is issued.
+   - If background voice continues to be heard after the 10-second break, the second warning is triggered.
+4. **Music & Keyboard Detection**:
+   - High harmonic tonality across music bands triggers `"Background music detected."`.
+   - Sharp transient high-frequency clusters trigger `"Keyboard typing sounds detected."`.
+5. **Noise Filtering & Suppression**:
+   - Mild environmental noise, quiet room tone, and low-level ambient hiss (< 35 energy) are safely ignored.
+   - Voice alarms are suppressed while the AI system prompt is speaking.
 
 ### D. System Watchdog (`useProctoringWatchdog`)
 - Checks hardware and media integrity every 1.5 seconds.

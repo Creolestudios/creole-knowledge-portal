@@ -26,22 +26,18 @@ export async function POST(req: NextRequest) {
         payload.resumeFileName = resumeFile.name;
         payload.resumeMimeType = resumeFile.type || 'application/octet-stream';
         const buffer = await resumeFile.arrayBuffer();
-        
+
         if (
           resumeFile.type.startsWith('text/') ||
           resumeFile.name.endsWith('.txt') ||
           resumeFile.name.endsWith('.md')
         ) {
+          // Plain text — decode directly
           payload.resumeText = (payload.resumeText || '') + '\n' + new TextDecoder().decode(buffer);
         } else {
+          // Binary file (PDF/DOCX) — send as base64 to Gemini only.
+          // Do NOT attempt raw binary decoding; it produces XML garbage that corrupts the fallback.
           payload.resumeFileBase64 = Buffer.from(buffer).toString('base64');
-          if (!payload.resumeText) {
-            const rawDecoded = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
-            const extractedWords = rawDecoded.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').match(/[a-zA-Z0-9\s.,#+-]{4,}/g)?.join(' ') || '';
-            if (extractedWords.length > 50) {
-              payload.resumeText = extractedWords;
-            }
-          }
         }
       }
 
@@ -56,16 +52,12 @@ export async function POST(req: NextRequest) {
           jdFile.name.endsWith('.txt') ||
           jdFile.name.endsWith('.md')
         ) {
+          // Plain text — decode directly
           payload.jdText = (payload.jdText || '') + '\n' + new TextDecoder().decode(buffer);
         } else {
+          // Binary file (PDF/DOCX) — send as base64 to Gemini only.
+          // Do NOT attempt raw binary decoding; it produces XML garbage that corrupts the fallback.
           payload.jdFileBase64 = Buffer.from(buffer).toString('base64');
-          if (!payload.jdText) {
-            const rawDecoded = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
-            const extractedWords = rawDecoded.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').match(/[a-zA-Z0-9\s.,#+-]{4,}/g)?.join(' ') || '';
-            if (extractedWords.length > 50) {
-              payload.jdText = extractedWords;
-            }
-          }
         }
       }
     } else {

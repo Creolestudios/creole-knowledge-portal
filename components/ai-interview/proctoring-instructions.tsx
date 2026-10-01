@@ -1,11 +1,50 @@
-import { CheckCircle2, Camera, Mic, MonitorUp, AlertCircle, Loader2, ListChecks } from 'lucide-react';
+import {
+  CheckCircle2,
+  Camera,
+  Mic,
+  MonitorUp,
+  AlertCircle,
+  Loader2,
+  ListChecks,
+  Eye,
+  Smartphone,
+  ShieldAlert,
+} from 'lucide-react';
 
 const INSTRUCTIONS = [
-  'Find a quiet, well-lit room and sit facing your camera for the full duration of the interview.',
-  'Keep your webcam, microphone, and screen-share on at all times — the session cannot continue if any of them is turned off.',
-  'Do not switch tabs, minimize the window, or open other applications during the interview.',
+  'Find a quiet, well-lit room and sit facing your camera directly for the full duration of the interview.',
+  'Keep your webcam, microphone, and entire screen-share on at all times — the session cannot continue if any is turned off.',
+  'Do not switch tabs, minimize the window, or open other applications during the assessment.',
   'Ensure a stable internet connection before you begin; the session cannot be paused once started.',
-  'Answer every question yourself — the use of external help or additional devices is not permitted.',
+  'Answer every question yourself in your own voice — external help, notes, or additional devices are strictly prohibited.',
+  'When you finish speaking your answer, click "Next Question" to proceed, or the interview will automatically advance when your answer is complete or time expires.',
+];
+
+const DETECTION_RULES = [
+  {
+    icon: 'Eye',
+    title: 'Face & Gaze Tracking',
+    description:
+      'Keep your eyes on the screen and face centered. Turning away, repeatedly looking away, or multiple people in camera frame will trigger warnings.',
+  },
+  {
+    icon: 'Smartphone',
+    title: 'Object Detection',
+    description:
+      'Phones, books, handwritten notes, headphones, earbuds, and secondary screens are actively detected and strictly prohibited.',
+  },
+  {
+    icon: 'Mic',
+    title: 'Voice Guard & Audio Analysis',
+    description:
+      'Background voices, second persons speaking, music, or external AI voice assistants will trigger proctoring flags.',
+  },
+  {
+    icon: 'ShieldAlert',
+    title: '3-Warning Termination Policy',
+    description:
+      'Up to 3 warnings are issued for proctoring infractions. A 4th violation or interrupting media streams will immediately end your interview.',
+  },
 ];
 
 export interface ProctoringInstructionsProps {
@@ -49,6 +88,40 @@ export function ProctoringInstructions({
           </li>
         ))}
       </ul>
+
+      {/* ── Active Proctoring & AI Detections Notice ── */}
+      <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 text-sky-700 shrink-0" />
+          <p className="text-xs font-bold uppercase tracking-[0.15em] text-sky-900">
+            Active Proctoring & AI Detections
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+          {DETECTION_RULES.map((rule) => {
+            const IconComponent =
+              rule.icon === 'Eye'
+                ? Eye
+                : rule.icon === 'Smartphone'
+                ? Smartphone
+                : rule.icon === 'Mic'
+                ? Mic
+                : ShieldAlert;
+            return (
+              <div
+                key={rule.title}
+                className="bg-white/95 border border-sky-100 rounded-lg p-2.5 space-y-1 shadow-2xs"
+              >
+                <div className="flex items-center gap-1.5 font-bold text-zinc-900 text-[11px]">
+                  <IconComponent className="w-3.5 h-3.5 text-[#0c7ea6] shrink-0" />
+                  <span>{rule.title}</span>
+                </div>
+                <p className="text-[11px] text-zinc-600 leading-snug">{rule.description}</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-4 space-y-3">
         <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">

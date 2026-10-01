@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 
 export const runtime = 'nodejs';
 
@@ -25,12 +26,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'interviewId and category are required' }, { status: 400 });
   }
 
+  const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
   const tsMs = Date.now();
 
   const { data: eventData, error } = await supabaseAdmin
     .from('interview_events')
     .insert({
-      session_id: interviewId,
+      session_id: targetSessionId,
       // Columns from 20260918120000 migration (event_type / metadata)
       event_type: category,
       metadata: meta,
@@ -51,13 +53,13 @@ export async function POST(req: Request) {
 
   // Supabase Realtime broadcast to HR live monitoring channel
   try {
-    const channel = supabaseAdmin.channel(`interview-monitor:${interviewId}`);
+    const channel = supabaseAdmin.channel(`interview-monitor:${targetSessionId}`);
     await channel.subscribe();
     await channel.send({
       type: 'broadcast',
       event: 'proctoring_event',
       payload: {
-        interviewId,
+        interviewId: targetSessionId,
         category,
         severity,
         confidence,

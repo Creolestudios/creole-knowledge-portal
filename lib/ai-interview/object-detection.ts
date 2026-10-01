@@ -25,99 +25,46 @@ export interface ObjectRule {
 }
 
 /**
- * Map of COCO-SSD class names → proctoring rules.
- * Only classes listed here will trigger warnings.
+ * Default generalized warning reason for any unauthorized object detected.
  */
-export const OBJECT_RULES: Record<string, ObjectRule> = {
-  'cell phone': {
-    category: 'object_detected',
-    object: 'phone',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Mobile phone detected in frame. External devices are not permitted.',
-  },
-  phone: {
-    category: 'object_detected',
-    object: 'phone',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Mobile phone detected in frame. External devices are not permitted.',
-  },
-  headphones: {
-    category: 'object_detected',
-    object: 'earbuds',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Earbuds or headphones detected. Audio aids are not permitted.',
-  },
-  book: {
-    category: 'object_detected',
-    object: 'book',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Reading material or notes detected. External aids are not permitted.',
-  },
-  tv: {
-    category: 'object_detected',
-    object: 'second_screen',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Additional screen or monitor detected in frame.',
-  },
-  laptop: {
-    category: 'object_detected',
-    object: 'second_screen',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Additional laptop or screen detected in frame.',
-  },
-  remote: {
-    category: 'object_detected',
-    object: 'remote',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Remote or unauthorized electronic device detected.',
-  },
-  tablet: {
-    category: 'object_detected',
-    object: 'tablet',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Tablet or mobile device detected in frame.',
-  },
-  mouse: {
-    category: 'object_detected',
-    object: 'device',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'Unauthorized electronic device detected.',
-  },
-  keyboard: {
-    category: 'object_detected',
-    object: 'device',
-    severity: 'warning',
-    thresholdMs: 0,
-    reason: 'External keypad or device detected.',
-  },
-};
+export const GENERAL_UNAUTHORIZED_OBJECT_REASON = 'Unauthorized object detected in camera view.';
 
 /**
- * Per-class confidence thresholds.
- * Calibrated for instant detection of prohibited items (phones, books, devices)
- * without latency when an object enters the camera view.
+ * The ONLY allowed detection class is the user/candidate themselves ('person').
+ * Any other object detected in the frame is considered an unauthorized object.
  */
-export const CLASS_CONFIDENCE_THRESHOLDS: Record<string, number> = {
-  'cell phone': 0.18,
-  phone: 0.18,
-  headphones: 0.20,
-  book: 0.18,
-  laptop: 0.22,
-  tv: 0.22,
-  remote: 0.20,
-  tablet: 0.20,
-  mouse: 0.25,
-  keyboard: 0.25,
-};
+export const ALLOWED_USER_CLASSES = new Set<string>(['person']);
+
+/**
+ * Dynamic Object Rule generator for any detected object other than the user's body.
+ * Every detected object receives the standardized warning reason and 0ms immediate threshold.
+ */
+export function getOrCreateObjectRule(className: string): ObjectRule {
+  return {
+    category: 'object_detected',
+    object: className,
+    severity: 'warning',
+    thresholdMs: 0,
+    reason: GENERAL_UNAUTHORIZED_OBJECT_REASON,
+  };
+}
+
+/**
+ * Proxy-based OBJECT_RULES mapping:
+ * Dynamically resolves ANY object name into an unauthorized object rule.
+ * Kept for backwards compatibility with tests and consumers that import OBJECT_RULES.
+ */
+export const OBJECT_RULES: Record<string, ObjectRule> = new Proxy(
+  {},
+  {
+    get: (_target, prop: string | symbol) => {
+      if (typeof prop === 'string') {
+        return getOrCreateObjectRule(prop);
+      }
+      return undefined;
+    },
+  },
+);
 
 export interface DetectedObjectEvent {
   /** COCO-SSD class label */
@@ -126,28 +73,32 @@ export interface DetectedObjectEvent {
   /** Normalised bounding box [x, y, width, height] */
   boundingBox: [number, number, number, number];
   /** Resolved rule, undefined if the object is not tracked */
-  rule: ObjectRule | undefined;
+  rule: ObjectRule;
 }
 
 /**
- * Filters raw COCO-SSD detections to only those we care about,
- * using per-class sensitivity thresholds so devices and objects are accurately detected.
+ * Filters raw COCO-SSD detections:
+ * Allows ONLY the candidate's body ('person').
+ * If ANY other object is detected, it is flagged as an unauthorized object.
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
-  defaultMinConfidence = 0.10,
+  minConfidence = 0.18,
 ): DetectedObjectEvent[] {
   return detections
     .filter((d) => {
-      if (!(d.class in OBJECT_RULES)) return false;
-      const threshold = CLASS_CONFIDENCE_THRESHOLDS[d.class] ?? defaultMinConfidence;
-      return d.score >= threshold;
+      const normalizedClass = d.class.toLowerCase().trim();
+      // Allow only the candidate/user body
+      if (ALLOWED_USER_CLASSES.has(normalizedClass)) {
+        return false;
+      }
+      return d.score >= minConfidence;
     })
     .map((d) => ({
       label: d.class,
       confidence: d.score,
       boundingBox: d.bbox,
-      rule: OBJECT_RULES[d.class],
+      rule: getOrCreateObjectRule(d.class),
     }));
 }
 

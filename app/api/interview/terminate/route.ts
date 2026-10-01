@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { ensureAllQuestionsAnswered } from '@/lib/ai-interview/answers';
 import { scoreInterviewSession } from '@/lib/ai-interview/scorer';
+import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 
 export const runtime = 'nodejs';
 
@@ -27,10 +28,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Interview ID and reason are required' }, { status: 400 });
   }
 
+  const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
+
   const { data: interview, error } = await supabaseAdmin
     .from('ai_interviews')
     .select('id, status')
-    .eq('id', interviewId)
+    .eq('id', targetSessionId)
     .single();
 
   if (error || !interview) {
@@ -50,7 +53,7 @@ export async function POST(req: Request) {
       terminated_at: now,
       termination_reason: reason,
     })
-    .eq('id', interviewId);
+    .eq('id', targetSessionId);
 
   if (updateError) {
     console.error('[terminate] ai_interviews update error:', updateError);
@@ -71,13 +74,13 @@ export async function POST(req: Request) {
   await supabaseAdmin
     .from('interview_sessions')
     .update(sessionUpdate)
-    .eq('id', interviewId);
+    .eq('id', targetSessionId);
 
-  await ensureAllQuestionsAnswered(interviewId);
+  await ensureAllQuestionsAnswered(targetSessionId);
 
   // Trigger post-interview scoring in background — generates fluency, cognitive
   // composite, and recommendation report even for terminated sessions.
-  scoreInterviewSession({ sessionId: interviewId }).catch((err) => {
+  scoreInterviewSession({ sessionId: targetSessionId }).catch((err) => {
     console.error('[interview-terminate] Background scoring error:', err);
   });
 

@@ -69,11 +69,7 @@ export async function POST(req: Request) {
 
       if (!isRequesterAdmin) {
         if (interview.status === 'in_progress') {
-          const cookieStore = await cookies();
-          const existingCookie = cookieStore.get('interview_verified_id')?.value;
-          if (existingCookie !== interview.id) {
-            return NextResponse.json({ error: 'This interview is already in progress on another device' }, { status: 403 });
-          }
+          return NextResponse.json({ error: 'This interview link has already been used and cannot be re-opened' }, { status: 410 });
         }
 
         if (interview.status === 'pending') {
@@ -149,11 +145,7 @@ export async function POST(req: Request) {
 
     if (!isRequesterAdmin) {
       if (invite.status === 'in_progress') {
-        const cookieStore = await cookies();
-        const existingCookie = cookieStore.get('interview_verified_id')?.value;
-        if (existingCookie && existingCookie !== sessionId && existingCookie !== interviewId) {
-          return NextResponse.json({ error: 'This interview is already in progress on another device' }, { status: 403 });
-        }
+        return NextResponse.json({ error: 'This interview link has already been used and cannot be re-opened' }, { status: 410 });
       }
 
       if (invite.status === 'active') {

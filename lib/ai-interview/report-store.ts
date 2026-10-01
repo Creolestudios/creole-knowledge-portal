@@ -37,29 +37,37 @@ export async function saveInterviewReport(
       .eq('session_id', sessionId)
       .maybeSingle();
 
-    if (!selErr) {
-      if (existingReport?.id) {
-        const { error: updErr } = await supabaseAdmin
-          .from('interview_reports')
-          .update(reportPayload)
-          .eq('id', existingReport.id);
-        if (!updErr) {
-          return { success: true, target: 'table', id: existingReport.id };
-        }
-      } else {
-        const { data: insData, error: insErr } = await supabaseAdmin
-          .from('interview_reports')
-          .insert(reportPayload)
-          .select('id')
-          .maybeSingle();
-        if (!insErr) {
-          return { success: true, target: 'table', id: insData?.id };
-        }
+    if (selErr) {
+      console.error('[report-store] SELECT interview_reports failed:', selErr.message, selErr.code, selErr.details);
+    } else if (existingReport?.id) {
+      // Strip session_id from update payload — it's a UNIQUE constraint column
+      const { session_id: _sid, ...updateFields } = reportPayload;
+      void _sid;
+      const { error: updErr } = await supabaseAdmin
+        .from('interview_reports')
+        .update(updateFields)
+        .eq('id', existingReport.id);
+      if (!updErr) {
+        console.log('[report-store] ✅ Updated interview_reports row', existingReport.id);
+        return { success: true, target: 'table', id: existingReport.id };
       }
+      console.error('[report-store] UPDATE interview_reports failed:', updErr.message, updErr.code, updErr.details);
+    } else {
+      const { data: insData, error: insErr } = await supabaseAdmin
+        .from('interview_reports')
+        .insert(reportPayload)
+        .select('id')
+        .maybeSingle();
+      if (!insErr) {
+        console.log('[report-store] ✅ Inserted interview_reports row', insData?.id);
+        return { success: true, target: 'table', id: insData?.id };
+      }
+      console.error('[report-store] INSERT interview_reports failed:', insErr.message, insErr.code, insErr.details);
     }
-  } catch {
-    // Ignore and proceed to resilient fallback
+  } catch (err) {
+    console.error('[report-store] interview_reports exception:', err);
   }
+
 
   // 2. Resilient fallback: public.interview_events with event_type: 'scoring_report'
   try {
@@ -126,7 +134,7 @@ export async function getInterviewReport(
       .eq('session_id', sessionId)
       .maybeSingle();
 
-    if (!error && rep) {
+    if (!error && rep && (rep.cognitive_composite != null || rep.recommendation != null || rep.competency_scores != null)) {
       return rep as StoredInterviewReport;
     }
   } catch {

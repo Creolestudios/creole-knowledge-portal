@@ -173,7 +173,7 @@ describe('POST /api/interview/verify', () => {
     expect(res.status).toBe(410);
   });
 
-  it('does not re-update status when interview is already in_progress', async () => {
+  it('blocks re-entry with 410 when interview is already in_progress (one-time access)', async () => {
     mockSingleInterview.mockResolvedValue({
       data: {
         id: 'i1',
@@ -185,9 +185,9 @@ describe('POST /api/interview/verify', () => {
     });
 
     const res = await POST(makeRequest({ interviewId: 'i1', email: 'test@example.com', accessCode: '123456' }));
-    // Depending on cookies logic, this could be 403 or 200. Since cookies mock returns undefined, it will be 403.
-    // wait, if there's no cookie, the current code returns 403: "This interview is already in progress on another device".
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe('This interview link has already been used and cannot be re-opened');
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 });

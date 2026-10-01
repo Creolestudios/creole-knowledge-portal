@@ -45,13 +45,16 @@ export async function POST(
 
   const { data: answer, error: insertErr } = await supabaseAdmin
     .from('interview_answers')
-    .insert({
-      session_id: invite.session_id,
-      question_id: questionId,
-      transcript,
-      time_to_first_response_sec: timeToFirstResponseSec,
-      total_time_taken_sec: totalTimeTakenSec,
-    })
+    .upsert(
+      {
+        session_id: invite.session_id,
+        question_id: questionId,
+        transcript,
+        time_to_first_response_sec: timeToFirstResponseSec,
+        total_time_taken_sec: totalTimeTakenSec,
+      },
+      { onConflict: 'session_id,question_id' }
+    )
     .select('id')
     .single();
 

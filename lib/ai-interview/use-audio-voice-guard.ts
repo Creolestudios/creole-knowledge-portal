@@ -11,6 +11,8 @@ export interface VoiceGuardOptions {
   onUnauthorizedVoiceDetected: (info: { reason: string; confidence: number }) => void;
   takeSnapshot?: () => Promise<string | null>;
   readingGracePeriodMs?: number;
+  continuousVoiceMs?: number;
+  cooldownMs?: number;
 }
 
 /**
@@ -30,6 +32,8 @@ export function useAudioVoiceGuard({
   onUnauthorizedVoiceDetected,
   takeSnapshot,
   readingGracePeriodMs = 0,
+  continuousVoiceMs = 8000,
+  cooldownMs = 10000,
 }: VoiceGuardOptions) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -44,6 +48,8 @@ export function useAudioVoiceGuard({
   const isCandidateMouthMovingRef = useRef<boolean>(isCandidateMouthMoving ?? false);
   const candidateTurnStartedAtRef = useRef<number>(0);
   const readingGracePeriodMsRef = useRef<number>(readingGracePeriodMs);
+  const continuousVoiceMsRef = useRef<number>(continuousVoiceMs);
+  const cooldownMsRef = useRef<number>(cooldownMs);
 
   useEffect(() => {
     isAiSpeakingRef.current = isAiSpeaking;
@@ -63,6 +69,14 @@ export function useAudioVoiceGuard({
   }, [readingGracePeriodMs]);
 
   useEffect(() => {
+    continuousVoiceMsRef.current = continuousVoiceMs;
+  }, [continuousVoiceMs]);
+
+  useEffect(() => {
+    cooldownMsRef.current = cooldownMs;
+  }, [cooldownMs]);
+
+  useEffect(() => {
     isCandidateMouthMovingRef.current = isCandidateMouthMoving ?? false;
   }, [isCandidateMouthMoving]);
 
@@ -77,12 +91,19 @@ export function useAudioVoiceGuard({
   const triggerVoiceWarning = useCallback(
     async (reason: string, confidence: number) => {
       const now = Date.now();
-      // Debounce voice warnings: enforce a 35-second cooldown between consecutive
-      // voice detection alerts (30-40 second break as required).
-      if (now - lastWarningTimeRef.current < 35000) return;
+      // Debounce voice warnings: enforce a 10-second cooldown between consecutive
+      // voice detection alerts (10-second break as required).
+      const cooldown = cooldownMsRef.current ?? 10000;
+      if (now - lastWarningTimeRef.current < cooldown) return;
       lastWarningTimeRef.current = now;
 
-      onUnauthorizedVoiceDetectedRef.current({ reason, confidence });
+      // Always generalize voice warning note to "Background voice detected"
+      const generalizedReason =
+        reason.toLowerCase().includes('voice') || reason === 'Background voice detected'
+          ? 'Background voice detected'
+          : reason;
+
+      onUnauthorizedVoiceDetectedRef.current({ reason: generalizedReason, confidence });
 
       // Capture snapshot if available
       if (takeSnapshotRef.current) {
@@ -136,6 +157,7 @@ export function useAudioVoiceGuard({
       const prevDataArray = new Uint8Array(bufferLength);
 
       let consecutiveSuspiciousFrames = 0;
+      let voiceDetectedStartAt = 0;
       let consecutiveAiFrames = 0;
       let consecutiveMusicFrames = 0;
       let prevHighBandEnergy = 0;
@@ -221,10 +243,12 @@ export function useAudioVoiceGuard({
         const highBandEnergy = highBandEnergySum / (highEndBin - highStartBin);
 
         // State check:
-        // 1. If AI system prompt is speaking OR during the cooldown window after a warning,
+        // 1. If AI system prompt is speaking OR during the 10-second cooldown window after a warning,
         // suppress frame accumulation
-        if (isAiSpeakingRef.current || (lastWarningTimeRef.current > 0 && nowMs - lastWarningTimeRef.current < 25000)) {
+        const cooldown = cooldownMsRef.current ?? 10000;
+        if (isAiSpeakingRef.current || (lastWarningTimeRef.current > 0 && nowMs - lastWarningTimeRef.current < cooldown)) {
           consecutiveSuspiciousFrames = 0;
+          voiceDetectedStartAt = 0;
           consecutiveAiFrames = 0;
           consecutiveMusicFrames = 0;
           recentTypingTimestamps.length = 0;
@@ -252,7 +276,9 @@ export function useAudioVoiceGuard({
 
           // Reading grace period for ambient background sounds
           const isReadingGracePeriod =
+            readingGracePeriodMsRef.current > 0 &&
             candidateTurnStartedAtRef.current > 0 &&
+            nowMs >= candidateTurnStartedAtRef.current &&
             nowMs - candidateTurnStartedAtRef.current < readingGracePeriodMsRef.current;
 
           // ── MUSIC DETECTION ────────────────────────────────────────────────
@@ -314,16 +340,6 @@ export function useAudioVoiceGuard({
           // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 1.8) while speech energy is clearly active (avg >= 65, peak >= 75).
           // Steady ambient background drone, laptop fans, or mic hiss (< 60) are strictly filtered out.
           const isAiVoice = avgSpeechEnergy >= 65 && peakEnergy >= 75 && avgFlux < 1.8 && frameCount > 15;
-          if (isAiVoice) {
-            consecutiveAiFrames++;
-            if (consecutiveAiFrames >= 25) {
-              consecutiveAiFrames = 0;
-              const confidence = Math.min(0.95, 0.75 + (avgSpeechEnergy / 255) * 0.2);
-              triggerVoiceWarning('AI voice detected during interview. Only natural candidate voice is allowed.', confidence);
-            }
-          } else {
-            consecutiveAiFrames = Math.max(0, consecutiveAiFrames - 2);
-          }
 
           // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
           // Mild environmental noise, fans, keyboard clicks, breathing, and low background sounds (< 65) are strictly IGNORED.
@@ -351,29 +367,32 @@ export function useAudioVoiceGuard({
             secondaryPeakEnergy > actualSpeakerLevel * 1.05 &&
             avgFlux >= 2.5;
 
-          const isBgVoiceDetected = !isAiVoice && !isMusic && (isBackgroundVoiceWhileSilent || isDualSpeakerPresent);
+          // Any kind of background voice (AI voice, human background voice while silent, or secondary speaker)
+          const isVoiceDetected = !isMusic && (isAiVoice || isBackgroundVoiceWhileSilent || isDualSpeakerPresent);
 
-          if (isBgVoiceDetected) {
+          if (isVoiceDetected) {
             consecutiveSuspiciousFrames++;
-            // Require sustained speech (~0.9-1.0s at 60fps) before triggering alert to avoid transient sounds
-            if (consecutiveSuspiciousFrames >= 55) {
+            if (voiceDetectedStartAt === 0) {
+              voiceDetectedStartAt = nowMs;
+            }
+            const continuousDurationMs = nowMs - voiceDetectedStartAt;
+            const targetMs = continuousVoiceMsRef.current ?? 8000;
+            // Frame count equivalence (~16.6ms per frame at 60fps)
+            const targetFrames = Math.max(30, Math.round(targetMs / 16.66));
+
+            // Show note when voice is detected continuously for 8 to 10 sec (>= 8000ms or frame threshold)
+            if (continuousDurationMs >= targetMs || consecutiveSuspiciousFrames >= targetFrames) {
+              voiceDetectedStartAt = 0;
               consecutiveSuspiciousFrames = 0;
               const confidence = Math.min(0.95, 0.78 + (avgSpeechEnergy / 255) * 0.2);
-              let reason: string;
-              if (isDualSpeakerPresent) {
-                reason = secondaryPeakEnergy > actualSpeakerLevel * 1.2
-                  ? 'Background voice louder than speaker detected.'
-                  : 'Secondary voice detected while speaking.';
-              } else {
-                reason = avgSpeechEnergy > actualSpeakerLevel * 1.1
-                  ? 'Background voice louder than candidate detected.'
-                  : 'Background voice detected while candidate was silent.';
-              }
-              triggerVoiceWarning(reason, confidence);
+              triggerVoiceWarning('Background voice detected', confidence);
             }
           } else {
-            // Rapid decay: decrease by 6 frames so intermittent noise or pauses don't slowly accumulate
-            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 6);
+            // Rapid decay: decrease by 10 frames so intermittent noise or pauses don't slowly accumulate
+            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 10);
+            if (consecutiveSuspiciousFrames === 0) {
+              voiceDetectedStartAt = 0;
+            }
           }
         }
 

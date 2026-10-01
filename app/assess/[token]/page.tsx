@@ -118,6 +118,13 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const baselineRef = useRef<CandidateBaseline | null>(null);
   const missingFramesRef = useRef<Map<string, number>>(new Map());
   const isSubmittingAnswerRef = useRef(false);
+  const autoSubmittedQuestionIdxRef = useRef<number | null>(null);
+  const lastSpeechAtRef = useRef<number>(0);
+  const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
+  const currentIndexRef = useRef(currentIndex);
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+  }, [currentIndex]);
   const handleSubmitAnswerRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   const stopAllMedia = useCallback(() => {
@@ -342,13 +349,36 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
       if (questionRemainingSecRef.current <= 1) {
         questionRemainingSecRef.current = 0;
         setQuestionRemainingSec(0);
-        // Time is up for this question: auto-advance to next question
-        if (!isSubmittingAnswerRef.current && handleSubmitAnswerRef.current) {
+        // Time is up for this question: auto-advance to next question once
+        if (
+          autoSubmittedQuestionIdxRef.current !== currentIndexRef.current &&
+          !isSubmittingAnswerRef.current &&
+          handleSubmitAnswerRef.current
+        ) {
+          autoSubmittedQuestionIdxRef.current = currentIndexRef.current;
           void handleSubmitAnswerRef.current();
         }
       } else {
         questionRemainingSecRef.current -= 1;
         setQuestionRemainingSec(questionRemainingSecRef.current);
+
+        // 3. Silence auto-advance (when candidate has spoken and remains silent for >= 5s)
+        if (
+          lastSpeechAtRef.current > 0 &&
+          !isSubmittingAnswerRef.current &&
+          handleSubmitAnswerRef.current
+        ) {
+          const silentSec = (Date.now() - lastSpeechAtRef.current) / 1000;
+          if (silentSec >= 7) {
+            setSilenceCountdown(null);
+            autoSubmittedQuestionIdxRef.current = currentIndexRef.current;
+            void handleSubmitAnswerRef.current();
+          } else if (silentSec >= 4) {
+            setSilenceCountdown(Math.max(1, Math.ceil(7 - silentSec)));
+          } else {
+            setSilenceCountdown(null);
+          }
+        }
       }
     }, 1000);
     return () => window.clearInterval(timer);
@@ -775,12 +805,13 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number }) => {
     if (stageRef.current !== 'interview' || terminatingRef.current) return;
     const nowMs = Date.now();
+    const voiceReason = 'Background voice detected';
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
       'unauthorized_voice',
       'voice',
-      info.reason,
+      voiceReason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
-      15000,
+      10000, // 10-second break / cooldown between consecutive voice warnings
       nowMs,
     );
 
@@ -788,7 +819,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
       setWarningToast({
         show: true,
         count: trackerStatus.warningCount,
-        reason: trackerStatus.reason,
+        reason: voiceReason,
       });
 
       void captureEvidenceSnapshot('unauthorized_voice');
@@ -800,7 +831,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
           category: 'unauthorized_voice',
           severity: 'warning',
           confidence: info.confidence,
-          meta: { warningCount: trackerStatus.warningCount, reason: info.reason },
+          meta: { warningCount: trackerStatus.warningCount, reason: voiceReason },
         }),
       }).catch((err) => console.warn('[assess-voice-event] fetch failed:', err));
 
@@ -832,8 +863,12 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   });
 
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
-    if (firstSpeechAtRef.current === null && line.text.trim().length > 0) {
-      firstSpeechAtRef.current = Date.now();
+    if (line.text.trim().length > 0) {
+      if (firstSpeechAtRef.current === null) {
+        firstSpeechAtRef.current = Date.now();
+      }
+      lastSpeechAtRef.current = Date.now();
+      setSilenceCountdown(null);
     }
     if (line.isFinal) {
       setAnswerText((prev) => (prev ? `${prev} ${line.text}` : line.text));
@@ -848,8 +883,14 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   });
 
   useEffect(() => {
-    if (firstSpeechAtRef.current === null && interimText.trim().length > 0) {
-      firstSpeechAtRef.current = Date.now();
+    if (interimText.trim().length > 0) {
+      if (firstSpeechAtRef.current === null) {
+        firstSpeechAtRef.current = Date.now();
+      }
+      lastSpeechAtRef.current = Date.now();
+      queueMicrotask(() => {
+        setSilenceCountdown(null);
+      });
     }
   }, [interimText]);
 
@@ -870,12 +911,13 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     isSubmittingAnswerRef.current = true;
     setSavingAnswer(true);
     setError(null);
+    setSilenceCountdown(null);
 
     // Capture all values synchronously before any state changes
     const questionId = currentQuestion.id;
-    const totalTimeTakenSec = (Date.now() - questionStartedAtRef.current) / 1000;
+    const totalTimeTakenSec = Math.max(1, (Date.now() - questionStartedAtRef.current) / 1000);
     const timeToFirstResponseSec = firstSpeechAtRef.current
-      ? (firstSpeechAtRef.current - questionStartedAtRef.current) / 1000
+      ? Math.max(0, (firstSpeechAtRef.current - questionStartedAtRef.current) / 1000)
       : totalTimeTakenSec;
 
     // Merge confirmed + in-flight interim text immediately
@@ -891,16 +933,21 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     try {
       void completeTurn();
 
+      // Controller with 8-second timeout so network lag never freezes candidate UI
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
       const answerRes = await fetch(`/api/assess/${token}/answer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           question_id: questionId,
           transcript: finalAnswer,
           time_to_first_response_sec: timeToFirstResponseSec,
           total_time_taken_sec: totalTimeTakenSec,
         }),
-      });
+      }).finally(() => clearTimeout(timeoutId));
 
       if (!answerRes.ok) {
         const answerJson = await answerRes.json().catch(() => null);
@@ -927,15 +974,31 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         const nextIdx = currentIndex + 1;
         const nextQSec = questions[nextIdx]?.time_limit_sec || 120;
         firstSpeechAtRef.current = null;
+        lastSpeechAtRef.current = 0;
         questionStartedAtRef.current = Date.now();
         questionRemainingSecRef.current = nextQSec;
+        autoSubmittedQuestionIdxRef.current = null;
         setQuestionRemainingSec(nextQSec);
         setAnswerText('');
         setCurrentIndex(nextIdx);
       }
     } catch (err) {
       console.error('[assess] failed to save answer:', err);
-      setError(err instanceof Error ? err.message : 'Failed to save your answer. Please try again.');
+      // If time has expired and it was an automated advance, proceed anyway so candidate isn't stuck forever
+      if (questionRemainingSecRef.current <= 0 && !isLastQuestion) {
+        const nextIdx = currentIndex + 1;
+        const nextQSec = questions[nextIdx]?.time_limit_sec || 120;
+        firstSpeechAtRef.current = null;
+        lastSpeechAtRef.current = 0;
+        questionStartedAtRef.current = Date.now();
+        questionRemainingSecRef.current = nextQSec;
+        autoSubmittedQuestionIdxRef.current = null;
+        setQuestionRemainingSec(nextQSec);
+        setAnswerText('');
+        setCurrentIndex(nextIdx);
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to save your answer. Please try again.');
+      }
     } finally {
       setSavingAnswer(false);
       isSubmittingAnswerRef.current = false;
@@ -1182,12 +1245,34 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
               </div>
             )}
 
+            {silenceCountdown !== null && (
+              <div className="flex items-center justify-between p-3.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-xs font-semibold animate-pulse">
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-sky-500 animate-ping" />
+                  Answer captured. Advancing to next question in {silenceCountdown}s...
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSubmitAnswer}
+                  className="text-[11px] text-sky-700 underline font-bold cursor-pointer hover:text-sky-950"
+                >
+                  Advance now
+                </button>
+              </div>
+            )}
+
             <button
               id="assess-submit-answer"
               type="button"
               onClick={handleSubmitAnswer}
               disabled={savingAnswer}
-              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm cursor-pointer"
+              className={[
+                'w-full text-zinc-900 font-black py-4 rounded-2xl transition-all flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer',
+                hasGivenAnswer
+                  ? 'bg-[#34c4f2] hover:bg-[#2db0db] shadow-xl shadow-[#34c4f2]/40 ring-2 ring-[#34c4f2]/50'
+                  : 'bg-[#34c4f2] hover:bg-[#2db0db] shadow-xl shadow-[#34c4f2]/30',
+                savingAnswer ? 'opacity-50 cursor-not-allowed' : '',
+              ].join(' ')}
             >
               {savingAnswer ? (
                 <>

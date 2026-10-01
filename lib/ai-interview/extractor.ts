@@ -217,12 +217,12 @@ ${jdText || '(See attached JD file)'}
 
   const modelsToTry = [
     ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
+    'gemini-2.5-flash',          // latest stable — may have transient 500s, retry handles it
+    'gemini-3.8-flash',          // Google's recommended replacement for gemini-2.0-flash
+    'gemini-2.5-flash-lite',     // lightweight, fast
+    'gemini-2.0-flash-lite',     // stable lite fallback
   ];
-  const maxAttemptsPerModel = 2;
+  const maxAttemptsPerModel = 3;
 
   for (const modelName of modelsToTry) {
     for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
@@ -365,15 +365,21 @@ ${jdText || '(See attached JD file)'}
           errMsg.includes('ENOTFOUND') ||
           errMsg.includes('ECONNREFUSED');
 
-        // Retry with backoff only for transient server-side errors:
+        // Retry with backoff for transient errors:
         //   • 500 INTERNAL / 503 UNAVAILABLE → temporary Google infra issue
+        //   • TCP resets (wsarecv / ECONNRESET / stream reading error) → network blip
         const isTransient =
           !isSkipModel &&
           (errMsg.includes('500') ||
             errMsg.includes('503') ||
             errMsg.includes('INTERNAL') ||
             errMsg.includes('UNAVAILABLE') ||
-            errMsg.includes('demand'));
+            errMsg.includes('demand') ||
+            errMsg.includes('wsarecv') ||
+            errMsg.includes('ECONNRESET') ||
+            errMsg.includes('stream reading error') ||
+            errMsg.includes('forcibly closed') ||
+            errMsg.includes('connection reset'));
 
         console.warn(
           `[AI Interview Extractor] Model ${modelName} failed (attempt ${attempt}/${maxAttemptsPerModel}):`,

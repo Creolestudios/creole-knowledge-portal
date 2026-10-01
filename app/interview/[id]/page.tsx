@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import {
   KeyRound,
   Loader2,
@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   AlertTriangle,
   Clock,
+  LogOut,
 } from 'lucide-react';
 import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
 import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
@@ -47,6 +48,7 @@ import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcrip
 
 export default function InterviewEntryPage() {
   const params = useParams();
+  const router = useRouter();
   const interviewId = params?.id as string;
 
   const [stage, setStage] = useState<Stage>('passcode');
@@ -78,6 +80,8 @@ export default function InterviewEntryPage() {
   const [faceTrackingStatus, setFaceTrackingStatus] = useState<'loading' | 'tracking' | 'error'>('loading');
   const [faceTrackingError, setFaceTrackingError] = useState<string | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
+  // Resolved session ID returned by /api/interview/verify — may differ from the URL token
+  const resolvedInterviewId = useRef<string>(interviewId);
   const [isMouthMoving, setIsMouthMoving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const supabase = createClient();
@@ -250,6 +254,15 @@ export default function InterviewEntryPage() {
     setCameraStream(null);
   }, []);
 
+  const handleAdminLeave = useCallback(() => {
+    stopAllMedia();
+    faceWorkerRef.current?.terminate();
+    faceWorkerRef.current = null;
+    objectWorkerRef.current?.terminate();
+    objectWorkerRef.current = null;
+    router.push('/admin/dashboard');
+  }, [stopAllMedia, router]);
+
   const notifyTermination = useCallback((reason: string) => {
     const counts = proctorTrackerRef.current.getWarningCounts();
     const payload = JSON.stringify({
@@ -311,12 +324,13 @@ export default function InterviewEntryPage() {
   const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number }) => {
     if (stageRef.current !== 'interview' || terminatingRef.current) return;
     const nowMs = Date.now();
+    const voiceReason = 'Background voice detected';
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
       'unauthorized_voice',
       'voice',
-      info.reason,
+      voiceReason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
-      15000,
+      10000, // 10-second break / cooldown between consecutive voice warnings
       nowMs,
     );
 
@@ -324,7 +338,7 @@ export default function InterviewEntryPage() {
       setWarningToast({
         show: true,
         count: trackerStatus.warningCount,
-        reason: trackerStatus.reason,
+        reason: voiceReason,
       });
 
       void captureEvidenceSnapshot('unauthorized_voice');
@@ -337,7 +351,7 @@ export default function InterviewEntryPage() {
           category: 'unauthorized_voice',
           severity: 'warning',
           confidence: info.confidence,
-          meta: { warningCount: trackerStatus.warningCount, reason: info.reason },
+          meta: { warningCount: trackerStatus.warningCount, reason: voiceReason },
         }),
       }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
 
@@ -395,8 +409,11 @@ export default function InterviewEntryPage() {
 
       if (json.isAdmin) {
         setIsAdmin(true);
+        // Store resolved session id so questions API cookie check passes
+        if (json.interviewId) resolvedInterviewId.current = json.interviewId;
         await requestPermissions(true);
       } else {
+        if (json.interviewId) resolvedInterviewId.current = json.interviewId;
         setStageWithRef('instructions');
       }
     } catch (err) {
@@ -444,7 +461,7 @@ export default function InterviewEntryPage() {
         setScreenGranted(true);
       }
 
-      const questionsResponse = await fetch(`/api/interview/${interviewId}/questions`);
+      const questionsResponse = await fetch(`/api/interview/${resolvedInterviewId.current}/questions`);
       const questionsData = await questionsResponse.json();
       if (!questionsResponse.ok || !Array.isArray(questionsData.questions) || !questionsData.questions.length) {
         setPermissionError(questionsData.error ?? 'Interview questions are not ready yet.');
@@ -489,6 +506,7 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage !== 'ready') return;
 
+    // Admin users skip calibration entirely — go straight to interview.
     if (isAdmin) {
       const adminTimer = window.setTimeout(() => {
         setStageWithRef('interview');
@@ -496,12 +514,9 @@ export default function InterviewEntryPage() {
       return () => window.clearTimeout(adminTimer);
     }
 
-    if (process.env.NODE_ENV === 'test') return;
-
-    const timer = window.setTimeout(() => {
-      setStageWithRef('calibration');
-    }, 3000);
-    return () => window.clearTimeout(timer);
+    // Candidates must click "Start Interview" manually — do NOT auto-advance.
+    // Calibration starting before the candidate is looking at the screen
+    // produces a bad baseline and incorrect proctoring alerts.
   }, [stage, isAdmin, setStageWithRef]);
 
   useProctoringWatchdog({
@@ -935,25 +950,9 @@ export default function InterviewEntryPage() {
   }, [warningToast.show, warningToast.count]);
 
   useEffect(() => {
-    if (stage !== 'interview' || durationSecondsRef.current <= 0) return;
+    if (stage !== 'interview') return;
     const timer = window.setInterval(() => {
-      // 1. Overall timer
-      durationSecondsRef.current -= 1;
-      setDurationSeconds((remaining) => {
-        if (remaining <= 1) {
-          window.clearInterval(timer);
-          completedRef.current = true;
-          stopAllMedia();
-          if (!isAdmin) {
-            fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch(() => {});
-          }
-          setStageWithRef('completed');
-          return 0;
-        }
-        return durationSecondsRef.current;
-      });
-
-      // 2. Per-question timer — auto-advance when it hits 0
+      // Per-question timer — auto-advance when it hits 0
       setQuestionRemainingSec((prevQ) => {
         if (prevQ <= 1) {
           // Timer just expired: auto-advance to next question (or finish interview)
@@ -1078,7 +1077,7 @@ export default function InterviewEntryPage() {
             <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-1" />
             <h1 className="text-xl font-bold text-white">You&apos;re verified</h1>
             <p className="text-sm text-zinc-400">
-              Your camera, mic, and screen share are live. Please wait while we initialize the face tracking calibration.
+              Your camera, mic, and screen share are all active. When you&apos;re ready, sit comfortably, look directly at the camera, and click the button below to begin.
             </p>
           </div>
 
@@ -1092,10 +1091,19 @@ export default function InterviewEntryPage() {
           />
 
           <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-center">
-            Stay on this tab and keep your camera, microphone, and screen share on — switching
-            tabs, minimizing the window, or stopping any of them will immediately end your
-            interview.
+            ⚠️ Look directly at your camera before clicking — calibration will begin immediately.
           </p>
+
+          {/* Explicit start button — candidate must opt in, calibration should never start automatically */}
+          <button
+            id="start-interview-calibration"
+            type="button"
+            onClick={() => setStageWithRef('calibration')}
+            className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center gap-3 active:scale-[0.98] uppercase tracking-[0.15em] text-sm"
+          >
+            <MonitorUp className="w-5 h-5" />
+            Start Interview
+          </button>
         </div>
 
         {settingsOpen && (
@@ -1157,7 +1165,7 @@ export default function InterviewEntryPage() {
                 </h1>
               </div>
               <div className="flex items-center gap-3">
-                {/* Per-Question Countdown Timer as mentioned for each question */}
+                {/* Per-Question Countdown Timer */}
                 <div
                   id="interview-question-timer-badge"
                   className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${
@@ -1171,18 +1179,22 @@ export default function InterviewEntryPage() {
                   <span>Question: {qMinutes}:{qSeconds}</span>
                 </div>
 
-                {/* Overall Interview Countdown Timer */}
-                <div
-                  className="rounded-xl bg-zinc-900 px-3.5 py-2.5 text-sm font-bold tabular-nums text-zinc-300 flex items-center gap-1.5 shadow-sm"
-                  title="Overall interview remaining time"
-                >
-                  <span className="text-zinc-500 text-xs">Total:</span>
-                  <span>{minutes}:{seconds}</span>
-                </div>
-
                 <span className="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-700">
                   {question?.difficulty || 'Medium'}
                 </span>
+
+                {isAdmin && (
+                  <button
+                    id="admin-leave-interview-btn"
+                    type="button"
+                    onClick={handleAdminLeave}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer ml-1"
+                    title="Leave live interview and return to admin dashboard"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-red-600" />
+                    <span>Leave</span>
+                  </button>
+                )}
               </div>
             </div>
             <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1689aa]">

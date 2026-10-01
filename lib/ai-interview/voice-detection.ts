@@ -18,9 +18,9 @@
 export interface VoiceDetectionConfig {
   /** RMS level above which audio is considered "significant noise" (0–1). Default: 0.04 */
   noiseThreshold?: number;
-  /** How long (ms) noise must be sustained before firing a warning. Default: 3000 */
+  /** How long (ms) noise must be sustained before firing a warning. Default: 8000 (8-10 seconds) */
   sustainedMs?: number;
-  /** Minimum gap (ms) between consecutive warnings. Default: 20000 */
+  /** Minimum gap (ms) between consecutive warnings. Default: 10000 (10-second break) */
   debounceMs?: number;
   /** Called when a background voice / noise event is sustained long enough */
   onBackgroundVoice: (meta: { duration_ms: number; rms_level: number }) => void;
@@ -44,8 +44,8 @@ export class VoiceDetector {
 
   constructor(config: VoiceDetectionConfig) {
     this.noiseThreshold = config.noiseThreshold ?? 0.04;
-    this.sustainedMs = config.sustainedMs ?? 3000;
-    this.debounceMs = config.debounceMs ?? 20000;
+    this.sustainedMs = config.sustainedMs ?? 8000;
+    this.debounceMs = config.debounceMs ?? 10000;
     this.onBackgroundVoice = config.onBackgroundVoice;
   }
 
