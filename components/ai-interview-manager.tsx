@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import type { IInterviewSummary } from '@/lib/ai-interview/types';
 import type { ExtractionResult, SessionGenerationResult } from '@/lib/ai-interview/types';
 import { KeywordAnalysisOverview, KeywordResults } from '@/components/ai-interview/keyword-results';
@@ -24,8 +25,14 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
   completed: 'bg-emerald-50 text-emerald-600 border-emerald-100',
   expired: 'bg-red-50 text-red-500 border-red-100',
   terminated: 'bg-red-50 text-red-600 border-red-100',
+  revoked: 'bg-red-50 text-red-600 border-red-100',
+  cancelled: 'bg-red-50 text-red-600 border-red-100',
   in_progress: 'bg-blue-50 text-blue-600 border-blue-100',
   ready: 'bg-amber-50 text-amber-600 border-amber-100',
+  pending: 'bg-amber-50 text-amber-600 border-amber-100',
+  active: 'bg-amber-50 text-amber-600 border-amber-100',
+  draft: 'bg-zinc-50 text-zinc-500 border-zinc-100',
+  questions_generated: 'bg-indigo-50 text-indigo-600 border-indigo-100',
 };
 const DEFAULT_STATUS_BADGE_STYLE = 'bg-zinc-50 text-zinc-500 border-zinc-100';
 
@@ -65,10 +72,45 @@ export default function AIInterviewManager() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const initTimer = setTimeout(() => {
       void fetchInterviews();
     }, 0);
-    return () => clearTimeout(timer);
+
+    let channel: any = null;
+    try {
+      const supabase = createClient();
+      channel = supabase
+        .channel('admin-ai-interviews-live')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'interview_sessions' }, () => {
+          void fetchInterviews();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'interview_invites' }, () => {
+          void fetchInterviews();
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_interviews' }, () => {
+          void fetchInterviews();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('[ai-interview-manager] realtime subscription fallback:', err);
+    }
+
+    const pollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        void fetchInterviews();
+      }
+    }, 3500);
+
+    return () => {
+      clearTimeout(initTimer);
+      clearInterval(pollTimer);
+      if (channel) {
+        try {
+          const supabase = createClient();
+          void supabase.removeChannel(channel);
+        } catch {}
+      }
+    };
   }, [fetchInterviews]);
 
   /**
@@ -452,9 +494,9 @@ export default function AIInterviewManager() {
                       STATUS_BADGE_STYLES[iv.status] ?? DEFAULT_STATUS_BADGE_STYLE
                     }`}
                   >
-                    {iv.status}
+                    {iv.status.replace('_', ' ')}
                   </span>
-                  {(iv.status === 'completed' || iv.status === 'terminated' || iv.status === 'in_progress') && (
+                  {(iv.status === 'completed' || iv.status === 'terminated' || iv.status === 'revoked' || iv.status === 'cancelled' || iv.status === 'in_progress') && (
                     <Link
                       id={`view-report-${iv.id}`}
                       href={`/admin/reports/${iv.id}`}

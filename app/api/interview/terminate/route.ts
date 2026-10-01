@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { ensureAllQuestionsAnswered } from '@/lib/ai-interview/answers';
 import { scoreInterviewSession } from '@/lib/ai-interview/scorer';
-import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
+import { resolveInterviewSessionId, resolveInviteByToken } from '@/lib/ai-interview/invite-token';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
  *
  * Public endpoint. Called by the candidate-facing proctoring UI the moment a
  * violation (tab switch, minimized window, camera/mic/screen-share stopped)
- * is detected. Marks the interview 'terminated' server-side so the session
+ * is detected. Marks the interview 'terminated'/'revoked' server-side so the session
  * cannot be resumed by refreshing and re-submitting the same passcode.
  *
  * Body: { interviewId: string, reason: string, warningCounts?: { face: number, object: number, voice: number } }
@@ -28,40 +28,89 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Interview ID and reason are required' }, { status: 400 });
   }
 
-  const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
+  const now = new Date().toISOString();
+  let found = false;
 
-  const { data: interview, error } = await supabaseAdmin
-    .from('ai_interviews')
-    .select('id, status')
-    .eq('id', targetSessionId)
-    .single();
+  // Resolve invite by token / token_hash if provided
+  let invite = await resolveInviteByToken(interviewId);
+  if (!invite) {
+    try {
+      const { data: inv } = await supabaseAdmin
+        .from('interview_invites')
+        .select('*')
+        .eq('id', interviewId)
+        .single();
+      if (inv?.session_id) invite = inv;
+    } catch {
+      // ignore
+    }
+  }
 
-  if (error || !interview) {
+  const targetSessionId = invite?.session_id || (await resolveInterviewSessionId(interviewId)) || interviewId;
+
+  // 1. Check legacy ai_interviews table
+  let aiInterview: { id: string; status: string } | null = null;
+  try {
+    const { data } = await supabaseAdmin
+      .from('ai_interviews')
+      .select('id, status')
+      .eq('id', targetSessionId)
+      .single();
+    if (data) aiInterview = data;
+  } catch {
+    // ignore
+  }
+
+  // 2. Check modern interview_sessions table
+  let sessionRecord: { id: string; status: string } | null = null;
+  try {
+    const { data } = await supabaseAdmin
+      .from('interview_sessions')
+      .select('id, status')
+      .eq('id', targetSessionId)
+      .single();
+    if (data) sessionRecord = data;
+  } catch {
+    // ignore
+  }
+
+  if (aiInterview || sessionRecord || invite) {
+    found = true;
+  }
+
+  if (!found) {
     return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
   }
 
-  if (interview.status === 'terminated' || interview.status === 'completed') {
-    return NextResponse.json({ terminated: true, interviewId: interview.id });
+  // Check if already finished
+  const isAlreadyFinished =
+    aiInterview?.status === 'terminated' ||
+    aiInterview?.status === 'completed' ||
+    sessionRecord?.status === 'cancelled' ||
+    sessionRecord?.status === 'completed' ||
+    invite?.status === 'revoked' ||
+    invite?.status === 'completed';
+
+  if (isAlreadyFinished) {
+    return NextResponse.json({ terminated: true, interviewId: targetSessionId });
   }
 
-  const now = new Date().toISOString();
-
-  const { error: updateError } = await supabaseAdmin
-    .from('ai_interviews')
-    .update({
-      status: 'terminated',
-      terminated_at: now,
-      termination_reason: reason,
-    })
-    .eq('id', targetSessionId);
-
-  if (updateError) {
-    console.error('[terminate] ai_interviews update error:', updateError);
+  // Update ai_interviews if present
+  if (aiInterview) {
+    await supabaseAdmin
+      .from('ai_interviews')
+      .update({
+        status: 'terminated',
+        terminated_at: now,
+        termination_reason: reason,
+      })
+      .eq('id', targetSessionId);
   }
 
-  // Sync cancellation into interview_sessions with per-type warning counts
+  // Update interview_sessions and interview_invites
   const sessionUpdate: Record<string, unknown> = {
     status: 'cancelled',
+    termination_reason: reason,
     updated_at: now,
   };
 
@@ -71,18 +120,42 @@ export async function POST(req: Request) {
     sessionUpdate.voice_warning_count = warningCounts.voice;
   }
 
-  await supabaseAdmin
-    .from('interview_sessions')
-    .update(sessionUpdate)
-    .eq('id', targetSessionId);
+  const updatePromises: Promise<any>[] = [
+    supabaseAdmin
+      .from('interview_sessions')
+      .update(sessionUpdate)
+      .eq('id', targetSessionId),
+    supabaseAdmin
+      .from('interview_invites')
+      .update({ status: 'revoked', completed_at: now })
+      .eq(invite?.id ? 'id' : 'session_id', invite?.id || targetSessionId),
+  ];
+
+  try {
+    const eventsTable = supabaseAdmin.from('interview_events');
+    if (typeof eventsTable?.insert === 'function') {
+      updatePromises.push(
+        eventsTable.insert({
+          session_id: targetSessionId,
+          event_type: 'proctoring_violation',
+          category: 'proctoring_violation',
+          severity: 'critical',
+          metadata: { reason, warningCounts },
+          meta: { reason, warningCounts },
+        })
+      );
+    }
+  } catch {
+    // ignore
+  }
+
+  await Promise.all(updatePromises);
 
   await ensureAllQuestionsAnswered(targetSessionId);
 
-  // Trigger post-interview scoring in background — generates fluency, cognitive
-  // composite, and recommendation report even for terminated sessions.
   scoreInterviewSession({ sessionId: targetSessionId }).catch((err) => {
     console.error('[interview-terminate] Background scoring error:', err);
   });
 
-  return NextResponse.json({ terminated: true, interviewId: interview.id });
+  return NextResponse.json({ terminated: true, interviewId: targetSessionId });
 }

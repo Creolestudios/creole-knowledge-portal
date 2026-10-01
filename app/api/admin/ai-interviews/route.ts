@@ -158,12 +158,21 @@ export async function GET() {
 
   const interviews = (data || []).map((row: any) => {
     const invite = row.interview_invites?.[0] ?? null;
+    let status = invite?.status ?? row.status;
+    if (row.status === 'cancelled' || row.status === 'terminated' || invite?.status === 'revoked') {
+      status = 'terminated';
+    } else if (row.status === 'completed' || invite?.status === 'completed') {
+      status = 'completed';
+    } else if (row.status === 'in_progress' || invite?.status === 'in_progress') {
+      status = 'in_progress';
+    }
+
     return {
       id: row.id,
       candidate_name: row.candidate_name,
       candidate_email: row.candidate_email,
       job_title: row.parsed_jd?.jobTitle ?? null,
-      status: invite?.status ?? row.status,
+      status,
       expires_at: invite?.expires_at ?? null,
       created_at: row.created_at,
     };
