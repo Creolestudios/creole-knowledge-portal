@@ -9,6 +9,8 @@ interface MeetingVideoTileProps {
   micOn: boolean;
   size?: 'large' | 'small';
   videoRef?: React.RefObject<HTMLVideoElement | null>;
+  muted?: boolean;
+  mirror?: boolean;
 }
 
 /**
@@ -24,6 +26,8 @@ export function MeetingVideoTile({
   micOn,
   size = 'large',
   videoRef: externalVideoRef,
+  muted: isMuted = true,
+  mirror = true,
 }: MeetingVideoTileProps) {
   const internalVideoRef = useRef<HTMLVideoElement>(null);
   const activeVideoRef = externalVideoRef ?? internalVideoRef;
@@ -32,6 +36,9 @@ export function MeetingVideoTile({
   useEffect(() => {
     const el = activeVideoRef.current;
     if (!el) return;
+
+    el.muted = isMuted;
+    el.defaultMuted = isMuted;
 
     if (stream) {
       el.srcObject = stream;
@@ -49,7 +56,7 @@ export function MeetingVideoTile({
     return () => {
       if (el) el.srcObject = null;
     };
-  }, [stream, activeVideoRef]);
+  }, [stream, activeVideoRef, isMuted]);
 
   const dimensions = size === 'large' ? 'aspect-video w-full' : 'aspect-[4/3] w-40 sm:w-48';
 
@@ -61,9 +68,9 @@ export function MeetingVideoTile({
       <video
         ref={activeVideoRef}
         autoPlay
-        muted
+        muted={isMuted}
         playsInline
-        className={`h-full w-full object-cover scale-x-[-1] transition-opacity ${hasVideo ? 'opacity-100' : 'opacity-0'}`}
+        className={`h-full w-full object-cover ${mirror ? 'scale-x-[-1]' : ''} transition-opacity ${hasVideo ? 'opacity-100' : 'opacity-0'}`}
       > {/* NOSONAR */}
         <track kind="captions" />
       </video>

@@ -1,4 +1,4 @@
-import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { Category, FaceLandmarker, FilesetResolver, NormalizedLandmark } from '@mediapipe/tasks-vision';
 import { analyzeFaceMetrics, CandidateBaseline, computeIrisRatio, getHeadYaw } from './face-tracking';
 
 type CalibrationFrame = {
@@ -30,8 +30,8 @@ let calibrationSamples: Array<{
 
 // Persistence buffer to prevent frame drops during eye or head movement
 let consecutiveMissingFrames = 0;
-let lastKnownLandmark: Array<{ x: number; y: number }> | undefined = undefined;
-let lastKnownBlendshapes: Array<{ categoryName?: string; score?: number }> = [];
+let lastKnownLandmark: NormalizedLandmark[] | undefined = undefined;
+let lastKnownBlendshapes: Category[] = [];
 let lastKnownMatrix: number[] = [];
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {

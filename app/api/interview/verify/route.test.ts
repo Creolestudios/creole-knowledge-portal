@@ -30,7 +30,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       }
       return {
         select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({ single: mockSingleInterview }),
+          eq: vi.fn().mockReturnValue({ single: mockSingleInterview, maybeSingle: mockSingleInterview }),
         }),
         update: (...args: any[]) => mockUpdate(...args),
       };
@@ -189,5 +189,32 @@ describe('POST /api/interview/verify', () => {
     const body = await res.json();
     expect(body.error).toBe('This interview link has already been used and cannot be re-opened');
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns 410 when joining via invite but underlying session is cancelled', async () => {
+    // 1st call: ai_interviews (returns null)
+    // 2nd call: interview_invites (returns invite)
+    // 3rd call: interview_sessions (returns cancelled session)
+    mockSingleInterview
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({
+        data: {
+          id: 'inv1',
+          session_id: 'sess1',
+          status: 'active',
+          token_hash: '123456',
+          expires_at: new Date(Date.now() + 86400000).toISOString()
+        },
+        error: null
+      })
+      .mockResolvedValueOnce({
+        data: { id: 'sess1', status: 'cancelled' },
+        error: null
+      });
+
+    const res = await POST(makeRequest({ interviewId: '123456', email: 'test@example.com', accessCode: '123456' }));
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.error).toBe('This interview has already ended');
   });
 });

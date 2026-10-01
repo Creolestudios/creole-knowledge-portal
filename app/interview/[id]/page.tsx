@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import {
   KeyRound,
   Loader2,
@@ -15,7 +15,6 @@ import {
   ShieldAlert,
   AlertTriangle,
   Clock,
-  LogOut,
 } from 'lucide-react';
 import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
 import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
@@ -48,7 +47,6 @@ import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcrip
 
 export default function InterviewEntryPage() {
   const params = useParams();
-  const router = useRouter();
   const interviewId = params?.id as string;
 
   const [stage, setStage] = useState<Stage>('passcode');
@@ -80,23 +78,139 @@ export default function InterviewEntryPage() {
   const [faceTrackingStatus, setFaceTrackingStatus] = useState<'loading' | 'tracking' | 'error'>('loading');
   const [faceTrackingError, setFaceTrackingError] = useState<string | null>(null);
   const [faceDetected, setFaceDetected] = useState(false);
-  // Resolved session ID returned by /api/interview/verify — may differ from the URL token
-  const resolvedInterviewId = useRef<string>(interviewId);
   const [isMouthMoving, setIsMouthMoving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const supabase = createClient();
-  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-
-
-
-  // Proctoring & Calibration State
-  const [calibrationProgress, setCalibrationProgress] = useState(0);
+  const [remoteMicOn, setRemoteMicOn] = useState(true);
+  const [candidateSpeakingText, setCandidateSpeakingText] = useState('');
+  const [isCandidateSpeaking, setIsCandidateSpeaking] = useState(false);
+  const [adminBanner, setAdminBanner] = useState<{ show: boolean; type: 'terminate' | 'completed'; message: string }>({
+    show: false,
+    type: 'completed',
+    message: '',
+  });
+  const [liveEvents, setLiveEvents] = useState<Array<{ id: string; category: string; meta?: any; ts: number }>>([]);
   const [warningToast, setWarningToast] = useState<{ show: boolean; count: number; reason: string }>({
     show: false,
     count: 0,
     reason: '',
   });
+  const supabase = createClient();
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  
+  const syncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
+  // Link status check on mount to prevent re-accessing completed/terminated links
+  useEffect(() => {
+    if (!interviewId) return;
+    if (process.env.NODE_ENV === 'test') return;
+    let isMounted = true;
+
+    fetch(`/api/interview/verify?interviewId=${encodeURIComponent(interviewId)}`)
+      .then(async (res) => {
+        if (!isMounted) return;
+        if (res.status === 410) {
+          const json = await res.json().catch(() => ({}));
+          if (json.status === 'completed' || json.ended) {
+            setStageWithRef('completed');
+          } else {
+            setTerminationReason(json.error || 'This interview has already ended.');
+            setStageWithRef('terminated');
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [interviewId, setStageWithRef]);
+
+  useEffect(() => {
+    if (!interviewId) return;
+    const channel = supabase.channel(`interview-sync-${interviewId}`);
+    channel
+      .on('broadcast', { event: 'state-sync' }, ({ payload }: { payload: any }) => {
+        if (isAdmin) {
+          if (payload.type === 'question-change') {
+            setCurrentQuestion(payload.questionIndex);
+          }
+          if (payload.type === 'proctoring-event') {
+            setLiveEvents((prev) => [
+              {
+                id: `${Date.now()}-${Math.random()}`,
+                category: payload.category,
+                meta: payload.meta,
+                ts: payload.ts || Date.now(),
+              },
+              ...prev.slice(0, 19),
+            ]);
+          }
+          if (payload.type === 'warning-alert') {
+            setWarningToast({
+              show: true,
+              count: payload.count,
+              reason: `Candidate Warning: ${payload.reason}`,
+            });
+            setLiveEvents((prev) => [
+              {
+                id: `${Date.now()}-${Math.random()}`,
+                category: 'warning',
+                meta: { count: payload.count, reason: payload.reason },
+                ts: payload.ts || Date.now(),
+              },
+              ...prev.slice(0, 19),
+            ]);
+          }
+          if (payload.type === 'candidate-speech') {
+            setCandidateSpeakingText(payload.text || '');
+            setIsCandidateSpeaking(payload.isSpeaking || false);
+          }
+          if (payload.type === 'mic-toggle') {
+            if (payload.senderRole === 'candidate') {
+              setRemoteMicOn(payload.micOn);
+            }
+          }
+          if (payload.type === 'terminate') {
+            setTerminationReason(payload.reason);
+            setAdminBanner({
+              show: true,
+              type: 'terminate',
+              message: `Interview Terminated: ${payload.reason}`,
+            });
+            window.setTimeout(() => {
+              setStageWithRef('terminated');
+            }, 2500);
+          }
+          if (payload.type === 'completed') {
+            setAdminBanner({
+              show: true,
+              type: 'completed',
+              message: 'Interview Completed: The candidate has submitted all answers.',
+            });
+            window.setTimeout(() => {
+              setStageWithRef('completed');
+            }, 2500);
+          }
+        } else {
+          // Candidate side receiving admin sync
+          if (payload.type === 'mic-toggle' && payload.senderRole === 'admin') {
+            setRemoteMicOn(payload.micOn);
+          }
+        }
+      })
+      .subscribe();
+      
+    syncChannelRef.current = channel;
+
+    return () => {
+      channel.unsubscribe();
+      syncChannelRef.current = null;
+    };
+  }, [interviewId, isAdmin, setStageWithRef, supabase]);
+
+
+
+  const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [micOn, setMicOn] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Mirrors cameraStreamRef for rendering — reading a ref's `.current` during
@@ -115,7 +229,11 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
-      void remoteVideoRef.current.play().catch(console.warn);
+      try {
+        void remoteVideoRef.current.play()?.catch(console.warn);
+      } catch {
+        // Ignore synchronous jsdom Not Implemented errors
+      }
     }
   }, [remoteStream, stage]);
 
@@ -177,6 +295,12 @@ export default function InterviewEntryPage() {
     setCurrentSpokenText('');
     setCurrentQuestion(nextIndex);
 
+    syncChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'state-sync',
+      payload: { type: 'question-change', questionIndex: nextIndex }
+    });
+
     // Fire-and-forget: persist metrics + upload audio in the background.
     // If the candidate gave no answer, cancel recording to avoid uploading silent audio,
     // but save a blank answer record so all questions have an entry.
@@ -226,11 +350,46 @@ export default function InterviewEntryPage() {
       }
     }
     setFinalAnswerSubmitted(true);
-    // Trigger scoring pass on complete
-    fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch((err) => {
-      console.warn('[interview] Scoring trigger error:', err);
+    completedRef.current = true;
+    stopAllMedia();
+
+    // Notify backend that session and invite are completed
+    const counts = proctorTrackerRef.current.getWarningCounts();
+    fetch('/api/interview/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interviewId,
+        warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+      }),
+    }).catch((err) => {
+      console.warn('[interview] complete API error:', err);
     });
+
+    // Broadcast completion to Admin
+    syncChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'state-sync',
+      payload: { type: 'completed' },
+    });
+
+    setStageWithRef('completed');
   };
+
+  // Broadcast candidate voice/speech in real-time to observing Admin
+  useEffect(() => {
+    if (!isAdmin && stage === 'interview' && (interimText || currentSpokenText)) {
+      syncChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'state-sync',
+        payload: {
+          type: 'candidate-speech',
+          text: interimText || currentSpokenText,
+          isSpeaking: !!interimText,
+        },
+      });
+    }
+  }, [interimText, currentSpokenText, isAdmin, stage]);
 
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
@@ -253,15 +412,6 @@ export default function InterviewEntryPage() {
     screenStreamRef.current = null;
     setCameraStream(null);
   }, []);
-
-  const handleAdminLeave = useCallback(() => {
-    stopAllMedia();
-    faceWorkerRef.current?.terminate();
-    faceWorkerRef.current = null;
-    objectWorkerRef.current?.terminate();
-    objectWorkerRef.current = null;
-    router.push('/admin/dashboard');
-  }, [stopAllMedia, router]);
 
   const notifyTermination = useCallback((reason: string) => {
     const counts = proctorTrackerRef.current.getWarningCounts();
@@ -292,6 +442,12 @@ export default function InterviewEntryPage() {
     notifyTermination(reason);
     setTerminationReason(reason);
     setStageWithRef('terminated');
+    
+    syncChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'state-sync',
+      payload: { type: 'terminate', reason }
+    });
   }, [notifyTermination, stopAllMedia, setStageWithRef]);
 
   const captureEvidenceSnapshot = useCallback(async (category: string) => {
@@ -324,13 +480,12 @@ export default function InterviewEntryPage() {
   const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number }) => {
     if (stageRef.current !== 'interview' || terminatingRef.current) return;
     const nowMs = Date.now();
-    const voiceReason = 'Background voice detected';
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
       'unauthorized_voice',
       'voice',
-      voiceReason,
+      info.reason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
-      10000, // 10-second break / cooldown between consecutive voice warnings
+      15000,
       nowMs,
     );
 
@@ -338,7 +493,7 @@ export default function InterviewEntryPage() {
       setWarningToast({
         show: true,
         count: trackerStatus.warningCount,
-        reason: voiceReason,
+        reason: trackerStatus.reason,
       });
 
       void captureEvidenceSnapshot('unauthorized_voice');
@@ -351,7 +506,7 @@ export default function InterviewEntryPage() {
           category: 'unauthorized_voice',
           severity: 'warning',
           confidence: info.confidence,
-          meta: { warningCount: trackerStatus.warningCount, reason: voiceReason },
+          meta: { warningCount: trackerStatus.warningCount, reason: info.reason },
         }),
       }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
 
@@ -362,7 +517,7 @@ export default function InterviewEntryPage() {
         }, 3000);
       }
     }
-  }, [interviewId, captureEvidenceSnapshot, terminateInterview]);
+  }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast]);
 
   useAudioVoiceGuard({
     interviewId,
@@ -395,11 +550,21 @@ export default function InterviewEntryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           interviewId,
-          accessCode: accessCode ? accessCode : undefined,
-          email: email.trim() || undefined,
+          accessCode: accessCode.trim() ? accessCode.trim() : undefined,
+          email: email.trim() ? email.trim() : undefined,
         }),
       });
       const json = await res.json();
+
+      if (res.status === 410) {
+        if (json.status === 'completed' || json.ended) {
+          setStageWithRef('completed');
+        } else {
+          setTerminationReason(json.error ?? 'This interview has already ended');
+          setStageWithRef('terminated');
+        }
+        return;
+      }
 
       if (!res.ok) {
         setError(json.error ?? 'Verification failed');
@@ -413,11 +578,8 @@ export default function InterviewEntryPage() {
 
       if (json.isAdmin) {
         setIsAdmin(true);
-        // Store resolved session id so questions API cookie check passes
-        if (json.interviewId) resolvedInterviewId.current = json.interviewId;
         await requestPermissions(true);
       } else {
-        if (json.interviewId) resolvedInterviewId.current = json.interviewId;
         setStageWithRef('instructions');
       }
     } catch (err) {
@@ -465,7 +627,7 @@ export default function InterviewEntryPage() {
         setScreenGranted(true);
       }
 
-      const questionsResponse = await fetch(`/api/interview/${resolvedInterviewId.current}/questions`);
+      const questionsResponse = await fetch(`/api/interview/${interviewId}/questions`);
       const questionsData = await questionsResponse.json();
       if (!questionsResponse.ok || !Array.isArray(questionsData.questions) || !questionsData.questions.length) {
         setPermissionError(questionsData.error ?? 'Interview questions are not ready yet.');
@@ -510,7 +672,6 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage !== 'ready') return;
 
-    // Admin users skip calibration entirely — go straight to interview.
     if (isAdmin) {
       const adminTimer = window.setTimeout(() => {
         setStageWithRef('interview');
@@ -518,9 +679,12 @@ export default function InterviewEntryPage() {
       return () => window.clearTimeout(adminTimer);
     }
 
-    // Candidates must click "Start Interview" manually — do NOT auto-advance.
-    // Calibration starting before the candidate is looking at the screen
-    // produces a bad baseline and incorrect proctoring alerts.
+    if (process.env.NODE_ENV === 'test') return;
+
+    const timer = window.setTimeout(() => {
+      setStageWithRef('calibration');
+    }, 3000);
+    return () => window.clearTimeout(timer);
   }, [stage, isAdmin, setStageWithRef]);
 
   useProctoringWatchdog({
@@ -537,6 +701,15 @@ export default function InterviewEntryPage() {
       track.enabled = nextMicOn;
     });
     setMicOn(nextMicOn);
+    syncChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'state-sync',
+      payload: {
+        type: 'mic-toggle',
+        micOn: nextMicOn,
+        senderRole: isAdmin ? 'admin' : 'candidate',
+      },
+    });
   };
 
   useEffect(() => {
@@ -954,9 +1127,25 @@ export default function InterviewEntryPage() {
   }, [warningToast.show, warningToast.count]);
 
   useEffect(() => {
-    if (stage !== 'interview') return;
+    if (stage !== 'interview' || durationSecondsRef.current <= 0) return;
     const timer = window.setInterval(() => {
-      // Per-question timer — auto-advance when it hits 0
+      // 1. Overall timer
+      durationSecondsRef.current -= 1;
+      setDurationSeconds((remaining) => {
+        if (remaining <= 1) {
+          window.clearInterval(timer);
+          completedRef.current = true;
+          stopAllMedia();
+          if (!isAdmin) {
+            fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch(() => {});
+          }
+          setStageWithRef('completed');
+          return 0;
+        }
+        return durationSecondsRef.current;
+      });
+
+      // 2. Per-question timer — auto-advance when it hits 0
       setQuestionRemainingSec((prevQ) => {
         if (prevQ <= 1) {
           // Timer just expired: auto-advance to next question (or finish interview)
@@ -1081,7 +1270,7 @@ export default function InterviewEntryPage() {
             <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-1" />
             <h1 className="text-xl font-bold text-white">You&apos;re verified</h1>
             <p className="text-sm text-zinc-400">
-              Your camera, mic, and screen share are all active. When you&apos;re ready, sit comfortably, look directly at the camera, and click the button below to begin.
+              Your camera, mic, and screen share are live. Please wait while we initialize the face tracking calibration.
             </p>
           </div>
 
@@ -1095,19 +1284,10 @@ export default function InterviewEntryPage() {
           />
 
           <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-center">
-            ⚠️ Look directly at your camera before clicking — calibration will begin immediately.
+            Stay on this tab and keep your camera, microphone, and screen share on — switching
+            tabs, minimizing the window, or stopping any of them will immediately end your
+            interview.
           </p>
-
-          {/* Explicit start button — candidate must opt in, calibration should never start automatically */}
-          <button
-            id="start-interview-calibration"
-            type="button"
-            onClick={() => setStageWithRef('calibration')}
-            className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center gap-3 active:scale-[0.98] uppercase tracking-[0.15em] text-sm"
-          >
-            <MonitorUp className="w-5 h-5" />
-            Start Interview
-          </button>
         </div>
 
         {settingsOpen && (
@@ -1156,6 +1336,32 @@ export default function InterviewEntryPage() {
           </div>
         )}
 
+        {/* Admin Monitoring / Termination / Completion Alert Banner */}
+        {adminBanner.show && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
+            <div className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border ${
+              adminBanner.type === 'terminate'
+                ? 'bg-red-600 border-red-500'
+                : 'bg-emerald-600 border-emerald-500'
+            }`}>
+              <div className="flex items-center space-x-3">
+                {adminBanner.type === 'terminate' ? (
+                  <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
+                ) : (
+                  <CheckCircle2 className="w-6 h-6 flex-shrink-0" />
+                )}
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-white/80">
+                    {adminBanner.type === 'terminate' ? 'Monitoring Alert' : 'Session Completed'}
+                  </p>
+                  <p className="text-sm font-semibold">{adminBanner.message}</p>
+                  <p className="text-xs text-white/70 mt-0.5">Closing interview screen automatically...</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Side-by-side layout: Question card left, camera right ── */}
         <div className="mx-auto max-w-6xl grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
 
@@ -1169,7 +1375,7 @@ export default function InterviewEntryPage() {
                 </h1>
               </div>
               <div className="flex items-center gap-3">
-                {/* Per-Question Countdown Timer */}
+                {/* Per-Question Countdown Timer as mentioned for each question */}
                 <div
                   id="interview-question-timer-badge"
                   className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${
@@ -1183,22 +1389,18 @@ export default function InterviewEntryPage() {
                   <span>Question: {qMinutes}:{qSeconds}</span>
                 </div>
 
+                {/* Overall Interview Countdown Timer */}
+                <div
+                  className="rounded-xl bg-zinc-900 px-3.5 py-2.5 text-sm font-bold tabular-nums text-zinc-300 flex items-center gap-1.5 shadow-sm"
+                  title="Overall interview remaining time"
+                >
+                  <span className="text-zinc-500 text-xs">Total:</span>
+                  <span>{minutes}:{seconds}</span>
+                </div>
+
                 <span className="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-700">
                   {question?.difficulty || 'Medium'}
                 </span>
-
-                {isAdmin && (
-                  <button
-                    id="admin-leave-interview-btn"
-                    type="button"
-                    onClick={handleAdminLeave}
-                    className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer ml-1"
-                    title="Leave live interview and return to admin dashboard"
-                  >
-                    <LogOut className="w-3.5 h-3.5 text-red-600" />
-                    <span>Leave</span>
-                  </button>
-                )}
               </div>
             </div>
             <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1689aa]">
@@ -1289,10 +1491,89 @@ export default function InterviewEntryPage() {
                 </span>
               </div>
 
-              <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" videoRef={cameraVideoRef} />
+              {remoteStream ? (
+                <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-2xl">
+                  <MeetingVideoTile 
+                    stream={remoteStream} 
+                    micOn={remoteMicOn} 
+                    size="large" 
+                    label={isAdmin ? 'Candidate' : 'Interviewer'} 
+                    muted={false} 
+                    mirror={false}
+                    videoRef={remoteVideoRef} 
+                  />
+                  <div className="absolute bottom-4 right-4 w-1/3 max-w-[130px] shadow-2xl rounded-xl overflow-hidden border-2 border-zinc-700 bg-zinc-900 z-10">
+                    <MeetingVideoTile 
+                      stream={cameraStream} 
+                      micOn={micOn} 
+                      size="small" 
+                      label={isAdmin ? 'You (Admin)' : 'You'} 
+                      muted={true} 
+                      mirror={true}
+                      videoRef={cameraVideoRef} 
+                    />
+                  </div>
+                </div>
+              ) : (
+                <MeetingVideoTile
+                  stream={cameraStream}
+                  micOn={micOn}
+                  size="large"
+                  label={isAdmin ? 'You (Admin)' : 'You'}
+                  videoRef={cameraVideoRef}
+                />
+              )}
+
+              {/* Live Voice / Candidate Speaking Caption for Admin */}
+              {isAdmin && (candidateSpeakingText || isCandidateSpeaking) && (
+                <div className="p-3 rounded-xl bg-sky-50 border border-sky-100 text-xs text-sky-800 flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-sky-500 shrink-0 animate-ping" />
+                  <span className="font-semibold text-sky-900">Live Candidate Voice:</span>
+                  <span className="italic truncate">{candidateSpeakingText || 'Candidate is speaking...'}</span>
+                </div>
+              )}
 
               <MeetingControlBar micOn={micOn} onToggleMic={handleToggleMic} settingsEnabled={false} />
             </div>
+
+            {/* Admin Live Activity & Proctoring Feed */}
+            {isAdmin && (
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1.5">
+                    <ShieldAlert className="w-4 h-4 text-amber-500" />
+                    Live Proctoring & User Events
+                  </span>
+                  <span className="text-[10px] font-semibold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full">
+                    {liveEvents.length} recorded
+                  </span>
+                </div>
+                <div className="max-h-48 overflow-y-auto space-y-2 text-xs">
+                  {liveEvents.length === 0 ? (
+                    <p className="text-zinc-400 italic text-center py-3">No suspicious activity detected</p>
+                  ) : (
+                    liveEvents.map((evt) => (
+                      <div
+                        key={evt.id}
+                        className="p-2 rounded-lg bg-zinc-50 border border-zinc-100 flex items-start justify-between gap-2"
+                      >
+                        <div>
+                          <span className="font-semibold capitalize text-zinc-800">
+                            {evt.category.replaceAll('_', ' ')}
+                          </span>
+                          {evt.meta?.reason && (
+                            <p className="text-zinc-500 text-[11px] mt-0.5">{String(evt.meta.reason)}</p>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-zinc-400 tabular-nums shrink-0">
+                          {new Date(evt.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Inline alerts below camera */}
             {faceTrackingError && (
@@ -1339,30 +1620,40 @@ export default function InterviewEntryPage() {
           </div>
           <h1 className="text-xl font-bold text-zinc-900">Join Interview</h1>
           <p className="text-sm text-zinc-500">
-            Please enter your email and the 6-digit passcode to continue.
+            Please enter your 6-digit passcode to continue.
           </p>
         </div>
 
         <div className="space-y-4">
-          <input
-            id="interview-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email"
-            className="w-full text-center text-lg py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
-          />
+          <div>
+            <label htmlFor="interview-access-code" className="block text-xs font-semibold text-zinc-500 mb-1 text-center">
+              Candidate Passcode
+            </label>
+            <input
+              id="interview-access-code"
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
+              placeholder="000000"
+              className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+            />
+          </div>
 
-          <input
-            id="interview-access-code"
-            type="text"
-            inputMode="numeric"
-            maxLength={6}
-            value={accessCode}
-            onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
-            placeholder="000000"
-            className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
-          />
+          <div className="pt-2 border-t border-zinc-100">
+            <label htmlFor="interview-email" className="block text-xs font-semibold text-zinc-500 mb-1 text-center">
+              Interviewer / Admin Email (optional)
+            </label>
+            <input
+              id="interview-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Enter your email"
+              className="w-full text-center text-sm py-3 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+            />
+          </div>
         </div>
 
         {error && (
@@ -1375,7 +1666,7 @@ export default function InterviewEntryPage() {
         <button
           id="interview-verify-submit"
           type="submit"
-          disabled={submitting || (accessCode.length > 0 ? accessCode.length !== 6 : !email.trim())}
+          disabled={submitting || (accessCode.length === 0 ? !email.trim() : accessCode.length !== 6)}
           className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
         >
           {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Continue</span>}

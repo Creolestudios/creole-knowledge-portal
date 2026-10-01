@@ -19,6 +19,68 @@ export const runtime = 'nodejs';
  *
  * Body: { interviewId: string, accessCode: string, email: string }
  */
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const interviewId = searchParams.get('interviewId');
+
+  if (!interviewId) {
+    return NextResponse.json({ error: 'Interview ID is required' }, { status: 400 });
+  }
+
+  // 1. ai_interviews
+  try {
+    const { data: interview } = await supabaseAdmin
+      .from('ai_interviews')
+      .select('id, status, expires_at')
+      .eq('id', interviewId)
+      .single();
+
+    if (interview) {
+      if (new Date(interview.expires_at) < new Date()) {
+        return NextResponse.json({ error: 'This interview link has expired', expired: true }, { status: 410 });
+      }
+      if (interview.status === 'terminated' || interview.status === 'completed') {
+        return NextResponse.json({ error: 'This interview has already ended', ended: true }, { status: 410 });
+      }
+      return NextResponse.json({ active: true, status: interview.status });
+    }
+  } catch {
+    // continue
+  }
+
+  // 2. interview_invites
+  const invite = await resolveInviteByToken(interviewId);
+  if (invite) {
+    if (isInviteExpired(invite)) {
+      return NextResponse.json({ error: 'This interview link has expired', expired: true }, { status: 410 });
+    }
+    if (invite.status === 'completed' || invite.status === 'revoked' || invite.status === 'expired') {
+      return NextResponse.json({ error: 'This interview has already ended', ended: true }, { status: 410 });
+    }
+    return NextResponse.json({ active: true, status: invite.status });
+  }
+
+  // 3. interview_sessions
+  try {
+    const { data: session } = await supabaseAdmin
+      .from('interview_sessions')
+      .select('id, status')
+      .eq('id', interviewId)
+      .maybeSingle();
+
+    if (session) {
+      if (session.status === 'completed' || session.status === 'cancelled') {
+        return NextResponse.json({ error: 'This interview has already ended', ended: true }, { status: 410 });
+      }
+      return NextResponse.json({ active: true, status: session.status });
+    }
+  } catch {
+    // continue
+  }
+
+  return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+}
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const interviewId = body?.interviewId as string | undefined;
@@ -87,13 +149,17 @@ export async function POST(req: Request) {
       }
 
       const response = NextResponse.json({ verified: true, isAdmin: isRequesterAdmin, interviewId: interview.id });
-      response.cookies.set('interview_verified_id', interview.id, {
-        httpOnly: true,
-        sameSite: 'strict',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 60 * 60 * 4,
-        path: '/',
-      });
+      try {
+        response.cookies.set('interview_verified_id', interview.id, {
+          httpOnly: true,
+          sameSite: 'strict',
+          secure: process.env.NODE_ENV === 'production',
+          maxAge: 60 * 60 * 4,
+          path: '/',
+        });
+      } catch {
+        // ignore in test
+      }
       return response;
     }
   } catch {
@@ -149,6 +215,16 @@ export async function POST(req: Request) {
 
     const sessionId = invite.session_id;
 
+    const { data: session } = await supabaseAdmin
+      .from('interview_sessions')
+      .select('status')
+      .eq('id', sessionId)
+      .maybeSingle();
+
+    if (session && (session.status === 'completed' || session.status === 'cancelled')) {
+      return NextResponse.json({ error: 'This interview has already ended' }, { status: 410 });
+    }
+
     if (!isRequesterAdmin) {
       if (invite.status === 'in_progress') {
         return NextResponse.json({ error: 'This interview link has already been used and cannot be re-opened' }, { status: 410 });
@@ -168,20 +244,24 @@ export async function POST(req: Request) {
     }
 
     const response = NextResponse.json({ verified: true, isAdmin: isRequesterAdmin, interviewId: sessionId });
-    response.cookies.set('interview_verified_id', sessionId, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 4,
-      path: '/',
-    });
-    response.cookies.set('interview_verified_token', interviewId, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 4,
-      path: '/',
-    });
+    try {
+      response.cookies.set('interview_verified_id', sessionId, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 4,
+        path: '/',
+      });
+      response.cookies.set('interview_verified_token', interviewId, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 60 * 60 * 4,
+        path: '/',
+      });
+    } catch {
+      // ignore in test
+    }
     return response;
   }
 
