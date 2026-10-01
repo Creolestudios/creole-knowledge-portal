@@ -10,6 +10,7 @@ import AIInterviewManager from '@/components/ai-interview-manager';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'interview-1' }),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }));
 
 const { mockCreateSession } = vi.hoisted(() => ({

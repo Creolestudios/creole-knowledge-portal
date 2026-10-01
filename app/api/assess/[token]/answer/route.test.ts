@@ -24,15 +24,17 @@ const { state, mockFrom, mockResolveInvite } = vi.hoisted(() => {
       };
     }
     if (table === 'interview_answers') {
+      const saveHandler = (payload: unknown) => {
+        state.insertedPayload = payload;
+        return {
+          select: () => ({
+            single: async () => ({ data: state.answer, error: state.insertError }),
+          }),
+        };
+      };
       return {
-        insert: (payload: unknown) => {
-          state.insertedPayload = payload;
-          return {
-            select: () => ({
-              single: async () => ({ data: state.answer, error: state.insertError }),
-            }),
-          };
-        },
+        insert: saveHandler,
+        upsert: saveHandler,
       };
     }
     throw new Error(`Unexpected table: ${table}`);

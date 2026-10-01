@@ -25,19 +25,25 @@ export async function POST(req: Request) {
   const accessCode = body?.accessCode as string | undefined;
   const email = body?.email as string | undefined;
 
-  if (!interviewId || !email) {
-    return NextResponse.json({ error: 'Interview ID and email are required' }, { status: 400 });
+  if (!interviewId) {
+    return NextResponse.json({ error: 'Interview ID is required' }, { status: 400 });
+  }
+
+  if (!accessCode && !email) {
+    return NextResponse.json({ error: 'Passcode is required' }, { status: 400 });
   }
 
   let isRequesterAdmin = false;
-  const { data: profile } = await supabaseAdmin
-    .from('user_profiles')
-    .select('role')
-    .eq('email', email.trim())
-    .single();
+  if (email && typeof email === 'string' && email.trim().length > 0) {
+    const { data: profile } = await supabaseAdmin
+      .from('user_profiles')
+      .select('role')
+      .eq('email', email.trim())
+      .single();
 
-  if (profile?.role === 'admin') {
-    isRequesterAdmin = true;
+    if (profile?.role === 'admin') {
+      isRequesterAdmin = true;
+    }
   }
 
   // 1. Try resolving via ai_interviews table (primary/legacy table)
@@ -68,7 +74,7 @@ export async function POST(req: Request) {
       }
 
       if (!isRequesterAdmin) {
-        if (interview.status === 'in_progress') {
+        if (interview.status === 'in_progress' && email) {
           return NextResponse.json({ error: 'This interview link has already been used and cannot be re-opened' }, { status: 410 });
         }
 

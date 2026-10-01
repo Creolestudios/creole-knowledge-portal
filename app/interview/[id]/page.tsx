@@ -393,7 +393,11 @@ export default function InterviewEntryPage() {
       const res = await fetch('/api/interview/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interviewId, accessCode: showAccessCode ? accessCode : undefined, email }),
+        body: JSON.stringify({
+          interviewId,
+          accessCode: accessCode ? accessCode : undefined,
+          email: email.trim() || undefined,
+        }),
       });
       const json = await res.json();
 
@@ -494,7 +498,7 @@ export default function InterviewEntryPage() {
       } else {
         setPermissionError(
           hasLiveCameraStream()
-            ? `Screen sharing failed (${errMsg}). Please ensure your browser has permission to capture the screen.`
+            ? 'Screen sharing was cancelled or denied. Please share your entire screen to continue.'
             : 'Camera, microphone, and full-screen sharing are all required to start this interview.',
         );
       }
@@ -1347,22 +1351,18 @@ export default function InterviewEntryPage() {
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
             className="w-full text-center text-lg py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
-            required
-            disabled={showAccessCode}
           />
 
-          {showAccessCode && (
-            <input
-              id="interview-access-code"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={accessCode}
-              onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
-            />
-          )}
+          <input
+            id="interview-access-code"
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            value={accessCode}
+            onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
+            placeholder="000000"
+            className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+          />
         </div>
 
         {error && (
@@ -1375,7 +1375,7 @@ export default function InterviewEntryPage() {
         <button
           id="interview-verify-submit"
           type="submit"
-          disabled={submitting || !email || (showAccessCode && accessCode.length !== 6)}
+          disabled={submitting || (accessCode.length > 0 ? accessCode.length !== 6 : !email.trim())}
           className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
         >
           {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Continue</span>}
