@@ -252,3 +252,29 @@ Located at `/admin/reports/[id]`:
   - Recommended Round 2 technical deep-dive questions.
 - **Full Transcript View**:
   - Chronological review of candidate speech answers with timestamps.
+
+---
+
+## 7. Interview Status Lifecycle & Real-Time Sync
+
+```
+[Invite Issued / Active] ──(Candidate Opens & Verifies)──► [In Progress]
+                                                               │
+                           ┌───────────────────────────────────┴───────────────────────────────────┐
+                           ▼                                                                       ▼
+      [Terminated] (Violation / Watchdog / Exit)                                              [Completed] (Normal Finish)
+      - sessions: 'cancelled'                                                                  - sessions: 'completed'
+      - invites:  'revoked'                                                                    - invites:  'completed'
+```
+
+### Status Mapping & Harmonization
+- **Pending / Active**: `invite.status === 'active'` (or session `invite_issued`).
+- **In Progress**: `session.status === 'in_progress'` or `invite.status === 'in_progress'` once the candidate passes passcode verification and enters the assessment room.
+- **Terminated**: Triggered via `/api/interview/terminate` or `/api/assess/[token]/terminate`. Sets `interview_sessions.status = 'cancelled'` and `interview_invites.status = 'revoked'`. Displayed as `terminated` in admin dashboard.
+- **Completed**: Triggered upon completion via `/api/interview/[id]/score` or `/api/assess/[token]/complete`. Sets `interview_sessions.status = 'completed'` and `interview_invites.status = 'completed'`.
+
+### Real-Time Dashboard Updates
+The admin AI Interview screen (`/admin/dashboard` &rarr; `ai-interviews`) automatically updates status without page reloads using:
+1. **Supabase Realtime**: Listens to `postgres_changes` on `interview_sessions`, `interview_invites`, and `ai_interviews`.
+2. **Heartbeat Poller**: 3.5-second polling interval active when the browser window is visible (`!document.hidden`).
+
