@@ -259,7 +259,14 @@ export async function POST(req: Request) {
         registerActiveSession(interviewId, deviceId);
       }
 
-      const response = NextResponse.json({ verified: true, isAdmin: isRequesterAdmin, interviewId: interview.id });
+      const inProgress = interview.status === 'in_progress';
+      const response = NextResponse.json({
+        verified: true,
+        isAdmin: isRequesterAdmin,
+        interviewId: interview.id,
+        status: interview.status,
+        inProgress,
+      });
       try {
         response.cookies.set('interview_verified_id', interview.id, {
           httpOnly: true,
@@ -410,7 +417,14 @@ export async function POST(req: Request) {
       }
     }
 
-    const response = NextResponse.json({ verified: true, isAdmin: isRequesterAdmin, interviewId: sessionId });
+    const inProgress = session?.status === 'in_progress' || invite.status === 'in_progress';
+    const response = NextResponse.json({
+      verified: true,
+      isAdmin: isRequesterAdmin,
+      interviewId: sessionId,
+      status: session?.status || invite.status,
+      inProgress,
+    });
     try {
       response.cookies.set('interview_verified_id', sessionId, {
         httpOnly: true,
@@ -482,7 +496,14 @@ export async function POST(req: Request) {
         registerActiveSession(interviewId, deviceId);
       }
 
-      const response = NextResponse.json({ verified: true, isAdmin: isRequesterAdmin, interviewId: session.id });
+      const sessionInProgress = session.status === 'in_progress';
+      const response = NextResponse.json({
+        verified: true,
+        isAdmin: isRequesterAdmin,
+        interviewId: session.id,
+        status: session.status,
+        inProgress: sessionInProgress,
+      });
       response.cookies.set('interview_verified_id', session.id, {
         httpOnly: true,
         sameSite: 'strict',

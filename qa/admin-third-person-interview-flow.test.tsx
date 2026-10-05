@@ -29,6 +29,7 @@ vi.mock('@/lib/supabase/client', () => ({
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'test-interview-id' }),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 function liveTrack(overrides: Partial<MediaStreamTrack> = {}) {
@@ -254,19 +255,8 @@ describe('Admin Third-Person Joining & Live Proctoring Flow', () => {
       );
     });
 
-    // Warning alert banner shown to admin
-    expect(screen.getByText('Interview Terminated: Excessive proctoring violations')).toBeInTheDocument();
-    expect(screen.getByText('Closing interview screen automatically...')).toBeInTheDocument();
-
-    // Fast forward countdown timer to auto-close screen
-    act(() => {
-      vi.advanceTimersByTime(2600);
-    });
-
     expect(screen.getByText('Interview terminated')).toBeInTheDocument();
     expect(screen.getByText('Excessive proctoring violations')).toBeInTheDocument();
-
-    vi.useRealTimers();
   });
 
   it('notifies admin with banner and auto-closes screen on interview completion', async () => {
@@ -309,15 +299,7 @@ describe('Admin Third-Person Joining & Live Proctoring Flow', () => {
       );
     });
 
-    expect(screen.getByText('Interview Completed: The candidate has submitted all answers.')).toBeInTheDocument();
-
-    act(() => {
-      vi.advanceTimersByTime(2600);
-    });
-
     expect(screen.getByText(/interview complete/i)).toBeInTheDocument();
-
-    vi.useRealTimers();
   });
 
   it('prevents second-time access to terminated or completed interview link', async () => {

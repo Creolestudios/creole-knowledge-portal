@@ -291,6 +291,12 @@ An admin or interviewer can join an ongoing candidate interview directly using t
      - Device presence conflict broadcasts (`candidate-presence`) are restricted strictly to active candidates in the `interview` stage, preventing spurious device conflict terminations when an admin loads the page.
      - `/api/interview/verify` validates the admin's email role against `user_profiles`. When `isAdmin === true`, concurrency locks and duplicate checks are bypassed.
      - On joining an in-progress interview, the admin screen receives a `sync-state` signal containing the current question index and remaining time to sync up with the candidate's exact live progress.
+   - **Admin Early Join ("Interview Not Started Yet")**:
+     - If an admin joins before the candidate has accessed the link or before the interview has started (`inProgress === false` or `status !== 'in_progress'`), the admin is presented with the dedicated **"Interview Not Started Yet"** screen.
+     - Displays a "Waiting for Candidate" badge with a live radar pulse indicator.
+     - The page actively listens to Supabase Realtime broadcast signals (`candidate-presence`, `candidate-joined`, `sync-state`) and performs automatic background polling against `/api/interview/verify` every 4 seconds.
+     - As soon as the candidate enters and begins the interview, the admin screen automatically transitions into the real-time proctoring view without requiring manual intervention.
+     - Provides a manual "Check Status / Refresh" button to re-check on demand and a "Return to Admin Dashboard" button.
 
 2. **WebRTC Dual-Stream Video & Non-Overlapping Layout**:
    - `useWebRTC` connects the admin and candidate via Supabase signaling (`interview-rtc-${interviewId}`).

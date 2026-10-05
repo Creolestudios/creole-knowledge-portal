@@ -104,14 +104,14 @@ export async function POST(
         return NextResponse.json({ error: 'Could not save the recorded answer.' }, { status: 500 });
       }
 
-      try {
-        transcript = await transcribeAnswer(buffer, mimeType);
-      } catch (err) {
-        console.error('[interview-answers] transcription failed:', err);
-      }
-
-      if (!transcript && clientTranscript) {
-        transcript = clientTranscript;
+      if (clientTranscript && clientTranscript.trim()) {
+        transcript = clientTranscript.trim();
+      } else {
+        try {
+          transcript = await transcribeAnswer(buffer, mimeType);
+        } catch (err) {
+          console.error('[interview-answers] transcription failed:', err);
+        }
       }
     }
 

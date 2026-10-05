@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Clock,
   LogOut,
+  RefreshCw,
 } from 'lucide-react';
 import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
 import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
@@ -26,7 +27,7 @@ import { useProctoringWatchdog } from '@/lib/ai-interview/use-proctoring-watchdo
 import { OBJECT_RULES, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 
-type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated' | 'expired';
+type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated' | 'expired' | 'not_started';
 
 type InterviewQuestion = {
   id: string;
@@ -150,11 +151,14 @@ export default function InterviewEntryPage() {
     count: 0,
     reason: '',
   });
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [statusCheckMessage, setStatusCheckMessage] = useState<string | null>(null);
   const supabase = createClient();
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const syncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const candidateEnteredAtRef = useRef<number>(0);
+  const requestPermissionsRef = useRef<((override?: boolean) => Promise<void>) | null>(null);
 
   // Link status check on mount to prevent re-accessing completed/terminated links
   useEffect(() => {
@@ -202,6 +206,18 @@ export default function InterviewEntryPage() {
     channel
       .on('broadcast', { event: 'state-sync' }, ({ payload }: { payload: any }) => {
         if (isAdmin) {
+          if (stageRef.current === 'not_started') {
+            if (
+              payload.type === 'sync-state' ||
+              payload.type === 'candidate-joined' ||
+              payload.type === 'candidate-presence' ||
+              payload.type === 'question-change' ||
+              payload.senderRole === 'candidate'
+            ) {
+              void requestPermissionsRef.current?.(true);
+              return;
+            }
+          }
           if (payload.type === 'sync-state') {
             if (typeof payload.questionIndex === 'number') {
               setCurrentQuestion(payload.questionIndex);
@@ -349,7 +365,7 @@ export default function InterviewEntryPage() {
             },
           });
         }
-        if (status === 'SUBSCRIBED' && isAdmin) {
+        if (status === 'SUBSCRIBED' && isAdmin && stageRef.current === 'interview') {
           channel.send({
             type: 'broadcast',
             event: 'state-sync',
@@ -366,22 +382,30 @@ export default function InterviewEntryPage() {
     };
   }, [interviewId, isAdmin, setStageWithRef, supabase, deviceId]);
 
-  // Broadcast candidate presence immediately when entering the live interview stage
+  // Broadcast presence immediately when entering the live interview stage
   useEffect(() => {
-    if (stage === 'interview' && !isAdmin) {
-      if (!candidateEnteredAtRef.current) {
-        candidateEnteredAtRef.current = Date.now();
+    if (stage === 'interview') {
+      if (!isAdmin) {
+        if (!candidateEnteredAtRef.current) {
+          candidateEnteredAtRef.current = Date.now();
+        }
+        syncChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'state-sync',
+          payload: {
+            type: 'candidate-presence',
+            senderRole: 'candidate',
+            deviceId,
+            enteredAt: candidateEnteredAtRef.current,
+          },
+        });
+      } else {
+        syncChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'state-sync',
+          payload: { type: 'admin-joined', senderRole: 'admin' },
+        });
       }
-      syncChannelRef.current?.send({
-        type: 'broadcast',
-        event: 'state-sync',
-        payload: {
-          type: 'candidate-presence',
-          senderRole: 'candidate',
-          deviceId,
-          enteredAt: candidateEnteredAtRef.current,
-        },
-      });
     }
   }, [stage, isAdmin, deviceId]);
 
@@ -430,6 +454,12 @@ export default function InterviewEntryPage() {
   // Prevents double-firing goToQuestion (e.g. timer + button click at the same time).
   const goingToNextRef = useRef(false);
 
+  // Real-time answer persistence state
+  const lastSavedSpokenTextRef = useRef<string>('');
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isSavingRealtime, setIsSavingRealtime] = useState(false);
+  const [hasSavedRealtime, setHasSavedRealtime] = useState(false);
+
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
     if (line.isFinal) {
       setCurrentSpokenText((prev) => (prev ? `${prev} ${line.text}` : line.text));
@@ -442,6 +472,41 @@ export default function InterviewEntryPage() {
     isCandidateTurn: stage === 'interview' && !isAdmin,
     onTranscriptLine: handleTranscriptLine,
   });
+
+  // Debounced real-time answer persistence to DB while candidate is speaking
+  useEffect(() => {
+    if (stage !== 'interview' || isAdmin) return;
+    const currentQ = questions[currentQuestion];
+    if (!currentQ?.id) return;
+
+    const fullSpoken = currentSpokenText.trim();
+    if (!fullSpoken || fullSpoken === lastSavedSpokenTextRef.current) return;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        setIsSavingRealtime(true);
+        lastSavedSpokenTextRef.current = fullSpoken;
+        await fetch(`/api/interview/${interviewId}/answers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId: currentQ.id, transcript: fullSpoken }),
+        });
+        setHasSavedRealtime(true);
+      } catch (err) {
+        console.warn('[interview] Real-time answer auto-save failed:', err);
+      } finally {
+        setIsSavingRealtime(false);
+      }
+    }, 1200);
+
+    return () => {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    };
+  }, [currentSpokenText, currentQuestion, stage, isAdmin, interviewId, questions]);
 
   // Only the candidate is recorded — never the admin interviewer's side of the call.
   const recordingQuestionId =
@@ -459,6 +524,7 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage === 'interview' && questions[currentQuestion]) {
       const qSec = questions[currentQuestion].time_limit_sec || 120;
+      // eslint-disable-next-line react-hooks/immutability
       questionRemainingSecRef.current = qSec;
       window.setTimeout(() => setQuestionRemainingSec(qSec), 0);
     }
@@ -468,16 +534,21 @@ export default function InterviewEntryPage() {
     if (goingToNextRef.current) return;
     goingToNextRef.current = true;
 
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
     // Capture spoken text before clearing state
     const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
     const currentQ = questions[currentQuestion];
 
     // Real-time answer storing: Immediately persist answer to interview_answers on next question
-    if (currentQ?.id) {
+    if (currentQ?.id && spokenText) {
+      lastSavedSpokenTextRef.current = spokenText;
       void fetch(`/api/interview/${interviewId}/answers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText || '' }),
+        body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText }),
       }).catch((err) => console.warn('[interview] Failed to save answer on next:', err));
     }
 
@@ -491,6 +562,9 @@ export default function InterviewEntryPage() {
 
     setFinalAnswerSubmitted(false);
     setCurrentSpokenText('');
+    lastSavedSpokenTextRef.current = '';
+    setHasSavedRealtime(false);
+    setIsSavingRealtime(false);
     setCurrentQuestion(nextIndex);
 
     syncChannelRef.current?.send({
@@ -506,45 +580,67 @@ export default function InterviewEntryPage() {
   };
 
   const submitFinalAnswer = async () => {
+    if (finalAnswerSubmitted) return;
+    setFinalAnswerSubmitted(true);
+    completedRef.current = true;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
     const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
     const currentQ = questions[currentQuestion];
 
-    // Real-time answer storing: Immediately persist final answer to interview_answers on submit
+    // 1. Immediately persist final transcript to interview_answers in background
     if (currentQ?.id) {
-      await fetch(`/api/interview/${interviewId}/answers`, {
+      lastSavedSpokenTextRef.current = spokenText;
+      void fetch(`/api/interview/${interviewId}/answers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText || '' }),
+        body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText }),
       }).catch((err) => console.warn('[interview] Failed to save final answer:', err));
     }
 
-    await completeTurn(spokenText).catch(console.warn);
-    await stopAndUpload(spokenText).catch(console.warn);
+    // 2. Stop turn and upload recorded audio in background
+    void completeTurn(spokenText).catch(console.warn);
+    void stopAndUpload(spokenText).catch(console.warn);
 
-    setFinalAnswerSubmitted(true);
-    completedRef.current = true;
-    stopAllMedia();
+    // 3. Stop media streams safely
+    try {
+      stopAllMedia();
+    } catch (err) {
+      console.warn('[interview] stopAllMedia error:', err);
+    }
 
-    // Notify backend that session and invite are completed
-    const counts = proctorTrackerRef.current.getWarningCounts();
-    fetch('/api/interview/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        interviewId,
-        warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
-      }),
-    }).catch((err) => {
-      console.warn('[interview] complete API error:', err);
-    });
+    // 4. Notify backend that session and invite are completed
+    try {
+      const counts = proctorTrackerRef.current?.getWarningCounts?.() || { face: 0, object: 0, voice: 0 };
+      void fetch('/api/interview/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewId,
+          warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+        }),
+      }).catch((err) => {
+        console.warn('[interview] complete API error:', err);
+      });
+    } catch (err) {
+      console.warn('[interview] Complete notify error:', err);
+    }
 
-    // Broadcast completion to Admin
-    syncChannelRef.current?.send({
-      type: 'broadcast',
-      event: 'state-sync',
-      payload: { type: 'completed' },
-    });
+    // 5. Broadcast completion to Admin
+    try {
+      syncChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'state-sync',
+        payload: { type: 'completed' },
+      });
+    } catch {
+      // ignore
+    }
 
+    // 6. Transition to completed screen immediately
     setStageWithRef('completed');
   };
 
@@ -671,7 +767,7 @@ export default function InterviewEntryPage() {
       event: 'state-sync',
       payload: { type: 'terminate', reason }
     });
-  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, interviewId]);
+  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, interviewId, completeTurn]);
 
   const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
     const video = cameraVideoRef.current;
@@ -861,6 +957,10 @@ export default function InterviewEntryPage() {
         } catch {
           // ignore
         }
+        if (json.inProgress === false || (json.status && json.status !== 'in_progress')) {
+          setStageWithRef('not_started');
+          return;
+        }
         await requestPermissions(true);
       } else {
         try {
@@ -883,7 +983,7 @@ export default function InterviewEntryPage() {
     (cameraStreamRef.current?.getTracks().length ?? 0) > 0 &&
     cameraStreamRef.current!.getTracks().every((track) => track.readyState === 'live');
 
-  const requestPermissions = async (overrideIsAdmin: boolean = false) => {
+  const requestPermissions = useCallback(async (overrideIsAdmin: boolean = false) => {
     const isAdminUser = isAdmin || overrideIsAdmin;
     setPermissionError(null);
     setRequestingPermissions(true);
@@ -956,7 +1056,11 @@ export default function InterviewEntryPage() {
     } finally {
       setRequestingPermissions(false);
     }
-  };
+  }, [isAdmin, interviewId, setStageWithRef]);
+
+  useEffect(() => {
+    requestPermissionsRef.current = requestPermissions;
+  }, [requestPermissions]);
 
   useEffect(() => {
     if (stage !== 'ready') return;
@@ -970,6 +1074,48 @@ export default function InterviewEntryPage() {
     }
     // Candidate stays on ready stage until clicking 'Join Interview'
   }, [stage, isAdmin, setStageWithRef]);
+
+  const checkInterviewStatus = useCallback(async () => {
+    if (!interviewId) return;
+    setIsCheckingStatus(true);
+    setStatusCheckMessage(null);
+    try {
+      const res = await fetch(`/api/interview/verify?interviewId=${encodeURIComponent(interviewId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.inProgress || data.status === 'in_progress') {
+          setStatusCheckMessage('Candidate has started! Connecting to live interview...');
+          await requestPermissions(true);
+          return;
+        } else {
+          setStatusCheckMessage('Interview has not started yet. Waiting for candidate to start...');
+        }
+      } else if (res.status === 410) {
+        const data = await res.json().catch(() => ({}));
+        if (data.expired || data.used) {
+          setExpiredNote(data.note || data.error || 'Note: This interview link has already been used and is expired.');
+          setStageWithRef('expired');
+        } else if (data.status === 'completed' || data.ended) {
+          setStageWithRef('completed');
+        } else {
+          setTerminationReason(data.error || 'This interview has already ended.');
+          setStageWithRef('terminated');
+        }
+      }
+    } catch {
+      setStatusCheckMessage('Could not verify status. Retrying automatically...');
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  }, [interviewId, requestPermissions, setStageWithRef]);
+
+  useEffect(() => {
+    if (stage !== 'not_started') return;
+    const interval = setInterval(() => {
+      void checkInterviewStatus();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [stage, checkInterviewStatus]);
 
   useProctoringWatchdog({
     active: ['ready', 'calibration', 'interview'].includes(stage),
@@ -1652,6 +1798,71 @@ export default function InterviewEntryPage() {
     );
   }
 
+  if (stage === 'not_started') {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-8">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 text-center space-y-6">
+          <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+            <span className="absolute inline-flex h-full w-full rounded-full bg-[#34c4f2]/20 animate-ping opacity-75" />
+            <div className="relative w-16 h-16 bg-[#34c4f2]/10 border border-[#34c4f2]/30 rounded-2xl flex items-center justify-center text-[#0284c7]">
+              <Clock className="w-8 h-8 text-[#0284c7]" />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/60">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              Waiting for Candidate
+            </span>
+            <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Interview Not Started Yet</h1>
+            <p className="text-sm text-zinc-500 leading-relaxed">
+              The candidate has not accessed the link or started the interview yet. As an administrator, you will be automatically connected to the live session once the candidate begins.
+            </p>
+          </div>
+
+          <div className="bg-zinc-50 border border-zinc-100 rounded-xl p-4 text-xs text-zinc-600 text-left space-y-2">
+            <div className="flex items-center justify-between font-semibold text-zinc-700">
+              <span>Live Observation Mode</span>
+              <span className="text-[#0284c7] flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7] animate-ping" />
+                Listening
+              </span>
+            </div>
+            <p className="text-zinc-500 leading-relaxed">
+              Keep this tab open. When the candidate enters and verifies their identity, this room will instantly transition to the real-time proctoring view.
+            </p>
+            {statusCheckMessage && (
+              <p className="text-xs font-medium text-[#0284c7] pt-1 border-t border-zinc-200/60">
+                {statusCheckMessage}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <button
+              type="button"
+              onClick={checkInterviewStatus}
+              disabled={isCheckingStatus}
+              className="w-full py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-sm disabled:opacity-60"
+            >
+              <RefreshCw className={`w-4 h-4 ${isCheckingStatus ? 'animate-spin' : ''}`} />
+              <span>{isCheckingStatus ? 'Checking Status...' : 'Check Status / Refresh'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleAdminLeave}
+              className="w-full py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Return to Admin Dashboard</span>
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   if (stage === 'ready') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#0b0f14] px-4 py-10">
@@ -1827,19 +2038,25 @@ export default function InterviewEntryPage() {
             {!isAdmin && (
               <div
                 id="answer-recording-status"
-                className="mt-8 flex items-center gap-2 text-xs font-bold uppercase tracking-widest"
+                className="mt-8 flex items-center gap-3 text-xs font-bold uppercase tracking-widest flex-wrap"
               >
                 {answerRecorderStatus === 'recording' && (
-                  <>
+                  <span className="flex items-center gap-2 text-red-600">
                     <span className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-red-600">Recording your voice</span>
-                  </>
+                    Recording your voice
+                  </span>
                 )}
-                {answerRecorderStatus === 'saving' && (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-500" />
-                    <span className="text-zinc-500">Saving your answer</span>
-                  </>
+                {isSavingRealtime && (
+                  <span className="text-sky-600 flex items-center gap-1.5 font-medium normal-case tracking-normal">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600" />
+                    Saving answer to database...
+                  </span>
+                )}
+                {!isSavingRealtime && hasSavedRealtime && (
+                  <span className="text-emerald-600 flex items-center gap-1.5 font-medium normal-case tracking-normal">
+                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                    Answer saved in real time
+                  </span>
                 )}
                 {answerRecorderStatus === 'unsupported' && (
                   <span className="text-amber-600">Answer recording is unavailable in this browser</span>
@@ -1860,25 +2077,21 @@ export default function InterviewEntryPage() {
                 <button
                   id="submit-final-interview-answer"
                   type="button"
-                  disabled={finalAnswerSubmitted || answerRecorderStatus === 'saving' || !hasGivenAnswer}
+                  disabled={finalAnswerSubmitted}
                   onClick={submitFinalAnswer}
-                  className="rounded-xl bg-[#34c4f2] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98]"
+                  className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
                 >
-                  {finalAnswerSubmitted
-                    ? 'Answer submitted'
-                    : !hasGivenAnswer
-                      ? 'Speak your answer to submit'
-                      : 'Submit final answer'}
+                  {finalAnswerSubmitted ? 'Submitting interview...' : 'Submit final answer'}
                 </button>
               ) : (
                 <button
                   id="next-interview-question"
                   type="button"
-                  disabled={currentQuestion === questions.length - 1 || answerRecorderStatus === 'saving' || !hasGivenAnswer}
+                  disabled={currentQuestion === questions.length - 1}
                   onClick={() => goToQuestion(currentQuestion + 1)}
-                  className="rounded-xl bg-[#34c4f2] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98]"
+                  className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
                 >
-                  {!hasGivenAnswer ? 'Speak your answer to continue' : 'Next question'}
+                  Next question
                 </button>
               )}
             </div>

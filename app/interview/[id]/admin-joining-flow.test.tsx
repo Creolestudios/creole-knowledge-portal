@@ -74,7 +74,7 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
       if (typeof url === 'string' && url.includes('/verify')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ verified: true, isAdmin: true, interviewId: 'session-123' }),
+          json: () => Promise.resolve({ verified: true, isAdmin: true, interviewId: 'session-123', status: 'in_progress', inProgress: true }),
         });
       }
       if (typeof url === 'string' && url.includes('/questions')) {
@@ -286,4 +286,175 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
     // Only candidate's own preview remains
     expect(screen.getByLabelText(/you camera preview/i)).toBeInTheDocument();
   });
+
+  it('shows Interview Not Started Yet page when admin joins before interview is started (pending or inProgress: false)', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/verify')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            verified: true,
+            isAdmin: true,
+            interviewId: 'session-123',
+            status: 'pending',
+            inProgress: false,
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), {
+      target: { value: 'admin@creolestudios.com' },
+    });
+    fireEvent.click(screen.getByText('Continue'));
+
+    // Admin should see "Interview Not Started Yet" page
+    expect(await screen.findByText('Interview Not Started Yet')).toBeInTheDocument();
+    expect(screen.getByText(/Waiting for Candidate/i)).toBeInTheDocument();
+    expect(screen.getByText(/The candidate has not accessed the link or started the interview yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Check Status \/ Refresh/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Return to Admin Dashboard/i })).toBeInTheDocument();
+  });
+
+  it('allows admin on Not Started page to return to admin dashboard', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/verify')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            verified: true,
+            isAdmin: true,
+            interviewId: 'session-123',
+            status: 'pending',
+            inProgress: false,
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), {
+      target: { value: 'admin@creolestudios.com' },
+    });
+    fireEvent.click(screen.getByText('Continue'));
+
+    const returnBtn = await screen.findByRole('button', { name: /Return to Admin Dashboard/i });
+    fireEvent.click(returnBtn);
+
+    expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
+  });
+
+  it('automatically connects admin to live interview when candidate broadcast is received', async () => {
+    let currentStatus = 'pending';
+    let currentInProgress = false;
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/verify')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            verified: true,
+            isAdmin: true,
+            interviewId: 'session-123',
+            status: currentStatus,
+            inProgress: currentInProgress,
+          }),
+        });
+      }
+      if (typeof url === 'string' && url.includes('/questions')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [
+              { id: 'q1', question_text: 'Admin observation question', category: 'system_design', question_order: 1 },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), {
+      target: { value: 'admin@creolestudios.com' },
+    });
+    fireEvent.click(screen.getByText('Continue'));
+
+    expect(await screen.findByText('Interview Not Started Yet')).toBeInTheDocument();
+
+    // Now candidate joins/starts and sends broadcast event
+    currentStatus = 'in_progress';
+    currentInProgress = true;
+
+    await act(async () => {
+      mockBroadcastCallback?.({
+        payload: {
+          type: 'candidate-presence',
+          senderRole: 'candidate',
+          deviceId: 'cand_123',
+          enteredAt: Date.now(),
+        },
+      });
+    });
+
+    // Admin should automatically transition to the live interview
+    expect(await screen.findByText('Admin observation question')).toBeInTheDocument();
+  });
+
+  it('transitions admin to live interview when clicking Check Status / Refresh after candidate started', async () => {
+    let currentStatus = 'pending';
+    let currentInProgress = false;
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/verify')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            verified: true,
+            isAdmin: true,
+            interviewId: 'session-123',
+            status: currentStatus,
+            inProgress: currentInProgress,
+          }),
+        });
+      }
+      if (typeof url === 'string' && url.includes('/questions')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [
+              { id: 'q1', question_text: 'Live candidate interview question', category: 'coding', question_order: 1 },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), {
+      target: { value: 'admin@creolestudios.com' },
+    });
+    fireEvent.click(screen.getByText('Continue'));
+
+    const refreshBtn = await screen.findByRole('button', { name: /Check Status \/ Refresh/i });
+    expect(refreshBtn).toBeInTheDocument();
+
+    // Candidate starts now
+    currentStatus = 'in_progress';
+    currentInProgress = true;
+
+    await act(async () => {
+      fireEvent.click(refreshBtn);
+    });
+
+    // Admin should connect to the live interview
+    expect(await screen.findByText('Live candidate interview question')).toBeInTheDocument();
+  });
 });
+
