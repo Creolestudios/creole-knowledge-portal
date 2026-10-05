@@ -342,13 +342,13 @@ export function useAudioVoiceGuard({
           const isAiVoice = avgSpeechEnergy >= 65 && peakEnergy >= 75 && avgFlux < 1.8 && frameCount > 15;
 
           // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
-          // Mild environmental noise, fans, keyboard clicks, breathing, and low background sounds (< 65) are strictly IGNORED.
-          // Real human voice concentrates energy into harmonic formants (peak-to-average formant ratio >= 1.12).
+          // Environmental silence and background hum (< 30) are ignored.
+          // Real human voice concentrates energy into harmonic formants (peak-to-average formant ratio >= 1.08).
           const formantRatio = peakEnergy / (avgSpeechEnergy + 0.001);
-          const isClearSpeech = avgSpeechEnergy >= 68 && peakEnergy >= 80 && formantRatio >= 1.12;
+          const isClearSpeech = avgSpeechEnergy >= 32 && peakEnergy >= 45 && formantRatio >= 1.08;
 
-          // Must be clearly above the room's ambient noise floor (at least 14 units higher)
-          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 14;
+          // Must be clearly above the room's ambient noise floor (at least 6 units higher)
+          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 6;
 
           // (2) Candidate is NOT speaking (mouth not moving), but clear human speech is active in background
           const isBackgroundVoiceWhileSilent =
@@ -356,16 +356,16 @@ export function useAudioVoiceGuard({
             isSilent &&
             isClearSpeech &&
             isAboveNoiseFloor &&
-            avgFlux >= 2.2;
+            avgFlux >= 1.6;
 
           // (1) Candidate IS speaking (mouth moving), but another loud voice is present (dual speaker)
           // Must have distinct non-formant frequency separation (>= 5 bins) and strong energy exceeding candidate level
           const isDualSpeakerPresent =
             !isSilent &&
             Math.abs(peakBin - secondaryPeakBin) >= 5 &&
-            secondaryPeakEnergy >= 75 &&
+            secondaryPeakEnergy >= 55 &&
             secondaryPeakEnergy > actualSpeakerLevel * 1.05 &&
-            avgFlux >= 2.5;
+            avgFlux >= 2.0;
 
           // Any kind of background voice (AI voice, human background voice while silent, or secondary speaker)
           const isVoiceDetected = !isMusic && (isAiVoice || isBackgroundVoiceWhileSilent || isDualSpeakerPresent);
@@ -376,11 +376,11 @@ export function useAudioVoiceGuard({
               voiceDetectedStartAt = nowMs;
             }
             const continuousDurationMs = nowMs - voiceDetectedStartAt;
-            const targetMs = continuousVoiceMsRef.current ?? 8000;
+            const targetMs = continuousVoiceMsRef.current ?? 2500;
             // Frame count equivalence (~16.6ms per frame at 60fps)
             const targetFrames = Math.max(30, Math.round(targetMs / 16.66));
 
-            // Show note when voice is detected continuously for 8 to 10 sec (>= 8000ms or frame threshold)
+            // Show note when voice is detected for ~2-3 sec (>= targetMs or frame threshold)
             if (continuousDurationMs >= targetMs || consecutiveSuspiciousFrames >= targetFrames) {
               voiceDetectedStartAt = 0;
               consecutiveSuspiciousFrames = 0;
@@ -388,8 +388,8 @@ export function useAudioVoiceGuard({
               triggerVoiceWarning('Background voice detected', confidence);
             }
           } else {
-            // Rapid decay: decrease by 10 frames so intermittent noise or pauses don't slowly accumulate
-            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 10);
+            // Gentle decay: decrease by 1 frame so natural speech micro-pauses (100-200ms) don't wipe out the detection
+            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 1);
             if (consecutiveSuspiciousFrames === 0) {
               voiceDetectedStartAt = 0;
             }

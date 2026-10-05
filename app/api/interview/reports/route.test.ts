@@ -65,10 +65,16 @@ vi.mock('@/lib/supabase/admin', () => ({
         };
       }
       if (table === 'interview_events') {
+        const orderMock = vi.fn().mockResolvedValue({ data: mockViolationEvents, error: null });
+        const eqMock = vi.fn().mockReturnValue({ order: orderMock });
+        // Also allow eq to be awaited directly if not followed by order
+        Object.assign(eqMock, {
+          then: (resolve: (v: any) => any) => Promise.resolve({ data: mockViolationEvents, error: null }).then(resolve),
+        });
         return {
           select: vi.fn().mockReturnValue({
             in: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ data: mockViolationEvents, error: null }),
+              eq: eqMock,
             }),
           }),
         };

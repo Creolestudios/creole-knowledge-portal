@@ -108,9 +108,10 @@ export async function POST(req: Request) {
   }
 
   // Update interview_sessions and interview_invites
+  // NOTE: interview_sessions does NOT have a termination_reason column.
+  // The reason is stored in interview_events (event_type: 'proctoring_violation').
   const sessionUpdate: Record<string, unknown> = {
     status: 'cancelled',
-    termination_reason: reason,
     updated_at: now,
   };
 
@@ -120,36 +121,33 @@ export async function POST(req: Request) {
     sessionUpdate.voice_warning_count = warningCounts.voice;
   }
 
-  const updatePromises: Promise<any>[] = [
+  // Supabase builders are PromiseLike — use PromiseLike<unknown>[] which Promise.all accepts
+  const updatePromises: PromiseLike<unknown>[] = [
     supabaseAdmin
       .from('interview_sessions')
       .update(sessionUpdate)
-      .eq('id', targetSessionId),
+      .eq('id', targetSessionId)
+      .then((r) => r),
     supabaseAdmin
       .from('interview_invites')
       .update({ status: 'revoked', completed_at: now })
-      .eq(invite?.id ? 'id' : 'session_id', invite?.id || targetSessionId),
+      .eq(invite?.id ? 'id' : 'session_id', invite?.id || targetSessionId)
+      .then((r) => r),
+    supabaseAdmin
+      .from('interview_events')
+      .insert({
+        session_id: targetSessionId,
+        event_type: 'proctoring_violation',
+        category: 'proctoring_violation',
+        severity: 'critical',
+        metadata: { reason, warningCounts },
+        meta: { reason, warningCounts },
+      })
+      .then((r) => r),
   ];
 
-  try {
-    const eventsTable = supabaseAdmin.from('interview_events');
-    if (typeof eventsTable?.insert === 'function') {
-      updatePromises.push(
-        eventsTable.insert({
-          session_id: targetSessionId,
-          event_type: 'proctoring_violation',
-          category: 'proctoring_violation',
-          severity: 'critical',
-          metadata: { reason, warningCounts },
-          meta: { reason, warningCounts },
-        })
-      );
-    }
-  } catch {
-    // ignore
-  }
-
   await Promise.all(updatePromises);
+
 
   await ensureAllQuestionsAnswered(targetSessionId);
 

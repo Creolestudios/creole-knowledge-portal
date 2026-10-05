@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 const { mockGetUser, mockProfileSingle, mockEq, mockSelect, mockFrom, mockPush } = vi.hoisted(() => {
@@ -53,7 +53,22 @@ async function verifyPasscode() {
 }
 
 describe('InterviewEntryPage', () => {
+  beforeEach(() => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
+  });
+
   afterEach(() => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
     // Prevent dangling fetches from crashing jsdom with Invalid URL
     global.fetch = vi.fn().mockImplementation(() => new Promise(() => {}));
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
@@ -429,5 +444,14 @@ describe('InterviewEntryPage', () => {
 
     fireEvent.click(leaveBtn);
     expect(mockPush).toHaveBeenCalledWith('/admin/dashboard');
+  });
+
+  it('directly shows link expired screen without email/passcode form when link was previously used', () => {
+    localStorage.setItem('interview_used_interview-1', 'true');
+    render(<InterviewEntryPage />);
+    expect(screen.getByText('Link is expired')).toBeInTheDocument();
+    expect(screen.getByText(/Note: This interview link has already been used and is expired/i)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Enter your email')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('000000')).not.toBeInTheDocument();
   });
 });

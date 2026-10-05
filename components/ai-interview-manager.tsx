@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   UploadCloud,
@@ -59,21 +59,33 @@ export default function AIInterviewManager() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [modalCopied, setModalCopied] = useState<'link' | 'code' | null>(null);
 
+  const isFetchingRef = useRef(false);
+
   const fetchInterviews = useCallback(async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const res = await fetch('/api/admin/ai-interviews');
-      const json = await res.json();
-      if (res.ok) setInterviews(json.interviews ?? []);
-    } catch (err) {
-      console.error('[ai-interview-manager] failed to load interviews:', err);
+      if (!res.ok) {
+        return;
+      }
+      const json = await res.json().catch(() => null);
+      if (json && Array.isArray(json.interviews)) {
+        setInterviews(json.interviews);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn('[ai-interview-manager] background load notice:', msg);
     } finally {
+      isFetchingRef.current = false;
       setLoadingList(false);
     }
   }, []);
 
   useEffect(() => {
+    let isMounted = true;
     const initTimer = setTimeout(() => {
-      void fetchInterviews();
+      if (isMounted) void fetchInterviews();
     }, 0);
 
     let channel: any = null;
@@ -82,13 +94,13 @@ export default function AIInterviewManager() {
       channel = supabase
         .channel('admin-ai-interviews-live')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'interview_sessions' }, () => {
-          void fetchInterviews();
+          if (isMounted) void fetchInterviews();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'interview_invites' }, () => {
-          void fetchInterviews();
+          if (isMounted) void fetchInterviews();
         })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'ai_interviews' }, () => {
-          void fetchInterviews();
+          if (isMounted) void fetchInterviews();
         })
         .subscribe();
     } catch (err) {
@@ -96,12 +108,13 @@ export default function AIInterviewManager() {
     }
 
     const pollTimer = setInterval(() => {
-      if (typeof document !== 'undefined' && !document.hidden) {
+      if (typeof document !== 'undefined' && !document.hidden && isMounted) {
         void fetchInterviews();
       }
-    }, 3500);
+    }, 5000);
 
     return () => {
+      isMounted = false;
       clearTimeout(initTimer);
       clearInterval(pollTimer);
       if (channel) {
@@ -159,10 +172,18 @@ export default function AIInterviewManager() {
         throw e;
       }
 
-      const extractJson = await extractRes.json().catch(() => null);
+      let extractJson: (ExtractionResult & { error?: string }) | null = null;
+      try {
+        extractJson = await extractRes.json();
+      } catch {
+        // extractRes was not JSON (e.g. timeout or plain text error)
+      }
 
       if (!extractRes.ok || !extractJson) {
-        throw new Error(extractJson?.error ?? `Failed to analyze resume and job description (${extractRes.status || 'Server error'}).`);
+        throw new Error(
+          extractJson?.error ||
+          `Failed to analyze resume and job description (${extractRes.status || 'Server error'}). Please try again.`
+        );
       }
 
       // Admin-typed candidate/job fields take priority over whatever Gemini

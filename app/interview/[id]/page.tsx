@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import {
   KeyRound,
   Loader2,
@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   AlertTriangle,
   Clock,
+  LogOut,
 } from 'lucide-react';
 import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
 import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
@@ -25,7 +26,7 @@ import { useProctoringWatchdog } from '@/lib/ai-interview/use-proctoring-watchdo
 import { OBJECT_RULES, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 
-type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated';
+type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated' | 'expired';
 
 type InterviewQuestion = {
   id: string;
@@ -38,6 +39,7 @@ type InterviewQuestion = {
 
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
+import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
 import { createClient } from '@/lib/supabase/client';
 import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
 import { useAnswerRecorder } from '@/lib/ai-interview/use-answer-recorder';
@@ -47,9 +49,24 @@ import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcrip
 
 export default function InterviewEntryPage() {
   const params = useParams();
+  const router = useRouter();
   const interviewId = params?.id as string;
 
-  const [stage, setStage] = useState<Stage>('passcode');
+  const [stage, setStage] = useState<Stage>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        if (
+          localStorage.getItem(`interview_used_${interviewId}`) === 'true' ||
+          sessionStorage.getItem(`interview_used_${interviewId}`) === 'true'
+        ) {
+          return 'expired';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return 'passcode';
+  });
   // Always reflects the latest stage so worker callbacks never
   // capture a stale value from their closure.
   const stageRef = useRef<Stage>(stage);
@@ -57,6 +74,40 @@ export default function InterviewEntryPage() {
     stageRef.current = next;
     setStage(next);
   }, []);
+
+  const [expiredNote, setExpiredNote] = useState<string>('Note: This interview link has already been used and is expired.');
+  const [isVerifyingLink, setIsVerifyingLink] = useState<boolean>(() => {
+    if (process.env.NODE_ENV === 'test') return false;
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        if (
+          localStorage.getItem(`interview_used_${interviewId}`) === 'true' ||
+          sessionStorage.getItem(`interview_used_${interviewId}`) === 'true'
+        ) {
+          return false;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return true;
+  });
+
+  const [deviceId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        let stored = sessionStorage.getItem('interview_device_id');
+        if (!stored) {
+          stored = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+          sessionStorage.setItem('interview_device_id', stored);
+        }
+        return stored;
+      } catch {
+        // ignore
+      }
+    }
+    return 'dev_' + Math.random().toString(36).substring(2, 10);
+  });
 
   const [email, setEmail] = useState('');
   const [accessCode, setAccessCode] = useState('');
@@ -96,7 +147,7 @@ export default function InterviewEntryPage() {
   });
   const supabase = createClient();
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
-  
+
   const syncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Link status check on mount to prevent re-accessing completed/terminated links
@@ -110,7 +161,16 @@ export default function InterviewEntryPage() {
         if (!isMounted) return;
         if (res.status === 410) {
           const json = await res.json().catch(() => ({}));
-          if (json.status === 'completed' || json.ended) {
+          try {
+            localStorage.setItem(`interview_used_${interviewId}`, 'true');
+            sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+          } catch {
+            // ignore
+          }
+          if (json.expired || json.used) {
+            setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
+            setStageWithRef('expired');
+          } else if (json.status === 'completed' || json.ended) {
             setStageWithRef('completed');
           } else {
             setTerminationReason(json.error || 'This interview has already ended.');
@@ -118,7 +178,12 @@ export default function InterviewEntryPage() {
           }
         }
       })
-      .catch(() => {});
+      .catch(() => { })
+      .finally(() => {
+        if (isMounted) {
+          setIsVerifyingLink(false);
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -192,14 +257,26 @@ export default function InterviewEntryPage() {
             }, 2500);
           }
         } else {
-          // Candidate side receiving admin sync
+          // Candidate side receiving admin sync and presence checks
           if (payload.type === 'mic-toggle' && payload.senderRole === 'admin') {
             setRemoteMicOn(payload.micOn);
           }
+          if (payload.type === 'candidate-presence' && payload.deviceId && payload.deviceId !== deviceId) {
+            setTerminationReason('An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
+            setStageWithRef('terminated');
+          }
         }
       })
-      .subscribe();
-      
+      .subscribe((status: string) => {
+        if (status === 'SUBSCRIBED' && !isAdmin) {
+          channel.send({
+            type: 'broadcast',
+            event: 'state-sync',
+            payload: { type: 'candidate-presence', deviceId },
+          });
+        }
+      });
+
     syncChannelRef.current = channel;
 
     return () => {
@@ -270,8 +347,7 @@ export default function InterviewEntryPage() {
     if (!recordingQuestionId) return;
     startRecording(recordingQuestionId);
     startTurn();
-    return () => cancelRecording();
-  }, [recordingQuestionId, startRecording, cancelRecording, startTurn]);
+  }, [recordingQuestionId, startRecording, startTurn]);
 
   // Sync question timer on current question or stage change.
   // Using setTimeout to defer setState avoids the react-hooks/set-state-in-effect lint rule;
@@ -288,8 +364,26 @@ export default function InterviewEntryPage() {
     if (goingToNextRef.current) return;
     goingToNextRef.current = true;
 
-    // Advance the UI immediately — do NOT await slow async operations here.
-    const hadAnswer = currentSpokenText.trim().length > 0 || (interimText && interimText.trim().length > 0);
+    // Capture spoken text before clearing state
+    const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
+    const currentQ = questions[currentQuestion];
+
+    // Real-time answer storing: Immediately persist answer to interview_answers on next question
+    if (currentQ?.id) {
+      void fetch(`/api/interview/${interviewId}/answers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText || '' }),
+      }).catch((err) => console.warn('[interview] Failed to save answer on next:', err));
+    }
+
+    // Persist turn metrics and upload recorded audio + client transcript in background
+    void completeTurn(spokenText).catch((err) =>
+      console.warn('[interview] completeTurn error:', err)
+    );
+    void stopAndUpload(spokenText).catch((err) =>
+      console.warn('[interview] stopAndUpload error:', err)
+    );
 
     setFinalAnswerSubmitted(false);
     setCurrentSpokenText('');
@@ -301,31 +395,6 @@ export default function InterviewEntryPage() {
       payload: { type: 'question-change', questionIndex: nextIndex }
     });
 
-    // Fire-and-forget: persist metrics + upload audio in the background.
-    // If the candidate gave no answer, cancel recording to avoid uploading silent audio,
-    // but save a blank answer record so all questions have an entry.
-    const currentQ = questions[currentQuestion];
-    if (hadAnswer) {
-      void completeTurn().catch((err) =>
-        console.warn('[interview] completeTurn error:', err)
-      );
-      void stopAndUpload().catch((err) =>
-        console.warn('[interview] stopAndUpload error:', err)
-      );
-    } else {
-      cancelRecording();
-      void completeTurn().catch((err) =>
-        console.warn('[interview] completeTurn error:', err)
-      );
-      if (currentQ?.id) {
-        void fetch(`/api/interview/${interviewId}/answers`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ questionId: currentQ.id, transcript: '' }),
-        }).catch((err) => console.warn('[interview] Failed to save blank answer:', err));
-      }
-    }
-
     // Reset guard after the state update has propagated.
     window.setTimeout(() => {
       goingToNextRef.current = false;
@@ -333,22 +402,21 @@ export default function InterviewEntryPage() {
   };
 
   const submitFinalAnswer = async () => {
-    const hadAnswer = currentSpokenText.trim().length > 0 || (interimText && interimText.trim().length > 0);
+    const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
     const currentQ = questions[currentQuestion];
-    if (hadAnswer) {
-      await completeTurn();
-      await stopAndUpload();
-    } else {
-      cancelRecording();
-      await completeTurn();
-      if (currentQ?.id) {
-        await fetch(`/api/interview/${interviewId}/answers`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ questionId: currentQ.id, transcript: '' }),
-        }).catch((err) => console.warn('[interview] Failed to save blank answer:', err));
-      }
+
+    // Real-time answer storing: Immediately persist final answer to interview_answers on submit
+    if (currentQ?.id) {
+      await fetch(`/api/interview/${interviewId}/answers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText || '' }),
+      }).catch((err) => console.warn('[interview] Failed to save final answer:', err));
     }
+
+    await completeTurn(spokenText).catch(console.warn);
+    await stopAndUpload(spokenText).catch(console.warn);
+
     setFinalAnswerSubmitted(true);
     completedRef.current = true;
     stopAllMedia();
@@ -400,10 +468,12 @@ export default function InterviewEntryPage() {
   const terminatingRef = useRef(false);
   const faceWorkerRef = useRef<Worker | null>(null);
   const objectWorkerRef = useRef<Worker | null>(null);
+  const objectWorkerReadyRef = useRef<boolean>(false);
   const voiceDetectorRef = useRef<VoiceDetector | null>(null);
   const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
   const baselineRef = useRef<CandidateBaseline | null>(null);
   const missingFramesRef = useRef<Map<string, number>>(new Map());
+  const consecutiveDetectedFramesRef = useRef<Map<string, number>>(new Map());
 
   const stopAllMedia = useCallback(() => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -412,6 +482,11 @@ export default function InterviewEntryPage() {
     screenStreamRef.current = null;
     setCameraStream(null);
   }, []);
+
+  const handleAdminLeave = useCallback(() => {
+    stopAllMedia();
+    router.push('/admin/dashboard');
+  }, [stopAllMedia, router]);
 
   const notifyTermination = useCallback((reason: string) => {
     const counts = proctorTrackerRef.current.getWarningCounts();
@@ -438,41 +513,71 @@ export default function InterviewEntryPage() {
   const terminateInterview = useCallback((reason: string) => {
     if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
     terminatedRef.current = true;
+
+    // Preserve candidate speech and audio recording for current question
+    const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
+    const curQ = questions[currentQuestion];
+    if (curQ?.id && spokenText) {
+      fetch(`/api/interview/${interviewId}/answers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questionId: curQ.id, transcript: spokenText }),
+        keepalive: true,
+      }).catch(console.warn);
+    }
+    void completeTurn(spokenText).catch(console.warn);
+    void stopAndUpload(spokenText).catch(console.warn);
+
     stopAllMedia();
     notifyTermination(reason);
     setTerminationReason(reason);
     setStageWithRef('terminated');
-    
+
     syncChannelRef.current?.send({
       type: 'broadcast',
       event: 'state-sync',
       payload: { type: 'terminate', reason }
     });
-  }, [notifyTermination, stopAllMedia, setStageWithRef]);
+  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, interviewId]);
 
-  const captureEvidenceSnapshot = useCallback(async (category: string) => {
-    if (!cameraVideoRef.current) return;
+  const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
+    const video = cameraVideoRef.current;
+    // Guard: video element must have decoded at least one frame and have valid dimensions
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
+      console.warn('[snapshot] skipping capture — video not ready (readyState:', video?.readyState, ', size:', video?.videoWidth, 'x', video?.videoHeight, ')');
+      return null;
+    }
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = cameraVideoRef.current.videoWidth || 640;
-      canvas.height = cameraVideoRef.current.videoHeight || 480;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(cameraVideoRef.current, 0, 0, canvas.width, canvas.height);
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const formData = new FormData();
-        formData.append('interviewId', interviewId);
-        formData.append('category', category);
-        formData.append('file', blob, 'snapshot.jpg');
-        await fetch('/api/interview/snapshots', {
-          method: 'POST',
-          body: formData,
-        }).catch((err) => console.warn('[snapshot] upload failed:', err));
-      }, 'image/jpeg', 0.8);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.8);
+      });
+      if (!blob) return null;
+
+      const formData = new FormData();
+      formData.append('interviewId', interviewId);
+      formData.append('category', category);
+      formData.append('file', blob, 'snapshot.jpg');
+
+      const res = await fetch('/api/interview/snapshots', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        console.warn('[snapshot] upload failed with status:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      return (data?.path as string) || null;
     } catch (err) {
       console.warn('[snapshot] capture exception:', err);
+      return null;
     }
   }, [interviewId]);
 
@@ -496,19 +601,21 @@ export default function InterviewEntryPage() {
         reason: trackerStatus.reason,
       });
 
-      void captureEvidenceSnapshot('unauthorized_voice');
-
-      fetch('/api/interview/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interviewId,
-          category: 'unauthorized_voice',
-          severity: 'warning',
-          confidence: info.confidence,
-          meta: { warningCount: trackerStatus.warningCount, reason: info.reason },
-        }),
-      }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
+      void (async () => {
+        const snapshotPath = await captureEvidenceSnapshot('unauthorized_voice');
+        await fetch('/api/interview/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            interviewId,
+            category: 'unauthorized_voice',
+            severity: 'warning',
+            confidence: info.confidence,
+            snapshotPath: snapshotPath || undefined,
+            meta: { warningCount: trackerStatus.warningCount, reason: info.reason },
+          }),
+        }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
+      })();
 
       if (trackerStatus.warningCount >= 3 && !terminatingRef.current) {
         terminatingRef.current = true;
@@ -530,7 +637,8 @@ export default function InterviewEntryPage() {
       await captureEvidenceSnapshot('unauthorized_voice');
       return null;
     },
-    readingGracePeriodMs: 8000,
+    readingGracePeriodMs: 0,
+    continuousVoiceMs: 2500,
   });
 
   useEffect(() => {
@@ -547,17 +655,35 @@ export default function InterviewEntryPage() {
     try {
       const res = await fetch('/api/interview/verify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-device-id': deviceId,
+        },
         body: JSON.stringify({
           interviewId,
           accessCode: accessCode.trim() ? accessCode.trim() : undefined,
           email: email.trim() ? email.trim() : undefined,
+          deviceId,
         }),
       });
       const json = await res.json();
 
+      if (res.status === 409 || json.concurrent) {
+        setError(json.error || 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
+        return;
+      }
+
       if (res.status === 410) {
-        if (json.status === 'completed' || json.ended) {
+        try {
+          localStorage.setItem(`interview_used_${interviewId}`, 'true');
+          sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+        } catch {
+          // ignore
+        }
+        if (json.expired || json.used) {
+          setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
+          setStageWithRef('expired');
+        } else if (json.status === 'completed' || json.ended) {
           setStageWithRef('completed');
         } else {
           setTerminationReason(json.error ?? 'This interview has already ended');
@@ -574,6 +700,13 @@ export default function InterviewEntryPage() {
       if (json.requiresAccessCode) {
         setShowAccessCode(true);
         return;
+      }
+
+      try {
+        localStorage.setItem(`interview_used_${interviewId}`, 'true');
+        sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+      } catch {
+        // ignore
       }
 
       if (json.isAdmin) {
@@ -653,7 +786,7 @@ export default function InterviewEntryPage() {
     } catch (err) {
       console.error('[interview-entry] permission request failed:', err);
       const errMsg = err instanceof Error ? err.message : String(err);
-      
+
       // If screenGranted was already set to true, the error happened during the API fetch, not screen sharing.
       if (screenStreamRef.current || isAdminUser) {
         setPermissionError(`Failed to load interview data: ${errMsg}`);
@@ -672,19 +805,14 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage !== 'ready') return;
 
+    // Admin goes directly to the interview room
     if (isAdmin) {
       const adminTimer = window.setTimeout(() => {
         setStageWithRef('interview');
       }, 0);
       return () => window.clearTimeout(adminTimer);
     }
-
-    if (process.env.NODE_ENV === 'test') return;
-
-    const timer = window.setTimeout(() => {
-      setStageWithRef('calibration');
-    }, 3000);
-    return () => window.clearTimeout(timer);
+    // Candidate stays on ready stage until clicking 'Join Interview'
   }, [stage, isAdmin, setStageWithRef]);
 
   useProctoringWatchdog({
@@ -720,7 +848,7 @@ export default function InterviewEntryPage() {
       cameraVideoRef.current.srcObject = stream;
     }
     try {
-      void cameraVideoRef.current.play()?.catch(() => {});
+      void cameraVideoRef.current.play()?.catch(() => { });
     } catch {
       // Ignore synchronous jsdom Not Implemented errors
     }
@@ -736,24 +864,26 @@ export default function InterviewEntryPage() {
     let lastFrameAt = 0;
 
     const captureFrame = async (timestamp: number) => {
-      if (timestamp - lastFrameAt >= 125 && videoElement) {
-        if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      const activeVideo = cameraVideoRef.current || videoElement;
+      if (timestamp - lastFrameAt >= 125 && activeVideo) {
+        if (activeVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
           if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-            frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+            frameRequest = activeVideo.requestVideoFrameCallback(captureFrame);
           }
           return;
         }
         lastFrameAt = timestamp;
         try {
-          const bitmap = await createImageBitmap(videoElement);
+          const bitmap = await createImageBitmap(activeVideo);
           worker.postMessage({ type: 'frame', bitmap, timestamp }, [bitmap]);
         } catch (err) {
           setFaceTrackingStatus('error');
           setFaceTrackingError(err instanceof Error ? err.message : 'Camera frame could not be read.');
         }
       }
-      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-        frameRequest = videoElement?.requestVideoFrameCallback(captureFrame) || 0;
+      const nextVideo = cameraVideoRef.current || videoElement;
+      if (nextVideo && 'requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        frameRequest = nextVideo.requestVideoFrameCallback(captureFrame);
       }
     };
 
@@ -762,16 +892,18 @@ export default function InterviewEntryPage() {
     }, 125);
 
     const startTimer = window.setTimeout(() => {
-      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && videoElement) {
-        frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+      const nextVideo = cameraVideoRef.current || videoElement;
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && nextVideo) {
+        frameRequest = nextVideo.requestVideoFrameCallback(captureFrame);
       }
     }, 250);
 
     return () => {
       window.clearTimeout(startTimer);
       window.clearInterval(captureTimer);
-      if (frameRequest && videoElement?.cancelVideoFrameCallback) {
-        videoElement.cancelVideoFrameCallback(frameRequest);
+      const activeVideo = cameraVideoRef.current || videoElement;
+      if (frameRequest && activeVideo?.cancelVideoFrameCallback) {
+        activeVideo.cancelVideoFrameCallback(frameRequest);
       }
     };
   };
@@ -904,17 +1036,37 @@ export default function InterviewEntryPage() {
             reason: trackerStatus.reason,
           });
 
-          void captureEvidenceSnapshot(trackerStatus.category);
-          fetch('/api/interview/events', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              interviewId,
-              category: trackerStatus.category,
-              severity: 'warning',
-              meta: { warningCount: trackerStatus.warningCount, reason: trackerStatus.reason },
-            }),
-          }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
+          // Broadcast warning to admin monitoring channel immediately (same as object detection path)
+          if (!isAdmin) {
+            try {
+              syncChannelRef.current?.send({
+                type: 'broadcast',
+                event: 'state-sync',
+                payload: {
+                  type: 'warning-alert',
+                  count: trackerStatus.warningCount,
+                  reason: trackerStatus.reason,
+                  category: trackerStatus.category,
+                  ts: Date.now(),
+                },
+              });
+            } catch { }
+          }
+
+          void (async () => {
+            const snapshotPath = await captureEvidenceSnapshot(trackerStatus.category);
+            await fetch('/api/interview/events', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                interviewId,
+                category: trackerStatus.category,
+                severity: 'warning',
+                snapshotPath: snapshotPath || undefined,
+                meta: { warningCount: trackerStatus.warningCount, reason: trackerStatus.reason },
+              }),
+            }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
+          })();
 
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
@@ -962,22 +1114,53 @@ export default function InterviewEntryPage() {
   // Starting during calibration wastes resources and may log false object
   // warnings before the candidate has even reached the interview screen.
   useEffect(() => {
-    if (stage !== 'interview' || isAdmin) return;
+    if (isAdmin || stage === 'completed' || stage === 'terminated') return;
     if (typeof Worker === 'undefined') {
       console.warn('[ObjectDetection] Web Workers not supported in this browser environment');
       return;
     }
 
-    console.log('%c[ObjectDetection] Initializing Object Detection Worker in stage: interview...', 'color: #06b6d4; font-weight: bold;');
-    const worker = new Worker(
-      new URL('../../../lib/ai-interview/object-detection.worker.ts', import.meta.url),
-    );
-    objectWorkerRef.current = worker;
+    if (!['permissions', 'calibration', 'ready', 'interview'].includes(stage)) return;
+
+    let worker = objectWorkerRef.current;
+    if (!worker) {
+      console.log(`%c[ObjectDetection] Pre-initializing Object Detection Worker early in stage: ${stage}...`, 'color: #06b6d4; font-weight: bold;');
+      worker = new Worker(
+        new URL('../../../lib/ai-interview/object-detection.worker.ts', import.meta.url),
+      );
+      objectWorkerRef.current = worker;
+      objectWorkerReadyRef.current = false;
+      worker.postMessage({ type: 'init' });
+    }
+
     let frameTimerRef: number | null = null;
     let frameCount = 0;
 
     worker.onerror = (err) => {
       console.warn('%c[ObjectDetection Error] Worker runtime exception:', 'color: #ef4444; font-weight: bold;', err);
+    };
+
+    const startCaptureLoop = () => {
+      if (frameTimerRef !== null) return;
+      console.log('%c[ObjectDetection] ✅ Worker model is READY. Starting camera frame capture loop (100ms)...', 'color: #10b981; font-weight: bold;');
+      frameTimerRef = window.setInterval(() => {
+        if (stageRef.current !== 'interview') return;
+        const video = cameraVideoRef.current;
+        if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          return;
+        }
+        createImageBitmap(video)
+          .then((bitmap) => {
+            frameCount += 1;
+            if (frameCount % 20 === 1) {
+              console.log(`[ObjectDetection] Captured frame #${frameCount} (${bitmap.width}x${bitmap.height}), running inference...`);
+            }
+            worker?.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
+          })
+          .catch((err) => {
+            console.warn('[ObjectDetection] Frame capture error:', err);
+          });
+      }, 100);
     };
 
     worker.onmessage = (event: MessageEvent<{ type: string; detections?: DetectedObjectEvent[]; message?: string }>) => {
@@ -988,33 +1171,19 @@ export default function InterviewEntryPage() {
         return;
       }
 
-      // ── Model ready: start sending frames NOW (not before) ──
+      // ── Model ready: start sending frames NOW if in interview stage ──
       if (msg.type === 'ready') {
-        console.log('%c[ObjectDetection] ✅ Worker model is READY. Starting camera frame capture loop (250ms)...', 'color: #10b981; font-weight: bold;');
-        frameTimerRef = window.setInterval(() => {
-          const video = cameraVideoRef.current;
-          if (!video) {
-            return;
-          }
-          if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-            return;
-          }
-          createImageBitmap(video)
-            .then((bitmap) => {
-              frameCount += 1;
-              if (frameCount % 10 === 1) {
-                console.log(`[ObjectDetection] Captured frame #${frameCount} (${bitmap.width}x${bitmap.height}), running inference...`);
-              }
-              worker.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
-            })
-            .catch((err) => {
-              console.warn('[ObjectDetection] Frame capture error:', err);
-            });
-        }, 150); // 150ms — real-time responsive object detection
+        console.log('%c[ObjectDetection] ✅ Worker model is READY.', 'color: #10b981; font-weight: bold;');
+        objectWorkerReadyRef.current = true;
+        if (stageRef.current === 'interview') {
+          startCaptureLoop();
+        }
         return;
       }
 
+      // Only process object detection results during active interview — not during pre-init stages
       if (msg.type !== 'result' || !msg.detections || terminatingRef.current) return;
+      if (stageRef.current !== 'interview') return;
 
       // ── Log raw detections for debugging ──
       if (msg.detections.length > 0) {
@@ -1036,6 +1205,14 @@ export default function InterviewEntryPage() {
         seenSubKeys.add(subKey);
         missingFramesRef.current.set(subKey, 0);
 
+        // Require at least 2 consecutive frames (100-200ms) to filter out single-frame optical glitches,
+        // while remaining instantaneous for any real object shown by candidate.
+        const consecutiveCount = (consecutiveDetectedFramesRef.current.get(subKey) || 0) + 1;
+        consecutiveDetectedFramesRef.current.set(subKey, consecutiveCount);
+        if (consecutiveCount < 2) {
+          continue;
+        }
+
         const trackerStatus = proctorTrackerRef.current.processGenericEvent(
           rule.category,
           subKey,
@@ -1051,35 +1228,59 @@ export default function InterviewEntryPage() {
             'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
           );
 
+          // 1. Direct synchronous capture snapshot from live video frame FIRST
+          const snapshotPromise = captureEvidenceSnapshot('object');
+
+          // 2. Direct show warning toast to user
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
             reason: trackerStatus.reason,
           });
 
+          // Also broadcast realtime sync for admin monitoring immediately
+          if (!isAdmin) {
+            try {
+              syncChannelRef.current?.send({
+                type: 'broadcast',
+                event: 'state-sync',
+                payload: {
+                  type: 'warning-alert',
+                  count: trackerStatus.warningCount,
+                  reason: trackerStatus.reason,
+                  category: 'object',
+                  ts: Date.now(),
+                },
+              });
+            } catch { }
+          }
+
           // Auto-dismiss warning toast after 5 seconds if not dismissed manually
           window.setTimeout(() => {
             setWarningToast((prev) => (prev.count === trackerStatus.warningCount ? { ...prev, show: false } : prev));
           }, 5000);
 
-          // Evidence snapshot + DB event
-          void captureEvidenceSnapshot(rule.category);
-          fetch('/api/interview/events', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              interviewId,
-              category: rule.category,
-              severity: rule.severity,
-              confidence: detection.confidence,
-              meta: {
-                object: rule.object,
+          // Evidence snapshot + DB event with snapshot_path
+          void (async () => {
+            const snapshotPath = await snapshotPromise;
+            await fetch('/api/interview/events', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                interviewId,
+                category: 'object',
+                severity: rule.severity,
                 confidence: detection.confidence,
-                boundingBox: detection.boundingBox,
-                warningCount: trackerStatus.warningCount,
-              },
-            }),
-          }).catch((err) => console.warn('[object-event] fetch failed:', err));
+                snapshotPath: snapshotPath || undefined,
+                meta: {
+                  object: rule.object,
+                  confidence: detection.confidence,
+                  boundingBox: detection.boundingBox,
+                  warningCount: trackerStatus.warningCount,
+                },
+              }),
+            }).catch((err) => console.warn('[object-event] fetch failed:', err));
+          })();
 
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
@@ -1089,13 +1290,17 @@ export default function InterviewEntryPage() {
               }, 3000);
             }
           }
+
+          // Enforce 1 alert per detection cycle and respect category break
+          break;
         }
       }
 
       // Clear timers for objects not seen after a 2-frame grace period
-      const allObjectSubKeys = Object.values(OBJECT_RULES).map((r) => r.object);
+      const allObjectSubKeys = Object.keys(OBJECT_RULES);
       for (const subKey of allObjectSubKeys) {
         if (!seenSubKeys.has(subKey)) {
+          consecutiveDetectedFramesRef.current.set(subKey, 0);
           const missCount = (missingFramesRef.current.get(subKey) || 0) + 1;
           missingFramesRef.current.set(subKey, missCount);
           if (missCount >= 2) {
@@ -1105,17 +1310,20 @@ export default function InterviewEntryPage() {
       }
     };
 
-    console.log('[ObjectDetection] Sending init to worker');
-    worker.postMessage({ type: 'init' });
-    // NOTE: frame timer is started inside the 'ready' handler above — NOT here.
-    // This prevents frames being dropped while the COCO-SSD model is still loading.
+    // If already in interview stage and model was already loaded, start loop immediately
+    if (stage === 'interview' && objectWorkerReadyRef.current) {
+      startCaptureLoop();
+    }
 
     return () => {
       if (frameTimerRef) window.clearInterval(frameTimerRef);
-      worker.terminate();
-      objectWorkerRef.current = null;
+      if (stage === 'completed' || stage === 'terminated') {
+        worker?.terminate();
+        objectWorkerRef.current = null;
+        objectWorkerReadyRef.current = false;
+      }
     };
-  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- worker uses stable refs
+  }, [stage, isAdmin, captureEvidenceSnapshot, interviewId, terminateInterview]);
 
   // ── Auto-dismiss warning toast after 5 seconds ──
   useEffect(() => {
@@ -1137,7 +1345,7 @@ export default function InterviewEntryPage() {
           completedRef.current = true;
           stopAllMedia();
           if (!isAdmin) {
-            fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch(() => {});
+            fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch(() => { });
           }
           setStageWithRef('completed');
           return 0;
@@ -1242,6 +1450,21 @@ export default function InterviewEntryPage() {
     setCameraStream(newStream);
   };
 
+  if (stage === 'expired') {
+    return <ExpiredInterviewLink note={expiredNote} isUsed={true} />;
+  }
+
+  if (isVerifyingLink) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="w-10 h-10 border-3 border-zinc-200 border-t-[#34c4f2] rounded-full animate-spin" />
+          <p className="text-sm font-medium text-zinc-500">Checking interview status...</p>
+        </div>
+      </main>
+    );
+  }
+
   if (stage === 'terminated') {
     return <TerminatedInterview terminationReason={terminationReason} />;
   }
@@ -1270,7 +1493,7 @@ export default function InterviewEntryPage() {
             <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-1" />
             <h1 className="text-xl font-bold text-white">You&apos;re verified</h1>
             <p className="text-sm text-zinc-400">
-              Your camera, mic, and screen share are live. Please wait while we initialize the face tracking calibration.
+              Your camera, mic, and screen share are live. Click Join Interview below to begin the calibration test.
             </p>
           </div>
 
@@ -1282,6 +1505,20 @@ export default function InterviewEntryPage() {
             onOpenSettings={() => setSettingsOpen(true)}
             settingsEnabled
           />
+
+          {!isAdmin && (
+            <button
+              id="interview-join-btn"
+              type="button"
+              onClick={() => {
+                setCalibrationProgress(0);
+                setStageWithRef(process.env.NODE_ENV === 'test' ? 'interview' : 'calibration');
+              }}
+              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer"
+            >
+              <span>Join Interview</span>
+            </button>
+          )}
 
           <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-center">
             Stay on this tab and keep your camera, microphone, and screen share on — switching
@@ -1339,11 +1576,10 @@ export default function InterviewEntryPage() {
         {/* Admin Monitoring / Termination / Completion Alert Banner */}
         {adminBanner.show && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
-            <div className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border ${
-              adminBanner.type === 'terminate'
+            <div className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border ${adminBanner.type === 'terminate'
                 ? 'bg-red-600 border-red-500'
                 : 'bg-emerald-600 border-emerald-500'
-            }`}>
+              }`}>
               <div className="flex items-center space-x-3">
                 {adminBanner.type === 'terminate' ? (
                   <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
@@ -1378,11 +1614,10 @@ export default function InterviewEntryPage() {
                 {/* Per-Question Countdown Timer as mentioned for each question */}
                 <div
                   id="interview-question-timer-badge"
-                  className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${
-                    questionRemainingSec <= 30
+                  className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${questionRemainingSec <= 30
                       ? 'bg-red-600 text-white animate-pulse'
                       : 'bg-blue-600 text-white'
-                  }`}
+                    }`}
                   title="Time remaining for this specific question"
                 >
                   <Clock className="w-4 h-4" />
@@ -1401,6 +1636,19 @@ export default function InterviewEntryPage() {
                 <span className="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-700">
                   {question?.difficulty || 'Medium'}
                 </span>
+
+                {isAdmin && (
+                  <button
+                    id="admin-leave-interview-btn"
+                    type="button"
+                    onClick={handleAdminLeave}
+                    className="flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer ml-1"
+                    title="Leave live interview and return to admin dashboard"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-red-600" />
+                    <span>Leave</span>
+                  </button>
+                )}
               </div>
             </div>
             <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1689aa]">
@@ -1452,8 +1700,8 @@ export default function InterviewEntryPage() {
                   {finalAnswerSubmitted
                     ? 'Answer submitted'
                     : !hasGivenAnswer
-                    ? 'Speak your answer to submit'
-                    : 'Submit final answer'}
+                      ? 'Speak your answer to submit'
+                      : 'Submit final answer'}
                 </button>
               ) : (
                 <button
@@ -1493,24 +1741,24 @@ export default function InterviewEntryPage() {
 
               {remoteStream ? (
                 <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-2xl">
-                  <MeetingVideoTile 
-                    stream={remoteStream} 
-                    micOn={remoteMicOn} 
-                    size="large" 
-                    label={isAdmin ? 'Candidate' : 'Interviewer'} 
-                    muted={false} 
+                  <MeetingVideoTile
+                    stream={remoteStream}
+                    micOn={remoteMicOn}
+                    size="large"
+                    label={isAdmin ? 'Candidate' : 'Interviewer'}
+                    muted={false}
                     mirror={false}
-                    videoRef={remoteVideoRef} 
+                    videoRef={remoteVideoRef}
                   />
                   <div className="absolute bottom-4 right-4 w-1/3 max-w-[130px] shadow-2xl rounded-xl overflow-hidden border-2 border-zinc-700 bg-zinc-900 z-10">
-                    <MeetingVideoTile 
-                      stream={cameraStream} 
-                      micOn={micOn} 
-                      size="small" 
-                      label={isAdmin ? 'You (Admin)' : 'You'} 
-                      muted={true} 
+                    <MeetingVideoTile
+                      stream={cameraStream}
+                      micOn={micOn}
+                      size="small"
+                      label={isAdmin ? 'You (Admin)' : 'You'}
+                      muted={true}
                       mirror={true}
-                      videoRef={cameraVideoRef} 
+                      videoRef={cameraVideoRef}
                     />
                   </div>
                 </div>

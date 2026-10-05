@@ -23,6 +23,7 @@ vi.mock('@/lib/supabase/admin', () => ({
           eq: vi.fn().mockReturnValue({ single: singleFn }),
         }),
         update: (...args: any[]) => mockUpdate(...args),
+        insert: vi.fn().mockReturnValue(Promise.resolve({ data: null, error: null })),
       };
     }),
   },
@@ -99,7 +100,7 @@ describe('POST /api/interview/terminate', () => {
     const body = await res.json();
     expect(body.terminated).toBe(true);
     expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'cancelled', termination_reason: 'Multiple faces detected' }),
+      expect.objectContaining({ status: 'cancelled' }),
     );
   });
 });

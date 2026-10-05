@@ -159,20 +159,24 @@ export function useRealtimeTranscript({
 
   // Completes a turn: flushes the full accumulated answer as ONE transcript row and saves turn metrics.
   const completeTurn = useCallback(
-    async (unauthorizedVoiceDetected = false) => {
+    async (overrideText?: string, unauthorizedVoiceDetected = false) => {
       const now = Date.now();
       const responseLatencyMs = speechStartRef.current > 0
         ? Math.max(0, speechStartRef.current - turnStartTimeRef.current)
         : 0;
 
       const totalSpeechMs = speechMsAccumRef.current;
-      // Use the ref so we always get the latest value even if called right after state update.
-      const fullAnswerText = accumulatedTextRef.current;
-      const totalWords = fullAnswerText.split(/\s+/).filter(Boolean).length;
+      // Use the overrideText if provided (e.g. currentSpokenText from UI), else fallback to accumulated ref
+      const fullAnswerText = (overrideText !== undefined && overrideText !== null && overrideText.trim())
+        ? overrideText.trim()
+        : accumulatedTextRef.current.trim();
+      const totalWords = fullAnswerText ? fullAnswerText.split(/\s+/).filter(Boolean).length : 0;
       const { count: fillerCount } = countFillerWords(fullAnswerText);
 
-      // Persist the whole answer as a single consolidated DB row.
-      await persistFullAnswer(fullAnswerText);
+      // Persist the whole answer as a single consolidated DB row ONLY if non-empty
+      if (fullAnswerText) {
+        await persistFullAnswer(fullAnswerText);
+      }
 
       if (!interviewId) return;
 

@@ -30,20 +30,33 @@ export async function POST(
     const targetSessionId = (await resolveInterviewSessionId(id)) || id;
     const now = new Date().toISOString();
 
-    await Promise.all([
-      supabaseAdmin
-        .from('interview_sessions')
-        .update({ status: 'completed', updated_at: now })
-        .eq('id', targetSessionId),
-      supabaseAdmin
-        .from('interview_invites')
-        .update({ status: 'completed', completed_at: now })
-        .eq('session_id', targetSessionId),
-      supabaseAdmin
-        .from('ai_interviews')
-        .update({ status: 'completed' })
-        .eq('id', targetSessionId),
-    ]).catch((err) => console.warn('[interview-score] Status update warning:', err));
+    // Check if session was terminated — never flip a terminated session to 'completed'
+    const { data: currentSession } = await supabaseAdmin
+      .from('interview_sessions')
+      .select('status')
+      .eq('id', targetSessionId)
+      .maybeSingle();
+
+    const isTerminated =
+      currentSession?.status === 'cancelled' ||
+      currentSession?.status === 'terminated';
+
+    if (!isTerminated) {
+      await Promise.all([
+        supabaseAdmin
+          .from('interview_sessions')
+          .update({ status: 'completed', updated_at: now })
+          .eq('id', targetSessionId),
+        supabaseAdmin
+          .from('interview_invites')
+          .update({ status: 'completed', completed_at: now })
+          .eq('session_id', targetSessionId),
+        supabaseAdmin
+          .from('ai_interviews')
+          .update({ status: 'completed' })
+          .eq('id', targetSessionId),
+      ]).catch((err) => console.warn('[interview-score] Status update warning:', err));
+    }
 
     const result = await scoreInterviewSession({ sessionId: targetSessionId });
     return NextResponse.json({ ok: true, result });

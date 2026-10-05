@@ -31,7 +31,7 @@ import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
 
-type Stage = 'passcode' | 'instructions' | 'permissions' | 'ready' | 'calibration' | 'interview' | 'completed' | 'terminated';
+type Stage = 'passcode' | 'instructions' | 'permissions' | 'ready' | 'calibration' | 'interview' | 'completed' | 'terminated' | 'expired';
 
 interface AssessQuestion {
   id: string;
@@ -46,20 +46,69 @@ interface AssessQuestion {
 
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
+import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
 
 export default function CandidateAssessmentPage({ initialToken }: { initialToken?: string } = {}) {
   const params = useParams();
   const token = initialToken || (params?.token as string) || (params?.id as string);
 
-  const [stage, setStage] = useState<Stage>('passcode');
+  const [stage, setStage] = useState<Stage>(() => {
+    if (typeof window !== 'undefined' && token) {
+      try {
+        if (
+          localStorage.getItem(`assess_used_${token}`) === 'true' ||
+          sessionStorage.getItem(`assess_used_${token}`) === 'true'
+        ) {
+          return 'expired';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return 'passcode';
+  });
 
   // ── stageRef: always reflects the latest stage so worker callbacks
   // never capture a stale value from their closure.
-  const stageRef = useRef<Stage>('passcode');
+  const stageRef = useRef<Stage>(stage);
   const setStageWithRef = useCallback((next: Stage) => {
     stageRef.current = next;
     setStage(next);
   }, []);
+
+  const [expiredNote, setExpiredNote] = useState<string>('Note: This interview link has already been used and is expired.');
+  const [isVerifyingLink, setIsVerifyingLink] = useState<boolean>(() => {
+    if (process.env.NODE_ENV === 'test') return false;
+    if (typeof window !== 'undefined' && token) {
+      try {
+        if (
+          localStorage.getItem(`assess_used_${token}`) === 'true' ||
+          sessionStorage.getItem(`assess_used_${token}`) === 'true'
+        ) {
+          return false;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return true;
+  });
+
+  const [deviceId] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        let stored = sessionStorage.getItem('assess_device_id');
+        if (!stored) {
+          stored = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+          sessionStorage.setItem('assess_device_id', stored);
+        }
+        return stored;
+      } catch {
+        // ignore
+      }
+    }
+    return 'dev_' + Math.random().toString(36).substring(2, 10);
+  });
 
   const [passcode, setPasscode] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -105,6 +154,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const completedRef = useRef(false);
 
   // ── Refs ──
+  const interimTextRef = useRef('');
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -117,6 +167,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
   const baselineRef = useRef<CandidateBaseline | null>(null);
   const missingFramesRef = useRef<Map<string, number>>(new Map());
+  const consecutiveDetectedFramesRef = useRef<Map<string, number>>(new Map());
   const isSubmittingAnswerRef = useRef(false);
   const autoSubmittedQuestionIdxRef = useRef<number | null>(null);
   const lastSpeechAtRef = useRef<number>(0);
@@ -157,34 +208,60 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const terminateInterview = useCallback((reason: string) => {
     if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
     terminatedRef.current = true;
+
+    // Flush and save candidate's current answer if any speech was recorded
+    const curQ = questions[currentIndex];
+    const liveInterim = interimTextRef.current.trim();
+    const currentSpeech = (answerText ? liveInterim ? `${answerText.trim()} ${liveInterim}` : answerText.trim() : liveInterim).trim();
+    if (curQ?.id && currentSpeech) {
+      fetch(`/api/assess/${token}/answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: curQ.id, transcript: currentSpeech }),
+        keepalive: true,
+      }).catch(console.warn);
+    }
+
     stopAllMedia();
     notifyTermination(reason);
     setTerminationReason(reason);
     setStageWithRef('terminated');
-  }, [notifyTermination, stopAllMedia, setStageWithRef]);
+  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentIndex, answerText, token]);
 
-  const captureEvidenceSnapshot = useCallback(async (category: string) => {
-    if (!cameraVideoRef.current) return;
+  const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
+    const video = cameraVideoRef.current;
+    if (!video) return null;
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = cameraVideoRef.current.videoWidth || 640;
-      canvas.height = cameraVideoRef.current.videoHeight || 480;
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
       const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.drawImage(cameraVideoRef.current, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const formData = new FormData();
-        formData.append('token', token);
-        formData.append('category', category);
-        formData.append('file', blob, 'snapshot.jpg');
-        await fetch('/api/assess/snapshots', {
-          method: 'POST',
-          body: formData,
-        }).catch((err) => console.warn('[assess-snapshot] upload failed:', err));
-      }, 'image/jpeg', 0.8);
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.8);
+      });
+      if (!blob) return null;
+
+      const formData = new FormData();
+      formData.append('token', token);
+      formData.append('category', category);
+      formData.append('file', blob, 'snapshot.jpg');
+
+      const res = await fetch('/api/assess/snapshots', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        console.warn('[assess-snapshot] upload failed with status:', res.status);
+        return null;
+      }
+      const data = await res.json();
+      return (data?.path as string) || null;
     } catch (err) {
       console.warn('[assess-snapshot] capture exception:', err);
+      return null;
     }
   }, [token]);
 
@@ -195,6 +272,41 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     };
   }, [stopAllMedia]);
 
+  // Initial link verification on mount to check if link was once used / expired
+  useEffect(() => {
+    if (!token) return;
+    if (process.env.NODE_ENV === 'test') return;
+    let isMounted = true;
+
+    fetch(`/api/assess/${encodeURIComponent(token)}/verify`)
+      .then(async (res) => {
+        if (!isMounted) return;
+        if (res.status === 410) {
+          const json = await res.json().catch(() => ({}));
+          try {
+            localStorage.setItem(`assess_used_${token}`, 'true');
+            sessionStorage.setItem(`assess_used_${token}`, 'true');
+          } catch {
+            // ignore
+          }
+          if (json.expired || json.used) {
+            setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
+            setStageWithRef('expired');
+          }
+        }
+      })
+      .catch(() => { })
+      .finally(() => {
+        if (isMounted) {
+          setIsVerifyingLink(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [token, setStageWithRef]);
+
   const handleSubmitPasscode = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -203,14 +315,41 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     try {
       const res = await fetch(`/api/assess/${token}/verify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ passcode }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-device-id': deviceId,
+        },
+        body: JSON.stringify({ passcode, deviceId }),
       });
       const json = await res.json();
+
+      if (res.status === 409 || json.concurrent) {
+        setError(json.error || 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
+        return;
+      }
+
+      if (res.status === 410) {
+        try {
+          localStorage.setItem(`assess_used_${token}`, 'true');
+          sessionStorage.setItem(`assess_used_${token}`, 'true');
+        } catch {
+          // ignore
+        }
+        setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
+        setStageWithRef('expired');
+        return;
+      }
 
       if (!res.ok) {
         setError(json.error ?? 'Verification failed');
         return;
+      }
+
+      try {
+        localStorage.setItem(`assess_used_${token}`, 'true');
+        sessionStorage.setItem(`assess_used_${token}`, 'true');
+      } catch {
+        // ignore
       }
 
       if (json.session_id) {
@@ -411,24 +550,26 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     let lastFrameAt = 0;
 
     const captureFrame = async (timestamp: number) => {
-      if (timestamp - lastFrameAt >= 125 && videoElement) {
-        if (videoElement.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      const activeVideo = cameraVideoRef.current || videoElement;
+      if (timestamp - lastFrameAt >= 125 && activeVideo) {
+        if (activeVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
           if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-            frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+            frameRequest = activeVideo.requestVideoFrameCallback(captureFrame);
           }
           return;
         }
         lastFrameAt = timestamp;
         try {
-          const bitmap = await createImageBitmap(videoElement);
+          const bitmap = await createImageBitmap(activeVideo);
           worker.postMessage({ type: 'frame', bitmap, timestamp }, [bitmap]);
         } catch (err) {
           setFaceTrackingStatus('error');
           setFaceTrackingError(err instanceof Error ? err.message : 'Camera frame could not be read.');
         }
       }
-      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
-        frameRequest = videoElement?.requestVideoFrameCallback(captureFrame) || 0;
+      const nextVideo = cameraVideoRef.current || videoElement;
+      if (nextVideo && 'requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+        frameRequest = nextVideo.requestVideoFrameCallback(captureFrame);
       }
     };
 
@@ -437,16 +578,18 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     }, 125);
 
     const startTimer = window.setTimeout(() => {
-      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && videoElement) {
-        frameRequest = videoElement.requestVideoFrameCallback(captureFrame);
+      const nextVideo = cameraVideoRef.current || videoElement;
+      if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && nextVideo) {
+        frameRequest = nextVideo.requestVideoFrameCallback(captureFrame);
       }
     }, 250);
 
     return () => {
       window.clearTimeout(startTimer);
       window.clearInterval(captureTimer);
-      if (frameRequest && videoElement?.cancelVideoFrameCallback) {
-        videoElement.cancelVideoFrameCallback(frameRequest);
+      const activeVideo = cameraVideoRef.current || videoElement;
+      if (frameRequest && activeVideo?.cancelVideoFrameCallback) {
+        activeVideo.cancelVideoFrameCallback(frameRequest);
       }
     };
   };
@@ -566,16 +709,19 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
             reason: trackerStatus.reason,
           });
 
-          void captureEvidenceSnapshot(trackerStatus.category);
-          fetch(`/api/assess/${token}/events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              category: trackerStatus.category,
-              severity: 'warning',
-              meta: { warningCount: trackerStatus.warningCount, reason: trackerStatus.reason },
-            }),
-          }).catch((err) => console.warn('[assess-proctor-event] fetch failed:', err));
+          void (async () => {
+            const snapshotPath = await captureEvidenceSnapshot(trackerStatus.category);
+            await fetch(`/api/assess/${token}/events`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                category: trackerStatus.category,
+                severity: 'warning',
+                snapshotPath: snapshotPath || undefined,
+                meta: { warningCount: trackerStatus.warningCount, reason: trackerStatus.reason },
+              }),
+            }).catch((err) => console.warn('[assess-proctor-event] fetch failed:', err));
+          })();
 
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
@@ -715,6 +861,14 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         seenSubKeys.add(subKey);
         missingFramesRef.current.set(subKey, 0);
 
+        // Require at least 2 consecutive frames (100-200ms) to filter out single-frame optical glitches,
+        // while remaining instantaneous for any real object shown by candidate.
+        const consecutiveCount = (consecutiveDetectedFramesRef.current.get(subKey) || 0) + 1;
+        consecutiveDetectedFramesRef.current.set(subKey, consecutiveCount);
+        if (consecutiveCount < 2) {
+          continue;
+        }
+
         const trackerStatus = proctorTrackerRef.current.processGenericEvent(
           rule.category,
           subKey,
@@ -730,6 +884,10 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
             'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
           );
 
+          // 1. Direct synchronous capture snapshot from live video frame FIRST
+          const snapshotPromise = captureEvidenceSnapshot('object');
+
+          // 2. Direct show warning toast to user
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
@@ -741,16 +899,20 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
             setWarningToast((prev) => (prev.count === trackerStatus.warningCount ? { ...prev, show: false } : prev));
           }, 5000);
 
-          void captureEvidenceSnapshot(rule.category);
-          fetch(`/api/assess/${token}/events`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              category: rule.category,
-              severity: rule.severity,
-              meta: { object: rule.object, confidence: detection.confidence, warningCount: trackerStatus.warningCount },
-            }),
-          }).catch((err) => console.warn('[assess-object-event] fetch failed:', err));
+          // Evidence snapshot + DB event with snapshot_path
+          void (async () => {
+            const snapshotPath = await snapshotPromise;
+            await fetch(`/api/assess/${token}/events`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                category: 'object',
+                severity: rule.severity,
+                snapshotPath: snapshotPath || undefined,
+                meta: { object: rule.object, confidence: detection.confidence, warningCount: trackerStatus.warningCount },
+              }),
+            }).catch((err) => console.warn('[assess-object-event] fetch failed:', err));
+          })();
 
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
@@ -760,15 +922,19 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
               }, 3000);
             }
           }
+
+          // Enforce 1 alert per detection cycle and respect category break
+          break;
         }
       }
 
-      const allObjectSubKeys = Object.values(OBJECT_RULES).map((r) => r.object);
+      const allObjectSubKeys = Object.keys(OBJECT_RULES);
       for (const subKey of allObjectSubKeys) {
         if (!seenSubKeys.has(subKey)) {
+          consecutiveDetectedFramesRef.current.set(subKey, 0);
           const missCount = (missingFramesRef.current.get(subKey) || 0) + 1;
           missingFramesRef.current.set(subKey, missCount);
-          if (missCount >= 5) {
+          if (missCount >= 2) {
             proctorTrackerRef.current.clearGenericKey('object_detected', subKey);
           }
         }
@@ -822,18 +988,20 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         reason: voiceReason,
       });
 
-      void captureEvidenceSnapshot('unauthorized_voice');
-
-      fetch(`/api/assess/${token}/events`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          category: 'unauthorized_voice',
-          severity: 'warning',
-          confidence: info.confidence,
-          meta: { warningCount: trackerStatus.warningCount, reason: voiceReason },
-        }),
-      }).catch((err) => console.warn('[assess-voice-event] fetch failed:', err));
+      void (async () => {
+        const snapshotPath = await captureEvidenceSnapshot('unauthorized_voice');
+        await fetch(`/api/assess/${token}/events`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            category: 'unauthorized_voice',
+            severity: 'warning',
+            confidence: info.confidence,
+            snapshotPath: snapshotPath || undefined,
+            meta: { warningCount: trackerStatus.warningCount, reason: voiceReason },
+          }),
+        }).catch((err) => console.warn('[assess-voice-event] fetch failed:', err));
+      })();
 
       if (trackerStatus.warningCount >= 3) {
         if (!terminatingRef.current) {
@@ -859,7 +1027,8 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
       await captureEvidenceSnapshot('unauthorized_voice');
       return null;
     },
-    readingGracePeriodMs: 8000,
+    readingGracePeriodMs: 0,
+    continuousVoiceMs: 2500,
   });
 
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
@@ -883,6 +1052,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   });
 
   useEffect(() => {
+    interimTextRef.current = interimText;
     if (interimText.trim().length > 0) {
       if (firstSpeechAtRef.current === null) {
         firstSpeechAtRef.current = Date.now();
@@ -931,7 +1101,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     const isLastQuestion = currentIndex >= questions.length - 1;
 
     try {
-      void completeTurn();
+      void completeTurn(finalAnswer);
 
       // Controller with 8-second timeout so network lag never freezes candidate UI
       const controller = new AbortController();
@@ -1011,6 +1181,21 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   });
 
   // ── Stage renders ─────────────────────────────────────────────────────────
+
+  if (stage === 'expired') {
+    return <ExpiredInterviewLink note={expiredNote} isUsed={true} />;
+  }
+
+  if (isVerifyingLink) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="w-10 h-10 border-3 border-zinc-200 border-t-[#34c4f2] rounded-full animate-spin" />
+          <p className="text-sm font-medium text-zinc-500">Checking interview status...</p>
+        </div>
+      </main>
+    );
+  }
 
   if (stage === 'terminated') {
     return <TerminatedInterview terminationReason={terminationReason} />;

@@ -69,9 +69,12 @@ function makeParams(token = 'raw-token') {
   return { params: Promise.resolve({ token }) };
 }
 
+import { resetSessionLocks, CONCURRENT_SESSION_ERROR } from '@/lib/ai-interview/session-lock';
+
 describe('POST /api/assess/[token]/verify', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSessionLocks();
     state.invite = null;
     state.inviteError = null;
     state.session = null;
@@ -177,5 +180,43 @@ describe('POST /api/assess/[token]/verify', () => {
     expect(state.updateCalls).toContainEqual(
       expect.objectContaining({ table: 'interview_sessions', payload: expect.objectContaining({ status: 'in_progress' }) }),
     );
+  });
+
+  it('rejects a second user joining at the same time with millisecond difference', async () => {
+    const crypto = await import('node:crypto');
+    const passcode = '654321';
+    const salt = 'salt';
+    const hash = crypto.scryptSync(passcode + salt, salt, 64).toString('hex');
+
+    state.invite = {
+      id: 'inv-concur',
+      session_id: 's-concur',
+      status: 'active',
+      expires_at: new Date(Date.now() + 100000).toISOString(),
+      passcode_hash: hash,
+      passcode_salt: salt,
+    };
+    state.session = { id: 's-concur', candidate_name: 'Jane', status: 'invite_issued' };
+    state.questions = [{ id: 'q1', question_text: 'Tell me about yourself' }];
+
+    // User 1 on Laptop A joins
+    const res1 = await POST(
+      makeRequest({ passcode, deviceId: 'laptop-A' }),
+      makeParams('concur-token')
+    );
+    expect(res1.status).toBe(200);
+    const body1 = await res1.json();
+    expect(body1.verified).toBe(true);
+
+    // User 2 on Laptop B joins milliseconds later with the same interview token
+    const res2 = await POST(
+      makeRequest({ passcode, deviceId: 'laptop-B' }),
+      makeParams('concur-token')
+    );
+    expect(res2.status).toBe(409);
+    const body2 = await res2.json();
+    expect(body2.error).toBe(CONCURRENT_SESSION_ERROR);
+    expect(body2.concurrent).toBe(true);
+    expect(body2.code).toBe('CONCURRENT_SESSION_DETECTED');
   });
 });

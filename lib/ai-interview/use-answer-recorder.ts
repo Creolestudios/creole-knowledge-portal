@@ -53,7 +53,7 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
     [stream]
   );
 
-  const stopAndUpload = useCallback(async () => {
+  const stopAndUpload = useCallback(async (clientTranscript?: string) => {
     const recorder = recorderRef.current;
     const questionId = questionIdRef.current;
     recorderRef.current = null;
@@ -76,6 +76,22 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
 
     const blob = new Blob(chunks, { type: recorder.mimeType });
     if (blob.size === 0) {
+      if (clientTranscript && clientTranscript.trim()) {
+        try {
+          await fetch(`/api/interview/${interviewId}/answers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              questionId,
+              transcript: clientTranscript.trim(),
+              startedAtMs,
+              endedAtMs,
+            }),
+          });
+        } catch (err) {
+          console.warn('[answer-recorder] Fallback transcript save failed:', err);
+        }
+      }
       setStatus('idle');
       return;
     }
@@ -87,6 +103,9 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
       formData.append('startedAtMs', String(startedAtMs));
       formData.append('endedAtMs', String(endedAtMs));
       formData.append('file', blob, 'answer');
+      if (clientTranscript && clientTranscript.trim()) {
+        formData.append('transcript', clientTranscript.trim());
+      }
 
       await fetch(`/api/interview/${interviewId}/answers`, { method: 'POST', body: formData });
     } catch (err) {

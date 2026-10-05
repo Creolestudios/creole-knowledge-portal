@@ -6,8 +6,78 @@ import {
   isInviteExpired,
 } from '@/lib/ai-interview/invite-token';
 import { validateActiveAssessToken } from '@/lib/ai-interview/assess-utils';
+import {
+  acquireJoinLock,
+  releaseJoinLock,
+  registerActiveSession,
+  CONCURRENT_SESSION_ERROR,
+} from '@/lib/ai-interview/session-lock';
 
 export const runtime = 'nodejs';
+
+/**
+ * GET /api/assess/[token]/verify
+ *
+ * Checks if the assess link is still active and valid for single-use access.
+ * If already consumed or completed, returns 410 with expired status.
+ */
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  const { token } = await params;
+  if (!token) {
+    return NextResponse.json({ error: 'Token is required' }, { status: 400 });
+  }
+
+  const { invite, errorResponse } = await validateActiveAssessToken(token, false);
+  if (errorResponse || !invite) return errorResponse;
+
+  if (isInviteExpired(invite)) {
+    return NextResponse.json({
+      error: 'This interview link has expired',
+      note: 'Note: This interview link has expired.',
+      expired: true,
+    }, { status: 410 });
+  }
+
+  if (
+    invite.consumed_at ||
+    invite.status === 'in_progress' ||
+    invite.status === 'completed' ||
+    invite.status === 'revoked' ||
+    invite.status === 'expired'
+  ) {
+    return NextResponse.json({
+      error: 'This interview link has already been used and is expired',
+      note: 'Note: This interview link has already been used and is expired.',
+      expired: true,
+      used: true,
+      status: invite.status,
+    }, { status: 410 });
+  }
+
+  const { data: session } = await supabaseAdmin
+    .from('interview_sessions')
+    .select('id, status')
+    .eq('id', invite.session_id)
+    .maybeSingle();
+
+  if (
+    session &&
+    (session.status === 'completed' || session.status === 'cancelled' || session.status === 'in_progress')
+  ) {
+    return NextResponse.json({
+      error: 'This interview link has already been used and is expired',
+      note: 'Note: This interview link has already been used and is expired.',
+      expired: true,
+      used: true,
+      status: session.status,
+    }, { status: 410 });
+  }
+
+  return NextResponse.json({ active: true, status: invite.status });
+}
 
 /**
  * POST /api/assess/[token]/verify
@@ -26,45 +96,84 @@ export async function POST(
   const { token } = await params;
   const body = await req.json().catch(() => null);
   const passcode = (body?.passcode as string | undefined)?.trim();
+  const deviceId =
+    (body?.deviceId as string | undefined)?.trim() ||
+    req.headers.get('x-device-id') ||
+    `dev_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
   if (!passcode) {
     return NextResponse.json({ error: 'Passcode is required' }, { status: 400 });
   }
 
+  // Acquire concurrency join lock for token (protecting millisecond race condition)
+  const lock = acquireJoinLock(token, deviceId);
+  if (!lock.acquired) {
+    return NextResponse.json({
+      error: lock.reason || CONCURRENT_SESSION_ERROR,
+      concurrent: true,
+      code: 'CONCURRENT_SESSION_DETECTED',
+    }, { status: 409 });
+  }
+
   const { invite, errorResponse } = await validateActiveAssessToken(token, false);
-  if (errorResponse || !invite) return errorResponse;
+  if (errorResponse || !invite) {
+    releaseJoinLock(token, deviceId);
+    return errorResponse;
+  }
 
   if (invite.status === 'revoked' || invite.status === 'expired') {
-    return NextResponse.json({ error: 'This interview link is no longer active' }, { status: 410 });
+    releaseJoinLock(token, deviceId);
+    return NextResponse.json({
+      error: 'This interview link has already been used and is expired',
+      note: 'Note: This interview link has already been used and is expired.',
+      expired: true,
+      used: true,
+    }, { status: 410 });
   }
 
   if (invite.status === 'completed') {
-    return NextResponse.json({ error: 'This interview has already been completed' }, { status: 410 });
+    releaseJoinLock(token, deviceId);
+    return NextResponse.json({
+      error: 'This interview link has already been used and is expired',
+      note: 'Note: This interview link has already been used and is expired.',
+      expired: true,
+      used: true,
+    }, { status: 410 });
   }
 
   if (isInviteExpired(invite)) {
+    releaseJoinLock(token, deviceId);
     await supabaseAdmin
       .from('interview_invites')
       .update({ status: 'expired' })
       .eq('id', invite.id);
-    return NextResponse.json({ error: 'This interview link has expired' }, { status: 410 });
+    return NextResponse.json({
+      error: 'This interview link has expired',
+      note: 'Note: This interview link has expired.',
+      expired: true,
+    }, { status: 410 });
+  }
+
+  if (invite.consumed_at || invite.status === 'in_progress') {
+    releaseJoinLock(token, deviceId);
+    return NextResponse.json({
+      error: 'This interview link has already been used and is expired',
+      note: 'Note: This interview link has already been used and is expired.',
+      expired: true,
+      used: true,
+      concurrent: true,
+    }, { status: 410 });
   }
 
   if (!invite.passcode_hash || !invite.passcode_salt) {
+    releaseJoinLock(token, deviceId);
     return NextResponse.json({ error: 'This invite is misconfigured. Contact your interviewer.' }, { status: 500 });
   }
 
   const suppliedHash = hashPasscode(passcode, invite.passcode_salt);
   if (suppliedHash !== invite.passcode_hash) {
+    releaseJoinLock(token, deviceId);
     return NextResponse.json({ error: 'Incorrect passcode' }, { status: 401 });
-  }
-
-  if (invite.status === 'in_progress') {
-    const cookieStore = await cookies();
-    const existingCookie = cookieStore.get('assess_verified_token')?.value;
-    if (existingCookie !== token) {
-      return NextResponse.json({ error: 'This assessment is already in progress on another device' }, { status: 403 });
-    }
   }
 
   const { data: session, error: sessionErr } = await supabaseAdmin
@@ -74,10 +183,12 @@ export async function POST(
     .single();
 
   if (sessionErr || !session) {
+    releaseJoinLock(token, deviceId);
     return NextResponse.json({ error: 'Interview session not found' }, { status: 404 });
   }
 
   if (session.status === 'completed' || session.status === 'cancelled') {
+    releaseJoinLock(token, deviceId);
     return NextResponse.json({ error: 'This interview has already ended' }, { status: 410 });
   }
 
@@ -88,6 +199,7 @@ export async function POST(
     .order('question_order', { ascending: true });
 
   if (questionsErr || !questions || questions.length === 0) {
+    releaseJoinLock(token, deviceId);
     return NextResponse.json(
       { error: 'No interview questions have been generated for this session yet' },
       { status: 409 }
@@ -108,6 +220,11 @@ export async function POST(
       .from('interview_sessions')
       .update({ status: 'in_progress', updated_at: now })
       .eq('id', invite.session_id);
+  }
+
+  registerActiveSession(token, deviceId);
+  if (invite.session_id) {
+    registerActiveSession(invite.session_id, deviceId);
   }
 
   const response = NextResponse.json({

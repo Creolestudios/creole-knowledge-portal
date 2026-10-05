@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 
 export const runtime = 'nodejs';
 
@@ -21,13 +22,16 @@ export async function POST(
       return NextResponse.json({ error: 'Valid session ID and text are required.' }, { status: 400 });
     }
 
+    const trimmedText = body.text.trim();
+    if (!trimmedText) {
+      return NextResponse.json({ ok: true, skipped: true });
+    }
+
+    const targetSessionId = (await resolveInterviewSessionId(id)) || id;
+
     const speaker = ['ai', 'candidate', 'unauthorized_voice'].includes(body.speaker)
       ? body.speaker
       : 'candidate';
-
-    if (!body.text.trim() && speaker !== 'candidate') {
-      return NextResponse.json({ error: 'Text cannot be empty for this speaker.' }, { status: 400 });
-    }
 
     const questionOrd = typeof body.questionOrd === 'number' ? body.questionOrd : null;
     const tsMs = typeof body.tsMs === 'number' ? body.tsMs : Date.now();
@@ -36,10 +40,10 @@ export async function POST(
     const { data: inserted, error } = await supabaseAdmin
       .from('interview_transcript')
       .insert({
-        session_id: id,
+        session_id: targetSessionId,
         question_ord: questionOrd,
         speaker,
-        text: body.text.trim(),
+        text: trimmedText,
         ts_ms: tsMs,
         is_flagged: isFlagged,
       })
@@ -53,16 +57,16 @@ export async function POST(
 
     // Broadcast in real-time to HR monitoring dashboard
     try {
-      const channel = supabaseAdmin.channel(`interview-monitor:${id}`);
+      const channel = supabaseAdmin.channel(`interview-monitor:${targetSessionId}`);
       await channel.send({
         type: 'broadcast',
         event: 'transcript_line',
         payload: {
           id: inserted.id,
-          sessionId: id,
+          sessionId: targetSessionId,
           questionOrd,
           speaker,
-          text: body.text.trim(),
+          text: trimmedText,
           tsMs,
           isFlagged,
           createdAt: inserted.created_at,
@@ -90,11 +94,12 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const targetSessionId = (await resolveInterviewSessionId(id)) || id;
 
     const { data: transcript, error } = await supabaseAdmin
       .from('interview_transcript')
       .select('*')
-      .eq('session_id', id)
+      .eq('session_id', targetSessionId)
       .order('ts_ms', { ascending: true });
 
     if (error) {

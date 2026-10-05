@@ -4,7 +4,7 @@
  * - Admin "create interview" form (components/ai-interview-manager.tsx)
  * - Candidate passcode entry page (app/interview/[id]/page.tsx)
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import AIInterviewManager from '@/components/ai-interview-manager';
 
@@ -239,7 +239,22 @@ describe('Admin create-interview form — UI scenarios', () => {
 import InterviewEntryPage from '@/app/interview/[id]/page';
 
 describe('Candidate passcode entry page — UI scenarios', () => {
+  beforeEach(() => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
+  });
+
   afterEach(() => {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
     global.fetch = originalFetch;
   });
 

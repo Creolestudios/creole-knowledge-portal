@@ -138,45 +138,51 @@ export async function POST(req: Request) {
  * link + passcode by generating a new invite from the interview detail view.
  */
 export async function GET() {
-  const admin = await requireAdminUser();
-  if (!admin) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from('interview_sessions')
-    .select('id, candidate_name, candidate_email, parsed_jd, status, created_at, interview_invites(status, expires_at, created_at)')
-    .eq('created_by', admin.userId)
-    .order('created_at', { ascending: false })
-    .order('created_at', { foreignTable: 'interview_invites', ascending: false })
-    .limit(1, { foreignTable: 'interview_invites' });
-
-  if (error) {
-    console.error('[ai-interviews] list failed:', error.message);
-    return NextResponse.json({ error: 'Failed to load interviews' }, { status: 500 });
-  }
-
-  const interviews = (data || []).map((row: any) => {
-    const invite = row.interview_invites?.[0] ?? null;
-    let status = invite?.status ?? row.status;
-    if (row.status === 'cancelled' || row.status === 'terminated' || invite?.status === 'revoked') {
-      status = 'terminated';
-    } else if (row.status === 'completed' || invite?.status === 'completed') {
-      status = 'completed';
-    } else if (row.status === 'in_progress' || invite?.status === 'in_progress') {
-      status = 'in_progress';
+  try {
+    const admin = await requireAdminUser();
+    if (!admin) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    return {
-      id: row.id,
-      candidate_name: row.candidate_name,
-      candidate_email: row.candidate_email,
-      job_title: row.parsed_jd?.jobTitle ?? null,
-      status,
-      expires_at: invite?.expires_at ?? null,
-      created_at: row.created_at,
-    };
-  });
+    const { data, error } = await supabaseAdmin
+      .from('interview_sessions')
+      .select('id, candidate_name, candidate_email, parsed_jd, status, created_at, interview_invites(status, expires_at, created_at)')
+      .eq('created_by', admin.userId)
+      .order('created_at', { ascending: false })
+      .order('created_at', { foreignTable: 'interview_invites', ascending: false })
+      .limit(1, { foreignTable: 'interview_invites' });
 
-  return NextResponse.json({ interviews });
+    if (error) {
+      console.error('[ai-interviews] list failed:', error.message);
+      return NextResponse.json({ error: 'Failed to load interviews', interviews: [] }, { status: 500 });
+    }
+
+    const interviews = (data || []).map((row: any) => {
+      const invite = row.interview_invites?.[0] ?? null;
+      let status = invite?.status ?? row.status;
+      if (row.status === 'cancelled' || row.status === 'terminated' || invite?.status === 'revoked') {
+        status = 'terminated';
+      } else if (row.status === 'completed' || invite?.status === 'completed') {
+        status = 'completed';
+      } else if (row.status === 'in_progress' || invite?.status === 'in_progress') {
+        status = 'in_progress';
+      }
+
+      return {
+        id: row.id,
+        candidate_name: row.candidate_name,
+        candidate_email: row.candidate_email,
+        job_title: row.parsed_jd?.jobTitle ?? null,
+        status,
+        expires_at: invite?.expires_at ?? null,
+        created_at: row.created_at,
+      };
+    });
+
+    return NextResponse.json({ interviews });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[ai-interviews] unexpected GET error:', msg);
+    return NextResponse.json({ error: 'Failed to load interviews', interviews: [] }, { status: 500 });
+  }
 }

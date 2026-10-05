@@ -43,17 +43,38 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       const wasmPath = `${origin}/mediapipe/wasm`;
 
       const filesetResolver = await FilesetResolver.forVisionTasks(wasmPath);
-      faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
-        baseOptions: {
-          modelAssetPath:
-            'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-          delegate: 'GPU',
-        },
-        runningMode: 'VIDEO',
-        numFaces: 2, // Enable multi-face detection
-        outputFaceBlendshapes: true,
-        outputFacialTransformationMatrixes: true,
-      });
+      try {
+        faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+            delegate: 'GPU',
+          },
+          runningMode: 'VIDEO',
+          numFaces: 4, // Track multiple faces robustly (up to 4)
+          minFaceDetectionConfidence: 0.65,
+          minFacePresenceConfidence: 0.65,
+          minTrackingConfidence: 0.65,
+          outputFaceBlendshapes: true,
+          outputFacialTransformationMatrixes: true,
+        });
+      } catch (gpuErr) {
+        console.warn('FaceLandmarker GPU delegate failed, falling back to CPU:', gpuErr);
+        faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+            delegate: 'CPU',
+          },
+          runningMode: 'VIDEO',
+          numFaces: 4,
+          minFaceDetectionConfidence: 0.65,
+          minFacePresenceConfidence: 0.65,
+          minTrackingConfidence: 0.65,
+          outputFaceBlendshapes: true,
+          outputFacialTransformationMatrixes: true,
+        });
+      }
       self.postMessage({ type: 'ready' });
     } catch (error) {
       self.postMessage({
@@ -96,8 +117,26 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
   try {
     const result = faceLandmarker.detectForVideo(inputSource, message.timestamp);
-    let numFaces = result.faceLandmarks?.length ?? 0;
-    let landmark = result.faceLandmarks?.[0];
+    const rawFaces = result.faceLandmarks ?? [];
+    let numFaces = rawFaces.length;
+
+    // Filter out phantom profile splits where 2 face detections are on the same person (< 0.22 distance)
+    if (rawFaces.length >= 2) {
+      const f0 = rawFaces[0];
+      const f1 = rawFaces[1];
+      if (f0 && f1 && f0[1] && f1[1] && f0[152] && f1[152]) {
+        const c0x = (f0[1].x + f0[152].x) / 2;
+        const c0y = (f0[1].y + f0[152].y) / 2;
+        const c1x = (f1[1].x + f1[152].x) / 2;
+        const c1y = (f1[1].y + f1[152].y) / 2;
+        const faceSeparation = Math.hypot(c0x - c1x, c0y - c1y);
+        if (faceSeparation < 0.22) {
+          numFaces = 1;
+        }
+      }
+    }
+
+    let landmark: NormalizedLandmark[] | undefined = result.faceLandmarks?.[0];
     let blendshapes = result.faceBlendshapes?.[0]?.categories ?? [];
     let matrix = result.facialTransformationMatrixes?.[0]?.data ?? [];
 
@@ -108,16 +147,11 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
       lastKnownMatrix = matrix;
     } else {
       consecutiveMissingFrames++;
-      // If the face was present recently (within 3 frames / ~375ms), hold last known face
-      // to avoid false "no face" drops when the user blinks or moves their eyes
-      if (consecutiveMissingFrames <= 3 && lastKnownLandmark) {
-        landmark = lastKnownLandmark;
-        blendshapes = lastKnownBlendshapes;
-        matrix = lastKnownMatrix;
-        numFaces = 1;
-      } else {
-        lastKnownLandmark = undefined;
-      }
+      // Do not fake numFaces when camera has no face; allow ProctoringTimeTracker to handle time threshold
+      landmark = undefined;
+      blendshapes = [];
+      matrix = [];
+      lastKnownLandmark = undefined;
     }
 
     const iris = landmark

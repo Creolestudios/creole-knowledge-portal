@@ -41,6 +41,7 @@ export async function POST(
     let storagePath: string | null = null;
     let durationSec = 0;
     let audioFile: Blob | null = null;
+    let clientTranscript: string | null = null;
 
     if (contentType.includes('application/json')) {
       const body = await req.json().catch(() => null);
@@ -50,13 +51,14 @@ export async function POST(
     } else {
       const formData = await req.formData();
       questionId = formData.get('questionId') as string | undefined;
+      clientTranscript = (formData.get('transcript') as string) || null;
       const file = formData.get('file');
       if (file instanceof Blob && file.size > 0) {
         audioFile = file;
-      } else if (!formData.has('transcript')) {
+      } else if (!clientTranscript) {
         return NextResponse.json({ error: 'questionId and an audio file are required.' }, { status: 400 });
       } else {
-        transcript = (formData.get('transcript') as string) || '';
+        transcript = clientTranscript;
       }
 
       const startedAtMs = Number(formData.get('startedAtMs'));
@@ -107,29 +109,48 @@ export async function POST(
       } catch (err) {
         console.error('[interview-answers] transcription failed:', err);
       }
+
+      if (!transcript && clientTranscript) {
+        transcript = clientTranscript;
+      }
     }
 
-    const answer = {
-      session_id: id,
-      question_id: questionId,
-      transcript,
-      audio_storage_path: storagePath,
-      total_time_taken_sec: durationSec,
-    };
-
-    // Re-answering a question (the candidate navigates Previous → Next) replaces the
-    // previous take. Matched on the existing row rather than an ON CONFLICT upsert so the
-    // write does not depend on the unique index having been migrated yet.
+    // Re-answering or updating a question replaces/updates the previous take.
+    // Matched on targetSessionId and questionId.
     const { data: existing } = await supabaseAdmin
       .from('interview_answers')
-      .select('id')
-      .eq('session_id', id)
+      .select('id, transcript, audio_storage_path, total_time_taken_sec')
+      .eq('session_id', targetSessionId)
       .eq('question_id', questionId)
       .maybeSingle();
 
-    const { error: saveError } = existing
-      ? await supabaseAdmin.from('interview_answers').update(answer).eq('id', existing.id)
-      : await supabaseAdmin.from('interview_answers').insert(answer);
+    let saveError;
+    if (existing) {
+      const updateData: Record<string, unknown> = {
+        session_id: targetSessionId,
+        question_id: questionId,
+        total_time_taken_sec: durationSec || existing.total_time_taken_sec || 0,
+      };
+      // Only overwrite transcript if incoming is non-empty, or existing has no transcript
+      if (transcript !== null) {
+        updateData.transcript = typeof transcript === 'string' ? transcript.trim() : transcript;
+      }
+      if (storagePath) {
+        updateData.audio_storage_path = storagePath;
+      }
+      const res = await supabaseAdmin.from('interview_answers').update(updateData).eq('id', existing.id);
+      saveError = res.error;
+    } else {
+      const insertData = {
+        session_id: targetSessionId,
+        question_id: questionId,
+        transcript: transcript !== null ? (typeof transcript === 'string' ? transcript.trim() : transcript) : null,
+        audio_storage_path: storagePath || null,
+        total_time_taken_sec: durationSec,
+      };
+      const res = await supabaseAdmin.from('interview_answers').insert(insertData);
+      saveError = res.error;
+    }
 
     if (saveError) {
       console.error('[interview-answers] save failed:', saveError.message);

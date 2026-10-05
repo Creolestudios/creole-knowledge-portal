@@ -32,6 +32,10 @@ export interface ReportDetailViewProps {
     created_at: string;
     updated_at?: string | null;
     parsed_jd?: { jobTitle?: string } | null;
+    // Injected server-side from proctoring_violation events (not a real column)
+    termination_reason?: string | null;
+    // Injected server-side from interview_invites.status
+    invite_status?: string | null;
   };
   report: {
     id?: string;
@@ -85,7 +89,19 @@ export interface ReportDetailViewProps {
   faceWarningCount: number;
   objectWarningCount: number;
   totalWarnings: number;
+  proctoringWarnings?: ProctoringWarningItem[];
   followUpQuestions: string[];
+}
+
+export interface ProctoringWarningItem {
+  id: string;
+  strikeNumber?: number;
+  category: 'voice' | 'face' | 'object' | 'general';
+  categoryLabel: string;
+  reason: string;
+  timestamp?: string;
+  severity?: string;
+  snapshotPath?: string | null;
 }
 
 function starRating(score: number): { filled: number; label: string; color: string } {
@@ -243,6 +259,7 @@ export function ReportDetailView({
   faceWarningCount,
   objectWarningCount,
   totalWarnings,
+  proctoringWarnings = [],
   followUpQuestions,
 }: ReportDetailViewProps) {
   const router = useRouter();
@@ -260,19 +277,32 @@ export function ReportDetailView({
         const json = await res.json().catch(() => null);
         throw new Error(json?.error || `Scoring failed (${res.status})`);
       }
-      // Refresh server component data
-      router.refresh();
+      // Force clean reload from server
+      window.location.reload();
     } catch (err) {
       setReportGenError(err instanceof Error ? err.message : 'Failed to generate report.');
     } finally {
       setIsGeneratingReport(false);
     }
-  }, [session.id, router]);
+  }, [session.id]);
 
-  const rawStatus = session.status || 'in_progress';
-  const isTerminated = rawStatus === 'terminated' || rawStatus === 'cancelled';
-  const isCompleted = rawStatus === 'completed';
-  const rec = report?.recommendation ?? (isTerminated ? 'no' : null);
+  const rawStatus = session.status || 'draft';
+  const inviteStatus = session.invite_status || '';
+
+  // Derive true status using BOTH session.status and invite.status.
+  // DB session statuses: 'completed', 'cancelled', 'in_progress',
+  //   'questions_generated', 'invite_issued', 'draft'
+  // DB invite statuses: 'completed', 'revoked', 'active', 'in_progress'
+  const isTerminated =
+    rawStatus === 'cancelled' ||
+    rawStatus === 'terminated' ||
+    inviteStatus === 'revoked';
+  const isCompleted =
+    rawStatus === 'completed' ||
+    inviteStatus === 'completed' ||
+    (!isTerminated && Boolean(report?.recommendation));
+
+  const rec = report?.recommendation ?? (isTerminated ? 'no' : isCompleted ? 'yes' : 'maybe');
   const cefr = report?.fluency_cefr ?? null;
   const cefrInfo = cefr ? cefrToPlain(cefr) : null;
 
@@ -307,13 +337,27 @@ export function ReportDetailView({
     },
   } as const;
 
-  const verdictCfg = rec ? VERDICT[rec as keyof typeof VERDICT] : null;
+  const verdictCfg = VERDICT[rec as keyof typeof VERDICT] ?? VERDICT['maybe'];
 
   const candidateTranscript = transcript.filter((t) => t.speaker === 'candidate' && !t.is_flagged);
-  const fluencyBreakdown = report?.fluency_breakdown as Record<string, { band?: number; notes?: string }> | null;
-  const fluencySub = fluencyBreakdown?.sub as
-    | { grammar?: { band?: number; notes?: string }; vocabulary?: { band?: number; notes?: string }; coherence?: { band?: number; notes?: string }; fluency?: { band?: number; notes?: string } }
-    | undefined;
+
+  // Fluency breakdown is the full parsed object from Gemini: { cefr, sub: { grammar, vocabulary, coherence, fluency }, summary, ... }
+  const fluencyBreakdown = report?.fluency_breakdown as {
+    cefr?: string;
+    sub?: {
+      grammar?: { band?: number; notes?: string };
+      vocabulary?: { band?: number; notes?: string };
+      coherence?: { band?: number; notes?: string };
+      fluency?: { band?: number; notes?: string };
+    };
+    summary?: string;
+    language_switch_detected?: boolean;
+    non_english_percentage?: number;
+    follow_up_recommendations?: string[];
+  } | null;
+
+  // sub is nested inside fluency_breakdown — NOT directly on fluency_breakdown
+  const fluencySub = fluencyBreakdown?.sub ?? null;
 
   const competencyScores = (report?.competency_scores ?? []) as Array<{
     ord: number;
@@ -324,8 +368,61 @@ export function ReportDetailView({
     bluff_suspected?: boolean;
   }>;
 
-  // Build answer lookup map by question id
-  const answerByQuestionId = new Map(answers.map((a) => [a.question_id, (a.transcript || '').trim()]));
+  // ── Database Answer Retrieval ──────────────────────────────────────
+  // 1. Map by question UUID: question_id -> transcript
+  const answerByQuestionId = new Map(
+    answers.filter((a) => a.question_id).map((a) => [a.question_id, (a.transcript || '').trim()])
+  );
+
+  // 2. Map by array index in answers (0-indexed)
+  const answerByIndex = new Map(
+    answers.map((a, idx) => [idx, (a.transcript || '').trim()])
+  );
+
+  // Retrieves the true verbatim candidate answer from database across all persistence strategies
+  const getCandidateAnswer = (qId: string, ord: number, qIdx: number): string => {
+    // A. Direct lookup by question UUID
+    const byId = answerByQuestionId.get(qId);
+    if (byId && byId.trim().length > 0) return byId.trim();
+
+    // B. Direct lookup by stringified order ('1', '2', etc.)
+    const byOrdStr = answerByQuestionId.get(String(ord));
+    if (byOrdStr && byOrdStr.trim().length > 0) return byOrdStr.trim();
+
+    // C. Lookup in answers list by question_id matching qId or ord
+    const foundAns = answers.find(
+      (a) => a.question_id === qId || a.question_id === String(ord)
+    );
+    if (foundAns?.transcript && foundAns.transcript.trim().length > 0) {
+      return foundAns.transcript.trim();
+    }
+
+    // D. Positional match in answers array (if answers were saved in question sequence)
+    const byIndex = answerByIndex.get(qIdx);
+    if (byIndex && byIndex.trim().length > 0) return byIndex.trim();
+
+    // E. Match in interview_transcript table by tagged question_ord
+    const transcriptByOrd = transcript
+      .filter((t) => t.speaker === 'candidate' && !t.is_flagged && t.question_ord === ord && t.text?.trim())
+      .map((t) => t.text.trim())
+      .join(' ')
+      .trim();
+    if (transcriptByOrd.length > 0) return transcriptByOrd;
+
+    // F. Match in interview_transcript table by sequence index if not tagged with question_ord
+    const candidateUtterances = transcript.filter((t) => t.speaker === 'candidate' && !t.is_flagged && t.text?.trim());
+    if (candidateUtterances[qIdx]?.text?.trim()) {
+      return candidateUtterances[qIdx].text.trim();
+    }
+
+    // G. Evidence quote from scoring report in DB
+    const scoreEvidence = competencyScores.find((cs) => cs.ord === ord)?.evidence?.[0]?.quote?.trim();
+    if (scoreEvidence && scoreEvidence.length > 0) {
+      return scoreEvidence;
+    }
+
+    return '';
+  };
 
   // Split questions into HR and Technical
   const hrQuestions = questions.filter(isHRQuestion);
@@ -388,12 +485,12 @@ export function ReportDetailView({
               <div>
                 <h2 className="text-base font-bold text-red-900 mb-1">Interview Terminated by Proctoring Guard</h2>
                 <p className="text-red-800 text-xs leading-relaxed max-w-2xl">
-                  The automated proctoring guard terminated this interview session due to repeated integrity violations
-                  ({totalWarnings} total warning{totalWarnings === 1 ? '' : 's'}). This candidate is flagged for HR review.
+                  The automated proctoring guard terminated this interview session due to integrity violations
+                  {totalWarnings > 0 ? ` (${totalWarnings} total warning${totalWarnings === 1 ? '' : 's'})` : ''}. This candidate is flagged for HR review.
                 </p>
-                {report?.recommendation_rationale && (
+                {(session.termination_reason || report?.recommendation_rationale) && (
                   <p className="mt-2 text-xs font-bold text-red-700 uppercase tracking-wider">
-                    {report.recommendation_rationale}
+                    {session.termination_reason || report?.recommendation_rationale}
                   </p>
                 )}
               </div>
@@ -426,21 +523,39 @@ export function ReportDetailView({
               {/* Score gauges */}
               <div className="flex flex-col items-end gap-3 flex-shrink-0">
                 <div className="flex items-center gap-6 bg-zinc-50 border border-zinc-200 rounded-xl px-6 py-4">
-                  <ScoreGauge value={report?.cognitive_composite ?? null} color="#1689aa" label="Technical Depth" />
-                  <ScoreGauge value={report?.fluency_score ?? null} color="#34c4f2" label="Communication" />
+                  <ScoreGauge
+                    value={
+                      report?.cognitive_composite !== null && report?.cognitive_composite !== undefined
+                        ? report.cognitive_composite
+                        : isTerminated
+                        ? 0
+                        : null
+                    }
+                    color="#1689aa"
+                    label="Technical Depth"
+                  />
+                  <ScoreGauge
+                    value={
+                      report?.fluency_score !== null && report?.fluency_score !== undefined
+                        ? report.fluency_score
+                        : isTerminated
+                        ? 0
+                        : null
+                    }
+                    color="#34c4f2"
+                    label="Communication"
+                  />
                 </div>
-                {/* Show refresh button if scores are null despite report existing */}
-                {(report?.cognitive_composite === null || report?.cognitive_composite === undefined
-                  || report?.fluency_score === null || report?.fluency_score === undefined) && (
-                  <button
-                    type="button"
-                    onClick={handleGenerateReport}
-                    disabled={isGeneratingReport}
-                    className="text-xs font-bold px-4 py-2 rounded-xl bg-[#34c4f2] text-zinc-900 hover:bg-[#2db0db] disabled:opacity-50 transition-colors cursor-pointer flex items-center gap-2"
-                  >
-                    {isGeneratingReport ? '⏳ Generating…' : '🔄 Refresh Scores'}
-                  </button>
-                )}
+                {/* Always offer Re-evaluate / Refresh Scores */}
+                <button
+                  type="button"
+                  onClick={handleGenerateReport}
+                  disabled={isGeneratingReport}
+                  className="text-xs font-bold px-3.5 py-1.5 rounded-xl bg-zinc-100 text-zinc-700 hover:bg-[#34c4f2] hover:text-zinc-900 border border-zinc-200 disabled:opacity-50 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {isGeneratingReport ? '⏳ Re-evaluating…' : 'Re-evaluate Scores'}
+                </button>
               </div>
             </div>
           </div>
@@ -557,40 +672,77 @@ export function ReportDetailView({
                   </div>
                 </div>
 
-                {cefrInfo && (
+                {/* CEFR or Zero-Speech Notice */}
+                {cefrInfo ? (
                   <div className="text-center py-2 bg-[#34c4f2]/5 rounded-xl p-4 border border-[#34c4f2]/20">
                     <span className="text-3xl font-black text-[#1689aa]">{cefr}</span>
                     <p className="text-sm font-bold text-zinc-900 mt-0.5">{cefrInfo.label}</p>
                     <p className="text-xs text-zinc-600 mt-1 leading-relaxed max-w-md mx-auto">{cefrInfo.desc}</p>
                   </div>
+                ) : (
+                  <div className="text-center py-3 bg-zinc-50 rounded-xl p-4 border border-zinc-200">
+                    <span className="text-2xl font-black text-zinc-800">
+                      {report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
+                        ? `${report.fluency_score} / 100`
+                        : '0 / 100'}
+                    </span>
+                    <p className="text-xs font-bold text-zinc-800 mt-0.5">
+                      {report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
+                        ? 'Spoken Fluency Score'
+                        : 'No Verbal Responses Recorded'}
+                    </p>
+                    <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed max-w-md mx-auto">
+                      {report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
+                        ? 'Evaluated across candidate spoken answers and speech cadence.'
+                        : 'Candidate skipped questions or microphone audio was absent during interview turns.'}
+                    </p>
+                  </div>
                 )}
 
-                {fluencySub && (
-                  <div className="space-y-2.5">
-                    {[
-                      { key: 'grammar', label: 'Grammar & Accuracy' },
-                      { key: 'vocabulary', label: 'Vocabulary Range' },
-                      { key: 'coherence', label: 'Structured Coherence' },
-                      { key: 'fluency', label: 'Fluency & Flow' },
-                    ].map(({ key, label }) => {
-                      const sub = fluencySub[key as keyof typeof fluencySub];
-                      return (
-                        <div key={key}>
-                          <div className="flex justify-between text-xs font-semibold mb-1">
-                            <span className="text-zinc-600">{label}</span>
-                            <span className="text-zinc-900 font-bold">{sub?.band ?? '—'}/100</span>
-                          </div>
-                          <ProgressBar value={sub?.band ?? 0} color="#1689aa" />
+                {/* Fluency Sub-Scores: Always Render All 4 Categories */}
+                <div className="space-y-2.5">
+                  {[
+                    { key: 'grammar', label: 'Grammar & Accuracy' },
+                    { key: 'vocabulary', label: 'Vocabulary Range' },
+                    { key: 'coherence', label: 'Structured Coherence' },
+                    { key: 'fluency', label: 'Fluency & Flow' },
+                  ].map(({ key, label }) => {
+                    const sub = fluencySub?.[key as keyof typeof fluencySub];
+                    const bandScore =
+                      sub?.band !== undefined && sub?.band !== null
+                        ? sub.band
+                        : report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
+                        ? report.fluency_score
+                        : 0;
+
+                    return (
+                      <div key={key}>
+                        <div className="flex justify-between text-xs font-semibold mb-1">
+                          <span className="text-zinc-600">{label}</span>
+                          <span className="text-zinc-900 font-bold">{bandScore}/100</span>
                         </div>
-                      );
-                    })}
+                        <ProgressBar value={bandScore} color={bandScore > 0 ? '#1689aa' : '#cbd5e1'} />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Linguistic Summary note if available */}
+                {fluencyBreakdown?.summary && (
+                  <div className="bg-zinc-50 rounded-xl p-3 border border-zinc-200 text-xs">
+                    <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500 mb-0.5">Linguistic Evaluation Note</p>
+                    <p className="text-zinc-700 leading-relaxed font-medium">{fluencyBreakdown.summary}</p>
                   </div>
                 )}
 
                 <div className="bg-zinc-50 rounded-xl p-3 text-xs text-zinc-700 flex items-center justify-between border border-zinc-200">
                   <span className="font-bold text-zinc-800">Speaking Pace:</span>
                   <span>
-                    {report?.local_metrics?.wpm ? `${report.local_metrics.wpm} words/min` : 'Natural pace'}
+                    {report?.local_metrics?.wpm
+                      ? `${report.local_metrics.wpm} words/min`
+                      : report?.fluency_score === 0
+                      ? '0 words/min (No speech)'
+                      : 'Natural pace'}
                   </span>
                 </div>
               </div>
@@ -617,14 +769,14 @@ export function ReportDetailView({
 
                 <div className="space-y-4">
                   {/* Single continuous total pool of 3 warnings */}
-                  <div className="bg-zinc-50 rounded-xl p-4 border border-zinc-200 space-y-2.5">
+                  <div className="bg-zinc-50 rounded-xl p-4 border border-zinc-200 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black uppercase tracking-wider text-zinc-700">
                         Continuous Warning Counter
                       </span>
                       <span className={`text-xs font-black px-2.5 py-1 rounded-lg ${
                         totalWarnings >= 3
-                          ? 'bg-red-600 text-white'
+                          ? 'bg-red-600 text-white shadow-sm'
                           : totalWarnings > 0
                           ? 'bg-amber-100 text-amber-900 border border-amber-300'
                           : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
@@ -633,23 +785,58 @@ export function ReportDetailView({
                       </span>
                     </div>
 
-                    <div className="flex gap-2 pt-1">
+                    {/* Strike 1, 2, 3 with exact violation reasons */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       {[1, 2, 3].map((slot) => {
                         const isUsed = slot <= totalWarnings;
+                        const strikeWarning =
+                          proctoringWarnings?.find((w) => w.strikeNumber === slot) ||
+                          proctoringWarnings?.[slot - 1];
+
                         return (
                           <div
                             key={slot}
-                            className={`flex-1 py-2 px-3 rounded-lg border text-center text-xs font-black transition-all ${
+                            className={`p-3 rounded-xl border text-left transition-all ${
                               isUsed
-                                ? 'bg-red-500 border-red-600 text-white shadow-sm'
+                                ? 'bg-red-500/10 border-red-500/30 text-red-950 shadow-sm'
                                 : 'bg-white border-zinc-200 text-zinc-400'
                             }`}
                           >
-                            Strike {slot} {isUsed ? '⚠️' : '✓'}
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className={`text-xs font-black ${isUsed ? 'text-red-700' : 'text-zinc-400'}`}>
+                                Strike {slot} {isUsed ? '⚠️' : '✓'}
+                              </span>
+                              {isUsed && strikeWarning?.timestamp && (
+                                <span className="text-[10px] font-bold text-red-600/80">{strikeWarning.timestamp}</span>
+                              )}
+                            </div>
+                            {isUsed ? (
+                              <div className="space-y-1">
+                                <span className="inline-block text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-800 border border-red-200">
+                                  {strikeWarning?.categoryLabel || 'Violation'}
+                                </span>
+                                <p className="text-[11px] font-semibold text-red-900 leading-snug">
+                                  {strikeWarning?.reason || 'Proctoring violation recorded.'}
+                                </p>
+                                {strikeWarning?.snapshotPath && (
+                                  <a
+                                    href={`/api/interview/snapshots?path=${encodeURIComponent(strikeWarning.snapshotPath)}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-1.5 inline-flex items-center gap-1 text-[10px] font-bold text-[#1689aa] hover:underline"
+                                  >
+                                    📷 View Evidence Snapshot
+                                  </a>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-zinc-400 font-medium">No violation recorded</p>
+                            )}
                           </div>
                         );
                       })}
                     </div>
+
                     <p className="text-[11px] text-zinc-500 leading-relaxed">
                       Continuous rule: Any 3 warnings across Face, Object, or Voice immediately terminate the session.
                     </p>
@@ -681,6 +868,40 @@ export function ReportDetailView({
                       <p className="text-[10px] text-zinc-400">warning{voiceWarningCount === 1 ? '' : 's'}</p>
                     </div>
                   </div>
+
+                  {/* Detailed incident log if warnings occurred */}
+                  {proctoringWarnings && proctoringWarnings.length > 0 && (
+                    <div className="pt-2 border-t border-zinc-200 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[11px] font-black uppercase tracking-wider text-zinc-800 flex items-center gap-1.5">
+                          <ShieldAlert className="w-3.5 h-3.5 text-red-600" />
+                          Proctoring Warning Incident Log ({proctoringWarnings.length})
+                        </h4>
+                        <span className="text-[10px] font-bold text-zinc-400">Stored in interview_events</span>
+                      </div>
+                      <div className="space-y-2">
+                        {proctoringWarnings.map((warn, i) => (
+                          <div
+                            key={warn.id || i}
+                            className="p-3 rounded-xl border border-red-200 bg-red-50/70 flex items-start gap-2.5 text-xs text-red-950"
+                          >
+                            <span className="px-2 py-0.5 rounded-md bg-red-600 text-white font-black text-[10px] uppercase flex-shrink-0 mt-0.5">
+                              Strike {warn.strikeNumber ?? i + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-2 mb-0.5">
+                                <span className="font-bold text-red-900 text-xs">{warn.categoryLabel}</span>
+                                {warn.timestamp && (
+                                  <span className="text-[10px] text-zinc-500 font-medium flex-shrink-0">{warn.timestamp}</span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-zinc-800 font-medium leading-relaxed">{warn.reason}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -727,17 +948,7 @@ export function ReportDetailView({
                     const ord = q.question_order ?? q.order_index ?? idx + 1;
                     const scoreItem = competencyScores.find((cs) => cs.ord === ord);
 
-                    // Strictly find answer for THIS question only — never fall back to global transcript!
-                    const directAnswer =
-                      answerByQuestionId.get(q.id)?.trim() ||
-                      answers.find((a) => a.question_id === q.id)?.transcript?.trim();
-                    const specificTranscript = transcript
-                      .filter((t) => t.speaker === 'candidate' && !t.is_flagged && t.question_ord === ord && t.text?.trim())
-                      .map((t) => t.text.trim())
-                      .join(' ')
-                      .trim();
-                    const candidateAnswer = directAnswer || specificTranscript || '';
-
+                    const candidateAnswer = getCandidateAnswer(q.id, ord, idx);
                     const score = scoreItem?.score ?? (candidateAnswer ? 3 : 0);
                     const { filled, label: starLabel, color: starColor } = starRating(score);
 
@@ -898,17 +1109,7 @@ export function ReportDetailView({
                     const ord = q.question_order ?? q.order_index ?? idx + 1;
                     const scoreItem = competencyScores.find((cs) => cs.ord === ord);
 
-                    // Strictly find answer for THIS question only — never fall back to global transcript!
-                    const directAnswer =
-                      answerByQuestionId.get(q.id)?.trim() ||
-                      answers.find((a) => a.question_id === q.id)?.transcript?.trim();
-                    const specificTranscript = transcript
-                      .filter((t) => t.speaker === 'candidate' && !t.is_flagged && t.question_ord === ord && t.text?.trim())
-                      .map((t) => t.text.trim())
-                      .join(' ')
-                      .trim();
-                    const candidateAnswer = directAnswer || specificTranscript || '';
-
+                    const candidateAnswer = getCandidateAnswer(q.id, ord, idx);
                     const score = scoreItem?.score ?? (candidateAnswer ? 3 : 0);
                     const { filled, label: starLabel, color: starColor } = starRating(score);
 
@@ -1094,12 +1295,21 @@ export function ReportDetailView({
             Back to Result Board
           </Link>
           <div className="flex items-center gap-3">
-            <Link
-              href={`/admin/reports/${session.id}`}
-              className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold rounded-xl transition-all"
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 text-xs font-bold rounded-xl transition-all cursor-pointer"
             >
               Refresh
-            </Link>
+            </button>
+            <button
+              type="button"
+              onClick={handleGenerateReport}
+              disabled={isGeneratingReport}
+              className="px-4 py-2 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 text-xs font-bold rounded-xl transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isGeneratingReport ? '⏳ Re-evaluating…' : 'Re-evaluate Report'}
+            </button>
           </div>
         </div>
 

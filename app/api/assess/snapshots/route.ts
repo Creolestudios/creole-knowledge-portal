@@ -25,20 +25,30 @@ export async function POST(req: Request) {
     const filename = `assess/${token}/${timestamp}_${category}.jpg`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    const { data, error } = await supabaseAdmin.storage
+    let uploadResult = await supabaseAdmin.storage
       .from('interview-snapshots')
       .upload(filename, buffer, {
         contentType: 'image/jpeg',
         upsert: true,
       });
 
-    if (error) {
-      console.error('[assess-snapshots] upload error:', error);
+    if (uploadResult.error && uploadResult.error.message?.toLowerCase().includes('bucket not found')) {
+      await supabaseAdmin.storage.createBucket('interview-snapshots', { public: false }).catch(() => { });
+      uploadResult = await supabaseAdmin.storage
+        .from('interview-snapshots')
+        .upload(filename, buffer, {
+          contentType: 'image/jpeg',
+          upsert: true,
+        });
+    }
+
+    if (uploadResult.error) {
+      console.error('[assess-snapshots] upload error:', uploadResult.error);
       // Gracefully return the computed path so callers are not blocked
       return NextResponse.json({ success: true, path: filename });
     }
 
-    return NextResponse.json({ success: true, path: data?.path || filename });
+    return NextResponse.json({ success: true, path: uploadResult.data?.path || filename });
   } catch (err) {
     console.error('[assess-snapshots] server error:', err);
     return NextResponse.json({ error: 'Failed to process snapshot upload' }, { status: 500 });

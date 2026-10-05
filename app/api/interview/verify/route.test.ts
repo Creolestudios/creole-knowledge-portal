@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { POST } from './route';
+import { GET, POST } from './route';
 
 const { mockSingleProfile, mockSingleInterview, mockUpdateEq, mockUpdate } = vi.hoisted(() => {
   const mockUpdateEq = vi.fn();
@@ -38,9 +38,12 @@ vi.mock('@/lib/supabase/admin', () => ({
   },
 }));
 
-function makeRequest(body: unknown) {
+import { resetSessionLocks, CONCURRENT_SESSION_ERROR } from '@/lib/ai-interview/session-lock';
+
+function makeRequest(body: unknown, headers?: Record<string, string>) {
   return new Request('http://localhost/api/interview/verify', {
     method: 'POST',
+    headers: headers || {},
     body: JSON.stringify(body),
   });
 }
@@ -48,6 +51,7 @@ function makeRequest(body: unknown) {
 describe('POST /api/interview/verify', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSessionLocks();
     mockSingleProfile.mockResolvedValue({ data: { role: 'user' } });
   });
 
@@ -216,5 +220,139 @@ describe('POST /api/interview/verify', () => {
     expect(res.status).toBe(410);
     const body = await res.json();
     expect(body.error).toBe('This interview has already ended');
+    expect(body.note).toBe('Note: This interview link has already been used and is expired.');
+  });
+
+  it('rejects a second user joining at the same time with millisecond difference', async () => {
+    mockSingleInterview.mockResolvedValue({
+      data: {
+        id: 'i-concur',
+        status: 'pending',
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        access_code: '123456',
+      },
+      error: null,
+    });
+    mockUpdateEq.mockResolvedValue({ error: null });
+
+    // User 1 on Laptop A joins
+    const res1 = await POST(makeRequest({
+      interviewId: 'i-concur',
+      accessCode: '123456',
+      deviceId: 'laptop-A',
+    }));
+    expect(res1.status).toBe(200);
+    const body1 = await res1.json();
+    expect(body1.verified).toBe(true);
+
+    // User 2 on Laptop B joins milliseconds later with the same interview link
+    const res2 = await POST(makeRequest({
+      interviewId: 'i-concur',
+      accessCode: '123456',
+      deviceId: 'laptop-B',
+    }));
+    expect(res2.status).toBe(409);
+    const body2 = await res2.json();
+    expect(body2.error).toBe(CONCURRENT_SESSION_ERROR);
+    expect(body2.concurrent).toBe(true);
+    expect(body2.code).toBe('CONCURRENT_SESSION_DETECTED');
+  });
+});
+
+describe('GET /api/interview/verify', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeGetRequest(interviewId?: string) {
+    const url = interviewId
+      ? `http://localhost/api/interview/verify?interviewId=${encodeURIComponent(interviewId)}`
+      : 'http://localhost/api/interview/verify';
+    return new Request(url, { method: 'GET' });
+  }
+
+  it('returns 400 when interviewId query param is missing', async () => {
+    const res = await GET(makeGetRequest());
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Interview ID is required');
+  });
+
+  it('returns 404 when interview is not found in database', async () => {
+    mockSingleInterview.mockResolvedValue({ data: null, error: { message: 'not found' } });
+    const res = await GET(makeGetRequest('non-existent-id'));
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 410 when interview has expired (expires_at in past)', async () => {
+    mockSingleInterview.mockResolvedValue({
+      data: {
+        id: 'i1',
+        status: 'pending',
+        expires_at: '2020-01-01T00:00:00Z',
+        used_at: null,
+      },
+      error: null,
+    });
+    const res = await GET(makeGetRequest('i1'));
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.expired).toBe(true);
+    expect(body.note).toBe('Note: This interview link has expired.');
+  });
+
+  it('returns 410 when interview was already used (used_at is set)', async () => {
+    mockSingleInterview.mockResolvedValue({
+      data: {
+        id: 'i1',
+        status: 'pending',
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        used_at: '2026-10-01T10:00:00Z',
+      },
+      error: null,
+    });
+    const res = await GET(makeGetRequest('i1'));
+    expect(res.status).toBe(410);
+    const body = await res.json();
+    expect(body.expired).toBe(true);
+    expect(body.used).toBe(true);
+    expect(body.note).toBe('Note: This interview link has already been used and is expired.');
+  });
+
+  it('returns 410 when interview status is in_progress, completed, or terminated', async () => {
+    for (const status of ['in_progress', 'completed', 'terminated']) {
+      mockSingleInterview.mockResolvedValue({
+        data: {
+          id: 'i1',
+          status,
+          expires_at: new Date(Date.now() + 86400000).toISOString(),
+          used_at: null,
+        },
+        error: null,
+      });
+      const res = await GET(makeGetRequest('i1'));
+      expect(res.status).toBe(410);
+      const body = await res.json();
+      expect(body.expired).toBe(true);
+      expect(body.used).toBe(true);
+      expect(body.note).toBe('Note: This interview link has already been used and is expired.');
+    }
+  });
+
+  it('returns 200 with active: true when interview is valid and pending', async () => {
+    mockSingleInterview.mockResolvedValue({
+      data: {
+        id: 'i1',
+        status: 'pending',
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        used_at: null,
+      },
+      error: null,
+    });
+    const res = await GET(makeGetRequest('i1'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.active).toBe(true);
+    expect(body.status).toBe('pending');
   });
 });

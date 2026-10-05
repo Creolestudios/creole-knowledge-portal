@@ -217,14 +217,11 @@ ${jdText || '(See attached JD file)'}
 
   const modelsToTry = [
     ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
-    'gemini-2.5-flash',          // latest stable — may have transient 500s, retry handles it
-    'gemini-3.8-flash',          // Google's recommended replacement for gemini-2.0-flash
-    'gemini-2.5-flash-lite',     // lightweight, fast
-    'gemini-2.0-flash-lite',     // stable lite fallback
+    'gemini-2.5-flash',
   ];
-  const maxAttemptsPerModel = 3;
+  const maxAttemptsPerModel = 2;
 
-  for (const modelName of modelsToTry) {
+  modelLoop: for (const modelName of modelsToTry) {
     for (let attempt = 1; attempt <= maxAttemptsPerModel; attempt++) {
       try {
         const response = await ai.models.generateContent({
@@ -234,7 +231,6 @@ ${jdText || '(See attached JD file)'}
             responseMimeType: 'application/json',
           },
         });
-
 
         if (response && response.text) {
           let rawText = response.text.trim();
@@ -350,24 +346,25 @@ ${jdText || '(See attached JD file)'}
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
 
-        // Skip model immediately — retrying won't help:
-        //   • 404 / NOT_FOUND  → model is deprecated or doesn't exist
-        //   • 429 / RESOURCE_EXHAUSTED / quota → daily quota used up for this model
+        const isQuotaExhausted =
+          errMsg.includes('429') ||
+          errMsg.includes('RESOURCE_EXHAUSTED') ||
+          errMsg.includes('quota');
+
+        if (isQuotaExhausted) {
+          console.warn('[AI Interview Extractor] Gemini API daily quota exhausted. Switching immediately to fast local fallback parser.');
+          break modelLoop;
+        }
+
         const isSkipModel =
           errMsg.includes('404') ||
           errMsg.includes('NOT_FOUND') ||
           errMsg.includes('no longer available') ||
-          errMsg.includes('429') ||
-          errMsg.includes('RESOURCE_EXHAUSTED') ||
-          errMsg.includes('quota') ||
           errMsg.includes('fetch failed') ||
           errMsg.includes('Failed to fetch') ||
           errMsg.includes('ENOTFOUND') ||
           errMsg.includes('ECONNREFUSED');
 
-        // Retry with backoff for transient errors:
-        //   • 500 INTERNAL / 503 UNAVAILABLE → temporary Google infra issue
-        //   • TCP resets (wsarecv / ECONNRESET / stream reading error) → network blip
         const isTransient =
           !isSkipModel &&
           (errMsg.includes('500') ||
@@ -387,9 +384,7 @@ ${jdText || '(See attached JD file)'}
         );
 
         if (isSkipModel) {
-          // No point retrying — move straight to the next model
           break;
-
         }
 
         if (isTransient && attempt < maxAttemptsPerModel) {
@@ -402,9 +397,43 @@ ${jdText || '(See attached JD file)'}
     }
   }
 
-  console.warn('[AI Interview Extractor] All Gemini models failed. Using local keyword fallback.');
-  const fallback = extractKeywordsLocalFallback(resumeText || 'Resume', jdText || 'JD');
-  const failureNote = 'Note: AI keyword extraction API is not working (all models failed or daily quota exhausted). Showing 0 or fallback keywords. Please retry.';
+  console.warn('[AI Interview Extractor] Using local keyword fallback parser.');
+  // If resume or JD text is missing because a binary file (PDF/DOCX) was uploaded,
+  // extract ASCII text streams from base64 so fallback can extract real candidate skills.
+  let effectiveResumeText = resumeText;
+  if (!effectiveResumeText && input.resumeFileBase64) {
+    try {
+      const raw = Buffer.from(input.resumeFileBase64, 'base64').toString('binary');
+      const matches: string[] = [];
+      const textRegex = /\(([^)]+)\)\s*T[jJ]/g;
+      let m: RegExpExecArray | null;
+      while ((m = textRegex.exec(raw)) !== null) {
+        if (m[1] && m[1].length > 1) matches.push(m[1]);
+      }
+      if (matches.length > 5) {
+        effectiveResumeText = matches.join(' ');
+      } else {
+        const words = raw.match(/[a-zA-Z0-9+#.-]{2,30}/g) || [];
+        effectiveResumeText = words.slice(0, 1000).join(' ');
+      }
+    } catch {
+      effectiveResumeText = 'Resume';
+    }
+  }
+
+  let effectiveJdText = jdText;
+  if (!effectiveJdText && input.jdFileBase64) {
+    try {
+      const raw = Buffer.from(input.jdFileBase64, 'base64').toString('binary');
+      const words = raw.match(/[a-zA-Z0-9+#.-]{2,30}/g) || [];
+      effectiveJdText = words.slice(0, 1000).join(' ');
+    } catch {
+      effectiveJdText = 'JD';
+    }
+  }
+
+  const fallback = extractKeywordsLocalFallback(effectiveResumeText || 'Resume', effectiveJdText || 'JD');
+  const failureNote = 'Note: AI keyword extraction API is unavailable (daily quota exhausted or network limit). Fallback parser extracted keywords from documents.';
   return {
     ...fallback,
     isFallback: true,
