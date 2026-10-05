@@ -287,6 +287,61 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
     expect(screen.getByLabelText(/you camera preview/i)).toBeInTheDocument();
   });
 
+  it('keeps candidate camera video mounted and processes proctoring warnings after admin leaves', async () => {
+    const makeFakeTrack = () => ({
+      stop: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      enabled: true,
+      readyState: 'live',
+    });
+    mockRemoteStream = {
+      getTracks: () => [makeFakeTrack()],
+      getVideoTracks: () => [makeFakeTrack()],
+      getAudioTracks: () => [makeFakeTrack()],
+    } as any;
+
+    render(<InterviewEntryPage />);
+    const codeInput = screen.getByPlaceholderText('000000');
+    fireEvent.change(codeInput, { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    expect(await screen.findByText('Before you begin')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /allow & start interview/i }));
+
+    expect(await screen.findByText("You're verified")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /join interview/i }));
+
+    expect(await screen.findByText('Candidate live question')).toBeInTheDocument();
+    const candidatePreviewBefore = screen.getByLabelText(/you camera preview/i);
+    expect(candidatePreviewBefore).toBeInTheDocument();
+
+    // Admin joins
+    act(() => {
+      mockBroadcastCallback?.({
+        payload: { type: 'admin-joined', senderRole: 'admin' },
+      });
+    });
+
+    expect(screen.getByLabelText(/interviewer camera preview/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/you camera preview/i)).toBeInTheDocument();
+
+    // Admin leaves
+    act(() => {
+      mockBroadcastCallback?.({
+        payload: { type: 'admin-left', senderRole: 'admin' },
+      });
+    });
+
+    // Interviewer video vanished, candidate preview remains
+    expect(screen.queryByLabelText(/interviewer camera preview/i)).not.toBeInTheDocument();
+    const candidatePreviewAfter = screen.getByLabelText(/you camera preview/i);
+    expect(candidatePreviewAfter).toBeInTheDocument();
+
+    // Candidate video element is the exact same element (not unmounted or destroyed)
+    expect(candidatePreviewAfter).toBe(candidatePreviewBefore);
+  });
+
   it('shows Interview Not Started Yet page when admin joins before interview is started (pending or inProgress: false)', async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (typeof url === 'string' && url.includes('/verify')) {

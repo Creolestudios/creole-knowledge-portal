@@ -306,6 +306,13 @@ export default function InterviewEntryPage() {
             if (remoteVideoRef.current) {
               remoteVideoRef.current.srcObject = null;
             }
+            // Explicitly ensure candidate local camera & audio tracks remain active and playing for proctoring
+            if (cameraVideoRef.current && cameraStreamRef.current) {
+              if (cameraVideoRef.current.srcObject !== cameraStreamRef.current) {
+                cameraVideoRef.current.srcObject = cameraStreamRef.current;
+              }
+              void cameraVideoRef.current.play()?.catch(() => {});
+            }
           }
           if (
             payload.type === 'candidate-presence' &&
@@ -1154,7 +1161,7 @@ export default function InterviewEntryPage() {
     } catch {
       // Ignore synchronous jsdom Not Implemented errors
     }
-  }, [cameraStream, cameraPreview, stage]);
+  }, [cameraStream, cameraPreview, stage, isAdminPresent]);
 
   // ─── Shared frame-capture helper ─────────────────────────────────────────
   // Extracted so both the calibration and interview effects can reuse it.
@@ -1169,6 +1176,9 @@ export default function InterviewEntryPage() {
       const activeVideo = cameraVideoRef.current || videoElement;
       if (timestamp - lastFrameAt >= 125 && activeVideo) {
         if (activeVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          if (activeVideo.paused && activeVideo.srcObject) {
+            void activeVideo.play()?.catch(() => {});
+          }
           if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
             frameRequest = activeVideo.requestVideoFrameCallback(captureFrame);
           }
@@ -1190,8 +1200,13 @@ export default function InterviewEntryPage() {
     };
 
     const captureTimer = window.setInterval(() => {
-      if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) void captureFrame(performance.now());
-    }, 125);
+      // Active watchdog: if requestVideoFrameCallback ever stalls or skips for > 200ms
+      // (e.g. video element re-rendered, tab backgrounded, or transient media pause),
+      // immediately force trigger captureFrame to keep proctoring running continuously.
+      if (performance.now() - lastFrameAt >= 200) {
+        void captureFrame(performance.now());
+      }
+    }, 100);
 
     const startTimer = window.setTimeout(() => {
       const nextVideo = cameraVideoRef.current || videoElement;
@@ -1448,7 +1463,11 @@ export default function InterviewEntryPage() {
       frameTimerRef = window.setInterval(() => {
         if (stageRef.current !== 'interview') return;
         const video = cameraVideoRef.current;
-        if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        if (!video) return;
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          if (video.paused && video.srcObject) {
+            void video.play()?.catch(() => {});
+          }
           return;
         }
         createImageBitmap(video)
@@ -2119,42 +2138,65 @@ export default function InterviewEntryPage() {
                 </span>
               </div>
 
-              {remoteStream && (isAdmin ? true : isAdminPresent) ? (
-                <div className="space-y-3">
-                  {/* Top Tile: Admin Video (when Admin) or Interviewer Video (when Candidate) */}
-                  <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
-                    <MeetingVideoTile
-                      stream={isAdmin ? cameraStream : remoteStream}
-                      micOn={isAdmin ? micOn : remoteMicOn}
-                      size="large"
-                      label={isAdmin ? 'You (Admin)' : 'Interviewer'}
-                      muted={isAdmin}
-                      mirror={isAdmin}
-                      videoRef={isAdmin ? cameraVideoRef : remoteVideoRef}
-                    />
-                  </div>
-                  {/* Bottom Tile: Candidate Video */}
-                  <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
-                    <MeetingVideoTile
-                      stream={isAdmin ? remoteStream : cameraStream}
-                      micOn={isAdmin ? remoteMicOn : micOn}
-                      size="large"
-                      label={isAdmin ? 'Candidate' : 'You'}
-                      muted={!isAdmin}
-                      mirror={!isAdmin}
-                      videoRef={isAdmin ? remoteVideoRef : cameraVideoRef}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <MeetingVideoTile
-                  stream={cameraStream}
-                  micOn={micOn}
-                  size="large"
-                  label={isAdmin ? 'You (Admin)' : 'You'}
-                  videoRef={cameraVideoRef}
-                />
-              )}
+              <div className="space-y-3">
+                {/* Admin View: Admin self tile at top, Candidate remote tile below */}
+                {isAdmin ? (
+                  <>
+                    <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
+                      <MeetingVideoTile
+                        stream={cameraStream}
+                        micOn={micOn}
+                        size="large"
+                        label="You (Admin)"
+                        muted={true}
+                        mirror={true}
+                        videoRef={cameraVideoRef}
+                      />
+                    </div>
+                    {remoteStream && (
+                      <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
+                        <MeetingVideoTile
+                          stream={remoteStream}
+                          micOn={remoteMicOn}
+                          size="large"
+                          label="Candidate"
+                          muted={false}
+                          mirror={false}
+                          videoRef={remoteVideoRef}
+                        />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  /* Candidate View: Interviewer tile at top (only while admin is present), Candidate self tile below (ALWAYS mounted) */
+                  <>
+                    {remoteStream && isAdminPresent && (
+                      <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
+                        <MeetingVideoTile
+                          stream={remoteStream}
+                          micOn={remoteMicOn}
+                          size="large"
+                          label="Interviewer"
+                          muted={false}
+                          mirror={false}
+                          videoRef={remoteVideoRef}
+                        />
+                      </div>
+                    )}
+                    <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
+                      <MeetingVideoTile
+                        stream={cameraStream}
+                        micOn={micOn}
+                        size="large"
+                        label="You"
+                        muted={true}
+                        mirror={true}
+                        videoRef={cameraVideoRef}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Live Voice / Candidate Speaking Caption for Admin */}
               {isAdmin && (candidateSpeakingText || isCandidateSpeaking) && (
