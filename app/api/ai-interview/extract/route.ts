@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { extractKeywordsFromResumeAndJD } from '@/lib/ai-interview/extractor';
+import { extractKeywordsFromResumeAndJD, extractTextFromDocumentBuffer } from '@/lib/ai-interview/extractor';
 import { ExtractKeywordsInput } from '@/lib/ai-interview/types';
 import { requireAdminUser } from '@/lib/supabase/admin';
 
@@ -28,40 +28,50 @@ export async function POST(req: NextRequest) {
       const resumeFile = formData.get('resumeFile') as File | null;
       if (resumeFile && resumeFile.size > 0) {
         payload.resumeFileName = resumeFile.name;
-        payload.resumeMimeType = resumeFile.type || 'application/octet-stream';
+        const isPdf = resumeFile.name.toLowerCase().endsWith('.pdf') || resumeFile.type === 'application/pdf';
+        payload.resumeMimeType = isPdf ? 'application/pdf' : (resumeFile.type || 'application/octet-stream');
         const buffer = await resumeFile.arrayBuffer();
+        const nodeBuffer = Buffer.from(buffer);
 
         if (
           resumeFile.type.startsWith('text/') ||
           resumeFile.name.endsWith('.txt') ||
           resumeFile.name.endsWith('.md')
         ) {
-          // Plain text — decode directly
           payload.resumeText = (payload.resumeText || '') + '\n' + new TextDecoder().decode(buffer);
         } else {
-          // Binary file (PDF/DOCX) — send as base64 to Gemini only.
-          // Do NOT attempt raw binary decoding; it produces XML garbage that corrupts the fallback.
-          payload.resumeFileBase64 = Buffer.from(buffer).toString('base64');
+          const extractedText = extractTextFromDocumentBuffer(nodeBuffer, resumeFile.name, payload.resumeMimeType);
+          if (extractedText && extractedText.length > 20) {
+            payload.resumeText = (payload.resumeText || '') + '\n' + extractedText;
+          }
+          if (isPdf) {
+            payload.resumeFileBase64 = nodeBuffer.toString('base64');
+          }
         }
       }
 
       const jdFile = formData.get('jdFile') as File | null;
       if (jdFile && jdFile.size > 0) {
         payload.jdFileName = jdFile.name;
-        payload.jdMimeType = jdFile.type || 'application/octet-stream';
+        const isPdf = jdFile.name.toLowerCase().endsWith('.pdf') || jdFile.type === 'application/pdf';
+        payload.jdMimeType = isPdf ? 'application/pdf' : (jdFile.type || 'application/octet-stream');
         const buffer = await jdFile.arrayBuffer();
+        const nodeBuffer = Buffer.from(buffer);
 
         if (
           jdFile.type.startsWith('text/') ||
           jdFile.name.endsWith('.txt') ||
           jdFile.name.endsWith('.md')
         ) {
-          // Plain text — decode directly
           payload.jdText = (payload.jdText || '') + '\n' + new TextDecoder().decode(buffer);
         } else {
-          // Binary file (PDF/DOCX) — send as base64 to Gemini only.
-          // Do NOT attempt raw binary decoding; it produces XML garbage that corrupts the fallback.
-          payload.jdFileBase64 = Buffer.from(buffer).toString('base64');
+          const extractedText = extractTextFromDocumentBuffer(nodeBuffer, jdFile.name, payload.jdMimeType);
+          if (extractedText && extractedText.length > 20) {
+            payload.jdText = (payload.jdText || '') + '\n' + extractedText;
+          }
+          if (isPdf) {
+            payload.jdFileBase64 = nodeBuffer.toString('base64');
+          }
         }
       }
     } else {

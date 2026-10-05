@@ -99,7 +99,7 @@ export interface DetectedObjectEvent {
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
-  minConfidence = 0.28,
+  minConfidence = 0.22,
 ): DetectedObjectEvent[] {
   return detections
     .filter((d) => {

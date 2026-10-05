@@ -1,6 +1,138 @@
 import { GoogleGenAI } from '@google/genai';
 import { ExtractKeywordsInput, ExtractionResult } from './types';
 
+// Curated technical and professional skills recognized in resumes & JDs
+const KNOWN_TECHNICAL_SKILLS = new Set([
+  'react', 'react.js', 'reactjs', 'next.js', 'nextjs', 'typescript', 'javascript',
+  'node.js', 'nodejs', 'node', 'python', 'java', 'c++', 'c#', 'golang', 'go', 'rust',
+  'ruby', 'php', 'swift', 'kotlin', 'html', 'html5', 'css', 'css3', 'tailwind',
+  'tailwindcss', 'bootstrap', 'sass', 'scss', 'sql', 'mysql', 'postgresql', 'postgres',
+  'mongodb', 'redis', 'sqlite', 'oracle', 'nosql', 'graphql', 'rest', 'restful',
+  'api', 'apis', 'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'cloud', 'git',
+  'github', 'gitlab', 'ci/cd', 'cicd', 'jenkins', 'terraform', 'ansible', 'linux',
+  'bash', 'agile', 'scrum', 'jira', 'tdd', 'unit testing', 'jest', 'vitest',
+  'cypress', 'playwright', 'selenium', 'redux', 'zustand', 'mobx', 'express',
+  'express.js', 'fastapi', 'django', 'flask', 'spring', 'spring boot',
+  'microservices', 'kafka', 'rabbitmq', 'elasticsearch', 'figma', 'ui/ux',
+  'devops', 'machine learning', 'ai', 'deep learning', 'nlp', 'pytorch',
+  'tensorflow', 'pandas', 'numpy', 'web3', 'solidity', 'blockchain',
+  'communication', 'leadership', 'problem solving', 'teamwork', 'critical thinking'
+]);
+
+// Common English stopwords and document markup noise to ignore
+const STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'content', 'types', 'xml', 'doc', 'docx', 'pdf',
+  'schema', 'http', 'https', 'org', 'com', 'rels', 'w3', 'xmlns', 'pkg',
+  'document', 'true', 'false', 'null', 'undefined', 'let', 'var', 'const', 'from',
+  'into', 'that', 'this', 'these', 'those', 'have', 'has', 'had', 'been', 'were',
+  'was', 'are', 'is', 'you', 'your', 'our', 'my', 'their', 'them', 'they', 'she',
+  'her', 'him', 'his', 'who', 'what', 'which', 'when', 'where', 'why', 'how',
+  'any', 'all', 'some', 'not', 'but', 'also', 'only', 'more', 'most', 'very',
+  'can', 'could', 'will', 'would', 'should', 'may', 'might', 'must', 'about',
+  'above', 'after', 'again', 'against', 'between', 'down', 'during', 'each', 'few',
+  'other', 'same', 'such', 'than', 'too', 'under', 'until', 'while', 'then', 'once',
+  'here', 'there', 'both', 'below', 'off', 'out', 'over', 'own', 'just', 'now',
+  'sample', 'resume', 'description', 'role', 'job', 'experience', 'skills',
+  'work', 'years', 'required', 'responsibilities', 'qualifications', 'requirements',
+  'seeking', 'looking', 'candidate', 'position', 'strong', 'ability', 'proficient'
+]);
+
+/**
+ * Safely extracts human-readable text from binary buffers (DOCX, PDF, or text).
+ * Prevents raw binary zip/deflate bytes from polluting keyword extraction.
+ */
+export function extractTextFromDocumentBuffer(
+  buffer: Buffer,
+  fileName?: string,
+  mimeType?: string,
+): string {
+  const isDocx =
+    (fileName && /\.docx$/i.test(fileName)) ||
+    (mimeType && mimeType.includes('wordprocessingml')) ||
+    (buffer.length > 4 && buffer[0] === 0x50 && buffer[1] === 0x4b);
+
+  if (isDocx) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const AdmZip = require('adm-zip');
+      const zip = new AdmZip(buffer);
+      const docEntry = zip.getEntry('word/document.xml');
+      if (docEntry) {
+        const xml = docEntry.getData().toString('utf8');
+        return xml
+          .replaceAll('</w:p>', '\n')
+          .replace(/<[^>]+>/g, ' ')
+          .replaceAll('&amp;', '&')
+          .replaceAll('&lt;', '<')
+          .replaceAll('&gt;', '>')
+          .replaceAll('&quot;', '"')
+          .replaceAll('&apos;', "'")
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+    } catch (e) {
+      console.warn('[extractTextFromDocumentBuffer] DOCX parse error:', e);
+    }
+  }
+
+  const isPdf =
+    (fileName && /\.pdf$/i.test(fileName)) ||
+    (mimeType && mimeType.includes('pdf')) ||
+    (buffer.length > 4 && buffer.subarray(0, 4).toString() === '%PDF');
+
+  if (isPdf) {
+    try {
+      const raw = buffer.toString('latin1');
+      let extracted = '';
+
+      // 1. Try decompressing FlateDecode streams
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const zlib = require('zlib');
+      const streamRegex = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
+      let match: RegExpExecArray | null;
+      while ((match = streamRegex.exec(raw)) !== null) {
+        try {
+          const streamBuf = Buffer.from(match[1], 'latin1');
+          const decompressed = zlib.inflateSync(streamBuf).toString('latin1');
+          const tjMatches = decompressed.match(/\(([^)]+)\)\s*T[jJ]/g);
+          if (tjMatches) {
+            extracted += ' ' + tjMatches.map((m: string) => m.replaceAll('(', '').replaceAll(')', '').replace(/T[jJ]/, '')).join(' ');
+          }
+        } catch {
+          // Stream is not flate-compressed or failed to inflate; skip
+        }
+      }
+
+      // 2. Uncompressed Tj / TJ
+      const directMatches = raw.match(/\(([^)]+)\)\s*T[jJ]/g);
+      if (directMatches) {
+        extracted += ' ' + directMatches.map((m: string) => m.replaceAll('(', '').replaceAll(')', '').replace(/T[jJ]/, '')).join(' ');
+      }
+
+      const cleaned = extracted.replace(/\s+/g, ' ').trim();
+      if (cleaned.length > 20) {
+        return cleaned;
+      }
+    } catch (e) {
+      console.warn('[extractTextFromDocumentBuffer] PDF parse error:', e);
+    }
+  }
+
+  // Fallback: check if ASCII/UTF8 plain text
+  try {
+    const utf8 = buffer.toString('utf8');
+    const printableMatches = utf8.match(/[\x20-\x7E\r\n\t]/g);
+    const printableRatio = (printableMatches ? printableMatches.length : 0) / (utf8.length || 1);
+    if (printableRatio > 0.85) {
+      return utf8.trim();
+    }
+  } catch {
+    // ignore
+  }
+
+  return '';
+}
+
 /**
  * Fallback heuristic keyword matcher for offline/testing when Gemini is unavailable.
  */
@@ -23,36 +155,76 @@ export function extractKeywordsLocalFallback(
       .replace(/[^a-z0-9+#.\s]/g, ' ')
       .split(/\s+/)
       .map(stripDotsAndPunctuation)
-      .filter((w) => w.length >= 2);
+      .filter((w) => {
+        if (w.length < 2) return false;
+        if (STOPWORDS.has(w)) return false;
+        // Keep 2-letter tokens only if known abbreviation or skill
+        if (w.length === 2 && !['ai', 'go', 'c#', 'c++', 'js', 'ts', 'qa', 'ml', 'ui', 'ux', 'db', 'ci', 'cd'].includes(w)) {
+          return false;
+        }
+        // Filter random symbols or tokens starting with # or +
+        if ((w.startsWith('#') || w.startsWith('+')) && !['c++', 'c#'].includes(w)) {
+          return false;
+        }
+        // Words without vowels unless known abbreviation or skill
+        if (!/[aeiouy]/.test(w) && !KNOWN_TECHNICAL_SKILLS.has(w)) {
+          return false;
+        }
+        // Filter random hexadecimal / byte fragments like f7, 8y, zy, mm, 9dn, rguq
+        if (/^[a-z0-9]{1,3}[0-9][a-z0-9]*$/.test(w) && !['c++', 'c#', 'html5', 'css3', 'web3', 'oauth2'].includes(w)) {
+          return false;
+        }
+        // Filter random 4+ consonant clusters or non-skill garbage
+        if (!KNOWN_TECHNICAL_SKILLS.has(w) && (/[^aeiouy]{4,}/.test(w) || w === 'rguq')) {
+          return false;
+        }
+        return true;
+      });
 
-  const resumeWords = new Set(clean(resumeText));
+  const resumeWords = Array.from(new Set(clean(resumeText)));
   const jdWords = Array.from(new Set(clean(jdText)));
+  const resumeWordSet = new Set(resumeWords);
 
-  const matched = jdWords.filter((w) => resumeWords.has(w));
-  const missing = jdWords.filter((w) => !resumeWords.has(w));
+  // Prioritize known technical skills first, then other meaningful words
+  const sortSkills = (words: string[]) =>
+    [...words].sort((a, b) => {
+      const aKnown = KNOWN_TECHNICAL_SKILLS.has(a) ? 1 : 0;
+      const bKnown = KNOWN_TECHNICAL_SKILLS.has(b) ? 1 : 0;
+      if (aKnown !== bKnown) return bKnown - aKnown;
+      return b.length - a.length;
+    });
+
+  const matched = sortSkills(jdWords.filter((w) => resumeWordSet.has(w)));
+  const missing = sortSkills(jdWords.filter((w) => !resumeWordSet.has(w)));
 
   const totalJd = jdWords.length || 1;
-  const matchPct = Math.round((matched.length / totalJd) * 100);
+  const matchPct = Math.min(100, Math.max(0, Math.round((matched.length / totalJd) * 100)));
+
+  // Sanitize summary if binary noise
+  let summary = resumeText.slice(0, 300);
+  if (/PK\s|Content_Types|\.xml|[^\x20-\x7E\r\n\t]{3,}/i.test(summary)) {
+    summary = matched.length > 0
+      ? `Candidate with competencies in ${matched.slice(0, 6).join(', ')}.`
+      : 'Resume content processed.';
+  }
 
   return {
     candidateProfile: {
-      summary: resumeText.slice(0, 300) || 'Resume content processed.',
-      extractedSkills: Array.from(resumeWords).slice(0, 15),
+      summary: summary || 'Resume content processed.',
+      extractedSkills: sortSkills(resumeWords).slice(0, 15),
       domains: ['Engineering'],
       yearsOfExperience: 0,
     },
     jdRequirements: {
-      mustHaveSkills: jdWords.slice(0, 10),
-      niceToHaveSkills: jdWords.slice(10, 15),
+      mustHaveSkills: sortSkills(jdWords).slice(0, 10),
+      niceToHaveSkills: sortSkills(jdWords).slice(10, 15),
       keyResponsibilities: ['Fulfill role objectives based on provided JD.'],
     },
     analysis: {
       matchPercentage: matchPct,
       matchedKeywords: matched.slice(0, 20),
       missingKeywords: missing.slice(0, 20),
-      resumeOnlyKeywords: Array.from(resumeWords)
-        .filter((w) => !jdWords.includes(w))
-        .slice(0, 15),
+      resumeOnlyKeywords: sortSkills(resumeWords.filter((w) => !jdWords.includes(w))).slice(0, 15),
       skillGapSummary: missing.length > 0 
         ? `Missing ${missing.length} keywords identified in JD.` 
         : 'Strong alignment with JD requirements.',
@@ -218,6 +390,10 @@ ${jdText || '(See attached JD file)'}
   const modelsToTry = [
     ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
     'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-3.6-flash',
+    'gemini-3.1-pro-preview',
   ];
   const maxAttemptsPerModel = 2;
 
@@ -352,8 +528,8 @@ ${jdText || '(See attached JD file)'}
           errMsg.includes('quota');
 
         if (isQuotaExhausted) {
-          console.warn('[AI Interview Extractor] Gemini API daily quota exhausted. Switching immediately to fast local fallback parser.');
-          break modelLoop;
+          console.warn(`[AI Interview Extractor] Gemini model ${modelName} daily quota exhausted. Trying next model...`);
+          break; // break attempt loop to try next model in modelLoop
         }
 
         const isSkipModel =
@@ -399,23 +575,12 @@ ${jdText || '(See attached JD file)'}
 
   console.warn('[AI Interview Extractor] Using local keyword fallback parser.');
   // If resume or JD text is missing because a binary file (PDF/DOCX) was uploaded,
-  // extract ASCII text streams from base64 so fallback can extract real candidate skills.
+  // extract clean human-readable text from base64 buffer so fallback can extract real candidate skills.
   let effectiveResumeText = resumeText;
   if (!effectiveResumeText && input.resumeFileBase64) {
     try {
-      const raw = Buffer.from(input.resumeFileBase64, 'base64').toString('binary');
-      const matches: string[] = [];
-      const textRegex = /\(([^)]+)\)\s*T[jJ]/g;
-      let m: RegExpExecArray | null;
-      while ((m = textRegex.exec(raw)) !== null) {
-        if (m[1] && m[1].length > 1) matches.push(m[1]);
-      }
-      if (matches.length > 5) {
-        effectiveResumeText = matches.join(' ');
-      } else {
-        const words = raw.match(/[a-zA-Z0-9+#.-]{2,30}/g) || [];
-        effectiveResumeText = words.slice(0, 1000).join(' ');
-      }
+      const buf = Buffer.from(input.resumeFileBase64, 'base64');
+      effectiveResumeText = extractTextFromDocumentBuffer(buf, input.resumeFileName, input.resumeMimeType);
     } catch {
       effectiveResumeText = 'Resume';
     }
@@ -424,9 +589,8 @@ ${jdText || '(See attached JD file)'}
   let effectiveJdText = jdText;
   if (!effectiveJdText && input.jdFileBase64) {
     try {
-      const raw = Buffer.from(input.jdFileBase64, 'base64').toString('binary');
-      const words = raw.match(/[a-zA-Z0-9+#.-]{2,30}/g) || [];
-      effectiveJdText = words.slice(0, 1000).join(' ');
+      const buf = Buffer.from(input.jdFileBase64, 'base64');
+      effectiveJdText = extractTextFromDocumentBuffer(buf, input.jdFileName, input.jdMimeType);
     } catch {
       effectiveJdText = 'JD';
     }

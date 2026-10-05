@@ -50,7 +50,32 @@ export function useWebRTC(
         currentLocal.getTracks().forEach((track) => pc.addTrack(track, currentLocal));
       }
 
+      pc.onconnectionstatechange = () => {
+        if (
+          pc.connectionState === 'disconnected' ||
+          pc.connectionState === 'failed' ||
+          pc.connectionState === 'closed'
+        ) {
+          setRemoteStream(null);
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        if (
+          pc.iceConnectionState === 'disconnected' ||
+          pc.iceConnectionState === 'failed' ||
+          pc.iceConnectionState === 'closed'
+        ) {
+          setRemoteStream(null);
+        }
+      };
+
       pc.ontrack = (event) => {
+        if (event.track) {
+          event.track.onended = () => {
+            setRemoteStream(null);
+          };
+        }
         if (event.streams && event.streams[0]) {
           setRemoteStream(event.streams[0]);
         } else {
@@ -77,6 +102,7 @@ export function useWebRTC(
       pcRef.current = pc;
       return pc;
     };
+
 
     channel
       .on('broadcast', { event: 'webrtc' }, async ({ payload }: { payload: any }) => {
@@ -131,6 +157,14 @@ export function useWebRTC(
               pendingCandidatesRef.current.push(payload.candidate);
             }
           }
+
+          if (payload.type === 'peer-left' || payload.type === 'admin-left') {
+            setRemoteStream(null);
+            if (pcRef.current) {
+              pcRef.current.close();
+              pcRef.current = null;
+            }
+          }
         } catch (err) {
           console.error('[WebRTC] Error handling signal:', err);
         }
@@ -154,6 +188,22 @@ export function useWebRTC(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interviewId, isActive, role, supabase]);
 
+  const leave = () => {
+    try {
+      const channel = supabase.channel(`interview-rtc-${interviewId}`);
+      channel.send({
+        type: 'broadcast',
+        event: 'webrtc',
+        payload: { type: `${role}-left`, sender: role },
+      });
+    } catch {
+      // ignore
+    }
+    pcRef.current?.close();
+    pcRef.current = null;
+    setRemoteStream(null);
+  };
+
   // Update tracks if localStream changes or is populated after connection creation
   useEffect(() => {
     const pc = pcRef.current;
@@ -176,5 +226,5 @@ export function useWebRTC(
     }
   }, [localStream]);
 
-  return { remoteStream };
+  return { remoteStream, leave };
 }

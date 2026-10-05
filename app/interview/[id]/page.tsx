@@ -124,6 +124,10 @@ export default function InterviewEntryPage() {
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
+  const currentQuestionRef = useRef(0);
+  useEffect(() => {
+    currentQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
   const [questionError, setQuestionError] = useState<string | null>(null);
   const [cameraPreview, setCameraPreview] = useState<MediaStream | null>(null);
   const [faceTrackingStatus, setFaceTrackingStatus] = useState<'loading' | 'tracking' | 'error'>('loading');
@@ -131,6 +135,7 @@ export default function InterviewEntryPage() {
   const [faceDetected, setFaceDetected] = useState(false);
   const [isMouthMoving, setIsMouthMoving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminPresent, setIsAdminPresent] = useState(false);
   const [remoteMicOn, setRemoteMicOn] = useState(true);
   const [candidateSpeakingText, setCandidateSpeakingText] = useState('');
   const [isCandidateSpeaking, setIsCandidateSpeaking] = useState(false);
@@ -149,6 +154,7 @@ export default function InterviewEntryPage() {
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const syncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const candidateEnteredAtRef = useRef<number>(0);
 
   // Link status check on mount to prevent re-accessing completed/terminated links
   useEffect(() => {
@@ -196,6 +202,11 @@ export default function InterviewEntryPage() {
     channel
       .on('broadcast', { event: 'state-sync' }, ({ payload }: { payload: any }) => {
         if (isAdmin) {
+          if (payload.type === 'sync-state') {
+            if (typeof payload.questionIndex === 'number') {
+              setCurrentQuestion(payload.questionIndex);
+            }
+          }
           if (payload.type === 'question-change') {
             setCurrentQuestion(payload.questionIndex);
           }
@@ -214,12 +225,12 @@ export default function InterviewEntryPage() {
             setWarningToast({
               show: true,
               count: payload.count,
-              reason: `Candidate Warning: ${payload.reason}`,
+              reason: payload.reason,
             });
             setLiveEvents((prev) => [
               {
                 id: `${Date.now()}-${Math.random()}`,
-                category: 'warning',
+                category: payload.category || 'warning',
                 meta: { count: payload.count, reason: payload.reason },
                 ts: payload.ts || Date.now(),
               },
@@ -242,9 +253,7 @@ export default function InterviewEntryPage() {
               type: 'terminate',
               message: `Interview Terminated: ${payload.reason}`,
             });
-            window.setTimeout(() => {
-              setStageWithRef('terminated');
-            }, 2500);
+            setStageWithRef('terminated');
           }
           if (payload.type === 'completed') {
             setAdminBanner({
@@ -252,27 +261,99 @@ export default function InterviewEntryPage() {
               type: 'completed',
               message: 'Interview Completed: The candidate has submitted all answers.',
             });
-            window.setTimeout(() => {
-              setStageWithRef('completed');
-            }, 2500);
+            setStageWithRef('completed');
           }
         } else {
           // Candidate side receiving admin sync and presence checks
+          if (payload.type === 'admin-joined') {
+            setIsAdminPresent(true);
+            try {
+              channel.send({
+                type: 'broadcast',
+                event: 'state-sync',
+                payload: {
+                  type: 'sync-state',
+                  questionIndex: currentQuestionRef.current,
+                  remainingSec: questionRemainingSecRef.current,
+                },
+              });
+            } catch {
+              // ignore
+            }
+          }
           if (payload.type === 'mic-toggle' && payload.senderRole === 'admin') {
             setRemoteMicOn(payload.micOn);
           }
-          if (payload.type === 'candidate-presence' && payload.deviceId && payload.deviceId !== deviceId) {
+          if (payload.type === 'admin-left') {
+            setIsAdminPresent(false);
+            setRemoteMicOn(true);
+            if (remoteVideoRef.current) {
+              remoteVideoRef.current.srcObject = null;
+            }
+          }
+          if (
+            payload.type === 'candidate-presence' &&
+            payload.senderRole === 'candidate' &&
+            payload.deviceId &&
+            payload.deviceId !== deviceId &&
+            stageRef.current === 'interview' &&
+            !isAdmin
+          ) {
+            const myEnteredAt = candidateEnteredAtRef.current || Date.now();
+            const theirEnteredAt = typeof payload.enteredAt === 'number' ? payload.enteredAt : Infinity;
+
+            if (myEnteredAt <= theirEnteredAt) {
+              // I am the primary candidate (joined earlier or simultaneous priority). Reject intruder.
+              syncChannelRef.current?.send({
+                type: 'broadcast',
+                event: 'state-sync',
+                payload: {
+                  type: 'candidate-presence-reject',
+                  senderRole: 'candidate',
+                  rejectDeviceId: payload.deviceId,
+                  activeDeviceId: deviceId,
+                },
+              });
+            } else {
+              // The other device joined earlier than me. Terminate this duplicate session.
+              setTerminationReason('An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
+              setStageWithRef('terminated');
+            }
+          }
+
+          if (
+            payload.type === 'candidate-presence-reject' &&
+            payload.rejectDeviceId === deviceId &&
+            stageRef.current === 'interview' &&
+            !isAdmin
+          ) {
             setTerminationReason('An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
             setStageWithRef('terminated');
           }
         }
       })
       .subscribe((status: string) => {
-        if (status === 'SUBSCRIBED' && !isAdmin) {
+        // ONLY broadcast candidate presence when the candidate is actually in the live interview!
+        if (status === 'SUBSCRIBED' && stageRef.current === 'interview' && !isAdmin) {
+          if (!candidateEnteredAtRef.current) {
+            candidateEnteredAtRef.current = Date.now();
+          }
           channel.send({
             type: 'broadcast',
             event: 'state-sync',
-            payload: { type: 'candidate-presence', deviceId },
+            payload: {
+              type: 'candidate-presence',
+              senderRole: 'candidate',
+              deviceId,
+              enteredAt: candidateEnteredAtRef.current,
+            },
+          });
+        }
+        if (status === 'SUBSCRIBED' && isAdmin) {
+          channel.send({
+            type: 'broadcast',
+            event: 'state-sync',
+            payload: { type: 'admin-joined', senderRole: 'admin' },
           });
         }
       });
@@ -283,7 +364,26 @@ export default function InterviewEntryPage() {
       channel.unsubscribe();
       syncChannelRef.current = null;
     };
-  }, [interviewId, isAdmin, setStageWithRef, supabase]);
+  }, [interviewId, isAdmin, setStageWithRef, supabase, deviceId]);
+
+  // Broadcast candidate presence immediately when entering the live interview stage
+  useEffect(() => {
+    if (stage === 'interview' && !isAdmin) {
+      if (!candidateEnteredAtRef.current) {
+        candidateEnteredAtRef.current = Date.now();
+      }
+      syncChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'state-sync',
+        payload: {
+          type: 'candidate-presence',
+          senderRole: 'candidate',
+          deviceId,
+          enteredAt: candidateEnteredAtRef.current,
+        },
+      });
+    }
+  }, [stage, isAdmin, deviceId]);
 
 
 
@@ -296,7 +396,7 @@ export default function InterviewEntryPage() {
   // proctoring watchdog, cleanup) that must always see the latest stream.
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
-  const { remoteStream } = useWebRTC(
+  const { remoteStream, leave: leaveWebRTC } = useWebRTC(
     interviewId,
     cameraStream,
     isAdmin ? 'admin' : 'candidate',
@@ -304,15 +404,19 @@ export default function InterviewEntryPage() {
   );
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-      try {
-        void remoteVideoRef.current.play()?.catch(console.warn);
-      } catch {
-        // Ignore synchronous jsdom Not Implemented errors
+    if (remoteVideoRef.current) {
+      if (remoteStream && (isAdmin ? true : isAdminPresent)) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        try {
+          void remoteVideoRef.current.play()?.catch(console.warn);
+        } catch {
+          // Ignore synchronous jsdom Not Implemented errors
+        }
+      } else {
+        remoteVideoRef.current.srcObject = null;
       }
     }
-  }, [remoteStream, stage]);
+  }, [remoteStream, stage, isAdmin, isAdminPresent]);
 
   const { status: answerRecorderStatus, startRecording, stopAndUpload, cancelRecording } =
     useAnswerRecorder(interviewId, cameraStream);
@@ -484,9 +588,38 @@ export default function InterviewEntryPage() {
   }, []);
 
   const handleAdminLeave = useCallback(() => {
+    try {
+      syncChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'state-sync',
+        payload: { type: 'admin-left', senderRole: 'admin' },
+      });
+      leaveWebRTC();
+    } catch {
+      // Ignore broadcast errors during leave
+    }
     stopAllMedia();
     router.push('/admin/dashboard');
-  }, [stopAllMedia, router]);
+  }, [stopAllMedia, router, leaveWebRTC]);
+
+  // If admin closes browser window or tab, broadcast admin-left so admin window vanishes from candidate screen
+  useEffect(() => {
+    if (!isAdmin) return;
+    const handleUnload = () => {
+      try {
+        syncChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'state-sync',
+          payload: { type: 'admin-left', senderRole: 'admin' },
+        });
+        leaveWebRTC();
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, [isAdmin, leaveWebRTC]);
 
   const notifyTermination = useCallback((reason: string) => {
     const counts = proctorTrackerRef.current.getWarningCounts();
@@ -601,6 +734,25 @@ export default function InterviewEntryPage() {
         reason: trackerStatus.reason,
       });
 
+      // Broadcast warning to admin monitoring channel immediately (same as face and object detection)
+      if (!isAdmin) {
+        try {
+          syncChannelRef.current?.send({
+            type: 'broadcast',
+            event: 'state-sync',
+            payload: {
+              type: 'warning-alert',
+              count: trackerStatus.warningCount,
+              reason: trackerStatus.reason,
+              category: 'unauthorized_voice',
+              ts: Date.now(),
+            },
+          });
+        } catch {
+          // ignore broadcast errors
+        }
+      }
+
       void (async () => {
         const snapshotPath = await captureEvidenceSnapshot('unauthorized_voice');
         await fetch('/api/interview/events', {
@@ -624,7 +776,7 @@ export default function InterviewEntryPage() {
         }, 3000);
       }
     }
-  }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast]);
+  }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast, isAdmin]);
 
   useAudioVoiceGuard({
     interviewId,
@@ -663,7 +815,6 @@ export default function InterviewEntryPage() {
           interviewId,
           accessCode: accessCode.trim() ? accessCode.trim() : undefined,
           email: email.trim() ? email.trim() : undefined,
-          deviceId,
         }),
       });
       const json = await res.json();
@@ -702,17 +853,22 @@ export default function InterviewEntryPage() {
         return;
       }
 
-      try {
-        localStorage.setItem(`interview_used_${interviewId}`, 'true');
-        sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
-      } catch {
-        // ignore
-      }
-
       if (json.isAdmin) {
         setIsAdmin(true);
+        try {
+          localStorage.removeItem(`interview_used_${interviewId}`);
+          sessionStorage.removeItem(`interview_used_${interviewId}`);
+        } catch {
+          // ignore
+        }
         await requestPermissions(true);
       } else {
+        try {
+          localStorage.setItem(`interview_used_${interviewId}`, 'true');
+          sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+        } catch {
+          // ignore
+        }
         setStageWithRef('instructions');
       }
     } catch (err) {
@@ -1205,14 +1361,7 @@ export default function InterviewEntryPage() {
         seenSubKeys.add(subKey);
         missingFramesRef.current.set(subKey, 0);
 
-        // Require at least 2 consecutive frames (100-200ms) to filter out single-frame optical glitches,
-        // while remaining instantaneous for any real object shown by candidate.
-        const consecutiveCount = (consecutiveDetectedFramesRef.current.get(subKey) || 0) + 1;
-        consecutiveDetectedFramesRef.current.set(subKey, consecutiveCount);
-        if (consecutiveCount < 2) {
-          continue;
-        }
-
+        // Immediately process unauthorized object upon detection
         const trackerStatus = proctorTrackerRef.current.processGenericEvent(
           rule.category,
           subKey,
@@ -1317,7 +1466,7 @@ export default function InterviewEntryPage() {
 
     return () => {
       if (frameTimerRef) window.clearInterval(frameTimerRef);
-      if (stage === 'completed' || stage === 'terminated') {
+      if ((stage as string) === 'completed' || (stage as string) === 'terminated') {
         worker?.terminate();
         objectWorkerRef.current = null;
         objectWorkerReadyRef.current = false;
@@ -1466,7 +1615,13 @@ export default function InterviewEntryPage() {
   }
 
   if (stage === 'terminated') {
-    return <TerminatedInterview terminationReason={terminationReason} />;
+    return (
+      <TerminatedInterview
+        terminationReason={terminationReason}
+        isAdmin={isAdmin}
+        onLeave={handleAdminLeave}
+      />
+    );
   }
 
   if (stage === 'completed') {
@@ -1478,8 +1633,20 @@ export default function InterviewEntryPage() {
           </div>
           <h1 className="text-2xl font-bold text-zinc-900">Interview complete</h1>
           <p className="text-sm text-zinc-500 leading-relaxed">
-            Thank you. Your responses and assessment data have been submitted. You may close this window now.
+            {isAdmin
+              ? 'The candidate has completed the interview and submitted all assessment responses.'
+              : 'Thank you. Your responses and assessment data have been submitted. You may close this window now.'}
           </p>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleAdminLeave}
+              className="w-full mt-4 py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-sm"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Return to Admin Dashboard</span>
+            </button>
+          )}
         </div>
       </main>
     );
@@ -1739,26 +1906,30 @@ export default function InterviewEntryPage() {
                 </span>
               </div>
 
-              {remoteStream ? (
-                <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-2xl">
-                  <MeetingVideoTile
-                    stream={remoteStream}
-                    micOn={remoteMicOn}
-                    size="large"
-                    label={isAdmin ? 'Candidate' : 'Interviewer'}
-                    muted={false}
-                    mirror={false}
-                    videoRef={remoteVideoRef}
-                  />
-                  <div className="absolute bottom-4 right-4 w-1/3 max-w-[130px] shadow-2xl rounded-xl overflow-hidden border-2 border-zinc-700 bg-zinc-900 z-10">
+              {remoteStream && (isAdmin ? true : isAdminPresent) ? (
+                <div className="space-y-3">
+                  {/* Top Tile: Admin Video (when Admin) or Interviewer Video (when Candidate) */}
+                  <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
                     <MeetingVideoTile
-                      stream={cameraStream}
-                      micOn={micOn}
-                      size="small"
-                      label={isAdmin ? 'You (Admin)' : 'You'}
-                      muted={true}
-                      mirror={true}
-                      videoRef={cameraVideoRef}
+                      stream={isAdmin ? cameraStream : remoteStream}
+                      micOn={isAdmin ? micOn : remoteMicOn}
+                      size="large"
+                      label={isAdmin ? 'You (Admin)' : 'Interviewer'}
+                      muted={isAdmin}
+                      mirror={isAdmin}
+                      videoRef={isAdmin ? cameraVideoRef : remoteVideoRef}
+                    />
+                  </div>
+                  {/* Bottom Tile: Candidate Video */}
+                  <div className="relative rounded-2xl overflow-hidden bg-black border border-zinc-800 shadow-xl">
+                    <MeetingVideoTile
+                      stream={isAdmin ? remoteStream : cameraStream}
+                      micOn={isAdmin ? remoteMicOn : micOn}
+                      size="large"
+                      label={isAdmin ? 'Candidate' : 'You'}
+                      muted={!isAdmin}
+                      mirror={!isAdmin}
+                      videoRef={isAdmin ? remoteVideoRef : cameraVideoRef}
                     />
                   </div>
                 </div>
@@ -1781,7 +1952,12 @@ export default function InterviewEntryPage() {
                 </div>
               )}
 
-              <MeetingControlBar micOn={micOn} onToggleMic={handleToggleMic} settingsEnabled={false} />
+              <MeetingControlBar
+                micOn={micOn}
+                onToggleMic={handleToggleMic}
+                onLeave={isAdmin ? handleAdminLeave : undefined}
+                settingsEnabled={false}
+              />
             </div>
 
             {/* Admin Live Activity & Proctoring Feed */}

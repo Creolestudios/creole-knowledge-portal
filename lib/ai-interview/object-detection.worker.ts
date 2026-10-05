@@ -100,19 +100,19 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
       if (offscreenCtx && offscreenCanvas) {
         offscreenCtx.drawImage(message.bitmap, 0, 0, targetW, targetH);
         try {
-          rawDetections = await model.detect(offscreenCanvas as unknown as HTMLCanvasElement, 20, 0.28);
+          rawDetections = await model.detect(offscreenCanvas as unknown as HTMLCanvasElement, 20, 0.22);
         } catch {
           const imgData = offscreenCtx.getImageData(0, 0, targetW, targetH);
-          rawDetections = await model.detect(imgData, 20, 0.28);
+          rawDetections = await model.detect(imgData, 20, 0.22);
         }
       }
     }
 
     if (!rawDetections) {
-      rawDetections = await model.detect(message.bitmap as unknown as ImageData, 20, 0.28);
+      rawDetections = await model.detect(message.bitmap as unknown as ImageData, 20, 0.22);
     }
 
-    const detections: DetectedObjectEvent[] = filterTrackedObjects(rawDetections);
+    const detections: DetectedObjectEvent[] = filterTrackedObjects(rawDetections, 0.22);
     if (detections.length > 0) {
       console.log(
         '[ObjectDetection Worker] Found tracked objects:',

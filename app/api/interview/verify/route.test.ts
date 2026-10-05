@@ -1,13 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, POST } from './route';
 
-const { mockSingleProfile, mockSingleInterview, mockUpdateEq, mockUpdate } = vi.hoisted(() => {
-  const mockUpdateEq = vi.fn();
+const { mockSingleProfile, mockSingleInterview, mockUpdateEq, mockUpdate, mockAtomicMaybeSingle, chain } = vi.hoisted(() => {
+  const mockAtomicMaybeSingle = vi.fn();
+  const mockUpdateEq: any = vi.fn();
+  const chain: any = {
+    eq: mockUpdateEq,
+    neq: mockUpdateEq,
+    select: vi.fn(() => ({
+      maybeSingle: mockAtomicMaybeSingle,
+    })),
+    then: (resolve: any) => Promise.resolve({ error: null }).then(resolve),
+  };
+  mockUpdateEq.mockReturnValue(chain);
+
   return {
     mockSingleProfile: vi.fn(),
     mockSingleInterview: vi.fn(),
     mockUpdateEq,
-    mockUpdate: vi.fn(() => ({ eq: mockUpdateEq })),
+    mockAtomicMaybeSingle,
+    mockUpdate: vi.fn(() => chain),
+    chain,
   };
 });
 
@@ -52,7 +65,9 @@ describe('POST /api/interview/verify', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetSessionLocks();
+    mockUpdateEq.mockReturnValue(chain);
     mockSingleProfile.mockResolvedValue({ data: { role: 'user' } });
+    mockAtomicMaybeSingle.mockResolvedValue({ data: { id: 'mock-id' }, error: null });
   });
 
   it('requires interviewId and email', async () => {
@@ -135,7 +150,7 @@ describe('POST /api/interview/verify', () => {
       },
       error: null,
     });
-    mockUpdateEq.mockResolvedValue({ error: null });
+    mockAtomicMaybeSingle.mockResolvedValue({ data: { id: 'i1' }, error: null });
 
     const res = await POST(makeRequest({ interviewId: 'i1', email: 'test@example.com', accessCode: '123456' }));
     expect(res.status).toBe(200);
@@ -233,7 +248,7 @@ describe('POST /api/interview/verify', () => {
       },
       error: null,
     });
-    mockUpdateEq.mockResolvedValue({ error: null });
+    mockAtomicMaybeSingle.mockResolvedValue({ data: { id: 'i-concur' }, error: null });
 
     // User 1 on Laptop A joins
     const res1 = await POST(makeRequest({
@@ -256,6 +271,30 @@ describe('POST /api/interview/verify', () => {
     expect(body2.error).toBe(CONCURRENT_SESSION_ERROR);
     expect(body2.concurrent).toBe(true);
     expect(body2.code).toBe('CONCURRENT_SESSION_DETECTED');
+  });
+
+  it('rejects second user joining 1 or 2 ms later when atomic database update returns 0 rows', async () => {
+    mockSingleInterview.mockResolvedValue({
+      data: {
+        id: 'i-atomic',
+        status: 'pending',
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        access_code: '123456',
+      },
+      error: null,
+    });
+    // Simulate that another worker updated status 1ms earlier, returning null
+    mockAtomicMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+
+    const res = await POST(makeRequest({
+      interviewId: 'i-atomic',
+      accessCode: '123456',
+      deviceId: 'laptop-late',
+    }));
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.code).toBe('CONCURRENT_SESSION_DETECTED');
+    expect(body.concurrent).toBe(true);
   });
 });
 
@@ -319,8 +358,8 @@ describe('GET /api/interview/verify', () => {
     expect(body.note).toBe('Note: This interview link has already been used and is expired.');
   });
 
-  it('returns 410 when interview status is in_progress, completed, or terminated', async () => {
-    for (const status of ['in_progress', 'completed', 'terminated']) {
+  it('returns 410 when interview status is completed or terminated', async () => {
+    for (const status of ['completed', 'terminated']) {
       mockSingleInterview.mockResolvedValue({
         data: {
           id: 'i1',
@@ -337,6 +376,23 @@ describe('GET /api/interview/verify', () => {
       expect(body.used).toBe(true);
       expect(body.note).toBe('Note: This interview link has already been used and is expired.');
     }
+  });
+
+  it('returns 200 with active: true and inProgress: true when interview is in_progress', async () => {
+    mockSingleInterview.mockResolvedValue({
+      data: {
+        id: 'i1',
+        status: 'in_progress',
+        expires_at: new Date(Date.now() + 86400000).toISOString(),
+        used_at: null,
+      },
+      error: null,
+    });
+    const res = await GET(makeGetRequest('i1'));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.active).toBe(true);
+    expect(body.inProgress).toBe(true);
   });
 
   it('returns 200 with active: true when interview is valid and pending', async () => {

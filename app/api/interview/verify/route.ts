@@ -50,8 +50,7 @@ export async function GET(req: Request) {
         }, { status: 410 });
       }
       if (
-        interview.used_at ||
-        interview.status === 'in_progress' ||
+        (interview.used_at && interview.status !== 'in_progress') ||
         interview.status === 'terminated' ||
         interview.status === 'completed'
       ) {
@@ -63,7 +62,12 @@ export async function GET(req: Request) {
           status: interview.status,
         }, { status: 410 });
       }
-      return NextResponse.json({ active: true, status: interview.status });
+      return NextResponse.json({
+        active: true,
+        status: interview.status,
+        inProgress: interview.status === 'in_progress',
+        requiresAccessCode: true,
+      });
     }
   } catch {
     // continue
@@ -80,8 +84,7 @@ export async function GET(req: Request) {
       }, { status: 410 });
     }
     if (
-      invite.consumed_at ||
-      invite.status === 'in_progress' ||
+      (invite.consumed_at && invite.status !== 'in_progress') ||
       invite.status === 'completed' ||
       invite.status === 'revoked' ||
       invite.status === 'expired'
@@ -94,7 +97,12 @@ export async function GET(req: Request) {
         status: invite.status,
       }, { status: 410 });
     }
-    return NextResponse.json({ active: true, status: invite.status });
+    return NextResponse.json({
+      active: true,
+      status: invite.status,
+      inProgress: invite.status === 'in_progress',
+      requiresAccessCode: true,
+    });
   }
 
   // 3. interview_sessions
@@ -108,8 +116,7 @@ export async function GET(req: Request) {
     if (session) {
       if (
         session.status === 'completed' ||
-        session.status === 'cancelled' ||
-        session.status === 'in_progress'
+        session.status === 'cancelled'
       ) {
         return NextResponse.json({
           error: 'This interview link has already been used and is expired',
@@ -119,7 +126,12 @@ export async function GET(req: Request) {
           status: session.status,
         }, { status: 410 });
       }
-      return NextResponse.json({ active: true, status: session.status });
+      return NextResponse.json({
+        active: true,
+        status: session.status,
+        inProgress: session.status === 'in_progress',
+        requiresAccessCode: true,
+      });
     }
   } catch {
     // continue
@@ -224,10 +236,25 @@ export async function POST(req: Request) {
         }
 
         if (interview.status === 'pending') {
-          await supabaseAdmin
+          const { data: updatedInterview } = await supabaseAdmin
             .from('ai_interviews')
             .update({ status: 'in_progress', used_at: new Date().toISOString() })
-            .eq('id', interviewId);
+            .eq('id', interviewId)
+            .eq('status', 'pending')
+            .select('id')
+            .maybeSingle();
+
+          if (!updatedInterview) {
+            if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+            return NextResponse.json({
+              error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
+              note: 'Note: This interview link has already been used and is expired.',
+              expired: true,
+              used: true,
+              concurrent: true,
+              code: 'CONCURRENT_SESSION_DETECTED',
+            }, { status: 409 });
+          }
         }
         registerActiveSession(interviewId, deviceId);
       }
@@ -351,10 +378,25 @@ export async function POST(req: Request) {
       }
 
       if (invite.status === 'active') {
-        await supabaseAdmin
+        const { data: updatedInvite } = await supabaseAdmin
           .from('interview_invites')
           .update({ status: 'in_progress', consumed_at: new Date().toISOString() })
-          .eq('id', invite.id);
+          .eq('id', invite.id)
+          .eq('status', 'active')
+          .select('id')
+          .maybeSingle();
+
+        if (!updatedInvite) {
+          if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+          return NextResponse.json({
+            error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
+            note: 'Note: This interview link has already been used and is expired.',
+            expired: true,
+            used: true,
+            concurrent: true,
+            code: 'CONCURRENT_SESSION_DETECTED',
+          }, { status: 409 });
+        }
       }
 
       await supabaseAdmin
@@ -415,6 +457,29 @@ export async function POST(req: Request) {
 
       if (!isRequesterAdmin && !accessCode) {
         return NextResponse.json({ requiresAccessCode: true }, { status: 200 });
+      }
+
+      if (!isRequesterAdmin && session.status !== 'in_progress') {
+        const { data: updatedSession } = await supabaseAdmin
+          .from('interview_sessions')
+          .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+          .eq('id', interviewId)
+          .neq('status', 'in_progress')
+          .select('id')
+          .maybeSingle();
+
+        if (!updatedSession) {
+          if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+          return NextResponse.json({
+            error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
+            note: 'Note: This interview link has already been used and is expired.',
+            expired: true,
+            used: true,
+            concurrent: true,
+            code: 'CONCURRENT_SESSION_DETECTED',
+          }, { status: 409 });
+        }
+        registerActiveSession(interviewId, deviceId);
       }
 
       const response = NextResponse.json({ verified: true, isAdmin: isRequesterAdmin, interviewId: session.id });

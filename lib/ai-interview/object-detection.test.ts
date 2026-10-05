@@ -78,5 +78,27 @@ describe('object-detection module', () => {
     expect(result.warningCount).toBe(1);
     expect(result.reason).toBe('Unauthorized object detected in camera view.');
   });
+
+  it('triggers on single frame immediately without requiring multiple consecutive frames', () => {
+    const rawDetections = [
+      { class: 'cell phone', score: 0.25, bbox: [50, 50, 100, 150] as [number, number, number, number] },
+    ];
+    const filtered = filterTrackedObjects(rawDetections);
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].label).toBe('cell phone');
+    expect(filtered[0].rule.thresholdMs).toBe(0);
+
+    const tracker = new ProctoringTimeTracker();
+    const event = tracker.processGenericEvent(
+      filtered[0].rule.category,
+      filtered[0].rule.object,
+      filtered[0].rule.reason,
+      filtered[0].rule.thresholdMs,
+      5000,
+      Date.now(),
+    );
+    expect(event.shouldTriggerWarning).toBe(true);
+    expect(event.warningCount).toBe(1);
+  });
 });
 

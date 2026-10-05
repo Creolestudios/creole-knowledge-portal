@@ -278,3 +278,70 @@ The admin AI Interview screen (`/admin/dashboard` &rarr; `ai-interviews`) automa
 1. **Supabase Realtime**: Listens to `postgres_changes` on `interview_sessions`, `interview_invites`, and `ai_interviews`.
 2. **Heartbeat Poller**: 3.5-second polling interval active when the browser window is visible (`!document.hidden`).
 
+---
+
+## 8. Third-Party Admin Live Joining & Proctoring Synchronization Flow
+
+An admin or interviewer can join an ongoing candidate interview directly using the interview link `/interview/[id]`:
+
+1. **Authentication & Flexible Entry (From Start or In Between)**:
+   - **Candidate Entry**: Candidates enter via their unique interview link, 6-digit passcode, and email address. They go through device calibration and enter the proctored test room.
+   - **Admin Entry (Start or In Between)**: Admins can join at the start or in the middle of an in-progress interview.
+     - `GET /api/interview/verify` keeps `in_progress` sessions active for admin verification instead of prematurely declaring them expired.
+     - Device presence conflict broadcasts (`candidate-presence`) are restricted strictly to active candidates in the `interview` stage, preventing spurious device conflict terminations when an admin loads the page.
+     - `/api/interview/verify` validates the admin's email role against `user_profiles`. When `isAdmin === true`, concurrency locks and duplicate checks are bypassed.
+     - On joining an in-progress interview, the admin screen receives a `sync-state` signal containing the current question index and remaining time to sync up with the candidate's exact live progress.
+
+2. **WebRTC Dual-Stream Video & Non-Overlapping Layout**:
+   - `useWebRTC` connects the admin and candidate via Supabase signaling (`interview-rtc-${interviewId}`).
+   - Instead of an overlapping picture-in-picture box obscuring candidate presentation:
+     - **Admin View**: Admin's video is placed in the top video tile (`You (Admin)`), and the candidate's stream is positioned in the bottom tile (`Candidate`).
+     - **Candidate View**: Interviewer stream is displayed in the top tile (`Interviewer`), and the candidate's preview is in the bottom tile (`You`).
+   - When an admin leaves, `admin-left` signals clean up the remote stream so the candidate reverts to single camera preview without session interruption.
+
+3. **Real-Time Proctoring Warnings Synchronization**:
+   - When any proctoring violation occurs (Face Tracking, Unauthorized Object Detection, or Unauthorized Voice Detection):
+     - Candidate displays the warning toast banner (`Warning X / 3: <reason>`).
+     - Candidate broadcasts a `warning-alert` payload across `interview-sync-${interviewId}`.
+     - Admin screen displays the exact same warning toast banner (`Warning X / 3: <reason>`) with countdown and dismiss controls, as well as logging it to the Live Proctoring feed.
+
+4. **Synchronized Terminate & Completed States**:
+   - **On Completion**: When candidate completes questions or timer elapses, both candidate and admin transition to the identical "Interview complete" screen. Admin is provided a "Return to Admin Dashboard" action.
+   - **On Termination**: When 3 warnings or proctoring violations occur, both candidate and admin transition to the identical red "Interview terminated" screen showing the exact violation reason. Admin has a "Return to Admin Dashboard" button to return safely.
+
+5. **Admin Leave Control**:
+   - Admins can cleanly exit the interview session at any point using the "Leave Interview" button in the question header or the "Exit" button in `MeetingControlBar`.
+   - Admin leaving closes their media tracks and redirects to `/admin/dashboard` without terminating the candidate's interview session.
+
+---
+
+## 9. Simultaneous Candidate Access & Concurrency Defense Engine
+
+To prevent multiple candidates or duplicate devices from accessing and taking the exact same interview session simultaneously (even when two users click "Continue" 1 to 2 milliseconds apart):
+
+1. **Door 1: Atomic Database Row-Level Locking (`POST /api/interview/verify`)**:
+   - Instead of checking `status` in memory and running an unconstrained update, the backend executes an **atomic conditional update** in PostgreSQL:
+     ```typescript
+     const { data: updatedInvite } = await supabaseAdmin
+       .from('interview_invites')
+       .update({ status: 'in_progress', consumed_at: new Date().toISOString() })
+       .eq('id', invite.id)
+       .eq('status', 'active')
+       .select('id')
+       .maybeSingle();
+     ```
+   - **User 1 (1–2 ms earlier)**: Matches `status = 'active'`, transitions the record to `in_progress`, and enters the permissions/interview stages with `200 OK`.
+   - **User 2 (1–2 ms later)**: Matches `0 rows` because the record is no longer `'active'`. The backend immediately rejects User 2 with `409 Conflict`:
+     `{ error: "An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.", concurrent: true, code: "CONCURRENT_SESSION_DETECTED" }`
+   - User 2 remains blocked on the passcode screen with an explicit security alert banner.
+
+2. **Door 2: Real-Time Live Stage Presence Arbitration (`candidate-presence-reject`)**:
+   - If two browser sessions ever reach the live interview stage:
+     - Each candidate tracks their exact live entry timestamp (`candidateEnteredAtRef.current = Date.now()`).
+     - On entering `stage === 'interview'`, the client broadcasts `{ type: 'candidate-presence', senderRole: 'candidate', deviceId, enteredAt }`.
+     - When an existing candidate receives this broadcast from another device:
+       - If `myEnteredAt <= theirEnteredAt` (User 1 arrived earlier): User 1 **stays active** in the interview and broadcasts `{ type: 'candidate-presence-reject', rejectDeviceId: payload.deviceId, activeDeviceId: deviceId }`.
+       - When User 2's device receives `candidate-presence-reject` targeting its `deviceId`: User 2 is immediately terminated with `"An active interview session is already in progress on another device."` and camera/mic tracks are stopped.
+
+
+

@@ -861,14 +861,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         seenSubKeys.add(subKey);
         missingFramesRef.current.set(subKey, 0);
 
-        // Require at least 2 consecutive frames (100-200ms) to filter out single-frame optical glitches,
-        // while remaining instantaneous for any real object shown by candidate.
-        const consecutiveCount = (consecutiveDetectedFramesRef.current.get(subKey) || 0) + 1;
-        consecutiveDetectedFramesRef.current.set(subKey, consecutiveCount);
-        if (consecutiveCount < 2) {
-          continue;
-        }
-
+        // Immediately process unauthorized object upon detection
         const trackerStatus = proctorTrackerRef.current.processGenericEvent(
           rule.category,
           subKey,
@@ -950,7 +943,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         window.clearInterval(frameTimerRef);
         frameTimerRef = null;
       }
-      if (stage === 'completed' || stage === 'terminated') {
+      if ((stage as string) === 'completed' || (stage as string) === 'terminated') {
         worker?.terminate();
         objectWorkerRef.current = null;
         objectWorkerReadyRef.current = false;

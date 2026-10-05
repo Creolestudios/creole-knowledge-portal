@@ -8,7 +8,7 @@ vi.mock('@google/genai', () => ({
   },
 }));
 
-import { extractKeywordsFromResumeAndJD, extractKeywordsLocalFallback } from './extractor';
+import { extractKeywordsFromResumeAndJD, extractKeywordsLocalFallback, extractTextFromDocumentBuffer } from './extractor';
 
 describe('extractKeywordsLocalFallback', () => {
   it('correctly matches overlapping technical keywords between resume and JD', () => {
@@ -24,6 +24,30 @@ describe('extractKeywordsLocalFallback', () => {
     expect(result.analysis.missingKeywords).toContain('aws');
     expect(result.analysis.matchPercentage).toBeGreaterThan(0);
     expect(result.extractedAt).toBeDefined();
+  });
+
+  it('filters out binary zip/xml noise (PK, Content_Types, xml, random byte tokens) from extracted keywords', () => {
+    const binaryGarbage = 'PK w- Content_Types .xml MO 8Y CD f7 #pTR +h Pv UF rgUq .w W3 SZ ok V+h ZY Mm 5U 397 9DN cL React Developer TypeScript Node.js';
+    const jdText = 'React Developer with TypeScript and Node.js';
+
+    const result = extractKeywordsLocalFallback(binaryGarbage, jdText);
+
+    // Real skills must be matched
+    expect(result.analysis.matchedKeywords).toContain('react');
+    expect(result.analysis.matchedKeywords).toContain('typescript');
+    expect(result.analysis.matchedKeywords).toContain('node.js');
+
+    // Binary tokens must NOT be in matched keywords or extracted skills
+    const allExtracted = [
+      ...result.analysis.matchedKeywords,
+      ...result.candidateProfile.extractedSkills,
+    ];
+    expect(allExtracted).not.toContain('pk');
+    expect(allExtracted).not.toContain('content_types');
+    expect(allExtracted).not.toContain('xml');
+    expect(allExtracted).not.toContain('8y');
+    expect(allExtracted).not.toContain('f7');
+    expect(allExtracted).not.toContain('rguq');
   });
 
   it('strips leading/trailing dots and punctuation from words without catastrophic backtracking', () => {
@@ -45,6 +69,29 @@ describe('extractKeywordsLocalFallback', () => {
     const result = extractKeywordsLocalFallback(pathological, 'word');
     expect(Date.now() - start).toBeLessThan(1000);
     expect(result.analysis.matchedKeywords).toContain('word');
+  });
+});
+
+describe('extractTextFromDocumentBuffer', () => {
+  it('extracts plain text from a mock docx zip archive', () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip();
+    zip.addFile(
+      'word/document.xml',
+      Buffer.from('<w:document><w:body><w:p><w:r><w:t>Full Stack Engineer with React and Python</w:t></w:r></w:p></w:body></w:document>')
+    );
+    const docxBuffer = zip.toBuffer();
+
+    const extracted = extractTextFromDocumentBuffer(docxBuffer, 'candidate_resume.docx');
+    expect(extracted).toContain('Full Stack Engineer with React and Python');
+    expect(extracted).not.toContain('<w:');
+  });
+
+  it('extracts readable ASCII text from plain text buffers', () => {
+    const textBuffer = Buffer.from('Senior Software Engineer specializing in Go, Docker, and Kubernetes');
+    const extracted = extractTextFromDocumentBuffer(textBuffer, 'resume.txt', 'text/plain');
+    expect(extracted).toContain('Senior Software Engineer specializing in Go, Docker, and Kubernetes');
   });
 });
 
