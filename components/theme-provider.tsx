@@ -22,10 +22,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // One-time sync from browser storage (an external system) on mount —
-    // the inline script in <head> already applied the `dark` class before
-    // paint, so this only brings React state in line with it.
+    // default to 'light' theme unless explicitly stored otherwise.
     const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
-    const initial = stored ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    const initial = stored === 'dark' ? 'dark' : 'light';
+    applyTheme(initial);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTheme(initial);
   }, []);

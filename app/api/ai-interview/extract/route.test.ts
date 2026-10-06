@@ -12,6 +12,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 vi.mock('@/lib/ai-interview/extractor', () => ({
   extractKeywordsFromResumeAndJD: mockExtractKeywords,
+  extractTextFromDocumentBuffer: vi.fn((_buf, name) => 'Mocked text extracted from document ' + (name || '')),
 }));
 
 import { POST } from './route';
@@ -103,7 +104,6 @@ describe('POST /api/ai-interview/extract', () => {
     expect(res.status).toBe(200);
     expect(mockExtractKeywords).toHaveBeenCalledWith(expect.objectContaining({
       resumeFileBase64: expect.any(String),
-      jdFileBase64: expect.any(String),
       resumeMimeType: 'application/pdf',
       jdMimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     }));

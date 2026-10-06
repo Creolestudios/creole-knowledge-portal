@@ -12,8 +12,9 @@ import { saveInterviewReport } from './report-store';
 // Model priority list for scoring — tries each in order, falls back on 429/503/404/quota exhaustion.
 const SCORING_MODELS = [
   ...(process.env.GEMINI_MODEL ? [process.env.GEMINI_MODEL] : []),
+  'gemini-3.5-flash-lite',
+  'gemini-flash-lite-latest',
   'gemini-2.5-flash',
-  'gemini-flash-latest',
   'gemini-3.6-flash',
   'gemini-3.5-flash',
 ];
