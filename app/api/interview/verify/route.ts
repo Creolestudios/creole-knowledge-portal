@@ -33,6 +33,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Interview ID is required' }, { status: 400 });
   }
 
+  let cookieStore;
+  try {
+    cookieStore = await cookies();
+  } catch {
+    cookieStore = { get: () => null };
+  }
+  
+  const verifiedId = cookieStore.get('interview_verified_id')?.value;
+  const verifiedToken = cookieStore.get('interview_verified_token')?.value;
+
+  const matchesCookie = (sessionId?: string) => {
+    if (verifiedToken === interviewId) return true;
+    if (verifiedId === interviewId) return true;
+    if (sessionId && verifiedId === sessionId) return true;
+    return false;
+  };
+
   // 1. ai_interviews
   try {
     const { data: interview } = await supabaseAdmin
@@ -66,7 +83,7 @@ export async function GET(req: Request) {
         active: true,
         status: interview.status,
         inProgress: interview.status === 'in_progress',
-        requiresAccessCode: true,
+        requiresAccessCode: !matchesCookie(interview.id),
       });
     }
   } catch {
@@ -101,7 +118,7 @@ export async function GET(req: Request) {
       active: true,
       status: invite.status,
       inProgress: invite.status === 'in_progress',
-      requiresAccessCode: true,
+      requiresAccessCode: !matchesCookie(invite.session_id),
     });
   }
 
@@ -130,7 +147,7 @@ export async function GET(req: Request) {
         active: true,
         status: session.status,
         inProgress: session.status === 'in_progress',
-        requiresAccessCode: true,
+        requiresAccessCode: !matchesCookie(session.id),
       });
     }
   } catch {
@@ -236,25 +253,9 @@ export async function POST(req: Request) {
         }
 
         if (interview.status === 'pending') {
-          const { data: updatedInterview } = await supabaseAdmin
-            .from('ai_interviews')
-            .update({ status: 'in_progress', used_at: new Date().toISOString() })
-            .eq('id', interviewId)
-            .eq('status', 'pending')
-            .select('id')
-            .maybeSingle();
-
-          if (!updatedInterview) {
-            if (lockAcquired) releaseJoinLock(interviewId, deviceId);
-            return NextResponse.json({
-              error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
-              note: 'Note: This interview link has already been used and is expired.',
-              expired: true,
-              used: true,
-              concurrent: true,
-              code: 'CONCURRENT_SESSION_DETECTED',
-            }, { status: 409 });
-          }
+          // Do not update the DB to in_progress here.
+          // The interview is only marked in_progress when they actually start answering questions.
+          // The lockAcquired handles concurrent protection for now.
         }
         registerActiveSession(interviewId, deviceId);
       }
@@ -384,32 +385,8 @@ export async function POST(req: Request) {
         }, { status: 410 });
       }
 
-      if (invite.status === 'active') {
-        const { data: updatedInvite } = await supabaseAdmin
-          .from('interview_invites')
-          .update({ status: 'in_progress', consumed_at: new Date().toISOString() })
-          .eq('id', invite.id)
-          .eq('status', 'active')
-          .select('id')
-          .maybeSingle();
-
-        if (!updatedInvite) {
-          if (lockAcquired) releaseJoinLock(interviewId, deviceId);
-          return NextResponse.json({
-            error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
-            note: 'Note: This interview link has already been used and is expired.',
-            expired: true,
-            used: true,
-            concurrent: true,
-            code: 'CONCURRENT_SESSION_DETECTED',
-          }, { status: 409 });
-        }
-      }
-
-      await supabaseAdmin
-        .from('interview_sessions')
-        .update({ status: 'in_progress', updated_at: new Date().toISOString() })
-        .eq('id', sessionId);
+      // Do not update the DB to in_progress here.
+      // We wait for the client to call /api/interview/start when they actually begin the interview.
 
       registerActiveSession(interviewId, deviceId);
       if (sessionId) {
@@ -474,25 +451,8 @@ export async function POST(req: Request) {
       }
 
       if (!isRequesterAdmin && session.status !== 'in_progress') {
-        const { data: updatedSession } = await supabaseAdmin
-          .from('interview_sessions')
-          .update({ status: 'in_progress', updated_at: new Date().toISOString() })
-          .eq('id', interviewId)
-          .neq('status', 'in_progress')
-          .select('id')
-          .maybeSingle();
-
-        if (!updatedSession) {
-          if (lockAcquired) releaseJoinLock(interviewId, deviceId);
-          return NextResponse.json({
-            error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
-            note: 'Note: This interview link has already been used and is expired.',
-            expired: true,
-            used: true,
-            concurrent: true,
-            code: 'CONCURRENT_SESSION_DETECTED',
-          }, { status: 409 });
-        }
+        // Do not update the DB to in_progress here.
+        // We wait for the client to call /api/interview/start when they actually begin the interview.
         registerActiveSession(interviewId, deviceId);
       }
 

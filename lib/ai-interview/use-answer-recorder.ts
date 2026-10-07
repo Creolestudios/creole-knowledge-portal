@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
+import { cacheFailedAnswer, getCachedAnswers, removeCachedAnswer } from './indexed-db';
 
 const PREFERRED_MIME_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg'];
 
@@ -24,6 +25,57 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
   const questionIdRef = useRef<string | null>(null);
   const startedAtRef = useRef(0);
   const [status, setStatus] = useState<AnswerRecorderStatus>('idle');
+
+  // Background Sync for Cached Answers
+  useEffect(() => {
+    const syncOfflineAnswers = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      try {
+        const cached = await getCachedAnswers();
+        for (const answer of cached) {
+          if (answer.interviewId !== interviewId) continue;
+          
+          let success = false;
+          try {
+            if (!answer.audioBlob || answer.audioBlob.size === 0) {
+              const res = await fetch(`/api/interview/${interviewId}/answers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  questionId: answer.questionId,
+                  transcript: answer.transcript,
+                }),
+              });
+              success = res.ok;
+            } else {
+              const formData = new FormData();
+              formData.append('questionId', answer.questionId);
+              formData.append('file', answer.audioBlob, 'answer');
+              if (answer.transcript) {
+                formData.append('transcript', answer.transcript);
+              }
+              const res = await fetch(`/api/interview/${interviewId}/answers`, { method: 'POST', body: formData });
+              success = res.ok;
+            }
+            
+            if (success) {
+              await removeCachedAnswer(answer.id);
+            }
+          } catch (err) {
+            console.warn('[sync] Failed to sync offline answer:', err);
+          }
+        }
+      } catch (err) {
+        console.warn('[sync] Failed to read from indexed-db:', err);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', syncOfflineAnswers);
+      syncOfflineAnswers();
+      return () => window.removeEventListener('online', syncOfflineAnswers);
+    }
+  }, [interviewId]);
 
   const startRecording = useCallback(
     (questionId: string) => {
@@ -78,19 +130,26 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
     if (blob.size === 0) {
       if (clientTranscript && clientTranscript.trim()) {
         try {
-          await fetch(`/api/interview/${interviewId}/answers`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+            const res = await fetch(`/api/interview/${interviewId}/answers`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                questionId,
+                transcript: clientTranscript.trim(),
+                startedAtMs,
+                endedAtMs,
+              }),
+            });
+            if (!res.ok) throw new Error('API failed');
+          } catch (err) {
+            console.warn('[answer-recorder] Fallback transcript save failed:', err);
+            await cacheFailedAnswer({
+              interviewId,
               questionId,
               transcript: clientTranscript.trim(),
-              startedAtMs,
-              endedAtMs,
-            }),
-          });
-        } catch (err) {
-          console.warn('[answer-recorder] Fallback transcript save failed:', err);
-        }
+              audioBlob: null,
+            }).catch(console.error);
+          }
       }
       setStatus('idle');
       return;
@@ -107,9 +166,16 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
         formData.append('transcript', clientTranscript.trim());
       }
 
-      await fetch(`/api/interview/${interviewId}/answers`, { method: 'POST', body: formData });
+      const res = await fetch(`/api/interview/${interviewId}/answers`, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('API failed');
     } catch (err) {
       console.error('[answer-recorder] answer upload failed:', err);
+      await cacheFailedAnswer({
+        interviewId,
+        questionId,
+        transcript: clientTranscript?.trim() || '',
+        audioBlob: blob,
+      }).catch(console.error);
     } finally {
       setStatus('idle');
     }

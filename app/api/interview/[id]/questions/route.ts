@@ -73,7 +73,7 @@ async function insertInterviewQuestions(sessionId: string, questions: any[]) {
       session_id: sessionId,
       question_bank_id:
         typeof question.id === 'string' &&
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(question.id)
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(question.id)
           ? question.id
           : null,
       question_text: String(question.question_text || ''),

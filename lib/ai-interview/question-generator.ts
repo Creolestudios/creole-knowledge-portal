@@ -289,9 +289,9 @@ export function generateQuestionsLocalFallback(
   const fallbackCategories = requestedCategories.length > 0
     ? requestedCategories
     : Array.from(
-        { length: Math.max(0, targetTotal - selectedHrQuestions.length) },
-        (_, index) => INTERVIEW_CATEGORIES[index % INTERVIEW_CATEGORIES.length]
-      );
+      { length: Math.max(0, targetTotal - selectedHrQuestions.length) },
+      (_, index) => INTERVIEW_CATEGORIES[index % INTERVIEW_CATEGORIES.length]
+    );
   const requiredGeneratedCount = Math.max(0, targetTotal - selectedHrQuestions.length);
 
   const matchedSkills = analysis?.matchedKeywords || profile?.extractedSkills || ['Core Technology'];
@@ -491,7 +491,7 @@ export async function generateInterviewQuestions(
   const targetTotalCount = calculateQuestionCount(options);
   const selectedHrQuestions = options?.includeMandatoryHr === false ? [] : hrQuestions;
   const requiredAiCount = Math.max(0, targetTotalCount - selectedHrQuestions.length);
-  
+
   // Guarantee exactly 4 technical questions (capped to whatever the requested total can fit)
   const categoryCounts: Record<string, number> = { ...(options?.categoryCounts || {}) };
   categoryCounts['technical'] = Math.min(4, requiredAiCount);
@@ -630,11 +630,11 @@ Return only a JSON array. Each item must contain:
     const requestedCategoryEntries = Object.entries(categoryCounts).filter(([, count]) => count > 0);
     const selectedAiQuestions = requestedCategoryEntries.length > 0
       ? requestedCategoryEntries.flatMap(([category, count]) => {
-          const matchingQuestions = aiQuestions.filter(
-            (question) => question.category.toLowerCase() === category.toLowerCase()
-          );
-          return matchingQuestions.slice(0, count);
-        })
+        const matchingQuestions = aiQuestions.filter(
+          (question) => question.category.toLowerCase() === category.toLowerCase()
+        );
+        return matchingQuestions.slice(0, count);
+      })
       : aiQuestions;
 
     // Gemini is told to "vary the angle" across same-category questions (e.g. the 4

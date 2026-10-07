@@ -397,9 +397,12 @@ export function ReportDetailView({
       return foundAns.transcript.trim();
     }
 
-    // D. Positional match in answers array (if answers were saved in question sequence)
-    const byIndex = answerByIndex.get(qIdx);
-    if (byIndex && byIndex.trim().length > 0) return byIndex.trim();
+    // D. Positional match in answers array (only if the answer is not bound to a different question)
+    const ansAtIdx = answers[qIdx];
+    if (ansAtIdx && (!ansAtIdx.question_id || ansAtIdx.question_id === qId || ansAtIdx.question_id === String(ord))) {
+      const byIndex = answerByIndex.get(qIdx);
+      if (byIndex && byIndex.trim().length > 0) return byIndex.trim();
+    }
 
     // E. Match in interview_transcript table by tagged question_ord
     const transcriptByOrd = transcript
@@ -409,8 +412,8 @@ export function ReportDetailView({
       .trim();
     if (transcriptByOrd.length > 0) return transcriptByOrd;
 
-    // F. Match in interview_transcript table by sequence index if not tagged with question_ord
-    const candidateUtterances = transcript.filter((t) => t.speaker === 'candidate' && !t.is_flagged && t.text?.trim());
+    // F. Match in interview_transcript table by sequence index if untagged with question_ord
+    const candidateUtterances = transcript.filter((t) => t.speaker === 'candidate' && !t.is_flagged && !t.question_ord && t.text?.trim());
     if (candidateUtterances[qIdx]?.text?.trim()) {
       return candidateUtterances[qIdx].text.trim();
     }

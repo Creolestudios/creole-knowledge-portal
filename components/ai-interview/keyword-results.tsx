@@ -126,6 +126,21 @@ ${analysis.skillGapSummary}
         </div>
       </div>
 
+      {/* DOCUMENT VALIDATION WARNING */}
+      {analysis.documentValidationWarning && (
+        <div className="flex items-start gap-3.5 p-4 bg-red-500/15 border border-red-500/40 rounded-2xl text-red-200 text-sm shadow-md">
+          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-red-300 text-sm">
+              Document Validation Warning
+            </p>
+            <p className="text-xs text-red-200/90 leading-relaxed">
+              {analysis.documentValidationWarning}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* API FAILURE / ZERO KEYWORDS ADMIN NOTE */}
       {isApiFailingOrZero && (
         <div

@@ -14,6 +14,7 @@ interface UseProctoringWatchdogArgs {
   cameraStreamRef: RefObject<MediaStream | null>;
   screenStreamRef: RefObject<MediaStream | null>;
   onViolation: (reason: string) => void;
+  onDeviceDisconnected?: (reason: string) => void;
 }
 
 /**
@@ -35,25 +36,35 @@ export function useProctoringWatchdog({
   cameraStreamRef,
   screenStreamRef,
   onViolation,
+  onDeviceDisconnected,
 }: UseProctoringWatchdogArgs) {
   // The pages rebuild `onViolation` on every render; holding it in a ref keeps
   // the effect subscribed once per session instead of re-binding every track
   // listener each time the candidate types an answer.
   const onViolationRef = useRef(onViolation);
+  const onDeviceDisconnectedRef = useRef(onDeviceDisconnected);
   useEffect(() => {
     onViolationRef.current = onViolation;
+    onDeviceDisconnectedRef.current = onDeviceDisconnected;
   });
 
   useEffect(() => {
     if (!active) return;
 
-    const report = (reason: string) => onViolationRef.current(reason);
+    const reportViolation = (reason: string) => onViolationRef.current(reason);
+    const reportDisconnect = (reason: string) => {
+      if (onDeviceDisconnectedRef.current) {
+        onDeviceDisconnectedRef.current(reason);
+      } else {
+        reportViolation(reason);
+      }
+    };
 
     const onVisibilityChange = () => {
-      if (document.hidden) report(PROCTORING_REASONS.pageHidden);
+      if (document.hidden) reportViolation(PROCTORING_REASONS.pageHidden);
     };
-    const onCameraEnded = () => report(PROCTORING_REASONS.cameraEnded);
-    const onScreenShareEnded = () => report(PROCTORING_REASONS.screenShareEnded);
+    const onCameraEnded = () => reportDisconnect(PROCTORING_REASONS.cameraEnded);
+    const onScreenShareEnded = () => reportDisconnect(PROCTORING_REASONS.screenShareEnded);
 
     // Captured once so cleanup detaches from the same tracks it attached to —
     // terminating nulls the stream refs, so re-reading them here would silently
@@ -66,7 +77,7 @@ export function useProctoringWatchdog({
     screenTracks.forEach((track) => track.addEventListener('ended', onScreenShareEnded));
 
     // The candidate may already have left between joining and this effect running.
-    if (document.hidden) report(PROCTORING_REASONS.pageHidden);
+    if (document.hidden) reportViolation(PROCTORING_REASONS.pageHidden);
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibilityChange);

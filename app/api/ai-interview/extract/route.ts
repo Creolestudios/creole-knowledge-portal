@@ -7,6 +7,35 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
+function isSuspiciousPayload(text: string): boolean {
+  if (!text) return false;
+  
+  // Check 1: Is it raw JSON?
+  const trimmed = text.trim();
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      JSON.parse(trimmed);
+      return true; // It's purely JSON data
+    } catch (e) {
+      // Not valid JSON, continue
+    }
+  }
+
+  // Check 2: Does it contain script tags or suspicious HTML wrappers?
+  const lowerText = text.toLowerCase();
+  if (lowerText.includes('<script') || lowerText.includes('type="application/ld+json"')) {
+    return true;
+  }
+
+  // Check 3: Is it heavily HTML-formatted rather than natural text?
+  const htmlTagMatches = text.match(/<[^>]+>/g);
+  if (htmlTagMatches && htmlTagMatches.length > 15 && htmlTagMatches.length > text.split(/\s+/).length / 3) {
+    return true; // Too many HTML tags compared to words
+  }
+
+  return false;
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!(await requireAdminUser())) {
@@ -108,6 +137,22 @@ export async function POST(req: NextRequest) {
     if (!payload.jdText?.trim() && !payload.jdFileBase64) {
       return NextResponse.json(
         { error: 'Job Description content or file is missing.' },
+        { status: 400 }
+      );
+    }
+
+    if (payload.jdText && !payload.jdFileBase64) {
+      const wordCount = payload.jdText.trim().split(/\s+/).length;
+      if (wordCount < 3) {
+        return NextResponse.json(
+          { error: 'Job Description is too short. Please provide at least 3 words for accurate analysis.' },
+          { status: 400 }
+        );
+      }
+    }
+    if (isSuspiciousPayload(payload.jdText || '') || isSuspiciousPayload(payload.resumeText || '')) {
+      return NextResponse.json(
+        { error: 'Invalid input format detected. Please provide a standard text Job Description or Resume, not code snippets, raw JSON, or raw HTML scripts.' },
         { status: 400 }
       );
     }

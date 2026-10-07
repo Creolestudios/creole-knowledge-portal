@@ -179,6 +179,7 @@ export function ResumeJDUploader({
                       type="file"
                       accept=".pdf,.docx,.txt,.md"
                       onChange={handleResumeFileChange}
+                      multiple={false}
                       className="hidden"
                     />
                   </label>
@@ -261,6 +262,7 @@ export function ResumeJDUploader({
                       type="file"
                       accept=".pdf,.docx,.txt,.md"
                       onChange={handleJdFileChange}
+                      multiple={false}
                       className="hidden"
                     />
                   </label>

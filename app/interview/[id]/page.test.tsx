@@ -77,6 +77,8 @@ describe('InterviewEntryPage', () => {
       value: originalMediaDevices,
       configurable: true,
     });
+    localStorage.clear();
+    sessionStorage.clear();
     // Tests below flip this; leaking it makes later renders arm while "hidden".
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
   });

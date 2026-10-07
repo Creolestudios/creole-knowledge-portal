@@ -304,9 +304,16 @@ export async function extractKeywordsFromResumeAndJD(
 You are an expert HR Tech & AI Technical Recruiter.
 Analyze the provided Resume and Job Description (JD) and extract structured keyword and skill alignment metadata.
 
-CRITICAL INSTRUCTIONS:
+CRITICAL INSTRUCTION #1: DOCUMENT TYPE CLASSIFICATION & VALIDATION
+Before analyzing anything else, you MUST read the content of both the "Resume Content" and the "Job Description Content" to verify they are the correct type of document.
+- A valid Resume contains an individual's personal work history, education, skills, and contact information.
+- A valid Job Description contains a company's hiring requirements, "We are looking for...", required qualifications, and role responsibilities.
+If the text provided in the "Job Description Content" section is actually a Resume, OR if the text provided in the "Resume Content" section is actually a Job Description, you MUST populate the "documentValidationWarning" field in the analysis object with a clear warning (e.g. "Warning: The text provided as a Job Description appears to be a candidate's Resume. Please verify your uploads."). Do NOT skip this check.
+If both documents are correctly classified, leave "documentValidationWarning" as null.
+
+CRITICAL INSTRUCTION #2: EXTRACTION
 1. Extract technical skills, soft skills, tools, frameworks, and domain keywords from both documents.
-2. Calculate an accurate matchPercentage (0 to 100) based on how well candidate experience & keywords cover the JD requirements.
+2. Calculate an accurate matchPercentage (0 to 100) based on how well candidate experience & keywords cover the JD requirements. 
 3. Identify matchedKeywords, missingKeywords (JD requirements missing from Resume), and resumeOnlyKeywords.
 4. Provide a clear skillGapSummary, candidate keyStrengths, and improvementAreas.
 5. Extract HR screening details when explicitly present in the resume. Include school results such as 10th/SSC and 12th/HSC percentage, CGPA, grade, and passing year. Never infer or calculate an academic result that is not stated.
@@ -354,7 +361,8 @@ Respond ONLY with valid JSON conforming strictly to this structure without markd
     "resumeOnlyKeywords": ["string"],
     "skillGapSummary": "string",
     "keyStrengths": ["string"],
-    "improvementAreas": ["string"]
+    "improvementAreas": ["string"],
+    "documentValidationWarning": "string or null"
   }
 }
 
@@ -497,6 +505,7 @@ ${jdText || '(See attached JD file)'}
                 improvementAreas: Array.isArray(parsed.analysis?.improvementAreas)
                   ? parsed.analysis.improvementAreas
                   : [],
+                documentValidationWarning: parsed.analysis?.documentValidationWarning || undefined,
                 apiFailed: isZeroKeywords,
                 apiNote: zeroNote,
               };

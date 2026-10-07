@@ -53,21 +53,7 @@ export default function InterviewEntryPage() {
   const router = useRouter();
   const interviewId = params?.id as string;
 
-  const [stage, setStage] = useState<Stage>(() => {
-    if (typeof window !== 'undefined' && interviewId) {
-      try {
-        if (
-          localStorage.getItem(`interview_used_${interviewId}`) === 'true' ||
-          sessionStorage.getItem(`interview_used_${interviewId}`) === 'true'
-        ) {
-          return 'expired';
-        }
-      } catch {
-        // ignore
-      }
-    }
-    return 'passcode';
-  });
+  const [stage, setStage] = useState<Stage>('passcode');
   // Always reflects the latest stage so worker callbacks never
   // capture a stale value from their closure.
   const stageRef = useRef<Stage>(stage);
@@ -145,6 +131,7 @@ export default function InterviewEntryPage() {
     type: 'completed',
     message: '',
   });
+  const [isUploadingNext, setIsUploadingNext] = useState(false);
   const [liveEvents, setLiveEvents] = useState<Array<{ id: string; category: string; meta?: any; ts: number }>>([]);
   const [warningToast, setWarningToast] = useState<{ show: boolean; count: number; reason: string }>({
     show: false,
@@ -169,8 +156,9 @@ export default function InterviewEntryPage() {
     fetch(`/api/interview/verify?interviewId=${encodeURIComponent(interviewId)}`)
       .then(async (res) => {
         if (!isMounted) return;
+        const json = await res.json().catch(() => ({}));
+        
         if (res.status === 410) {
-          const json = await res.json().catch(() => ({}));
           try {
             localStorage.setItem(`interview_used_${interviewId}`, 'true');
             sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
@@ -186,6 +174,10 @@ export default function InterviewEntryPage() {
             setTerminationReason(json.error || 'This interview has already ended.');
             setStageWithRef('terminated');
           }
+        } else if (res.ok) {
+          // Note: Even if they have a valid cookie, if they refreshed the page
+          // before joining the interview, they must re-enter the passcode.
+          // This is a strict requirement for both candidates and admins.
         }
       })
       .catch(() => { })
@@ -311,7 +303,7 @@ export default function InterviewEntryPage() {
               if (cameraVideoRef.current.srcObject !== cameraStreamRef.current) {
                 cameraVideoRef.current.srcObject = cameraStreamRef.current;
               }
-              void cameraVideoRef.current.play()?.catch(() => {});
+              void cameraVideoRef.current.play()?.catch(() => { });
             }
           }
           if (
@@ -537,9 +529,10 @@ export default function InterviewEntryPage() {
     }
   }, [currentQuestion, stage, questions]);
 
-  const goToQuestion = (nextIndex: number) => {
+  const goToQuestion = async (nextIndex: number) => {
     if (goingToNextRef.current) return;
     goingToNextRef.current = true;
+    setIsUploadingNext(true);
 
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
@@ -552,7 +545,7 @@ export default function InterviewEntryPage() {
     // Real-time answer storing: Immediately persist answer to interview_answers on next question
     if (currentQ?.id && spokenText) {
       lastSavedSpokenTextRef.current = spokenText;
-      void fetch(`/api/interview/${interviewId}/answers`, {
+      await fetch(`/api/interview/${interviewId}/answers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText }),
@@ -560,10 +553,10 @@ export default function InterviewEntryPage() {
     }
 
     // Persist turn metrics and upload recorded audio + client transcript in background
-    void completeTurn(spokenText).catch((err) =>
+    await completeTurn(spokenText).catch((err) =>
       console.warn('[interview] completeTurn error:', err)
     );
-    void stopAndUpload(spokenText).catch((err) =>
+    await stopAndUpload(spokenText).catch((err) =>
       console.warn('[interview] stopAndUpload error:', err)
     );
 
@@ -580,6 +573,7 @@ export default function InterviewEntryPage() {
       payload: { type: 'question-change', questionIndex: nextIndex }
     });
 
+    setIsUploadingNext(false);
     // Reset guard after the state update has propagated.
     window.setTimeout(() => {
       goingToNextRef.current = false;
@@ -589,6 +583,7 @@ export default function InterviewEntryPage() {
   const submitFinalAnswer = async () => {
     if (finalAnswerSubmitted) return;
     setFinalAnswerSubmitted(true);
+    setIsUploadingNext(true);
     completedRef.current = true;
 
     if (autoSaveTimerRef.current) {
@@ -601,7 +596,7 @@ export default function InterviewEntryPage() {
     // 1. Immediately persist final transcript to interview_answers in background
     if (currentQ?.id) {
       lastSavedSpokenTextRef.current = spokenText;
-      void fetch(`/api/interview/${interviewId}/answers`, {
+      await fetch(`/api/interview/${interviewId}/answers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ questionId: currentQ.id, transcript: spokenText }),
@@ -609,8 +604,8 @@ export default function InterviewEntryPage() {
     }
 
     // 2. Stop turn and upload recorded audio in background
-    void completeTurn(spokenText).catch(console.warn);
-    void stopAndUpload(spokenText).catch(console.warn);
+    await completeTurn(spokenText).catch(console.warn);
+    await stopAndUpload(spokenText).catch(console.warn);
 
     // 3. Stop media streams safely
     try {
@@ -622,7 +617,7 @@ export default function InterviewEntryPage() {
     // 4. Notify backend that session and invite are completed
     try {
       const counts = proctorTrackerRef.current?.getWarningCounts?.() || { face: 0, object: 0, voice: 0 };
-      void fetch('/api/interview/complete', {
+      await fetch('/api/interview/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -647,6 +642,7 @@ export default function InterviewEntryPage() {
       // ignore
     }
 
+    setIsUploadingNext(false);
     // 6. Transition to completed screen immediately
     setStageWithRef('completed');
   };
@@ -970,12 +966,6 @@ export default function InterviewEntryPage() {
         }
         await requestPermissions(true);
       } else {
-        try {
-          localStorage.setItem(`interview_used_${interviewId}`, 'true');
-          sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
-        } catch {
-          // ignore
-        }
         setStageWithRef('instructions');
       }
     } catch (err) {
@@ -1070,6 +1060,17 @@ export default function InterviewEntryPage() {
   }, [requestPermissions]);
 
   useEffect(() => {
+    if (stage === 'interview' && !isAdmin) {
+      // Mark the interview as officially started (consumes the link)
+      fetch('/api/interview/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interviewId }),
+      }).catch(e => console.warn('Failed to call start endpoint', e));
+    }
+  }, [stage, isAdmin, interviewId]);
+
+  useEffect(() => {
     if (stage !== 'ready') return;
 
     // Admin goes directly to the interview room
@@ -1125,7 +1126,7 @@ export default function InterviewEntryPage() {
   }, [stage, checkInterviewStatus]);
 
   useProctoringWatchdog({
-    active: ['ready', 'calibration', 'interview'].includes(stage),
+    active: stage === 'interview',
     cameraStreamRef,
     screenStreamRef,
     onViolation: terminateInterview,
@@ -1177,7 +1178,7 @@ export default function InterviewEntryPage() {
       if (timestamp - lastFrameAt >= 125 && activeVideo) {
         if (activeVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
           if (activeVideo.paused && activeVideo.srcObject) {
-            void activeVideo.play()?.catch(() => {});
+            void activeVideo.play()?.catch(() => { });
           }
           if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
             frameRequest = activeVideo.requestVideoFrameCallback(captureFrame);
@@ -1466,7 +1467,7 @@ export default function InterviewEntryPage() {
         if (!video) return;
         if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
           if (video.paused && video.srcObject) {
-            void video.play()?.catch(() => {});
+            void video.play()?.catch(() => { });
           }
           return;
         }
@@ -1676,7 +1677,7 @@ export default function InterviewEntryPage() {
               setQuestions((qs) => {
                 if (!goingToNextRef.current && !isAdmin) {
                   if (cq < qs.length - 1) {
-                    goToQuestion(cq + 1);
+                    void goToQuestion(cq + 1);
                   } else {
                     // Last question — submit automatically
                     void submitFinalAnswer();
@@ -1710,12 +1711,7 @@ export default function InterviewEntryPage() {
     }
   }, [stage, interviewId, questions.length]);
 
-  useProctoringWatchdog({
-    active: !isAdmin && ['ready', 'calibration', 'interview'].includes(stage),
-    cameraStreamRef,
-    screenStreamRef,
-    onViolation: terminateInterview,
-  });
+
 
   if (stage === 'calibration') {
     return (
@@ -1974,8 +1970,8 @@ export default function InterviewEntryPage() {
         {adminBanner.show && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
             <div className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border ${adminBanner.type === 'terminate'
-                ? 'bg-red-600 border-red-500'
-                : 'bg-emerald-600 border-emerald-500'
+              ? 'bg-red-600 border-red-500'
+              : 'bg-emerald-600 border-emerald-500'
               }`}>
               <div className="flex items-center space-x-3">
                 {adminBanner.type === 'terminate' ? (
@@ -2012,8 +2008,8 @@ export default function InterviewEntryPage() {
                 <div
                   id="interview-question-timer-badge"
                   className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${questionRemainingSec <= 30
-                      ? 'bg-red-600 text-white animate-pulse'
-                      : 'bg-blue-600 text-white'
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-blue-600 text-white'
                     }`}
                   title="Time remaining for this specific question"
                 >
@@ -2092,26 +2088,28 @@ export default function InterviewEntryPage() {
 
             <div className="mt-6 flex justify-end gap-3">
               {/* Previous button removed — candidate only moves forward */}
-              {!isAdmin && currentQuestion === questions.length - 1 ? (
-                <button
-                  id="submit-final-interview-answer"
-                  type="button"
-                  disabled={finalAnswerSubmitted}
-                  onClick={submitFinalAnswer}
-                  className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  {finalAnswerSubmitted ? 'Submitting interview...' : 'Submit final answer'}
-                </button>
-              ) : (
-                <button
-                  id="next-interview-question"
-                  type="button"
-                  disabled={currentQuestion === questions.length - 1}
-                  onClick={() => goToQuestion(currentQuestion + 1)}
-                  className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  Next question
-                </button>
+              {!isAdmin && (
+                currentQuestion === questions.length - 1 ? (
+                  <button
+                    id="submit-final-interview-answer"
+                    type="button"
+                    disabled={finalAnswerSubmitted || isUploadingNext}
+                    onClick={() => void submitFinalAnswer()}
+                    className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isUploadingNext || finalAnswerSubmitted ? <><Loader2 className="w-4 h-4 animate-spin" /> Submitting interview...</> : 'Submit final answer'}
+                  </button>
+                ) : (
+                  <button
+                    id="next-interview-question"
+                    type="button"
+                    disabled={currentQuestion === questions.length - 1 || isUploadingNext}
+                    onClick={() => void goToQuestion(currentQuestion + 1)}
+                    className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    {isUploadingNext ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : 'Next question'}
+                  </button>
+                )
               )}
             </div>
           </section>

@@ -41,6 +41,8 @@ describe('CandidateAssessmentPage', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
     // Tests below flip this; leaking it makes later renders arm while "hidden".
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
   });

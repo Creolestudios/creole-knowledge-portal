@@ -42,6 +42,7 @@ export interface KeywordMatchAnalysis {
   skillGapSummary: string;
   keyStrengths: string[];
   improvementAreas: string[];
+  documentValidationWarning?: string;
   apiFailed?: boolean;
   apiNote?: string;
 }
