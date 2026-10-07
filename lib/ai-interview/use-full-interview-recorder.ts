@@ -145,37 +145,17 @@ export function useFullInterviewRecorder({
         const screenVid = screenVideoRef.current;
         const camVid = cameraVideoRef.current;
 
-        // Background: Screen share
+        // Clean single-screen recording:
+        // Prioritize the interview screen share (which already contains the candidate webcam and question UI)
         if (screenVid && screenVid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           ctx.drawImage(screenVid, 0, 0, canvas.width, canvas.height);
         } else if (camVid && camVid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-          // If no screen share, draw camera full screen
+          // Fallback to candidate camera full-screen if no screen share is present
           ctx.drawImage(camVid, 0, 0, canvas.width, canvas.height);
         } else {
           // Placeholder dark slate background
           ctx.fillStyle = '#0f172a';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        // Picture-in-Picture: Candidate Camera in bottom-right corner
-        if (
-          screenVid &&
-          screenVid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-          camVid &&
-          camVid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
-        ) {
-          const pipWidth = 320;
-          const pipHeight = 180;
-          const pipMargin = 24;
-          const pipX = canvas.width - pipWidth - pipMargin;
-          const pipY = canvas.height - pipHeight - pipMargin;
-
-          // Draw subtle drop shadow / border
-          ctx.fillStyle = '#000000';
-          ctx.fillRect(pipX - 2, pipY - 2, pipWidth + 4, pipHeight + 4);
-
-          // Draw camera frame
-          ctx.drawImage(camVid, pipX, pipY, pipWidth, pipHeight);
         }
       }
 
