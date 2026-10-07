@@ -13,6 +13,7 @@ import {
   Link2,
   ClipboardPaste,
   X,
+  Video,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -518,14 +519,29 @@ export default function AIInterviewManager() {
                     {iv.status.replace('_', ' ')}
                   </span>
                   {(iv.status === 'completed' || iv.status === 'terminated' || iv.status === 'revoked' || iv.status === 'cancelled' || iv.status === 'in_progress') && (
-                    <Link
-                      id={`view-report-${iv.id}`}
-                      href={`/admin/reports/${iv.id}`}
-                      className="px-3 py-1.5 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      View Report
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        id={`view-report-${iv.id}`}
+                        href={`/admin/reports/${iv.id}`}
+                        className="px-3 py-1.5 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        View Report
+                      </Link>
+                      {iv.recording_url && (
+                        <a
+                          id={`view-recording-${iv.id}`}
+                          href={iv.recording_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                          title="Open full Google Drive interview video"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          Video
+                        </a>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>

@@ -17,6 +17,7 @@ import {
   Clock,
   LogOut,
   RefreshCw,
+  UploadCloud,
 } from 'lucide-react';
 import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
 import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
@@ -46,6 +47,7 @@ import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
 import { useAnswerRecorder } from '@/lib/ai-interview/use-answer-recorder';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
+import { useFullInterviewRecorder } from '@/lib/ai-interview/use-full-interview-recorder';
 
 
 export default function InterviewEntryPage() {
@@ -483,6 +485,28 @@ export default function InterviewEntryPage() {
     useAnswerRecorder(interviewId, cameraStream);
   const [finalAnswerSubmitted, setFinalAnswerSubmitted] = useState(false);
 
+  // Full-session video recorder (Screen + Camera PiP + Audio) uploading whole video to Google Drive
+  const {
+    isRecording: isFullVideoRecording,
+    isUploading: isUploadingFullVideo,
+    uploadProgress: fullVideoUploadProgress,
+    uploadStatusText: fullVideoUploadStatusText,
+    startRecording: startFullVideoRecording,
+    stopAndUploadRecording: stopAndUploadFullVideo,
+  } = useFullInterviewRecorder({
+    interviewId,
+    cameraStream: cameraStream || cameraPreview,
+    screenStream: screenStreamRef.current,
+    enabled: !isAdmin,
+  });
+
+  // Start full video recording when candidate enters the live interview
+  useEffect(() => {
+    if (stage === 'interview' && !isAdmin) {
+      startFullVideoRecording();
+    }
+  }, [stage, isAdmin, startFullVideoRecording]);
+
 
 
   const [currentSpokenText, setCurrentSpokenText] = useState('');
@@ -650,7 +674,14 @@ export default function InterviewEntryPage() {
     void completeTurn(spokenText).catch(console.warn);
     void stopAndUpload(spokenText).catch(console.warn);
 
-    // 3. Stop media streams safely
+    // 3. Stop full video recording and upload whole video directly to Google Drive
+    try {
+      await stopAndUploadFullVideo();
+    } catch (err) {
+      console.warn('[interview] stopAndUploadFullVideo error:', err);
+    }
+
+    // 4. Stop media streams safely
     try {
       stopAllMedia();
     } catch (err) {
@@ -785,6 +816,7 @@ export default function InterviewEntryPage() {
     }
     void completeTurn(spokenText).catch(console.warn);
     void stopAndUpload(spokenText).catch(console.warn);
+    void stopAndUploadFullVideo().catch(console.warn);
 
     stopAllMedia();
     notifyTermination(reason);
@@ -796,7 +828,7 @@ export default function InterviewEntryPage() {
       event: 'state-sync',
       payload: { type: 'terminate', reason }
     });
-  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, interviewId, completeTurn]);
+  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, stopAndUploadFullVideo, interviewId, completeTurn]);
 
   const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
     const video = cameraVideoRef.current;
@@ -2014,6 +2046,40 @@ export default function InterviewEntryPage() {
 
     return (
       <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
+        {/* Full Video Uploading to Google Drive Overlay */}
+        {isUploadingFullVideo && (
+          <div
+            id="full-video-upload-modal"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
+          >
+            <div className="max-w-md w-full bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+              <div className="w-16 h-16 rounded-2xl bg-[#34c4f2]/10 border border-[#34c4f2]/30 flex items-center justify-center mx-auto text-[#34c4f2]">
+                <UploadCloud className="w-8 h-8 animate-pulse" />
+              </div>
+              <div className="space-y-2">
+                <h3 className="text-xl font-black text-zinc-900 dark:text-white">
+                  Securing Interview Recording
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Please do not close or refresh this tab while your video is securely transferred to Google Drive.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-3 rounded-full overflow-hidden">
+                  <div
+                    className="bg-[#34c4f2] h-full transition-all duration-300 ease-out rounded-full"
+                    style={{ width: `${fullVideoUploadProgress}%` }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-xs font-mono text-zinc-500 dark:text-zinc-400">
+                  <span>{fullVideoUploadStatusText || 'Uploading to Google Drive...'}</span>
+                  <span className="font-bold text-[#34c4f2]">{fullVideoUploadProgress}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Full Screen Blur Overlay on Pause */}
         {isInterviewPaused && (
           <div

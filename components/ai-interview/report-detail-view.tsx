@@ -21,6 +21,7 @@ import {
   Check,
   Sparkles,
   FileText,
+  Video,
 } from 'lucide-react';
 
 export interface ReportDetailViewProps {
@@ -37,6 +38,12 @@ export interface ReportDetailViewProps {
     // Injected server-side from interview_invites.status
     invite_status?: string | null;
   };
+  recording?: {
+    fileId: string;
+    webViewLink: string;
+    previewUrl: string;
+    fileName?: string;
+  } | null;
   report: {
     id?: string;
     cognitive_composite?: number | null;
@@ -251,6 +258,7 @@ export function isHRQuestion(q: {
 
 export function ReportDetailView({
   session,
+  recording,
   report,
   questions,
   answers,
@@ -397,9 +405,12 @@ export function ReportDetailView({
       return foundAns.transcript.trim();
     }
 
-    // D. Positional match in answers array (if answers were saved in question sequence)
-    const byIndex = answerByIndex.get(qIdx);
-    if (byIndex && byIndex.trim().length > 0) return byIndex.trim();
+    // D. Positional match in answers array (only if answer does not have a conflicting question_id)
+    const targetAns = answers[qIdx];
+    if (targetAns && (!targetAns.question_id || targetAns.question_id === qId || targetAns.question_id === String(ord))) {
+      const byIndex = (targetAns.transcript || '').trim();
+      if (byIndex.length > 0) return byIndex;
+    }
 
     // E. Match in interview_transcript table by tagged question_ord
     const transcriptByOrd = transcript
@@ -409,10 +420,12 @@ export function ReportDetailView({
       .trim();
     if (transcriptByOrd.length > 0) return transcriptByOrd;
 
-    // F. Match in interview_transcript table by sequence index if not tagged with question_ord
-    const candidateUtterances = transcript.filter((t) => t.speaker === 'candidate' && !t.is_flagged && t.text?.trim());
-    if (candidateUtterances[qIdx]?.text?.trim()) {
-      return candidateUtterances[qIdx].text.trim();
+    // F. Match in interview_transcript table by sequence index if not tagged with question_ord (only if no structured answers exist)
+    if (answers.length === 0) {
+      const candidateUtterances = transcript.filter((t) => t.speaker === 'candidate' && !t.is_flagged && t.text?.trim());
+      if (candidateUtterances[qIdx]?.text?.trim()) {
+        return candidateUtterances[qIdx].text.trim();
+      }
     }
 
     // G. Evidence quote from scoring report in DB
@@ -610,6 +623,51 @@ export function ReportDetailView({
             ))}
           </div>
         </div>
+
+        {/* ── Full Interview Video Recording Card (Google Drive) ──── */}
+        {recording && (
+          <div
+            id="report-video-recording-card"
+            className="bg-white dark:bg-[#2b2b2b] rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] shadow-card p-6 space-y-4"
+          >
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-red-500/10 text-red-600 flex items-center justify-center font-black shadow-sm">
+                  <Video className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-zinc-900 dark:text-white text-base">
+                    Full Interview Video Recording
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] font-medium">
+                    Continuous Screen Share + Candidate Camera (PiP) + Audio stored in Google Drive
+                  </p>
+                </div>
+              </div>
+              <a
+                id="open-drive-video-link"
+                href={recording.webViewLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-xl transition-colors shadow-sm self-start sm:self-auto cursor-pointer"
+              >
+                <span>Open in Google Drive</span>
+                <span className="text-xs">↗</span>
+              </a>
+            </div>
+
+            {/* Embedded Drive Preview Player */}
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-800 shadow-inner">
+              <iframe
+                src={recording.previewUrl}
+                title="Interview Video Recording"
+                className="w-full h-full border-0"
+                allow="autoplay; encrypted-media"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        )}
 
         {/* ── 4. Main Dual-Perspective Tab Switcher (Matching Portal Theme) ────────── */}
         <div className="bg-zinc-100 dark:bg-[#2b2b2b] p-1.5 rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] inline-flex flex-wrap gap-2">

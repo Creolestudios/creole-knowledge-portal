@@ -201,9 +201,24 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       : null) ??
     ((report as unknown as { follow_up_recommendations?: string[] })?.follow_up_recommendations ?? []);
 
+  // ── Google Drive Recording Event ──────────────────────────────────
+  const recordingEvent = allEvents.find(
+    (e) => e.category === 'full_recording' || e.event_type === 'full_recording'
+  );
+  const recMeta = (recordingEvent?.meta || recordingEvent?.metadata || {}) as Record<string, unknown>;
+  const recording = recMeta.fileId
+    ? {
+        fileId: String(recMeta.fileId),
+        webViewLink: (recMeta.webViewLink as string) || `https://drive.google.com/file/d/${recMeta.fileId}/view`,
+        previewUrl: (recMeta.previewUrl as string) || `https://drive.google.com/file/d/${recMeta.fileId}/preview`,
+        fileName: recMeta.fileName as string | undefined,
+      }
+    : null;
+
   return (
     <ReportDetailView
       session={sessionWithReason as unknown as React.ComponentProps<typeof ReportDetailView>['session']}
+      recording={recording}
       report={report as unknown as React.ComponentProps<typeof ReportDetailView>['report']}
       questions={sortedQuestions}
       answers={answers ?? []}

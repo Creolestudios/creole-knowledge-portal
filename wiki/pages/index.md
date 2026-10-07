@@ -16,4 +16,5 @@ This section contains important overview pages for the Creole Knowledge Portal p
 *   [[pages/gatekeeper-plan.md|Gatekeeper Module Design]]
 *   [[pages/resume-jd-assessment-plan.md|Student Mock Interview / Assessment Module]]
 *   [[pages/ai-interview-extractor.md|AI Interview Module]]
+*   [[pages/full-interview-video-recording.md|Full Interview Video Recording & Google Drive Storage]]
 

@@ -267,4 +267,32 @@ describe('ReportDetailView', () => {
     expect(screen.getByText('Object / Phone')).toBeInTheDocument();
     expect(screen.getByText('Voice / Audio')).toBeInTheDocument();
   });
+
+  it('renders Google Drive full interview video card with preview player and drive link when recording is present', () => {
+    render(
+      <ReportDetailView
+        session={mockSession}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        recording={{
+          fileId: 'drive-file-999',
+          webViewLink: 'https://drive.google.com/file/d/drive-file-999/view',
+          previewUrl: 'https://drive.google.com/file/d/drive-file-999/preview',
+        }}
+        voiceWarningCount={0}
+        faceWarningCount={0}
+        objectWarningCount={0}
+        totalWarnings={0}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    expect(screen.getByText('Full Interview Video Recording')).toBeInTheDocument();
+    const driveLink = screen.getByRole('link', { name: /Open in Google Drive/i });
+    expect(driveLink).toHaveAttribute('href', 'https://drive.google.com/file/d/drive-file-999/view');
+    const iframe = screen.getByTitle('Interview Video Recording');
+    expect(iframe).toHaveAttribute('src', 'https://drive.google.com/file/d/drive-file-999/preview');
+  });
 });
