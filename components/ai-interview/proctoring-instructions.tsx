@@ -17,6 +17,8 @@ const INSTRUCTIONS = [
   'Do not switch tabs, minimize the window, or open other applications during the assessment.',
   'Ensure a stable internet connection before you begin; the session cannot be paused once started.',
   'Answer every question yourself in your own voice — external help, notes, or additional devices are strictly prohibited.',
+  '3-Warning Termination Policy: Any proctoring infraction triggers a strike. On the 3rd warning, the interview is immediately and permanently terminated with no option to resume.',
+  '30-Second Auto-Resume: If an infraction pauses your interview (warnings 1 or 2), you have up to 30 seconds to click "Resume Interview". If not clicked within 30 seconds, the session will automatically resume.',
   'When you finish speaking your answer, click "Next Question" to proceed, or the interview will automatically advance when your answer is complete or time expires.',
 ];
 
@@ -43,7 +45,7 @@ const DETECTION_RULES = [
     icon: 'ShieldAlert',
     title: '3-Warning Termination Policy',
     description:
-      'Up to 3 warnings are issued for proctoring infractions. A 4th violation or interrupting media streams will immediately end your interview.',
+      'Warnings 1 & 2 offer a 30s resume window (auto-resumes if unclicked). A 3rd warning terminates the interview immediately with no resume alert.',
   },
 ];
 

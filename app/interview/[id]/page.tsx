@@ -161,6 +161,8 @@ export default function InterviewEntryPage() {
   const [isInterviewPaused, setIsInterviewPaused] = useState(false);
   const isInterviewPausedRef = useRef(false);
   const resumeCooldownUntilRef = useRef<number>(0);
+  const [autoResumeCountdown, setAutoResumeCountdown] = useState<number>(30);
+  const autoResumeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [statusCheckMessage, setStatusCheckMessage] = useState<string | null>(null);
   const supabase = createClient();
@@ -948,9 +950,7 @@ export default function InterviewEntryPage() {
 
       if (trackerStatus.warningCount >= 3 && !terminatingRef.current) {
         terminatingRef.current = true;
-        setTimeout(() => {
-          terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
-        }, 3000);
+        terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
       }
     }
   }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast, isAdmin]);
@@ -1469,9 +1469,7 @@ export default function InterviewEntryPage() {
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
-              setTimeout(() => {
-                terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
-              }, 3000);
+              terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
             }
           }
         }
@@ -1683,9 +1681,7 @@ export default function InterviewEntryPage() {
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
-              setTimeout(() => {
-                terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
-              }, 3000);
+              terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
             }
           }
 
@@ -1724,6 +1720,10 @@ export default function InterviewEntryPage() {
   }, [stage, isAdmin, captureEvidenceSnapshot, interviewId, terminateInterview]);
 
   const handleResumeInterview = useCallback(() => {
+    if (autoResumeTimerRef.current) {
+      clearInterval(autoResumeTimerRef.current);
+      autoResumeTimerRef.current = null;
+    }
     setWarningToast((prev) => ({ ...prev, show: false }));
     setIsInterviewPaused(false);
     isInterviewPausedRef.current = false;
@@ -1744,6 +1744,40 @@ export default function InterviewEntryPage() {
       } catch { }
     }
   }, [isAdmin]);
+
+  // ── Auto-Resume Interval: 30-second countdown for warnings 1 & 2 ──
+  useEffect(() => {
+    if (!warningToast.show || warningToast.count >= 3 || !isInterviewPaused) {
+      if (autoResumeTimerRef.current) {
+        clearInterval(autoResumeTimerRef.current);
+        autoResumeTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Reset countdown to 30s on each pause/warning
+    setAutoResumeCountdown(30);
+
+    const interval = setInterval(() => {
+      setAutoResumeCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          autoResumeTimerRef.current = null;
+          // Auto-resume after 30 seconds
+          handleResumeInterview();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    autoResumeTimerRef.current = interval;
+
+    return () => {
+      clearInterval(interval);
+      autoResumeTimerRef.current = null;
+    };
+  }, [warningToast.show, warningToast.count, isInterviewPaused, handleResumeInterview]);
 
   useEffect(() => {
     if (stage !== 'interview' || durationSecondsRef.current <= 0 || isInterviewPaused) return;
@@ -2091,23 +2125,53 @@ export default function InterviewEntryPage() {
         {/* Warning Toast Banner */}
         {warningToast.show && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
-            <div className="bg-amber-500 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-amber-400 gap-4">
+            <div
+              className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border gap-4 ${
+                warningToast.count >= 3
+                  ? 'bg-red-600 border-red-500'
+                  : 'bg-amber-500 border-amber-400'
+              }`}
+            >
               <div className="flex items-center space-x-3">
                 <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-amber-100">
-                    Warning {warningToast.count} / 3
+                  <p
+                    className={`text-xs font-bold uppercase tracking-wider ${
+                      warningToast.count >= 3 ? 'text-red-100' : 'text-amber-100'
+                    }`}
+                  >
+                    {warningToast.count >= 3
+                      ? 'Warning 3 / 3 — Session Terminated'
+                      : `Warning ${warningToast.count} / 3`}
                   </p>
                   <p className="text-sm font-semibold">{warningToast.reason}</p>
+                  {warningToast.count < 3 ? (
+                    <p className="text-xs text-amber-100/90 mt-0.5">
+                      Auto-resumes in <span className="font-mono font-bold text-white">{autoResumeCountdown}s</span> if not clicked
+                    </p>
+                  ) : (
+                    <p className="text-xs text-red-100/90 mt-0.5">
+                      Three warnings reached. Interview terminated permanently.
+                    </p>
+                  )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={handleResumeInterview}
-                className="text-white font-bold text-xs bg-amber-600 hover:bg-amber-700 border border-amber-300/40 rounded-xl px-4 py-2 transition-all shadow-md flex-shrink-0 cursor-pointer"
-              >
-                Resume Interview
-              </button>
+              {warningToast.count < 3 ? (
+                <button
+                  type="button"
+                  onClick={handleResumeInterview}
+                  className="text-white font-bold text-xs bg-amber-600 hover:bg-amber-700 border border-amber-300/40 rounded-xl px-4 py-2 transition-all shadow-md flex-shrink-0 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Resume Interview</span>
+                  <span className="bg-amber-700/60 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
+                    {autoResumeCountdown}s
+                  </span>
+                </button>
+              ) : (
+                <div className="bg-red-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-red-400/40 flex-shrink-0">
+                  Terminating...
+                </div>
+              )}
             </div>
           </div>
         )}

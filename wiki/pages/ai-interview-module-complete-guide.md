@@ -86,9 +86,9 @@ All proctoring rules feed into a **Single Unified Counter** strictly capped at *
 
 | Warning # | Action Taken |
 | :--- | :--- |
-| **Warning 1** | On-screen warning toast (auto-dismisses after 5s) + Event logged + Camera snapshot captured. |
-| **Warning 2** | Second on-screen warning toast + Event logged + Camera snapshot captured. |
-| **Warning 3** | Session **auto-terminates immediately**. Final proctoring audit recorded. |
+| **Warning 1** | Session pauses. Warning banner displayed with a **30-second auto-resume countdown**. Candidate can click "Resume Interview" or the session auto-resumes after 30s. Snapshot & event logged. |
+| **Warning 2** | Session pauses. Second warning banner with **30-second auto-resume countdown**. Candidate can click "Resume Interview" or the session auto-resumes after 30s. Snapshot & event logged. |
+| **Warning 3** | **No resume option provided.** Session **terminates immediately**. Final proctoring audit recorded with maximum strikes. |
 
 ```
                                   Unified Proctoring Engine

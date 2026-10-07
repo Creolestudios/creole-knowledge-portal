@@ -111,7 +111,7 @@ describe('google-drive-recorder', () => {
       );
       expect(result.fileName).toContain('interview_jane_doe');
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable',
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
