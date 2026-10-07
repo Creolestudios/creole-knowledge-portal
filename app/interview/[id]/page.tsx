@@ -175,9 +175,49 @@ export default function InterviewEntryPage() {
             setStageWithRef('terminated');
           }
         } else if (res.ok) {
-          // Note: Even if they have a valid cookie, if they refreshed the page
-          // before joining the interview, they must re-enter the passcode.
-          // This is a strict requirement for both candidates and admins.
+          try {
+            const authStr = sessionStorage.getItem(`interview_auth_${interviewId}`);
+            if (authStr) {
+              const authData = JSON.parse(authStr);
+              if (authData.accessCode || authData.email) {
+                const verifyRes = await fetch('/api/interview/verify', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-device-id': deviceId,
+                  },
+                  body: JSON.stringify({
+                    interviewId,
+                    accessCode: authData.accessCode,
+                    email: authData.email,
+                  }),
+                });
+                
+                if (verifyRes.ok) {
+                  const verifyJson = await verifyRes.json();
+                  if (!isMounted) return;
+                  if (!verifyJson.requiresAccessCode) {
+                    setAccessCode(authData.accessCode || '');
+                    setEmail(authData.email || '');
+                    if (verifyJson.isAdmin) {
+                      setIsAdmin(true);
+                      if (verifyJson.inProgress === false || (verifyJson.status && verifyJson.status !== 'in_progress')) {
+                        setStageWithRef('not_started');
+                      } else {
+                        void requestPermissionsRef.current?.(true);
+                      }
+                    } else {
+                      setStageWithRef('instructions');
+                    }
+                  }
+                } else {
+                  sessionStorage.removeItem(`interview_auth_${interviewId}`);
+                }
+              }
+            }
+          } catch (e) {
+            console.error('Failed to restore auth session', e);
+          }
         }
       })
       .catch(() => { })
@@ -190,7 +230,7 @@ export default function InterviewEntryPage() {
     return () => {
       isMounted = false;
     };
-  }, [interviewId, setStageWithRef]);
+  }, [interviewId, setStageWithRef, deviceId]);
 
   useEffect(() => {
     if (!interviewId) return;
@@ -957,6 +997,10 @@ export default function InterviewEntryPage() {
         try {
           localStorage.removeItem(`interview_used_${interviewId}`);
           sessionStorage.removeItem(`interview_used_${interviewId}`);
+          sessionStorage.setItem(`interview_auth_${interviewId}`, JSON.stringify({
+            accessCode: accessCode.trim(),
+            email: email.trim(),
+          }));
         } catch {
           // ignore
         }
@@ -966,6 +1010,14 @@ export default function InterviewEntryPage() {
         }
         await requestPermissions(true);
       } else {
+        try {
+          sessionStorage.setItem(`interview_auth_${interviewId}`, JSON.stringify({
+            accessCode: accessCode.trim(),
+            email: email.trim(),
+          }));
+        } catch {
+          // ignore
+        }
         setStageWithRef('instructions');
       }
     } catch (err) {

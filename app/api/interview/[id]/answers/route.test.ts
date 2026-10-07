@@ -127,24 +127,20 @@ describe('POST /api/interview/[id]/answers', () => {
     expect(mockUpload).not.toHaveBeenCalled();
   });
 
-  it('stores the audio and the transcript against the question', async () => {
+  it('stores the transcript against the question but drops audio if transcription succeeds', async () => {
     const res = await POST(makeRequest(), makeParams());
     const body = await res.json();
 
     expect(res.status).toBe(200);
     expect(body).toEqual({ ok: true, transcribed: true });
 
-    expect(mockUpload).toHaveBeenCalledWith(
-      'sess-1/q1.webm',
-      expect.any(Buffer),
-      { contentType: 'audio/webm', upsert: true }
-    );
+    expect(mockUpload).not.toHaveBeenCalled();
     expect(mockTranscribe).toHaveBeenCalledWith(expect.any(Buffer), 'audio/webm');
     expect(mockInsert).toHaveBeenCalledWith({
       session_id: 'sess-1',
       question_id: 'q1',
       transcript: 'I built the payments service.',
-      audio_storage_path: 'sess-1/q1.webm',
+      audio_storage_path: null,
       total_time_taken_sec: 12,
     });
   });
@@ -161,7 +157,7 @@ describe('POST /api/interview/[id]/answers', () => {
     );
   });
 
-  it('keeps the recording when transcription fails, saving the answer without a transcript', async () => {
+  it('uploads the recording when transcription fails, saving the answer without a transcript', async () => {
     mockTranscribe.mockRejectedValue(new Error('gemini quota exceeded'));
 
     const res = await POST(makeRequest(), makeParams());
@@ -169,6 +165,12 @@ describe('POST /api/interview/[id]/answers', () => {
 
     expect(res.status).toBe(200);
     expect(body).toEqual({ ok: true, transcribed: false });
+    
+    expect(mockUpload).toHaveBeenCalledWith(
+      'sess-1/q1.webm',
+      expect.any(Buffer),
+      { contentType: 'audio/webm', upsert: true }
+    );
     expect(mockInsert).toHaveBeenCalledWith(
       expect.objectContaining({ transcript: null, audio_storage_path: 'sess-1/q1.webm' })
     );
@@ -180,7 +182,9 @@ describe('POST /api/interview/[id]/answers', () => {
     expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({ total_time_taken_sec: 0 }));
   });
 
-  it('returns 500 when the audio upload fails', async () => {
+  it('returns 500 when the audio upload fails (fallback path)', async () => {
+    // Transcription must fail for upload to even be attempted
+    mockTranscribe.mockRejectedValue(new Error('gemini quota exceeded'));
     state.uploadError = { message: 'bucket unavailable' };
 
     const res = await POST(makeRequest(), makeParams());

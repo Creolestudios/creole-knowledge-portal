@@ -95,23 +95,31 @@ export async function POST(
       const buffer = Buffer.from(await audioFile.arrayBuffer());
       storagePath = `${id}/${questionId}.${extension}`;
 
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from('interview-answer-audio')
-        .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
-
-      if (uploadError) {
-        console.error('[interview-answers] audio upload failed:', uploadError.message);
-        return NextResponse.json({ error: 'Could not save the recorded answer.' }, { status: 500 });
-      }
-
       if (clientTranscript && clientTranscript.trim()) {
         transcript = clientTranscript.trim();
       } else {
         try {
+          // Transcribe the buffer IN-MEMORY first
           transcript = await transcribeAnswer(buffer, mimeType);
         } catch (err) {
           console.error('[interview-answers] transcription failed:', err);
         }
+      }
+
+      // DATA MINIMIZATION: Only save audio to storage if we failed to get a transcript
+      // If transcript is successful, we don't upload the audio, saving ~90%+ storage space.
+      if (!transcript) {
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('interview-answer-audio')
+          .upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+
+        if (uploadError) {
+          console.error('[interview-answers] audio upload failed:', uploadError.message);
+          return NextResponse.json({ error: 'Could not save the recorded answer.' }, { status: 500 });
+        }
+      } else {
+        // Since we didn't upload it, we set storagePath to null to avoid saving a broken path in DB
+        storagePath = null;
       }
     }
 

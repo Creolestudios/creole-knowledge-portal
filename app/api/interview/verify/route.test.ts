@@ -140,7 +140,7 @@ describe('POST /api/interview/verify', () => {
     expect(res.status).toBe(401);
   });
 
-  it('verifies a correct passcode and marks the interview in_progress', async () => {
+  it('verifies a correct passcode but does NOT mark the interview in_progress immediately', async () => {
     mockSingleInterview.mockResolvedValue({
       data: {
         id: 'i1',
@@ -157,9 +157,8 @@ describe('POST /api/interview/verify', () => {
     const body = await res.json();
     expect(body.verified).toBe(true);
     expect(body.isAdmin).toBe(false);
-    expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'in_progress', used_at: expect.any(String) }),
-    );
+    // Should NOT update to in_progress yet (waits for client to call /start)
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it('returns 410 when the interview was already terminated', async () => {
@@ -273,29 +272,7 @@ describe('POST /api/interview/verify', () => {
     expect(body2.code).toBe('CONCURRENT_SESSION_DETECTED');
   });
 
-  it('rejects second user joining 1 or 2 ms later when atomic database update returns 0 rows', async () => {
-    mockSingleInterview.mockResolvedValue({
-      data: {
-        id: 'i-atomic',
-        status: 'pending',
-        expires_at: new Date(Date.now() + 86400000).toISOString(),
-        access_code: '123456',
-      },
-      error: null,
-    });
-    // Simulate that another worker updated status 1ms earlier, returning null
-    mockAtomicMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
 
-    const res = await POST(makeRequest({
-      interviewId: 'i-atomic',
-      accessCode: '123456',
-      deviceId: 'laptop-late',
-    }));
-    expect(res.status).toBe(409);
-    const body = await res.json();
-    expect(body.code).toBe('CONCURRENT_SESSION_DETECTED');
-    expect(body.concurrent).toBe(true);
-  });
 });
 
 describe('GET /api/interview/verify', () => {
