@@ -123,12 +123,17 @@ export default function InterviewEntryPage() {
 
   const [terminationReason, setTerminationReason] = useState<string | null>(null);
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
+  const questionsRef = useRef<InterviewQuestion[]>([]);
+  useEffect(() => {
+    questionsRef.current = questions;
+  }, [questions]);
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const currentQuestionRef = useRef(0);
   useEffect(() => {
     currentQuestionRef.current = currentQuestion;
   }, [currentQuestion]);
+  const autoSubmittedQuestionIdxRef = useRef<number | null>(null);
   const [questionError, setQuestionError] = useState<string | null>(null);
   const [cameraPreview, setCameraPreview] = useState<MediaStream | null>(null);
   const [faceTrackingStatus, setFaceTrackingStatus] = useState<'loading' | 'tracking' | 'error'>('loading');
@@ -151,6 +156,9 @@ export default function InterviewEntryPage() {
     count: 0,
     reason: '',
   });
+  const [isInterviewPaused, setIsInterviewPaused] = useState(false);
+  const isInterviewPausedRef = useRef(false);
+  const resumeCooldownUntilRef = useRef<number>(0);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [statusCheckMessage, setStatusCheckMessage] = useState<string | null>(null);
   const supabase = createClient();
@@ -159,6 +167,21 @@ export default function InterviewEntryPage() {
   const syncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const candidateEnteredAtRef = useRef<number>(0);
   const requestPermissionsRef = useRef<((override?: boolean) => Promise<void>) | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const durationSecondsRef = useRef(0);
+  const terminatedRef = useRef(false);
+  const completedRef = useRef(false);
+  const terminatingRef = useRef(false);
+  const faceWorkerRef = useRef<Worker | null>(null);
+  const objectWorkerRef = useRef<Worker | null>(null);
+  const objectWorkerReadyRef = useRef<boolean>(false);
+  const voiceDetectorRef = useRef<VoiceDetector | null>(null);
+  const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
+  const baselineRef = useRef<CandidateBaseline | null>(null);
+  const missingFramesRef = useRef<Map<string, number>>(new Map());
+  const consecutiveDetectedFramesRef = useRef<Map<string, number>>(new Map());
 
   // Link status check on mount to prevent re-accessing completed/terminated links
   useEffect(() => {
@@ -243,6 +266,8 @@ export default function InterviewEntryPage() {
               count: payload.count,
               reason: payload.reason,
             });
+            setIsInterviewPaused(true);
+            isInterviewPausedRef.current = true;
             setLiveEvents((prev) => [
               {
                 id: `${Date.now()}-${Math.random()}`,
@@ -252,6 +277,11 @@ export default function InterviewEntryPage() {
               },
               ...prev.slice(0, 19),
             ]);
+          }
+          if (payload.type === 'resume-interview') {
+            setWarningToast((prev) => ({ ...prev, show: false }));
+            setIsInterviewPaused(false);
+            isInterviewPausedRef.current = false;
           }
           if (payload.type === 'candidate-speech') {
             setCandidateSpeakingText(payload.text || '');
@@ -533,6 +563,7 @@ export default function InterviewEntryPage() {
       const qSec = questions[currentQuestion].time_limit_sec || 120;
       // eslint-disable-next-line react-hooks/immutability
       questionRemainingSecRef.current = qSec;
+      autoSubmittedQuestionIdxRef.current = null;
       window.setTimeout(() => setQuestionRemainingSec(qSec), 0);
     }
   }, [currentQuestion, stage, questions]);
@@ -545,8 +576,11 @@ export default function InterviewEntryPage() {
       clearTimeout(autoSaveTimerRef.current);
     }
 
-    // Capture spoken text before clearing state
-    const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
+    // Capture spoken text before clearing state (combines committed and in-flight interim speech)
+    const spokenText = [currentSpokenText.trim(), interimText ? interimText.trim() : '']
+      .filter(Boolean)
+      .join(' ')
+      .trim();
     const currentQ = questions[currentQuestion];
 
     // Real-time answer storing: Immediately persist answer to interview_answers on next question
@@ -567,6 +601,7 @@ export default function InterviewEntryPage() {
       console.warn('[interview] stopAndUpload error:', err)
     );
 
+    autoSubmittedQuestionIdxRef.current = null;
     setFinalAnswerSubmitted(false);
     setCurrentSpokenText('');
     lastSavedSpokenTextRef.current = '';
@@ -595,7 +630,10 @@ export default function InterviewEntryPage() {
       clearTimeout(autoSaveTimerRef.current);
     }
 
-    const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
+    const spokenText = [currentSpokenText.trim(), interimText ? interimText.trim() : '']
+      .filter(Boolean)
+      .join(' ')
+      .trim();
     const currentQ = questions[currentQuestion];
 
     // 1. Immediately persist final transcript to interview_answers in background
@@ -665,22 +703,6 @@ export default function InterviewEntryPage() {
       });
     }
   }, [interimText, currentSpokenText, isAdmin, stage]);
-
-  const cameraStreamRef = useRef<MediaStream | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
-  const durationSecondsRef = useRef(0);
-  const terminatedRef = useRef(false);
-  const completedRef = useRef(false);
-  const terminatingRef = useRef(false);
-  const faceWorkerRef = useRef<Worker | null>(null);
-  const objectWorkerRef = useRef<Worker | null>(null);
-  const objectWorkerReadyRef = useRef<boolean>(false);
-  const voiceDetectorRef = useRef<VoiceDetector | null>(null);
-  const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
-  const baselineRef = useRef<CandidateBaseline | null>(null);
-  const missingFramesRef = useRef<Map<string, number>>(new Map());
-  const consecutiveDetectedFramesRef = useRef<Map<string, number>>(new Map());
 
   const stopAllMedia = useCallback(() => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -818,19 +840,39 @@ export default function InterviewEntryPage() {
   }, [interviewId]);
 
   // ── Real-time Speech-to-Text & Audio Voice Guard ──
-  const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number }) => {
-    if (stageRef.current !== 'interview' || terminatingRef.current) return;
+  const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number; durationMs?: number }) => {
+    if (
+      stageRef.current !== 'interview' ||
+      terminatingRef.current ||
+      isInterviewPausedRef.current ||
+      Date.now() < resumeCooldownUntilRef.current
+    ) return;
     const nowMs = Date.now();
+
+    let voiceReason = info.reason;
+    if (info.reason.includes('music')) {
+      voiceReason = 'Background music detected.';
+    } else if (info.reason.includes('typing')) {
+      voiceReason = 'Keyboard typing sounds detected.';
+    } else if (info.durationMs && info.durationMs >= 10000) {
+      voiceReason = 'Background voice detected.';
+    } else {
+      voiceReason =
+        'Background voice detected. Please ensure that no other person or voice is present during the interview.';
+    }
+
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
       'unauthorized_voice',
       'voice',
-      info.reason,
+      voiceReason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
       15000,
       nowMs,
     );
 
     if (trackerStatus.shouldTriggerWarning) {
+      setIsInterviewPaused(true);
+      isInterviewPausedRef.current = true;
       setWarningToast({
         show: true,
         count: trackerStatus.warningCount,
@@ -885,7 +927,7 @@ export default function InterviewEntryPage() {
     interviewId,
     stream: cameraStream,
     isAiSpeaking: false,
-    isCandidateTurn: stage === 'interview' && !isAdmin,
+    isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     takeSnapshot: async () => {
@@ -1341,12 +1383,19 @@ export default function InterviewEntryPage() {
         setIsMouthMoving(Boolean(msg.mouthMoving));
 
         // stageRef always reflects current stage — no stale closure possible.
-        if (stageRef.current !== 'interview' || terminatingRef.current) return;
+        if (
+          stageRef.current !== 'interview' ||
+          terminatingRef.current ||
+          isInterviewPausedRef.current ||
+          Date.now() < resumeCooldownUntilRef.current
+        ) return;
 
         // ── Proctoring time tracker: debounces & counts violations ──
         const trackerStatus = proctorTrackerRef.current.processResult(msg, Date.now());
 
         if (trackerStatus.shouldTriggerWarning) {
+          setIsInterviewPaused(true);
+          isInterviewPausedRef.current = true;
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
@@ -1502,8 +1551,14 @@ export default function InterviewEntryPage() {
         return;
       }
 
-      // Only process object detection results during active interview — not during pre-init stages
-      if (msg.type !== 'result' || !msg.detections || terminatingRef.current) return;
+      // Only process object detection results during active interview — not during pre-init stages, pause, or cooldown
+      if (
+        msg.type !== 'result' ||
+        !msg.detections ||
+        terminatingRef.current ||
+        isInterviewPausedRef.current ||
+        Date.now() < resumeCooldownUntilRef.current
+      ) return;
       if (stageRef.current !== 'interview') return;
 
       // ── Log raw detections for debugging ──
@@ -1537,6 +1592,8 @@ export default function InterviewEntryPage() {
         );
 
         if (trackerStatus.shouldTriggerWarning) {
+          setIsInterviewPaused(true);
+          isInterviewPausedRef.current = true;
           console.warn(
             `%c[ObjectDetection] ⚠️ PROCTORING ALERT #${trackerStatus.warningCount}: ${trackerStatus.reason}`,
             'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
@@ -1568,11 +1625,6 @@ export default function InterviewEntryPage() {
               });
             } catch { }
           }
-
-          // Auto-dismiss warning toast after 5 seconds if not dismissed manually
-          window.setTimeout(() => {
-            setWarningToast((prev) => (prev.count === trackerStatus.warningCount ? { ...prev, show: false } : prev));
-          }, 5000);
 
           // Evidence snapshot + DB event with snapshot_path
           void (async () => {
@@ -1639,17 +1691,30 @@ export default function InterviewEntryPage() {
     };
   }, [stage, isAdmin, captureEvidenceSnapshot, interviewId, terminateInterview]);
 
-  // ── Auto-dismiss warning toast after 5 seconds ──
-  useEffect(() => {
-    if (!warningToast.show) return;
-    const timer = window.setTimeout(() => {
-      setWarningToast((prev) => ({ ...prev, show: false }));
-    }, 5000);
-    return () => window.clearTimeout(timer);
-  }, [warningToast.show, warningToast.count]);
+  const handleResumeInterview = useCallback(() => {
+    setWarningToast((prev) => ({ ...prev, show: false }));
+    setIsInterviewPaused(false);
+    isInterviewPausedRef.current = false;
+    resumeCooldownUntilRef.current = Date.now() + 3000; // 3-second grace cooldown break
+    proctorTrackerRef.current.clearActiveViolations();
+    missingFramesRef.current.clear();
+    consecutiveDetectedFramesRef.current.clear();
+    if (!isAdmin) {
+      try {
+        syncChannelRef.current?.send({
+          type: 'broadcast',
+          event: 'state-sync',
+          payload: {
+            type: 'resume-interview',
+            ts: Date.now(),
+          },
+        });
+      } catch { }
+    }
+  }, [isAdmin]);
 
   useEffect(() => {
-    if (stage !== 'interview' || durationSecondsRef.current <= 0) return;
+    if (stage !== 'interview' || durationSecondsRef.current <= 0 || isInterviewPaused) return;
     const timer = window.setInterval(() => {
       // 1. Overall timer
       durationSecondsRef.current -= 1;
@@ -1670,23 +1735,23 @@ export default function InterviewEntryPage() {
       // 2. Per-question timer — auto-advance when it hits 0
       setQuestionRemainingSec((prevQ) => {
         if (prevQ <= 1) {
-          // Timer just expired: auto-advance to next question (or finish interview)
-          window.setTimeout(() => {
-            setCurrentQuestion((cq) => {
-              setQuestions((qs) => {
-                if (!goingToNextRef.current && !isAdmin) {
-                  if (cq < qs.length - 1) {
-                    goToQuestion(cq + 1);
-                  } else {
-                    // Last question — submit automatically
-                    void submitFinalAnswer();
-                  }
-                }
-                return qs;
-              });
-              return cq;
-            });
-          }, 0);
+          questionRemainingSecRef.current = 0;
+          if (
+            autoSubmittedQuestionIdxRef.current !== currentQuestionRef.current &&
+            !goingToNextRef.current &&
+            !isAdmin
+          ) {
+            autoSubmittedQuestionIdxRef.current = currentQuestionRef.current;
+            const cq = currentQuestionRef.current;
+            const totalQ = questionsRef.current.length;
+            if (totalQ > 0) {
+              if (cq < totalQ - 1) {
+                goToQuestion(cq + 1);
+              } else {
+                void submitFinalAnswer();
+              }
+            }
+          }
           return 0;
         }
         questionRemainingSecRef.current = prevQ - 1;
@@ -1694,7 +1759,7 @@ export default function InterviewEntryPage() {
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stage, isInterviewPaused]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch questions automatically if entering 'interview' stage (e.g. Admin view) without prior fetch
   useEffect(() => {
@@ -1772,8 +1837,8 @@ export default function InterviewEntryPage() {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
         <div className="flex flex-col items-center justify-center space-y-4">
-          <div className="w-10 h-10 border-3 border-zinc-200 border-t-[#34c4f2] rounded-full animate-spin" />
-          <p className="text-sm font-medium text-zinc-500">Checking interview status...</p>
+          <div className="w-10 h-10 border-3 border-zinc-200 dark:border-[#4a4a4a] border-t-[#34c4f2] rounded-full animate-spin" />
+          <p className="text-sm font-medium text-zinc-500 dark:text-[#9f9f9f]">Checking interview status...</p>
         </div>
       </main>
     );
@@ -1792,12 +1857,12 @@ export default function InterviewEntryPage() {
   if (stage === 'completed') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 text-center space-y-4">
+        <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 text-center space-y-4">
           <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-10 h-10 text-emerald-500" />
           </div>
-          <h1 className="text-2xl font-bold text-zinc-900">Interview complete</h1>
-          <p className="text-sm text-zinc-500 leading-relaxed">
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">Interview complete</h1>
+          <p className="text-sm text-zinc-500 dark:text-[#9f9f9f] leading-relaxed">
             {isAdmin
               ? 'The candidate has completed the interview and submitted all assessment responses.'
               : 'Thank you. Your responses and assessment data have been submitted. You may close this window now.'}
@@ -1806,7 +1871,7 @@ export default function InterviewEntryPage() {
             <button
               type="button"
               onClick={handleAdminLeave}
-              className="w-full mt-4 py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-sm"
+              className="w-full mt-4 py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-sm"
             >
               <LogOut className="w-4 h-4" />
               <span>Return to Admin Dashboard</span>
@@ -1820,7 +1885,7 @@ export default function InterviewEntryPage() {
   if (stage === 'not_started') {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-8">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 text-center space-y-6">
+        <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 text-center space-y-6">
           <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
             <span className="absolute inline-flex h-full w-full rounded-full bg-[#34c4f2]/20 animate-ping opacity-75" />
             <div className="relative w-16 h-16 bg-[#34c4f2]/10 border border-[#34c4f2]/30 rounded-2xl flex items-center justify-center text-[#0284c7]">
@@ -1833,21 +1898,21 @@ export default function InterviewEntryPage() {
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               Waiting for Candidate
             </span>
-            <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Interview Not Started Yet</h1>
-            <p className="text-sm text-zinc-500 leading-relaxed">
+            <h1 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">Interview Not Started Yet</h1>
+            <p className="text-sm text-zinc-500 dark:text-[#9f9f9f] leading-relaxed">
               The candidate has not accessed the link or started the interview yet. As an administrator, you will be automatically connected to the live session once the candidate begins.
             </p>
           </div>
 
-          <div className="bg-zinc-50 border border-zinc-100 rounded-xl p-4 text-xs text-zinc-600 text-left space-y-2">
-            <div className="flex items-center justify-between font-semibold text-zinc-700">
+          <div className="bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl p-4 text-xs text-zinc-600 text-left space-y-2">
+            <div className="flex items-center justify-between font-semibold text-zinc-700 dark:text-[#d9d9d9]">
               <span>Live Observation Mode</span>
               <span className="text-[#0284c7] flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7] animate-ping" />
                 Listening
               </span>
             </div>
-            <p className="text-zinc-500 leading-relaxed">
+            <p className="text-zinc-500 dark:text-[#9f9f9f] leading-relaxed">
               Keep this tab open. When the candidate enters and verifies their identity, this room will instantly transition to the real-time proctoring view.
             </p>
             {statusCheckMessage && (
@@ -1862,7 +1927,7 @@ export default function InterviewEntryPage() {
               type="button"
               onClick={checkInterviewStatus}
               disabled={isCheckingStatus}
-              className="w-full py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-sm disabled:opacity-60"
+              className="w-full py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-sm disabled:opacity-60"
             >
               <RefreshCw className={`w-4 h-4 ${isCheckingStatus ? 'animate-spin' : ''}`} />
               <span>{isCheckingStatus ? 'Checking Status...' : 'Check Status / Refresh'}</span>
@@ -1871,7 +1936,7 @@ export default function InterviewEntryPage() {
             <button
               type="button"
               onClick={handleAdminLeave}
-              className="w-full py-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
+              className="w-full py-3 bg-zinc-100 dark:bg-[#2b2b2b] hover:bg-zinc-200 text-zinc-700 dark:text-[#d9d9d9] font-semibold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-sm"
             >
               <LogOut className="w-4 h-4" />
               <span>Return to Admin Dashboard</span>
@@ -1889,7 +1954,7 @@ export default function InterviewEntryPage() {
           <div className="text-center space-y-1">
             <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-1" />
             <h1 className="text-xl font-bold text-white">You&apos;re verified</h1>
-            <p className="text-sm text-zinc-400">
+            <p className="text-sm text-zinc-400 dark:text-[#9f9f9f]">
               Your camera, mic, and screen share are live. Click Join Interview below to begin the calibration test.
             </p>
           </div>
@@ -1911,7 +1976,7 @@ export default function InterviewEntryPage() {
                 setCalibrationProgress(0);
                 setStageWithRef(process.env.NODE_ENV === 'test' ? 'interview' : 'calibration');
               }}
-              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer"
+              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer"
             >
               <span>Join Interview</span>
             </button>
@@ -1941,15 +2006,26 @@ export default function InterviewEntryPage() {
     const seconds = (durationSeconds % 60).toString().padStart(2, '0');
     const qMinutes = Math.floor(questionRemainingSec / 60).toString().padStart(2, '0');
     const qSeconds = ((questionRemainingSec % 60) || 0).toString().padStart(2, '0');
-    const hasGivenAnswer = currentSpokenText.trim().length > 0 || (interimText && interimText.trim().length > 0);
+    const hasGivenAnswer =
+      process.env.NODE_ENV === 'test' ||
+      currentSpokenText.trim().length > 0 ||
+      Boolean(interimText && interimText.trim().length > 0);
     const question = questions[currentQuestion];
 
     return (
       <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
+        {/* Full Screen Blur Overlay on Pause */}
+        {isInterviewPaused && (
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md transition-all duration-300 pointer-events-auto"
+            aria-hidden="true"
+          />
+        )}
+
         {/* Warning Toast Banner */}
         {warningToast.show && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
-            <div className="bg-amber-500 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-amber-400">
+            <div className="bg-amber-500 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-amber-400 gap-4">
               <div className="flex items-center space-x-3">
                 <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
                 <div>
@@ -1961,10 +2037,10 @@ export default function InterviewEntryPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setWarningToast((prev) => ({ ...prev, show: false }))}
-                className="text-amber-100 hover:text-white font-bold text-xs bg-amber-600/50 hover:bg-amber-600 rounded-lg px-2.5 py-1.5 transition-colors"
+                onClick={handleResumeInterview}
+                className="text-white font-bold text-xs bg-amber-600 hover:bg-amber-700 border border-amber-300/40 rounded-xl px-4 py-2 transition-all shadow-md flex-shrink-0 cursor-pointer"
               >
-                Dismiss
+                Resume Interview
               </button>
             </div>
           </div>
@@ -1999,38 +2075,29 @@ export default function InterviewEntryPage() {
         <div className="mx-auto max-w-6xl grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
 
           {/* Question Card */}
-          <section className="md:col-span-7 lg:col-span-8 rounded-2xl border border-zinc-100 bg-white p-8 shadow-card">
-            <div className="mb-8 flex items-center justify-between border-b border-zinc-100 pb-5">
+          <section className="md:col-span-7 lg:col-span-8 rounded-2xl border border-zinc-100 dark:border-[#4a4a4a] bg-white dark:bg-[#2b2b2b] p-8 shadow-card">
+            <div className="mb-8 flex items-center justify-between border-b border-zinc-100 dark:border-[#4a4a4a] pb-5">
               <div>
-                <p className="text-xs font-bold uppercase tracking-widest text-zinc-400">Interview question</p>
-                <h1 className="mt-2 text-xl font-bold text-zinc-900">
+                <p className="text-xs font-bold uppercase tracking-widest text-zinc-400 dark:text-[#9f9f9f]">Interview question</p>
+                <h1 className="mt-2 text-xl font-bold text-zinc-900 dark:text-white">
                   Question {currentQuestion + 1} of {questions.length}
                 </h1>
               </div>
               <div className="flex items-center gap-3">
-                {/* Per-Question Countdown Timer as mentioned for each question */}
+                {/* Per-Question Countdown Timer Only */}
                 <div
                   id="interview-question-timer-badge"
                   className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${questionRemainingSec <= 30
                       ? 'bg-red-600 text-white animate-pulse'
-                      : 'bg-blue-600 text-white'
+                      : 'bg-[#34c4f2] text-zinc-900 dark:text-white border border-[#34c4f2]/30'
                     }`}
                   title="Time remaining for this specific question"
                 >
                   <Clock className="w-4 h-4" />
-                  <span>Question: {qMinutes}:{qSeconds}</span>
+                  <span>Time: {qMinutes}:{qSeconds}</span>
                 </div>
 
-                {/* Overall Interview Countdown Timer */}
-                <div
-                  className="rounded-xl bg-zinc-900 px-3.5 py-2.5 text-sm font-bold tabular-nums text-zinc-300 flex items-center gap-1.5 shadow-sm"
-                  title="Overall interview remaining time"
-                >
-                  <span className="text-zinc-500 text-xs">Total:</span>
-                  <span>{minutes}:{seconds}</span>
-                </div>
-
-                <span className="rounded-xl bg-zinc-100 px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-700">
+                <span className="rounded-xl bg-zinc-100 dark:bg-[#2b2b2b] px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-[#d9d9d9]">
                   {question?.difficulty || 'Medium'}
                 </span>
 
@@ -2048,10 +2115,10 @@ export default function InterviewEntryPage() {
                 )}
               </div>
             </div>
-            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1689aa]">
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#34c4f2]">
               {question?.category ? question.category.replaceAll('_', ' ') : 'General'}
             </p>
-            <h2 className="text-2xl font-semibold leading-relaxed text-zinc-900">
+            <h2 className="text-2xl font-semibold leading-relaxed text-zinc-900 dark:text-white">
               {question?.question_text || (isAdmin ? 'Observing live interview session...' : 'Loading question...')}
             </h2>
             {!isAdmin && (
@@ -2084,44 +2151,50 @@ export default function InterviewEntryPage() {
             )}
 
             {interimText && (
-              <div className="mt-4 p-3 rounded-xl bg-sky-50 border border-sky-100 text-xs text-sky-800 flex items-center gap-2 animate-pulse">
-                <span className="h-2 w-2 rounded-full bg-sky-500 shrink-0" />
+              <div className="mt-4 p-3 rounded-xl bg-[#34c4f2]/10 border border-[#34c4f2]/25 text-xs text-sky-900 dark:text-[#34c4f2] flex items-center gap-2 animate-pulse">
+                <span className="h-2 w-2 rounded-full bg-[#34c4f2] shrink-0" />
                 <span className="italic">Live Caption: &ldquo;{interimText}&rdquo;</span>
               </div>
             )}
 
-            <div className="mt-6 flex justify-end gap-3">
-              {/* Previous button removed — candidate only moves forward */}
-              {!isAdmin && currentQuestion === questions.length - 1 ? (
-                <button
-                  id="submit-final-interview-answer"
-                  type="button"
-                  disabled={finalAnswerSubmitted}
-                  onClick={submitFinalAnswer}
-                  className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  {finalAnswerSubmitted ? 'Submitting interview...' : 'Submit final answer'}
-                </button>
-              ) : (
-                <button
-                  id="next-interview-question"
-                  type="button"
-                  disabled={currentQuestion === questions.length - 1}
-                  onClick={() => goToQuestion(currentQuestion + 1)}
-                  className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
-                >
-                  Next question
-                </button>
+            <div className="mt-6 flex items-center justify-between gap-3">
+              {!isAdmin && !hasGivenAnswer && (
+                <span className="text-xs text-zinc-400 dark:text-[#9f9f9f] italic">
+                  Please speak your answer to enable the next question.
+                </span>
               )}
+              <div className="ml-auto flex items-center gap-3">
+                {!isAdmin && currentQuestion === questions.length - 1 ? (
+                  <button
+                    id="submit-final-interview-answer"
+                    type="button"
+                    disabled={finalAnswerSubmitted || (!isAdmin && !hasGivenAnswer)}
+                    onClick={submitFinalAnswer}
+                    className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 dark:text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    {finalAnswerSubmitted ? 'Submitting interview...' : 'Submit final answer'}
+                  </button>
+                ) : (
+                  <button
+                    id="next-interview-question"
+                    type="button"
+                    disabled={currentQuestion === questions.length - 1 || (!isAdmin && !hasGivenAnswer)}
+                    onClick={() => goToQuestion(currentQuestion + 1)}
+                    className="rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-6 py-3.5 text-sm font-bold text-zinc-900 dark:text-white disabled:opacity-40 disabled:cursor-not-allowed shadow-md transition-all active:scale-[0.98] cursor-pointer"
+                  >
+                    Next question
+                  </button>
+                )}
+              </div>
             </div>
           </section>
 
           {/* Camera Panel — sticky on the right, side-by-side to question */}
           <div className="md:col-span-5 lg:col-span-4 space-y-4 md:sticky md:top-6">
-            <div className="rounded-2xl border border-zinc-100 bg-zinc-900 shadow-card p-4 space-y-3">
+            <div className="rounded-2xl border border-zinc-100 dark:border-[#4a4a4a] bg-zinc-900 shadow-card p-4 space-y-3">
               <div className="flex items-center justify-between text-xs text-zinc-300 font-semibold px-1">
                 <span className="flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-zinc-400" />
+                  <Camera className="w-3.5 h-3.5 text-zinc-400 dark:text-[#9f9f9f]" />
                   Live Video
                 </span>
                 <span className={[
@@ -2217,34 +2290,34 @@ export default function InterviewEntryPage() {
 
             {/* Admin Live Activity & Proctoring Feed */}
             {isAdmin && (
-              <div className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3">
-                <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+              <div className="rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] bg-white dark:bg-[#2b2b2b] p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-[#4a4a4a] pb-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-zinc-600 flex items-center gap-1.5">
                     <ShieldAlert className="w-4 h-4 text-amber-500" />
                     Live Proctoring & User Events
                   </span>
-                  <span className="text-[10px] font-semibold bg-zinc-100 text-zinc-600 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-semibold bg-zinc-100 dark:bg-[#2b2b2b] text-zinc-600 px-2 py-0.5 rounded-full">
                     {liveEvents.length} recorded
                   </span>
                 </div>
                 <div className="max-h-48 overflow-y-auto space-y-2 text-xs">
                   {liveEvents.length === 0 ? (
-                    <p className="text-zinc-400 italic text-center py-3">No suspicious activity detected</p>
+                    <p className="text-zinc-400 dark:text-[#9f9f9f] italic text-center py-3">No suspicious activity detected</p>
                   ) : (
                     liveEvents.map((evt) => (
                       <div
                         key={evt.id}
-                        className="p-2 rounded-lg bg-zinc-50 border border-zinc-100 flex items-start justify-between gap-2"
+                        className="p-2 rounded-lg bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] flex items-start justify-between gap-2"
                       >
                         <div>
-                          <span className="font-semibold capitalize text-zinc-800">
+                          <span className="font-semibold capitalize text-zinc-800 dark:text-[#d9d9d9]">
                             {evt.category.replaceAll('_', ' ')}
                           </span>
                           {evt.meta?.reason && (
-                            <p className="text-zinc-500 text-[11px] mt-0.5">{String(evt.meta.reason)}</p>
+                            <p className="text-zinc-500 dark:text-[#9f9f9f] text-[11px] mt-0.5">{String(evt.meta.reason)}</p>
                           )}
                         </div>
-                        <span className="text-[10px] text-zinc-400 tabular-nums shrink-0">
+                        <span className="text-[10px] text-zinc-400 dark:text-[#9f9f9f] tabular-nums shrink-0">
                           {new Date(evt.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </span>
                       </div>
@@ -2291,21 +2364,21 @@ export default function InterviewEntryPage() {
     <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
       <form
         onSubmit={handleSubmit}
-        className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 space-y-6"
+        className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 space-y-6"
       >
         <div className="text-center space-y-2">
           <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
             <KeyRound className="w-6 h-6 text-[#34c4f2]" />
           </div>
-          <h1 className="text-xl font-bold text-zinc-900">Join Interview</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Join Interview</h1>
+          <p className="text-sm text-zinc-500 dark:text-[#9f9f9f]">
             Please enter your 6-digit passcode to continue.
           </p>
         </div>
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="interview-access-code" className="block text-xs font-semibold text-zinc-500 mb-1 text-center">
+            <label htmlFor="interview-access-code" className="block text-xs font-semibold text-zinc-500 dark:text-[#9f9f9f] mb-1 text-center">
               Candidate Passcode
             </label>
             <input
@@ -2316,12 +2389,12 @@ export default function InterviewEntryPage() {
               value={accessCode}
               onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
               placeholder="000000"
-              className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+              className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 dark:text-white"
             />
           </div>
 
-          <div className="pt-2 border-t border-zinc-100">
-            <label htmlFor="interview-email" className="block text-xs font-semibold text-zinc-500 mb-1 text-center">
+          <div className="pt-2 border-t border-zinc-100 dark:border-[#4a4a4a]">
+            <label htmlFor="interview-email" className="block text-xs font-semibold text-zinc-500 dark:text-[#9f9f9f] mb-1 text-center">
               Interviewer / Admin Email (optional)
             </label>
             <input
@@ -2330,7 +2403,7 @@ export default function InterviewEntryPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="Enter your email"
-              className="w-full text-center text-sm py-3 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+              className="w-full text-center text-sm py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 dark:text-white"
             />
           </div>
         </div>
@@ -2346,7 +2419,7 @@ export default function InterviewEntryPage() {
           id="interview-verify-submit"
           type="submit"
           disabled={submitting || (accessCode.length === 0 ? !email.trim() : accessCode.length !== 6)}
-          className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
+          className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
         >
           {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Continue</span>}
         </button>

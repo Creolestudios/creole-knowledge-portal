@@ -103,15 +103,15 @@ export function DeviceSettingsPanel({ currentCameraId, currentMicId, onClose, on
         role="dialog"
         aria-modal="true"
         aria-label="Camera and microphone settings"
-        className="relative z-10 w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 space-y-5"
+        className="relative z-10 w-full max-w-md bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-2xl p-6 space-y-5"
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-zinc-900">Camera &amp; Microphone Settings</h3>
+          <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Camera &amp; Microphone Settings</h3>
           <button
             id="device-settings-close"
             type="button"
             onClick={onClose}
-            className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100"
+            className="p-1.5 text-zinc-400 dark:text-[#9f9f9f] hover:text-zinc-700 dark:hover:text-white dark:text-[#d9d9d9] rounded-lg hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] dark:bg-[#2b2b2b]"
           >
             <X className="w-4 h-4" />
           </button>
@@ -119,12 +119,12 @@ export function DeviceSettingsPanel({ currentCameraId, currentMicId, onClose, on
 
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+            <Loader2 className="w-6 h-6 animate-spin text-zinc-400 dark:text-[#9f9f9f]" />
           </div>
         ) : (
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <label htmlFor="device-settings-camera-select" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+              <label htmlFor="device-settings-camera-select" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f]">
                 <Camera className="w-3.5 h-3.5" />
                 Camera
               </label>
@@ -132,7 +132,7 @@ export function DeviceSettingsPanel({ currentCameraId, currentMicId, onClose, on
                 id="device-settings-camera-select"
                 value={selectedCamera}
                 onChange={(e) => setSelectedCamera(e.target.value)}
-                className="w-full px-3 py-2.5 bg-zinc-50 border border-zinc-100 rounded-xl text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#34c4f2]"
+                className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-[#34c4f2]"
               >
                 {cameras.length === 0 && <option value="">No camera found</option>}
                 {cameras.map((cam) => (
@@ -144,7 +144,7 @@ export function DeviceSettingsPanel({ currentCameraId, currentMicId, onClose, on
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="device-settings-mic-select" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500">
+              <label htmlFor="device-settings-mic-select" className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f]">
                 <Mic className="w-3.5 h-3.5" />
                 Microphone
               </label>
@@ -152,7 +152,7 @@ export function DeviceSettingsPanel({ currentCameraId, currentMicId, onClose, on
                 id="device-settings-mic-select"
                 value={selectedMic}
                 onChange={(e) => setSelectedMic(e.target.value)}
-                className="w-full px-3 py-2.5 bg-zinc-50 border border-zinc-100 rounded-xl text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-[#34c4f2]"
+                className="w-full px-3 py-2.5 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl text-sm text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-[#34c4f2]"
               >
                 {mics.length === 0 && <option value="">No microphone found</option>}
                 {mics.map((mic) => (
@@ -177,7 +177,7 @@ export function DeviceSettingsPanel({ currentCameraId, currentMicId, onClose, on
           type="button"
           onClick={handleApply}
           disabled={applying || loading || !selectedCamera || !selectedMic}
-          className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           {applying ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Apply</span>}
         </button>

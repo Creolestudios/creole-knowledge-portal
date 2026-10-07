@@ -204,23 +204,23 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
 
   return (
     <div className="w-full space-y-6">
-      <div className="p-5 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-2xl space-y-3">
+      <div className="p-5 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-3 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+          <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white flex items-center gap-2">
             <span>Select Interview Questions</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-medium">
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#34c4f2]/15 text-[#1f1f1f] dark:text-[#34c4f2] border border-[#34c4f2]/30 font-bold">
               {selectedCount} HR Selected
             </span>
           </h3>
-          <div className="text-xs text-slate-400">
-            Total Interview: <strong className="text-white">{selectedCount + 4}</strong> questions ({selectedCount} HR + 4 Technical)
+          <div className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f]">
+            Total Interview: <strong className="text-[#1f1f1f] dark:text-white">{selectedCount + 4}</strong> questions ({selectedCount} HR + 4 Technical)
           </div>
         </div>
 
-        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20 text-xs text-purple-200 leading-relaxed">
-          <Sparkles className="w-4 h-4 text-yellow-300 shrink-0 mt-0.5" />
+        <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-[#34c4f2]/10 border border-[#34c4f2]/25 text-xs text-[#1f1f1f] dark:text-zinc-200 leading-relaxed">
+          <Sparkles className="w-4 h-4 text-[#34c4f2] shrink-0 mt-0.5" />
           <span>
-            <strong>Automatic Dynamic Technical Questions:</strong> Exactly 4 candidate-tailored technical questions will be generated dynamically by AI with dynamic time limits according to question difficulty (Easy ~3m, Medium ~4m, Hard ~5m), referencing the candidate&apos;s resume, project highlights, and job description skills.
+            <strong className="text-[#1f1f1f] dark:text-white">Automatic Dynamic Technical Questions:</strong> Exactly 4 candidate-tailored technical questions will be generated dynamically by AI with dynamic time limits according to question difficulty (Easy ~3m, Medium ~4m, Hard ~5m), referencing the candidate&apos;s resume, project highlights, and job description skills.
           </span>
         </div>
       </div>
@@ -228,14 +228,14 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
       {isApiFailingOrZero && (
         <div
           id="question-bank-api-warning"
-          className="flex items-start gap-3.5 p-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl text-amber-200 text-sm shadow-md"
+          className="flex items-start gap-3.5 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/60 rounded-2xl text-amber-900 dark:text-amber-200 text-sm shadow-sm"
         >
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
           <div className="space-y-1">
-            <p className="font-bold text-amber-200">
+            <p className="font-bold text-amber-900 dark:text-amber-200">
               Note: AI Keyword Extraction API is not working or returned 0 keywords.
             </p>
-            <p className="text-xs text-amber-300/90 leading-relaxed">
+            <p className="text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
               {extraction.apiNote || extraction.analysis?.apiNote || 'The keyword extraction API encountered an issue and returned 0 matching keywords. You can go back to retry, or proceed with standard question bank questions.'}
             </p>
           </div>
@@ -243,8 +243,8 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
       )}
 
       {bankError && (
-        <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
+        <div className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-950/20 border border-red-300 dark:border-red-700/60 rounded-xl text-red-800 dark:text-red-300 text-sm">
+          <AlertTriangle className="w-5 h-5 shrink-0 text-red-500" />
           <span>{bankError}</span>
         </div>
       )}
@@ -252,26 +252,26 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
       {submitError && (
         <div
           id="question-bank-selector-error"
-          className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-sm"
+          className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-950/20 border border-red-300 dark:border-red-700/60 rounded-xl text-red-800 dark:text-red-300 text-sm"
         >
-          <AlertTriangle className="w-5 h-5 shrink-0" />
+          <AlertTriangle className="w-5 h-5 shrink-0 text-red-500" />
           <span>{submitError}</span>
         </div>
       )}
 
       {bankLoading ? (
-        <div className="flex items-center gap-2 text-slate-400 text-sm p-6">
-          <Loader2 className="w-4 h-4 animate-spin" />
+        <div className="flex items-center gap-2 text-[#4a4a4a] dark:text-[#9f9f9f] text-sm p-6">
+          <Loader2 className="w-4 h-4 animate-spin text-[#34c4f2]" />
           <span>Loading the question bank...</span>
         </div>
       ) : (
         <>
           {/* CONFIGURATION */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <label className="flex flex-col gap-1 text-xs font-medium text-slate-400">
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-[#1f1f1f] dark:text-[#9f9f9f]">
               <span className="flex items-center justify-between">
                 <span>Total question count (HR Questions to Pick)</span>
-                <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">Admin Decided</span>
+                <span className="text-[10px] uppercase font-bold text-[#34c4f2] tracking-wider">Admin Decided</span>
               </span>
               <input
                 id="question-bank-selector-question-count"
@@ -279,16 +279,16 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                 min={1}
                 value={questionCount}
                 onChange={(e) => setQuestionCount(Math.max(1, Number(e.target.value) || 1))}
-                className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-slate-100 outline-none focus:border-blue-500"
+                className="p-3 bg-white dark:bg-[#2b2b2b] dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl text-sm font-medium text-[#1f1f1f] dark:text-white outline-none focus:border-[#34c4f2] focus:ring-1 focus:ring-[#34c4f2]"
               />
-              <span className="text-[11px] text-slate-500">
+              <span className="text-[11px] text-[#4a4a4a] dark:text-[#9f9f9f]">
                 Number of HR / behavioral questions to include
               </span>
             </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-slate-400">
+            <label className="flex flex-col gap-1.5 text-xs font-semibold text-[#1f1f1f] dark:text-[#9f9f9f]">
               <span className="flex items-center justify-between">
                 <span>Total Time for HR Questions</span>
-                <span className="text-[10px] uppercase font-bold text-blue-400 tracking-wider">Admin Decided</span>
+                <span className="text-[10px] uppercase font-bold text-[#34c4f2] tracking-wider">Admin Decided</span>
               </span>
               <div className="relative">
                 <input
@@ -298,59 +298,59 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                   max={30}
                   value={hrTotalMinutes}
                   onChange={(e) => setHrTotalMinutes(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-full p-3 bg-slate-950/60 border border-slate-800 rounded-xl text-sm text-slate-100 outline-none focus:border-blue-500 pr-12"
+                  className="w-full p-3 bg-white dark:bg-[#2b2b2b] dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl text-sm font-medium text-[#1f1f1f] dark:text-white outline-none focus:border-[#34c4f2] focus:ring-1 focus:ring-[#34c4f2] pr-12"
                 />
-                <span className="absolute right-3 top-3 text-xs text-slate-400 font-semibold">min</span>
+                <span className="absolute right-3 top-3 text-xs text-[#4a4a4a] dark:text-[#9f9f9f] font-semibold">min</span>
               </div>
-              <span className="text-[11px] text-slate-500">
+              <span className="text-[11px] text-[#4a4a4a] dark:text-[#9f9f9f]">
                 {hrTotalMinutes} mins allocated as a whole for all HR questions
               </span>
             </label>
-            <div className="flex flex-col justify-between p-3.5 bg-purple-950/30 border border-purple-800/40 rounded-xl">
+            <div className="flex flex-col justify-between p-3.5 bg-white dark:bg-[#2b2b2b] dark:bg-[#1f1f1f] border border-[#34c4f2]/40 rounded-xl shadow-sm">
               <div>
-                <div className="flex items-center justify-between text-xs font-semibold text-purple-300">
+                <div className="flex items-center justify-between text-xs font-bold text-[#1f1f1f] dark:text-white">
                   <span className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
+                    <Sparkles className="w-3.5 h-3.5 text-[#34c4f2]" />
                     4 Technical Questions
                   </span>
-                  <span className="text-[10px] uppercase font-bold text-purple-400 tracking-wider">AI Decided</span>
+                  <span className="text-[10px] uppercase font-bold text-[#34c4f2] tracking-wider">AI Decided</span>
                 </div>
-                <p className="text-xs font-bold text-white mt-1.5">Dynamic Minutes Per Question</p>
-                <p className="text-[11px] text-purple-200/80 leading-relaxed mt-0.5">
+                <p className="text-xs font-bold text-[#1f1f1f] dark:text-white mt-1.5">Dynamic Minutes Per Question</p>
+                <p className="text-[11px] text-[#4a4a4a] dark:text-[#9f9f9f] leading-relaxed mt-0.5">
                   AI decides the exact minutes for each technical question along with the question based on technical complexity.
                 </p>
               </div>
-              <div className="text-[10px] font-semibold text-purple-300/90 pt-1 border-t border-purple-800/30">
+              <div className="text-[10px] font-semibold text-[#34c4f2] pt-1.5 border-t border-[#d9d9d9] dark:border-[#4a4a4a]">
                 No hardcoded minutes &bull; Decided dynamically by AI
               </div>
             </div>
           </div>
 
           {/* TOTAL DURATION BANNER */}
-          <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="p-4 rounded-xl bg-[#1f1f1f] text-white dark:bg-[#2b2b2b] border border-[#34c4f2]/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
             <div>
-              <span className="text-xs uppercase tracking-wider font-bold text-blue-400 block">Total Overall Interview Timer</span>
-              <p className="text-xs text-slate-300 mt-0.5">
+              <span className="text-xs uppercase tracking-wider font-bold text-[#34c4f2] block">Total Overall Interview Timer</span>
+              <p className="text-xs text-zinc-300 mt-0.5">
                 {hrTotalMinutes} min total (as a whole for {questionCount} HR question{questionCount > 1 ? 's' : ''}) + Technical questions duration (AI decided with questions)
               </p>
             </div>
             <div className="text-right">
-              <span className="text-2xl font-black text-white">~{totalDurationMinutes}</span>
-              <span className="text-xs font-bold text-blue-300 ml-1">MINUTES</span>
-              <span className="block text-[10px] text-slate-400">Total timer calculated upon AI generation</span>
+              <span className="text-2xl font-black text-[#34c4f2]">~{totalDurationMinutes}</span>
+              <span className="text-xs font-bold text-white ml-1">MINUTES</span>
+              <span className="block text-[10px] text-zinc-400 dark:text-[#9f9f9f]">Total timer calculated upon AI generation</span>
             </div>
           </div>
 
           {isLowMatch && (
             <label
               id="question-bank-selector-low-match-confirm"
-              className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-sm cursor-pointer"
+              className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/60 rounded-xl text-amber-900 dark:text-amber-200 text-sm font-medium cursor-pointer shadow-sm"
             >
               <input
                 type="checkbox"
                 checked={similarityConfirmed}
                 onChange={(e) => setSimilarityConfirmed(e.target.checked)}
-                className="mt-0.5"
+                className="mt-0.5 accent-[#34c4f2]"
               />
               <span>
                 Match score is {matchPercentage}%, below the {LOW_MATCH_THRESHOLD}% recommended
@@ -361,7 +361,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
 
           {/* HR CATEGORIES PILLS */}
           <div className="space-y-2">
-            <span className="text-xs font-medium text-slate-400">HR & Behavioral Categories</span>
+            <span className="text-xs font-semibold text-[#1f1f1f] dark:text-[#9f9f9f]">HR & Behavioral Categories</span>
             <div className="flex flex-wrap gap-2">
               {categories.map((category) => {
                 const active = selectedCategories.has(category);
@@ -374,16 +374,16 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                     type="button"
                     id={`question-bank-category-${category}`}
                     onClick={() => toggleCategory(category)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                       active
-                        ? 'bg-blue-600 border-blue-500 text-white shadow-sm'
-                        : 'bg-slate-900/60 border-slate-800 text-slate-300 hover:border-slate-700'
+                        ? 'bg-[#34c4f2] border-[#34c4f2] text-[#1f1f1f] shadow-md'
+                        : 'bg-white dark:bg-[#2b2b2b] border-[#d9d9d9] dark:border-[#4a4a4a] text-[#1f1f1f] dark:text-[#9f9f9f] hover:border-[#34c4f2]'
                     }`}
                   >
                     {active ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
                     <span className="capitalize">{category.replaceAll('_', ' ')}</span>
                     {categorySelectedCount > 0 && (
-                      <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px] font-semibold">
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${active ? 'bg-[#1f1f1f]/20 text-[#1f1f1f]' : 'bg-[#34c4f2]/20 text-[#1f1f1f] dark:text-[#34c4f2]'}`}>
                         {categorySelectedCount}
                       </span>
                     )}
@@ -402,14 +402,14 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
               return (
                 <div
                   key={category}
-                  className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-3"
+                  className="p-4 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-3 shadow-sm"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-semibold text-slate-200 capitalize">
+                      <h4 className="text-sm font-bold text-[#1f1f1f] dark:text-white capitalize">
                         {category.replaceAll('_', ' ')}
                       </h4>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f]">
                         ({categorySelectedCount}/{questions.length} selected)
                       </span>
                     </div>
@@ -418,14 +418,14 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                       <button
                         type="button"
                         onClick={() => selectAllInCategory(category)}
-                        className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded-lg hover:bg-blue-500/10 transition"
+                        className="text-xs font-semibold text-[#1f1f1f] dark:text-[#34c4f2] hover:underline px-2 py-1 rounded-lg hover:bg-[#34c4f2]/10 transition cursor-pointer"
                       >
                         Select All
                       </button>
                       <button
                         type="button"
                         onClick={() => clearCategory(category)}
-                        className="text-xs text-slate-400 hover:text-slate-300 px-2 py-1 rounded-lg hover:bg-slate-800 transition"
+                        className="text-xs font-semibold text-[#4a4a4a] dark:text-[#9f9f9f] hover:underline px-2 py-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] dark:bg-[#2b2b2b] dark:hover:bg-[#1f1f1f] transition cursor-pointer"
                       >
                         Clear
                       </button>
@@ -440,24 +440,24 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                           key={q.id}
                           className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                             checked
-                              ? 'bg-blue-950/20 border-blue-500/40 text-slate-100'
-                              : 'bg-slate-950/50 border-slate-800/90 text-slate-300 hover:border-slate-700'
+                              ? 'bg-[#34c4f2]/10 border-[#34c4f2]/50 text-[#1f1f1f] dark:text-white'
+                              : 'bg-zinc-50 dark:bg-[#1f1f1f] border-[#d9d9d9] dark:border-[#4a4a4a] text-[#1f1f1f] dark:text-[#9f9f9f] hover:border-[#34c4f2]'
                           }`}
                         >
                           <input
                             type="checkbox"
                             checked={checked}
                             onChange={() => toggleQuestion(q.id)}
-                            className="mt-1"
+                            className="mt-1 accent-[#34c4f2]"
                           />
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold text-slate-400">{q.title}</span>
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 uppercase font-medium">
+                              <span className="text-xs font-bold text-[#1f1f1f] dark:text-white">{q.title}</span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-[#2b2b2b] text-[#1f1f1f] dark:text-[#9f9f9f] uppercase font-bold">
                                 {q.difficulty}
                               </span>
                             </div>
-                            <p className="text-sm leading-relaxed">{q.question_text}</p>
+                            <p className="text-sm leading-relaxed text-[#1f1f1f] dark:text-zinc-200">{q.question_text}</p>
                           </div>
                         </label>
                       );
@@ -469,13 +469,13 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
           </div>
 
           {/* CUSTOM QUESTIONS */}
-          <div className="p-4 bg-slate-900/60 border border-indigo-500/30 rounded-2xl space-y-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-              <PencilLine className="h-4 w-4 text-indigo-400" />
+          <div className="p-4 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-3 shadow-sm">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#1f1f1f] dark:text-white">
+              <PencilLine className="h-4 w-4 text-[#34c4f2]" />
               Write any other question
-              <span className="ml-auto text-[11px] font-normal text-slate-500">For this candidate only</span>
+              <span className="ml-auto text-[11px] font-normal text-[#4a4a4a] dark:text-[#9f9f9f]">For this candidate only</span>
             </div>
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-[#4a4a4a] dark:text-[#9f9f9f]">
               Add a question that is not in the bank. It will be saved only on this candidate&apos;s interview.
             </p>
             <textarea
@@ -484,14 +484,14 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
               onChange={(event) => setDraftCustomQuestion(event.target.value)}
               placeholder="Write any other question..."
               rows={3}
-              className="w-full rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-600 outline-none focus:border-indigo-500"
+              className="w-full rounded-xl border border-[#d9d9d9] dark:border-[#4a4a4a] bg-white dark:bg-[#2b2b2b] dark:bg-[#1f1f1f] px-3 py-2 text-sm text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] outline-none focus:border-[#34c4f2] focus:ring-1 focus:ring-[#34c4f2]"
             />
             <button
               id="add-custom-interview-question"
               type="button"
               onClick={handleAddCustomQuestion}
               disabled={!draftCustomQuestion.trim()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-[#34c4f2] hover:bg-[#2db0db] px-3.5 py-2 text-xs font-bold text-[#1f1f1f] transition cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-3.5 w-3.5" />
               Add question
@@ -501,9 +501,9 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                 {customQuestions.map((question, index) => (
                   <div
                     key={`${question}-${index}`}
-                    className="flex items-start gap-3 rounded-xl border border-indigo-500/40 bg-indigo-500/5 p-3 text-sm text-slate-200"
+                    className="flex items-start gap-3 rounded-xl border border-[#34c4f2]/40 bg-[#34c4f2]/10 p-3 text-sm text-[#1f1f1f] dark:text-zinc-200"
                   >
-                    <span className="mt-0.5 rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-300">
+                    <span className="mt-0.5 rounded bg-[#34c4f2]/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#1f1f1f] dark:text-[#34c4f2]">
                       Custom
                     </span>
                     <span className="flex-1">{question}</span>
@@ -511,7 +511,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                       type="button"
                       aria-label={`Remove custom question ${index + 1}`}
                       onClick={() => handleRemoveCustomQuestion(index)}
-                      className="text-slate-500 transition hover:text-rose-400"
+                      className="text-zinc-400 dark:text-[#9f9f9f] hover:text-red-500 transition cursor-pointer"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -523,11 +523,11 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
 
           {/* ACTIONS */}
           <div className="flex flex-col items-center gap-3 pt-2">
-            <div className="text-xs text-slate-400 text-center">
-              Selected <strong className="text-white">{selectedCount}</strong> of {questionCount} HR question{questionCount === 1 ? '' : 's'}
-              <span className="text-purple-300 font-medium"> + 4 dynamic technical questions will be generated</span>
+            <div className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] text-center">
+              Selected <strong className="text-[#1f1f1f] dark:text-white">{selectedCount}</strong> of {questionCount} HR question{questionCount === 1 ? '' : 's'}
+              <span className="text-[#34c4f2] font-semibold"> + 4 dynamic technical questions will be generated</span>
               {!countMatches && (
-                <div className="text-amber-400 mt-1">
+                <div className="text-amber-600 dark:text-amber-400 font-semibold mt-1">
                   HR selection must match configured count ({questionCount}) before generating
                 </div>
               )}
@@ -537,7 +537,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                 type="button"
                 onClick={onBack}
                 disabled={isSubmitting}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-xl border border-slate-700"
+                className="px-5 py-3 bg-white dark:bg-[#2b2b2b] hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] dark:bg-[#2b2b2b] dark:hover:bg-[#333333] text-[#1f1f1f] dark:text-white text-sm font-bold rounded-xl border border-[#d9d9d9] dark:border-[#4a4a4a] transition-all cursor-pointer"
               >
                 Back
               </button>
@@ -546,7 +546,7 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
                 type="button"
                 onClick={handleGenerate}
                 disabled={!canGenerate}
-                className="px-6 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                className="px-6 py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-[#1f1f1f] font-black rounded-xl shadow-lg shadow-[#34c4f2]/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
                 {isSubmitting ? statusMessage || 'Working...' : 'Generate Interview Link'}
               </button>

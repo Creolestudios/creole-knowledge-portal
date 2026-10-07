@@ -19,22 +19,55 @@ describe('object-detection module', () => {
     expect(OBJECT_RULES.remote).toBeDefined();
   });
 
-  it('allows only the user body (person) and flags any other detected object (chair, cup, pen, phone, etc.) as unauthorized', () => {
+  it('flags major cheating objects (phone, books, earphones, pens, paper, laptop) while ignoring chairs, clocks, watches, and cups', () => {
     const rawDetections = [
       { class: 'person', score: 0.95, bbox: [0, 0, 100, 100] as [number, number, number, number] },
-      { class: 'chair', score: 0.85, bbox: [10, 10, 50, 50] as [number, number, number, number] },
-      { class: 'cup', score: 0.75, bbox: [20, 20, 30, 30] as [number, number, number, number] },
-      { class: 'pen', score: 0.80, bbox: [15, 15, 25, 25] as [number, number, number, number] },
+      { class: 'chair', score: 0.85, bbox: [10, 10, 50, 50] as [number, number, number, number] }, // Ignored
+      { class: 'clock', score: 0.90, bbox: [5, 5, 20, 20] as [number, number, number, number] }, // Ignored
+      { class: 'watch', score: 0.80, bbox: [12, 12, 15, 15] as [number, number, number, number] }, // Ignored
+      { class: 'cup', score: 0.75, bbox: [20, 20, 30, 30] as [number, number, number, number] }, // Ignored
+      { class: 'pen', score: 0.80, bbox: [15, 15, 25, 25] as [number, number, number, number] }, // Flagged
+      { class: 'cell phone', score: 0.85, bbox: [30, 30, 40, 40] as [number, number, number, number] }, // Flagged
+      { class: 'book', score: 0.88, bbox: [40, 40, 60, 60] as [number, number, number, number] }, // Flagged
+      { class: 'paper', score: 0.70, bbox: [50, 50, 70, 70] as [number, number, number, number] }, // Flagged
+      { class: 'earphones', score: 0.78, bbox: [60, 60, 30, 30] as [number, number, number, number] }, // Flagged
     ];
 
     const results = filterTrackedObjects(rawDetections);
-    expect(results).toHaveLength(3); // chair, cup, pen (only person excluded)
-    expect(results[0].label).toBe('chair');
-    expect(results[0].rule.reason).toBe('Unauthorized object detected in camera view.');
-    expect(results[1].label).toBe('cup');
-    expect(results[1].rule.reason).toBe('Unauthorized object detected in camera view.');
-    expect(results[2].label).toBe('pen');
-    expect(results[2].rule.reason).toBe('Unauthorized object detected in camera view.');
+    expect(results).toHaveLength(5); // pen, cell phone, book, paper, earphones
+    const labels = results.map((r) => r.label);
+    expect(labels).toContain('pen');
+    expect(labels).toContain('cell phone');
+    expect(labels).toContain('book');
+    expect(labels).toContain('paper');
+    expect(labels).toContain('earphones');
+
+    expect(labels).not.toContain('chair');
+    expect(labels).not.toContain('clock');
+    expect(labels).not.toContain('watch');
+    expect(labels).not.toContain('cup');
+    expect(labels).not.toContain('person');
+
+    for (const r of results) {
+      expect(r.rule.reason).toBe(
+        'Prohibited object detected. Please remove it from your surroundings before continuing.',
+      );
+    }
+  });
+
+  it('flags when another person is detected in the camera frame along with candidate', () => {
+    const rawDetections = [
+      { class: 'person', score: 0.95, bbox: [0, 0, 100, 100] as [number, number, number, number] }, // Candidate
+      { class: 'person', score: 0.88, bbox: [120, 0, 100, 100] as [number, number, number, number] }, // Second person!
+    ];
+
+    const results = filterTrackedObjects(rawDetections);
+    expect(results).toHaveLength(1);
+    expect(results[0].label).toBe('second person');
+    expect(results[0].rule.object).toBe('multiple_persons');
+    expect(results[0].rule.reason).toBe(
+      'Multiple persons detected in camera view. Please ensure that only you are present during the interview.',
+    );
   });
 
   it('detects tracked objects at calibrated responsive confidence', () => {
@@ -48,10 +81,10 @@ describe('object-detection module', () => {
     expect(results).toHaveLength(2);
     expect(results[0].label).toBe('cell phone');
     expect(results[0].rule?.object).toBe('cell phone');
-    expect(results[0].rule?.reason).toContain('Unauthorized object detected');
+    expect(results[0].rule?.reason).toContain('Prohibited object detected');
     expect(results[1].label).toBe('book');
     expect(results[1].rule?.object).toBe('book');
-    expect(results[1].rule?.reason).toContain('Unauthorized object detected');
+    expect(results[1].rule?.reason).toContain('Prohibited object detected');
   });
 
   it('enforces thresholdMs === 0 for immediate proctoring alert triggers', () => {
@@ -76,7 +109,9 @@ describe('object-detection module', () => {
 
     expect(result.shouldTriggerWarning).toBe(true);
     expect(result.warningCount).toBe(1);
-    expect(result.reason).toBe('Unauthorized object detected in camera view.');
+    expect(result.reason).toBe(
+      'Prohibited object detected. Please remove it from your surroundings before continuing.',
+    );
   });
 
   it('triggers on single frame immediately without requiring multiple consecutive frames', () => {

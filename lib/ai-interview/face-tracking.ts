@@ -32,7 +32,7 @@ export type ExtendedFaceTrackingResult = FaceTrackingResult & {
   relativePitch: number;
   irisRatioOffset: number;
   expression: ExpressionMetrics;
-  category: 'gaze_away' | 'reading_suspected' | 'no_face' | 'multi_face' | 'none';
+  category: 'gaze_away' | 'reading_suspected' | 'no_face' | 'multi_face' | 'framing_issue' | 'none';
 };
 
 const toScore = (categories: Array<{ categoryName?: string; score?: number }>, names: string[]) => {
@@ -263,6 +263,39 @@ export function analyzeFaceMetrics(
     };
   }
 
+  // 4. Framing / Position issue: Face is visible, but poorly positioned in frame or distance is abnormal
+  const nose = landmarks?.[1];
+  const isFramingIssue =
+    facePresent &&
+    !isBlinking &&
+    !lookingAway &&
+    !headTurnedAway &&
+    !readingSuspected &&
+    !multiFaceDetected &&
+    nose !== undefined &&
+    eyeDistance > 0 &&
+    (nose.x < 0.16 || nose.x > 0.84 || nose.y < 0.14 || nose.y > 0.86 || eyeDistance < 0.07 || eyeDistance > 0.44);
+
+  if (isFramingIssue) {
+    return {
+      facePresent: true,
+      eyesClosed,
+      lookingAway: false,
+      headTurnedAway: false,
+      eyeConfidence,
+      alert: 'warning',
+      numFaces: 1,
+      multiFaceDetected: false,
+      readingSuspected: false,
+      mouthMoving,
+      relativeYaw,
+      relativePitch,
+      irisRatioOffset,
+      expression,
+      category: 'framing_issue',
+    };
+  }
+
   return {
     facePresent: true,
     eyesClosed,
@@ -291,7 +324,7 @@ export interface WarningCounts {
 
 /**
  * Normalizes any proctoring violation category into broad categories:
- * - 'face': no_face, gaze_away, reading_suspected, multi_face, face
+ * - 'face': no_face, gaze_away, reading_suspected, multi_face, framing_issue, face
  * - 'object': object_detected, object
  * - 'voice': unauthorized_voice, background_voice, voice
  */
@@ -304,7 +337,8 @@ export function getBroadCategory(category: string): 'face' | 'object' | 'voice' 
     lower === 'no_face' ||
     lower === 'gaze_away' ||
     lower === 'multi_face' ||
-    lower === 'reading_suspected'
+    lower === 'reading_suspected' ||
+    lower === 'framing_issue'
   ) {
     return 'face';
   }
@@ -344,10 +378,11 @@ export class ProctoringTimeTracker {
     result: ExtendedFaceTrackingResult,
     nowMs: number = Date.now(),
     options: {
-      gazeAwayThresholdMs?: number; // default 1200ms
+      gazeAwayThresholdMs?: number; // default 1500ms
       readingThresholdMs?: number; // default 3500ms
       noFaceThresholdMs?: number; // default 1500ms
       multiFaceThresholdMs?: number; // default 1000ms
+      framingThresholdMs?: number; // default 2000ms
       debounceMs?: number; // default 5000ms
       categoryBreakMs?: number; // default 5000ms cooldown between face warnings
     } = {},
@@ -362,10 +397,11 @@ export class ProctoringTimeTracker {
     }
 
     const {
-      gazeAwayThresholdMs = 1200,
+      gazeAwayThresholdMs = 1500,
       readingThresholdMs = 3500,
       noFaceThresholdMs = 1500,
       multiFaceThresholdMs = 1000,
+      framingThresholdMs = 2000,
       debounceMs = 5000,
       categoryBreakMs,
     } = options;
@@ -384,11 +420,12 @@ export class ProctoringTimeTracker {
     this.noneFrameCount = 0;
 
     // Determine required threshold
-    let requiredMs = 1200;
+    let requiredMs = 1500;
     if (currentCategory === 'no_face') requiredMs = noFaceThresholdMs;
     else if (currentCategory === 'multi_face') requiredMs = multiFaceThresholdMs;
     else if (currentCategory === 'gaze_away') requiredMs = gazeAwayThresholdMs;
     else if (currentCategory === 'reading_suspected') requiredMs = readingThresholdMs;
+    else if (currentCategory === 'framing_issue') requiredMs = framingThresholdMs;
 
     if (!this.categoryStartTime.has(currentCategory)) {
       this.categoryStartTime.set(currentCategory, nowMs);
@@ -418,10 +455,18 @@ export class ProctoringTimeTracker {
         this.lastCategoryWarningTime.set('face', nowMs);
         this.faceWarningCount += 1;
 
-        let reason = 'Keep your eyes on the screen during the interview.';
-        if (currentCategory === 'no_face') reason = 'No face detected in webcam frame.';
-        else if (currentCategory === 'multi_face') reason = 'Multiple faces detected in frame.';
-        else if (currentCategory === 'reading_suspected') reason = 'Suspected reading off-screen.';
+        let reason = 'Please keep your attention focused on the interview screen.';
+        if (currentCategory === 'no_face') {
+          reason = 'Your face is not clearly visible. Please position yourself properly in front of the camera.';
+        } else if (currentCategory === 'multi_face') {
+          reason = 'Multiple faces detected. Please ensure that only you are present during the interview.';
+        } else if (currentCategory === 'gaze_away') {
+          reason = 'Please keep your attention focused on the interview screen.';
+        } else if (currentCategory === 'reading_suspected') {
+          reason = 'Please avoid looking away or reading from another source during the interview.';
+        } else if (currentCategory === 'framing_issue') {
+          reason = 'Please adjust your position so your face remains clearly visible.';
+        }
 
         return {
           shouldTriggerWarning: true,
@@ -527,6 +572,11 @@ export class ProctoringTimeTracker {
    */
   public clearGenericKey(category: string, subKey: string): void {
     this.categoryStartTime.delete(`${category}:${subKey}`);
+  }
+
+  public clearActiveViolations(): void {
+    this.categoryStartTime.clear();
+    this.noneFrameCount = 0;
   }
 
   public getWarningCount(): number {

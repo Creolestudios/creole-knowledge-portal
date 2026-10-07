@@ -89,7 +89,7 @@ export function useAudioVoiceGuard({
   });
 
   const triggerVoiceWarning = useCallback(
-    async (reason: string, confidence: number) => {
+    async (reason: string, confidence: number, durationMs?: number) => {
       const now = Date.now();
       // Debounce voice warnings: enforce a 10-second cooldown between consecutive
       // voice detection alerts (10-second break as required).
@@ -97,13 +97,8 @@ export function useAudioVoiceGuard({
       if (now - lastWarningTimeRef.current < cooldown) return;
       lastWarningTimeRef.current = now;
 
-      // Always generalize voice warning note to "Background voice detected"
-      const generalizedReason =
-        reason.toLowerCase().includes('voice') || reason === 'Background voice detected'
-          ? 'Background voice detected'
-          : reason;
-
-      onUnauthorizedVoiceDetectedRef.current({ reason: generalizedReason, confidence });
+      const finalReason = reason.trim();
+      onUnauthorizedVoiceDetectedRef.current({ reason: finalReason, confidence, durationMs });
 
       // Capture snapshot if available
       if (takeSnapshotRef.current) {
@@ -377,15 +372,13 @@ export function useAudioVoiceGuard({
             }
             const continuousDurationMs = nowMs - voiceDetectedStartAt;
             const targetMs = continuousVoiceMsRef.current ?? 2500;
-            // Frame count equivalence (~16.6ms per frame at 60fps)
             const targetFrames = Math.max(30, Math.round(targetMs / 16.66));
 
-            // Show note when voice is detected for ~2-3 sec (>= targetMs or frame threshold)
             if (continuousDurationMs >= targetMs || consecutiveSuspiciousFrames >= targetFrames) {
               voiceDetectedStartAt = 0;
               consecutiveSuspiciousFrames = 0;
               const confidence = Math.min(0.95, 0.78 + (avgSpeechEnergy / 255) * 0.2);
-              triggerVoiceWarning('Background voice detected', confidence);
+              triggerVoiceWarning('Background voice detected', confidence, continuousDurationMs);
             }
           } else {
             // Gentle decay: decrease by 1 frame so natural speech micro-pauses (100-200ms) don't wipe out the detection

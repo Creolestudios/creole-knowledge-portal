@@ -28,29 +28,77 @@ export interface ObjectRule {
 /**
  * Default generalized warning reason for any unauthorized object detected.
  */
-export const GENERAL_UNAUTHORIZED_OBJECT_REASON = 'Unauthorized object detected in camera view.';
+export const GENERAL_UNAUTHORIZED_OBJECT_REASON =
+  'Prohibited object detected. Please remove it from your surroundings before continuing.';
 
 /**
- * The ONLY allowed detection class is the user/candidate themselves ('person').
- * Any other object detected in the frame is considered an unauthorized object.
+ * Standard environmental furniture, fixtures, timepieces, and mundane background items.
+ * These are normally present in an office or room and must NEVER trigger proctoring violations.
  */
-export const ALLOWED_USER_CLASSES = new Set<string>(['person']);
+export const ROOM_ENVIRONMENT_CLASSES = new Set<string>([
+  // Furniture & seating
+  'chair',
+  'couch',
+  'sofa',
+  'bed',
+  'bench',
+  'dining table',
+  'desk',
+  'table',
+  // Timepieces
+  'clock',
+  'watch',
+  // Ambient decor & kitchen/hydration
+  'potted plant',
+  'plant',
+  'vase',
+  'bottle',
+  'cup',
+  'mug',
+  'bowl',
+  'wine glass',
+  // Clothing / bags
+  'tie',
+  'backpack',
+  'handbag',
+  'suitcase',
+  'umbrella',
+  'sink',
+  'refrigerator',
+]);
+
+/** Backward-compatibility aliases */
+export const ALLOWED_ENVIRONMENT_CLASSES = ROOM_ENVIRONMENT_CLASSES;
+export const ALLOWED_USER_CLASSES = new Set<string>(['person', ...ROOM_ENVIRONMENT_CLASSES]);
 
 /**
- * Known default proctoring classes for enumerability in OBJECT_RULES.
+ * Evaluates whether an object is a standard background room fixture / furniture / timepiece
+ * that should not trigger cheating violations.
  */
-const DEFAULT_OBJECT_CLASSES = [
-  'cell phone',
-  'headphones',
-  'book',
-  'laptop',
-  'tv',
-  'remote',
-];
+export function isRoomEnvironment(className: string): boolean {
+  const lower = (className || '').toLowerCase().trim();
+
+  if (ROOM_ENVIRONMENT_CLASSES.has(lower)) {
+    return true;
+  }
+
+  // Substring matches for common household furniture and ambient items
+  return (
+    lower.includes('chair') ||
+    lower.includes('clock') ||
+    lower.includes('watch') ||
+    lower.includes('couch') ||
+    lower.includes('sofa') ||
+    lower.includes('table') ||
+    lower.includes('plant') ||
+    lower.includes('bottle') ||
+    lower.includes('cup')
+  );
+}
 
 /**
- * Dynamic Object Rule generator for any detected object other than the user's body.
- * Every detected object receives the standardized warning reason and 0ms immediate threshold.
+ * Dynamic Object Rule generator for any detected object.
+ * Every detected unauthorized object receives the standardized warning reason and 0ms immediate threshold.
  */
 export function getOrCreateObjectRule(className: string): ObjectRule {
   const normalized = className.toLowerCase().trim();
@@ -63,6 +111,18 @@ export function getOrCreateObjectRule(className: string): ObjectRule {
   };
 }
 
+const DEFAULT_OBJECT_CLASSES = [
+  'cell phone',
+  'headphones',
+  'book',
+  'laptop',
+  'tv',
+  'remote',
+  'pen',
+  'paper',
+  'earphones',
+];
+
 const baseRules: Record<string, ObjectRule> = Object.fromEntries(
   DEFAULT_OBJECT_CLASSES.map((key) => [key, getOrCreateObjectRule(key)]),
 );
@@ -70,7 +130,6 @@ const baseRules: Record<string, ObjectRule> = Object.fromEntries(
 /**
  * Proxy-based OBJECT_RULES mapping:
  * Dynamically resolves ANY object name into an unauthorized object rule with 0ms threshold.
- * Enumerates default proctoring classes when iterated with Object.entries/Object.keys.
  */
 export const OBJECT_RULES: Record<string, ObjectRule> = new Proxy(baseRules, {
   get: (target, prop: string | symbol) => {
@@ -83,37 +142,75 @@ export const OBJECT_RULES: Record<string, ObjectRule> = new Proxy(baseRules, {
 });
 
 export interface DetectedObjectEvent {
-  /** COCO-SSD class label */
+  /** Detected class label */
   label: string;
   confidence: number;
   /** Normalised bounding box [x, y, width, height] */
   boundingBox: [number, number, number, number];
-  /** Resolved rule, undefined if the object is not tracked */
+  /** Resolved rule */
   rule: ObjectRule;
 }
 
 /**
- * Filters raw COCO-SSD detections:
- * Allows ONLY the candidate's body ('person').
- * If ANY other object is detected, it is flagged as an unauthorized object immediately.
+ * Filters raw object detections dynamically:
+ * 1. Checks candidate presence: The first 'person' is the candidate themselves (allowed).
+ * 2. Checks multi-person presence: If an additional 'person' is detected in camera view, it flags as violation!
+ * 3. Filters out mundane room fixtures (chair, clock, watch, desk, couch, cup, etc.).
+ * 4. Flags any other detected object (phone, laptop, book, earphones, notes, pen, paper, remote, or any suspicious item) dynamically.
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
   minConfidence = 0.22,
 ): DetectedObjectEvent[] {
-  return detections
-    .filter((d) => {
-      const normalizedClass = d.class.toLowerCase().trim();
-      // Allow only the candidate/user body
-      if (ALLOWED_USER_CLASSES.has(normalizedClass)) {
-        return false;
+  let candidateFound = false;
+
+  const results: DetectedObjectEvent[] = [];
+
+  for (const d of detections) {
+    const normalizedClass = (d.class || '').toLowerCase().trim();
+
+    // ── Person Handling ──
+    if (normalizedClass === 'person') {
+      if (!candidateFound) {
+        // The first person detected is the candidate themselves
+        candidateFound = true;
+        continue;
       }
-      return d.score >= minConfidence;
-    })
-    .map((d) => ({
-      label: d.class,
-      confidence: d.score,
-      boundingBox: d.bbox,
-      rule: getOrCreateObjectRule(d.class),
-    }));
+
+      // Another person is detected in the camera view!
+      if (d.score >= Math.max(0.45, minConfidence)) {
+        results.push({
+          label: 'second person',
+          confidence: d.score,
+          boundingBox: d.bbox,
+          rule: {
+            category: 'object_detected',
+            object: 'multiple_persons',
+            severity: 'warning',
+            thresholdMs: 0,
+            reason:
+              'Multiple persons detected in camera view. Please ensure that only you are present during the interview.',
+          },
+        });
+      }
+      continue;
+    }
+
+    // ── Ignore Room Environment & Furniture (chair, clock, watch, etc.) ──
+    if (isRoomEnvironment(normalizedClass)) {
+      continue;
+    }
+
+    // ── Any Other Suspicious Object (Phone, Book, Laptop, Earphones, Pen, Paper, etc.) ──
+    if (d.score >= minConfidence) {
+      results.push({
+        label: d.class,
+        confidence: d.score,
+        boundingBox: d.bbox,
+        rule: getOrCreateObjectRule(d.class),
+      });
+    }
+  }
+
+  return results;
 }
