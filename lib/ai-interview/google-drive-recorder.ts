@@ -156,7 +156,7 @@ export async function createDriveResumableUploadSession(params: {
     headers['X-Upload-Content-Length'] = params.fileSize.toString();
   }
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
     method: 'POST',
     headers,
     body: JSON.stringify(metadata),
