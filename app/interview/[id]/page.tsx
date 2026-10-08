@@ -184,6 +184,7 @@ export default function InterviewEntryPage() {
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [statusCheckMessage, setStatusCheckMessage] = useState<string | null>(null);
   const [bypassProctoring, setBypassProctoring] = useState(false);
+  const [timeWarningOverlay, setTimeWarningOverlay] = useState<string | null>(null);
 
   const [showAckPopup, setShowAckPopup] = useState(false);
   const [ackChecked, setAckChecked] = useState(false);
@@ -781,7 +782,10 @@ export default function InterviewEntryPage() {
   // the ref is updated synchronously so the interval always reads the right value.
   useEffect(() => {
     if (stage === 'interview' && questions[currentQuestion]) {
-      const qSec = questions[currentQuestion].time_limit_sec || 120;
+      let qSec = questions[currentQuestion].time_limit_sec || 120;
+      if (durationSecondsRef.current > 0 && qSec > durationSecondsRef.current) {
+        qSec = durationSecondsRef.current;
+      }
       // eslint-disable-next-line react-hooks/immutability
       questionRemainingSecRef.current = qSec;
       autoSubmittedQuestionIdxRef.current = null;
@@ -1001,37 +1005,6 @@ export default function InterviewEntryPage() {
     }).catch((err) => console.error('[interview-entry] terminate notify failed:', err));
   }, [interviewId]);
 
-  // Prevent candidate from accidentally closing or refreshing tab during live interview
-  useEffect(() => {
-    if (stage !== 'interview' || isAdmin) return;
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
-      return e.returnValue;
-    };
-    
-    const handlePageHide = () => {
-      notifyTermination('The candidate refreshed or closed the page during the live interview.');
-    };
-    
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        // Fallback for mobile browsers where pagehide might not fire reliably
-        notifyTermination('The candidate placed the browser in the background or minimized the window.');
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('pagehide', handlePageHide);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('pagehide', handlePageHide);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [stage, isAdmin, notifyTermination]);
-
   const terminateInterview = useCallback(async (reason: string) => {
     if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
     terminatedRef.current = true;
@@ -1072,6 +1045,51 @@ export default function InterviewEntryPage() {
     // Now safely stop media tracks
     stopAllMedia();
   }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, stopAndUploadFullVideo, interviewId, completeTurn, isAdmin]);
+
+  const terminateInterviewRef = useRef(terminateInterview);
+  useEffect(() => {
+    terminateInterviewRef.current = terminateInterview;
+  }, [terminateInterview]);
+
+  // Prevent candidate from accidentally closing or refreshing tab during live interview
+  useEffect(() => {
+    if (stage !== 'interview' || isAdmin) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
+      return e.returnValue;
+    };
+    
+    const handlePageHide = () => {
+      if (bypassProctoring) return;
+      terminateInterviewRef.current('The candidate refreshed or closed the page during the live interview.');
+    };
+    
+    const handleVisibilityChange = () => {
+      if (bypassProctoring) return;
+      if (document.visibilityState === 'hidden') {
+        // Fallback for mobile browsers where pagehide might not fire reliably
+        terminateInterviewRef.current('The candidate placed the browser in the background or minimized the window.');
+      }
+    };
+
+    const handleBlur = () => {
+      if (bypassProctoring) return;
+      terminateInterviewRef.current('The candidate clicked outside the interview window or switched tabs.');
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [stage, isAdmin, bypassProctoring]);
 
   const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
     const video = cameraVideoRef.current;
@@ -2118,12 +2136,20 @@ export default function InterviewEntryPage() {
   }, [warningToast.show, warningToast.count, isInterviewPaused, handleResumeInterview]);
 
   useEffect(() => {
-    if (stage !== 'interview' || durationSecondsRef.current <= 0 || isInterviewPaused) return;
+    if (stage !== 'interview' || durationSecondsRef.current <= 0 || isInterviewPaused || isUploadingNext) return;
     const timer = window.setInterval(() => {
       // 1. Overall timer
       durationSecondsRef.current -= 1;
+      const newRemaining = durationSecondsRef.current;
+
+      // Screen flash for time warnings
+      if (newRemaining > 0 && newRemaining <= 300 && newRemaining % 60 === 0) {
+        setTimeWarningOverlay(`${newRemaining / 60} minute${newRemaining / 60 > 1 ? 's' : ''} left`);
+        setTimeout(() => setTimeWarningOverlay(null), 2000);
+      }
+
       setDurationSeconds((remaining) => {
-        if (remaining <= 1) {
+        if (newRemaining <= 1) {
           window.clearInterval(timer);
           completedRef.current = true;
           if (!isAdmin) {
@@ -2173,7 +2199,7 @@ export default function InterviewEntryPage() {
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [stage, isInterviewPaused]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stage, isInterviewPaused, isUploadingNext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch questions automatically if entering 'interview' stage (e.g. Admin view) without prior fetch
   useEffect(() => {
@@ -2488,6 +2514,15 @@ export default function InterviewEntryPage() {
           />
         )}
 
+        {/* Time Warning Overlay */}
+        {timeWarningOverlay && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center pointer-events-none bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="text-white text-5xl md:text-7xl font-black drop-shadow-[0_4px_10px_rgba(0,0,0,0.5)] animate-in zoom-in-75 duration-300">
+              {timeWarningOverlay}
+            </div>
+          </div>
+        )}
+
         {/* Warning Toast Banner */}
         {warningToast.show && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
@@ -2593,7 +2628,23 @@ export default function InterviewEntryPage() {
                 </h1>
               </div>
               <div className="flex items-center gap-3">
-                {/* Per-Question Countdown Timer Only */}
+                {/* Overall Interview Timer */}
+                <div
+                  id="interview-overall-timer-badge"
+                  className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all duration-500 ${
+                    durationSeconds <= 60
+                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800'
+                      : durationSeconds <= 600
+                      ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-200 dark:border-orange-800'
+                      : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
+                  } ${durationSeconds === 600 ? 'animate-bounce scale-110' : ''}`}
+                  title="Total time remaining for the entire interview"
+                >
+                  <Clock className={`w-4 h-4 ${durationSeconds === 600 ? 'animate-pulse text-orange-600 dark:text-orange-400' : 'opacity-70'}`} />
+                  <span>Total: {minutes}:{seconds}</span>
+                </div>
+
+                {/* Per-Question Countdown Timer */}
                 <div
                   id="interview-question-timer-badge"
                   className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${questionRemainingSec <= 30
@@ -2603,7 +2654,7 @@ export default function InterviewEntryPage() {
                   title="Time remaining for this specific question"
                 >
                   <Clock className="w-4 h-4" />
-                  <span>Time: {qMinutes}:{qSeconds}</span>
+                  <span>Question: {qMinutes}:{qSeconds}</span>
                 </div>
 
                 <span className="rounded-xl bg-zinc-100 dark:bg-[#2b2b2b] px-3 py-2 text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-[#d9d9d9]">
