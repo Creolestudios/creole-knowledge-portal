@@ -1038,9 +1038,8 @@ export default function InterviewEntryPage() {
     setIsInterviewPaused(true);
     setTerminationReason(reason);
 
-    // Immediately switch UI to terminated stage and stop local media tracks
+    // Immediately switch UI to terminated stage
     setStageWithRef('terminated');
-    stopAllMedia();
     notifyTermination(reason);
 
     syncChannelRef.current?.send({
@@ -1063,12 +1062,15 @@ export default function InterviewEntryPage() {
     completeTurn(spokenText).catch(console.warn);
     stopAndUpload(spokenText).catch(console.warn);
 
-    // Securely stop and upload full video recording to Google Drive in the background
+    // Securely stop and upload full video recording to Google Drive in the background BEFORE stopping media tracks
     if (!isAdmin) {
       stopAndUploadFullVideo().catch((err) => {
         console.warn('[terminateInterview] stopAndUploadFullVideo error:', err);
       });
     }
+
+    // Now safely stop media tracks
+    stopAllMedia();
   }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, stopAndUploadFullVideo, interviewId, completeTurn, isAdmin]);
 
   const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
@@ -2257,6 +2259,9 @@ export default function InterviewEntryPage() {
         terminationReason={terminationReason}
         isAdmin={isAdmin}
         onLeave={handleAdminLeave}
+        isUploading={isUploadingFullVideo}
+        uploadProgress={fullVideoUploadProgress}
+        uploadStatusText={fullVideoUploadStatusText}
       />
     );
   }
@@ -2272,8 +2277,28 @@ export default function InterviewEntryPage() {
           <p className="text-sm text-zinc-500 dark:text-[#9f9f9f] leading-relaxed">
             {isAdmin
               ? 'The candidate has completed the interview and submitted all assessment responses.'
-              : 'Thank you. Your responses and assessment data have been submitted. You may close this window now.'}
+              : isUploadingFullVideo
+                ? 'Thank you. Your responses are saved. Please keep this tab open while your interview video finalizes upload.'
+                : 'Thank you. Your responses and assessment video have been submitted. You may close this window now.'}
           </p>
+
+          {!isAdmin && isUploadingFullVideo && (
+            <div className="mt-4 p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 text-left space-y-2">
+              <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#34c4f2]" />
+                <span>{fullVideoUploadStatusText || 'Saving interview video to Google Drive...'}</span>
+              </div>
+              <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
+                <div
+                  className="bg-[#34c4f2] h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.max(fullVideoUploadProgress, 5)}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-tight">
+                Please wait a moment while your recording is securely uploaded to Google Drive.
+              </p>
+            </div>
+          )}
           {isAdmin && (
             <button
               type="button"

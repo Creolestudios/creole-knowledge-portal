@@ -133,8 +133,9 @@ export async function createDriveResumableUploadSession(params: {
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .toLowerCase();
   const dateStr = new Date().toISOString().slice(0, 10);
-  const fileName = `interview_${safeName}_${params.interviewId.slice(0, 8)}_${dateStr}.webm`;
-  const mimeType = params.mimeType || 'video/webm';
+  const ext = params.mimeType?.includes('mp4') ? 'mp4' : 'webm';
+  const fileName = `interview_${safeName}_${params.interviewId.slice(0, 8)}_${dateStr}.${ext}`;
+  const mimeType = params.mimeType || (ext === 'mp4' ? 'video/mp4' : 'video/webm');
 
   const folderId = getRecordingFolderId();
   const metadata: Record<string, unknown> = {
@@ -211,8 +212,9 @@ export async function uploadDriveFileDirectly(params: {
     .replace(/[^a-zA-Z0-9_-]/g, '_')
     .toLowerCase();
   const dateStr = new Date().toISOString().slice(0, 10);
-  const fileName = `interview_${safeName}_${params.interviewId.slice(0, 8)}_${dateStr}.webm`;
-  const mimeType = params.mimeType || 'video/webm';
+  const ext = params.mimeType?.includes('mp4') ? 'mp4' : 'webm';
+  const fileName = `interview_${safeName}_${params.interviewId.slice(0, 8)}_${dateStr}.${ext}`;
+  const mimeType = params.mimeType || (ext === 'mp4' ? 'video/mp4' : 'video/webm');
   const folderId = getRecordingFolderId();
 
   const requestBody: Record<string, unknown> = {

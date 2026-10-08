@@ -79,10 +79,26 @@ export function useFullInterviewRecorder({
   useEffect(() => {
     if (typeof document === 'undefined') return;
 
+    let container = document.getElementById('interview-recorder-hidden-dom');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'interview-recorder-hidden-dom';
+      container.style.position = 'fixed';
+      container.style.top = '-9999px';
+      container.style.left = '-9999px';
+      container.style.width = '1px';
+      container.style.height = '1px';
+      container.style.opacity = '0.001';
+      container.style.pointerEvents = 'none';
+      container.style.zIndex = '-9999';
+      document.body.appendChild(container);
+    }
+
     if (!hiddenCanvasRef.current) {
       const canvas = document.createElement('canvas');
       canvas.width = 1280;
       canvas.height = 720;
+      container.appendChild(canvas);
       hiddenCanvasRef.current = canvas;
     }
 
@@ -91,6 +107,7 @@ export function useFullInterviewRecorder({
       v.muted = true;
       v.playsInline = true;
       v.autoplay = true;
+      container.appendChild(v);
       screenVideoRef.current = v;
     }
 
@@ -99,6 +116,7 @@ export function useFullInterviewRecorder({
       v.muted = true;
       v.playsInline = true;
       v.autoplay = true;
+      container.appendChild(v);
       cameraVideoRef.current = v;
     }
 
@@ -107,6 +125,7 @@ export function useFullInterviewRecorder({
       v.muted = true;
       v.playsInline = true;
       v.autoplay = true;
+      container.appendChild(v);
       remoteVideoRef.current = v;
     }
 
@@ -123,6 +142,17 @@ export function useFullInterviewRecorder({
         }
         audioContextRef.current = null;
       }
+      if (container && container.parentNode) {
+        try {
+          container.parentNode.removeChild(container);
+        } catch {
+          // ignore
+        }
+      }
+      hiddenCanvasRef.current = null;
+      screenVideoRef.current = null;
+      cameraVideoRef.current = null;
+      remoteVideoRef.current = null;
     };
   }, []);
 
@@ -258,14 +288,24 @@ export function useFullInterviewRecorder({
       startCompositorLoop();
 
       const canvas = hiddenCanvasRef.current;
-      if (!canvas) return;
+      let stream: MediaStream | null = null;
+      try {
+        const captureStreamFn =
+          canvas ? ((canvas as any).captureStream || (canvas as any).mozCaptureStream) : null;
+        if (captureStreamFn) {
+          stream = captureStreamFn.call(canvas, 15);
+        }
+      } catch (err) {
+        console.warn('[useFullInterviewRecorder] canvas.captureStream failed:', err);
+      }
 
-      // Capture 15fps composite video stream with cross-browser fallback
-      const captureStreamFn =
-        (canvas as any).captureStream || (canvas as any).mozCaptureStream;
-      const stream = captureStreamFn ? captureStreamFn.call(canvas, 15) : null;
+      // Robust cross-device fallback: if canvas.captureStream fails or is unsupported on mobile/Safari,
+      // record screenStream or cameraStream directly so interview video is ALWAYS captured!
+      if (!stream || stream.getVideoTracks().length === 0) {
+        stream = screenStream || cameraStream || null;
+      }
       if (!stream) {
-        console.warn('[useFullInterviewRecorder] canvas.captureStream not supported');
+        console.warn('[useFullInterviewRecorder] No video streams available for recording');
         return;
       }
 
@@ -279,7 +319,7 @@ export function useFullInterviewRecorder({
         if (AudioContextClass) {
           const audioCtx = new AudioContextClass();
           if (audioCtx.state === 'suspended') {
-            void audioCtx.resume();
+            void audioCtx.resume().catch(() => {});
           }
           audioContextRef.current = audioCtx;
           const destination = audioCtx.createMediaStreamDestination();
@@ -319,19 +359,18 @@ export function useFullInterviewRecorder({
         console.warn('[useFullInterviewRecorder] Web Audio API initialization failed, falling back:', err);
       }
 
-      if (mixedAudioTrack) {
-        stream.addTrack(mixedAudioTrack);
-      } else {
-        // Fallback: direct track attachment
-        const micAudioTracks = cameraStream?.getAudioTracks() ?? [];
-        const screenAudioTracks = screenStream?.getAudioTracks() ?? [];
-        const remoteAudioTracks = remoteStream?.getAudioTracks() ?? [];
-        [...micAudioTracks, ...screenAudioTracks, ...remoteAudioTracks].forEach((track) => {
-          stream.addTrack(track);
-        });
-      }
+      // Safely combine video and audio tracks into recordable stream
+      const videoTracks = stream.getVideoTracks();
+      const audioTracks = mixedAudioTrack
+        ? [mixedAudioTrack]
+        : [
+            ...(cameraStream?.getAudioTracks() ?? []),
+            ...(screenStream?.getAudioTracks() ?? []),
+            ...(remoteStream?.getAudioTracks() ?? []),
+          ];
 
-      compositeStreamRef.current = stream;
+      const recordableStream = new MediaStream([...videoTracks, ...audioTracks]);
+      compositeStreamRef.current = recordableStream;
       chunksRef.current = [];
 
       const mimeType = pickSupportedMimeType();
@@ -341,7 +380,7 @@ export function useFullInterviewRecorder({
       if (mimeType) {
         recorderOptions.mimeType = mimeType;
       }
-      const recorder = new MediaRecorder(stream, recorderOptions);
+      const recorder = new MediaRecorder(recordableStream, recorderOptions);
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -371,7 +410,7 @@ export function useFullInterviewRecorder({
     }
 
     const recorder = recorderRef.current;
-    if (!recorder) {
+    if (!recorder && chunksRef.current.length === 0) {
       return { success: false, error: 'No active recorder' };
     }
 
@@ -382,9 +421,15 @@ export function useFullInterviewRecorder({
     setUploadStatusText('Preparing full interview video recording...');
 
     return new Promise<UploadResult>((resolve) => {
-      recorder.onstop = async () => {
+      let uploadHandled = false;
+
+      const executeUpload = async () => {
+        if (uploadHandled) return;
+        uploadHandled = true;
+
         try {
-          const mimeType = recorder.mimeType || 'video/webm';
+          const mimeType = recorder?.mimeType || pickSupportedMimeType() || 'video/webm';
+          const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
           const fullVideoBlob = new Blob(chunksRef.current, { type: mimeType });
 
           if (fullVideoBlob.size === 0) {
@@ -421,7 +466,7 @@ export function useFullInterviewRecorder({
           }
 
           const uploadUrl = sessionJson?.uploadUrl;
-          const fileName = sessionJson?.fileName || `interview_${interviewId}.webm`;
+          const fileName = sessionJson?.fileName || `interview_${interviewId}.${ext}`;
 
           let fileId: string | undefined;
 
@@ -438,7 +483,6 @@ export function useFullInterviewRecorder({
 
                 xhr.upload.onprogress = (event) => {
                   if (event.lengthComputable && event.total > 0) {
-                    // Map progress from 10% to 90%
                     const percent = Math.round(10 + (event.loaded / event.total) * 80);
                     setUploadProgress(percent);
                     setUploadStatusText(`Uploading full interview video to Google Drive... ${percent}%`);
@@ -508,10 +552,6 @@ export function useFullInterviewRecorder({
           // 3. Drop in-memory blobs immediately for instant garbage collection (OOM prevention)
           chunksRef.current = [];
 
-          if (!fileId) {
-            setUploadStatusText('Upload complete, finalizing video link...');
-          }
-
           setUploadProgress(95);
           setUploadStatusText('Finalizing video permissions and saving to dashboard...');
 
@@ -546,6 +586,15 @@ export function useFullInterviewRecorder({
         }
       };
 
+      if (!recorder) {
+        void executeUpload();
+        return;
+      }
+
+      recorder.onstop = () => {
+        void executeUpload();
+      };
+
       try {
         if (recorder.state === 'recording') {
           try {
@@ -553,15 +602,31 @@ export function useFullInterviewRecorder({
           } catch {
             // ignore
           }
+          recorder.stop();
+        } else {
+          // Recorder already inactive (e.g. tracks stopped), process collected chunks immediately
+          void executeUpload();
         }
-        recorder.stop();
       } catch (err) {
-        console.warn('[useFullInterviewRecorder] recorder.stop exception:', err);
-        setIsUploading(false);
-        resolve({ success: false, error: 'Stop recorder failed' });
+        console.warn('[useFullInterviewRecorder] recorder.stop exception, executing upload on collected chunks:', err);
+        void executeUpload();
       }
     });
   }, [interviewId]);
+
+  // Prevent accidental window close or navigation while video upload is in progress
+  useEffect(() => {
+    if (!isUploading) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'Interview video recording is uploading to Google Drive. Please wait until upload completes.';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isUploading]);
 
   return {
     isRecording,
