@@ -159,6 +159,13 @@ export async function POST(req: NextRequest) {
 
     const result = await extractKeywordsFromResumeAndJD(payload);
 
+    if (result.analysis?.documentValidationWarning) {
+      return NextResponse.json(
+        { error: result.analysis.documentValidationWarning },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(result, { status: 200 });
   } catch (err: any) {
     console.error('[API /api/ai-interview/extract] Extraction error:', err);

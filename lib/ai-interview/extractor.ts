@@ -305,11 +305,14 @@ You are an expert HR Tech & AI Technical Recruiter.
 Analyze the provided Resume and Job Description (JD) and extract structured keyword and skill alignment metadata.
 
 CRITICAL INSTRUCTION #1: DOCUMENT TYPE CLASSIFICATION & VALIDATION
-Before analyzing anything else, you MUST read the content of both the "Resume Content" and the "Job Description Content" to verify they are the correct type of document.
+Before analyzing anything else, you MUST check the document explicitly labeled "UPLOADED IN 'RESUME' FIELD" and the document explicitly labeled "UPLOADED IN 'JOB DESCRIPTION' FIELD".
 - A valid Resume contains an individual's personal work history, education, skills, and contact information.
 - A valid Job Description contains a company's hiring requirements, "We are looking for...", required qualifications, and role responsibilities.
-If the text provided in the "Job Description Content" section is actually a Resume, OR if the text provided in the "Resume Content" section is actually a Job Description, you MUST populate the "documentValidationWarning" field in the analysis object with a clear warning (e.g. "Warning: The text provided as a Job Description appears to be a candidate's Resume. Please verify your uploads."). Do NOT skip this check.
-If both documents are correctly classified, leave "documentValidationWarning" as null.
+You must handle these 3 error scenarios specifically and return the exact corresponding string in "documentValidationWarning":
+1. If the document labeled "UPLOADED IN 'RESUME' FIELD" AND the document labeled "UPLOADED IN 'JOB DESCRIPTION' FIELD" BOTH appear to be Resumes: "Please add a valid Job Description. It appears you have uploaded two Resumes."
+2. If the document labeled "UPLOADED IN 'RESUME' FIELD" AND the document labeled "UPLOADED IN 'JOB DESCRIPTION' FIELD" BOTH appear to be Job Descriptions: "Please add a valid candidate Resume. It appears you have uploaded two Job Descriptions."
+3. If the document labeled "UPLOADED IN 'RESUME' FIELD" is actually a Job Description AND the document labeled "UPLOADED IN 'JOB DESCRIPTION' FIELD" is actually a Resume: "Please add the Resume and Job Description (JD) in the correct places. It appears they have been swapped."
+If none of these errors apply and both documents are correctly classified, leave "documentValidationWarning" as null.
 
 CRITICAL INSTRUCTION #2: EXTRACTION
 1. Extract technical skills, soft skills, tools, frameworks, and domain keywords from both documents.
@@ -321,6 +324,7 @@ CRITICAL INSTRUCTION #2: EXTRACTION
 Output format requirement:
 Respond ONLY with valid JSON conforming strictly to this structure without markdown wraps:
 {
+  "documentValidationWarning": "string or null (Evaluate this FIRST before extracting anything else)",
   "candidateProfile": {
     "name": "string or null",
     "email": "string or null",
@@ -361,21 +365,21 @@ Respond ONLY with valid JSON conforming strictly to this structure without markd
     "resumeOnlyKeywords": ["string"],
     "skillGapSummary": "string",
     "keyStrengths": ["string"],
-    "improvementAreas": ["string"],
-    "documentValidationWarning": "string or null"
+    "improvementAreas": ["string"]
   }
 }
 
-Resume Content:
+--- TEXT UPLOADED IN "RESUME" FIELD ---
 ${resumeText || '(See attached Resume file)'}
 
-Job Description Content:
+--- TEXT UPLOADED IN "JOB DESCRIPTION" FIELD ---
 ${jdText || '(See attached JD file)'}
 `.trim();
 
   const contents: any[] = [];
 
   if (input.resumeFileBase64 && input.resumeMimeType) {
+    contents.push({ text: '--- DOCUMENT UPLOADED IN "RESUME" FIELD ---' });
     contents.push({
       inlineData: {
         mimeType: input.resumeMimeType,
@@ -385,6 +389,7 @@ ${jdText || '(See attached JD file)'}
   }
 
   if (input.jdFileBase64 && input.jdMimeType) {
+    contents.push({ text: '--- DOCUMENT UPLOADED IN "JOB DESCRIPTION" FIELD ---' });
     contents.push({
       inlineData: {
         mimeType: input.jdMimeType,
@@ -505,7 +510,7 @@ ${jdText || '(See attached JD file)'}
                 improvementAreas: Array.isArray(parsed.analysis?.improvementAreas)
                   ? parsed.analysis.improvementAreas
                   : [],
-                documentValidationWarning: parsed.analysis?.documentValidationWarning || undefined,
+                documentValidationWarning: parsed.documentValidationWarning || parsed.analysis?.documentValidationWarning || undefined,
                 apiFailed: isZeroKeywords,
                 apiNote: zeroNote,
               };
