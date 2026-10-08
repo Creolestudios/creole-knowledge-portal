@@ -119,6 +119,7 @@ export async function GET(req: Request) {
       status: invite.status,
       inProgress: invite.status === 'in_progress',
       requiresAccessCode: !matchesCookie(invite.session_id),
+      bypassProctoring: (invite.max_alerts ?? 0) > 1000,
     });
   }
 
@@ -401,6 +402,7 @@ export async function POST(req: Request) {
       interviewId: sessionId,
       status: session?.status || invite.status,
       inProgress,
+      bypassProctoring: (invite.max_alerts ?? 0) > 1000,
     });
     try {
       response.cookies.set('interview_verified_id', sessionId, {

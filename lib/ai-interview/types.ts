@@ -13,6 +13,7 @@ export interface CandidateProfile {
   name?: string;
   email?: string;
   phone?: string;
+  zohoRecruiterLink?: string;
   yearsOfExperience?: number;
   summary?: string;
   extractedSkills: string[];
@@ -55,6 +56,7 @@ export interface ExtractionResult {
   isFallback?: boolean;
   apiFailed?: boolean;
   apiNote?: string;
+  bypassProctoring?: boolean;
 }
 
 /**

@@ -41,6 +41,7 @@ export default function AIInterviewManager() {
   const [candidateName, setCandidateName] = useState('');
   const [candidateEmail, setCandidateEmail] = useState('');
   const [jobTitle, setJobTitle] = useState('');
+  const [zohoLink, setZohoLink] = useState('');
   const [resume, setResume] = useState<File | null>(null);
   const [jdMode, setJdMode] = useState<'file' | 'text'>('text');
   const [jd, setJd] = useState<File | null>(null);
@@ -48,6 +49,10 @@ export default function AIInterviewManager() {
 
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const [bypassProctoring, setBypassProctoring] = useState(false);
+  const [showBypassConfirm, setShowBypassConfirm] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
   const [sessionResult, setSessionResult] = useState<SessionGenerationResult | null>(null);
@@ -140,6 +145,28 @@ export default function AIInterviewManager() {
     setExtractionResult(null);
     setSessionResult(null);
 
+    if (!candidateName.trim()) {
+      setError('Please enter the candidate name.');
+      return;
+    }
+    const emailStr = candidateEmail.trim();
+    if (!emailStr) {
+      setError('Please enter the candidate email.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (zohoLink.trim()) {
+      try {
+        new URL(zohoLink.trim());
+      } catch {
+        setError('Please enter a valid URL for the Zoho Recruiter Link.');
+        return;
+      }
+    }
+
     if (!resume) {
       setError('Please attach a resume.');
       return;
@@ -187,6 +214,10 @@ export default function AIInterviewManager() {
         );
       }
 
+      if (extractJson.analysis?.documentValidationWarning) {
+        throw new Error(extractJson.analysis.documentValidationWarning);
+      }
+
       // Admin-typed candidate/job fields take priority over whatever Gemini
       // extracted from the documents, since they're what the admin meant.
       const mergedExtraction: ExtractionResult = {
@@ -195,11 +226,13 @@ export default function AIInterviewManager() {
           ...extractJson.candidateProfile,
           name: candidateName.trim() || extractJson.candidateProfile?.name,
           email: candidateEmail.trim() || extractJson.candidateProfile?.email,
+          zohoRecruiterLink: zohoLink.trim() || undefined,
         },
         jdRequirements: {
           ...extractJson.jdRequirements,
           jobTitle: jobTitle.trim() || extractJson.jdRequirements?.jobTitle,
         },
+        bypassProctoring,
       };
       setExtractionResult(mergedExtraction);
       setStatusMessage(null);
@@ -223,12 +256,15 @@ export default function AIInterviewManager() {
     setCandidateName('');
     setCandidateEmail('');
     setJobTitle('');
+    setZohoLink('');
     setResume(null);
     setJd(null);
     setJdText('');
     setExtractionResult(null);
     setSessionResult(null);
     setError(null);
+    setBypassProctoring(false);
+    setShowBypassConfirm(false);
   };
 
   const copyValue = async (
@@ -318,22 +354,24 @@ export default function AIInterviewManager() {
           />
         </div>
       ) : (
-      <form onSubmit={handleAnalyze} className="p-8 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <form onSubmit={handleAnalyze} className="p-8 space-y-6" noValidate>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <input
             id="candidate-name"
             type="text"
+            required
             value={candidateName}
             onChange={(e) => setCandidateName(e.target.value)}
-            placeholder="Candidate name (optional)"
+            placeholder="Candidate name *"
             className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
           />
           <input
             id="candidate-email"
             type="email"
+            required
             value={candidateEmail}
             onChange={(e) => setCandidateEmail(e.target.value)}
-            placeholder="Candidate email (optional)"
+            placeholder="Candidate email *"
             className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
           />
           <input
@@ -342,6 +380,14 @@ export default function AIInterviewManager() {
             value={jobTitle}
             onChange={(e) => setJobTitle(e.target.value)}
             placeholder="Job title (optional)"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
+          />
+          <input
+            id="zoho-link"
+            type="url"
+            value={zohoLink}
+            onChange={(e) => setZohoLink(e.target.value)}
+            placeholder="Zoho Recruiter Link (optional)"
             className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
           />
         </div>
@@ -437,6 +483,43 @@ export default function AIInterviewManager() {
               />
             </label>
           )}
+
+          <div className="pt-2 flex items-center gap-2 px-1">
+            <div className="flex items-center gap-3 cursor-pointer">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={bypassProctoring}
+                onClick={() => {
+                  if (!bypassProctoring) {
+                    setShowBypassConfirm(true);
+                  } else {
+                    setBypassProctoring(false);
+                  }
+                }}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#34c4f2] focus:ring-offset-2 ${
+                  bypassProctoring ? 'bg-[#34c4f2]' : 'bg-zinc-200 dark:bg-[#4a4a4a]'
+                }`}
+              >
+                <span className="sr-only">Bypass Proctoring Warnings</span>
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    bypassProctoring ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+              <span 
+                className="text-sm font-semibold text-[#1f1f1f] dark:text-[#e0e0e0] hover:opacity-80 transition-opacity"
+                onClick={() => {
+                  if (!bypassProctoring) setShowBypassConfirm(true);
+                  else setBypassProctoring(false);
+                }}
+              >
+                Bypass Proctoring Warnings
+              </span>
+            </div>
+          </div>
         </div>
 
         <AnimatePresence>
@@ -638,6 +721,40 @@ export default function AIInterviewManager() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {showBypassConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] p-6 rounded-2xl max-w-md w-full shadow-2xl">
+            <h3 className="text-xl font-bold text-[#1f1f1f] dark:text-white mb-3">Confirm Bypass Proctoring</h3>
+            <p className="mb-6 text-sm text-[#4a4a4a] dark:text-[#a0a0a0] leading-relaxed">
+              Bypassing proctoring will completely disable automated candidate monitoring for this session. This includes tab-switch detection, face tracking, unauthorized object alerts, and background voice detection. Are you absolutely sure you wish to proceed without proctoring?
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button 
+                type="button" 
+                onClick={() => {
+                  setShowBypassConfirm(false);
+                  setBypassProctoring(false);
+                }} 
+                className="px-5 py-2.5 rounded-xl border border-[#d9d9d9] dark:border-[#4a4a4a] text-[#4a4a4a] dark:text-[#d9d9d9] hover:bg-black/5 dark:hover:bg-white/5 font-semibold text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={() => { 
+                  setBypassProctoring(true); 
+                  setShowBypassConfirm(false); 
+                }} 
+                className="px-5 py-2.5 rounded-xl bg-[#34c4f2] hover:bg-[#34c4f2]/90 text-white font-semibold text-sm transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

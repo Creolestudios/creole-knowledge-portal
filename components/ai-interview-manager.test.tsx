@@ -42,6 +42,8 @@ function mockFetchByUrl(handlers: Record<string, unknown>) {
 }
 
 async function attachResumeAndJd() {
+  fireEvent.change(document.getElementById('candidate-name') as HTMLInputElement, { target: { value: 'John Doe' } });
+  fireEvent.change(document.getElementById('candidate-email') as HTMLInputElement, { target: { value: 'john@example.com' } });
   fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
     target: { files: [new File(['resume'], 'resume.pdf', { type: 'application/pdf' })] },
   });
@@ -77,12 +79,43 @@ describe('AIInterviewManager', () => {
     expect(await screen.findByText(/Jane Doe/)).toBeInTheDocument();
   });
 
+  it('shows an error when submitting without candidate name', async () => {
+    global.fetch = mockFetchOnce({ interviews: [] }) as any;
+    render(<AIInterviewManager />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/please enter the candidate name/i)).toBeInTheDocument();
+    }).catch(e => {
+      console.log('DOM dump:', document.body.innerHTML);
+      throw e;
+    });
+  });
+
+  it('shows an error when submitting with invalid email', async () => {
+    global.fetch = mockFetchOnce({ interviews: [] }) as any;
+    render(<AIInterviewManager />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+    fireEvent.change(document.getElementById('candidate-name') as HTMLInputElement, { target: { value: 'John Doe' } });
+    fireEvent.change(document.getElementById('candidate-email') as HTMLInputElement, { target: { value: 'priya' } });
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => {
+      expect(screen.getByText(/please enter a valid email address/i)).toBeInTheDocument();
+    });
+  });
+
   it('shows an error when submitting without files', async () => {
     global.fetch = mockFetchOnce({ interviews: [] }) as any;
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByText('Analyze Resume & JD'));
+    fireEvent.change(document.getElementById('candidate-name') as HTMLInputElement, { target: { value: 'John Doe' } });
+    fireEvent.change(document.getElementById('candidate-email') as HTMLInputElement, { target: { value: 'john@example.com' } });
+    fireEvent.submit(document.querySelector('form')!);
 
     await waitFor(() => {
       expect(screen.getByText(/please attach a resume/i)).toBeInTheDocument();
@@ -93,6 +126,9 @@ describe('AIInterviewManager', () => {
     global.fetch = mockFetchOnce({ interviews: [] }) as any;
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+    fireEvent.change(document.getElementById('candidate-name') as HTMLInputElement, { target: { value: 'John Doe' } });
+    fireEvent.change(document.getElementById('candidate-email') as HTMLInputElement, { target: { value: 'john@example.com' } });
 
     const resumeInput = document.getElementById('resume-upload') as HTMLInputElement;
     fireEvent.change(resumeInput, {
@@ -153,6 +189,9 @@ describe('AIInterviewManager', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText('Upload File'));
+
+    fireEvent.change(document.getElementById('candidate-name') as HTMLInputElement, { target: { value: 'John Doe' } });
+    fireEvent.change(document.getElementById('candidate-email') as HTMLInputElement, { target: { value: 'john@example.com' } });
 
     const resumeInput = document.getElementById('resume-upload') as HTMLInputElement;
     const jdInput = document.getElementById('jd-upload') as HTMLInputElement;

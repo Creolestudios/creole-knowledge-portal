@@ -44,6 +44,7 @@ export interface SessionSelectionOptions {
   hrTotalMinutes?: number;
   hrQuestionMinutes?: number;
   techQuestionMinutes?: number;
+  bypassProctoring?: boolean;
 }
 
 /**
@@ -95,7 +96,9 @@ export async function createInterviewSessionWithInvite(
   const inviteRes = await fetch(`/api/interviews/${session.id}/invite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify({
+      max_alerts: options.bypassProctoring ? 999999 : 3,
+    }),
   });
   const inviteJson = await readJsonOrThrow(inviteRes, 'invite', 'Failed to create the interview invite link.');
   const invite: InterviewInvite = {

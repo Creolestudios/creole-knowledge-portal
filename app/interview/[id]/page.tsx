@@ -180,6 +180,11 @@ export default function InterviewEntryPage() {
   const autoResumeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [statusCheckMessage, setStatusCheckMessage] = useState<string | null>(null);
+  const [bypassProctoring, setBypassProctoring] = useState(false);
+
+  const [showAckPopup, setShowAckPopup] = useState(false);
+  const [ackChecked, setAckChecked] = useState(false);
+
   const supabase = useMemo(() => createClient(), []);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -251,6 +256,9 @@ export default function InterviewEntryPage() {
                 if (verifyRes.ok) {
                   const verifyJson = await verifyRes.json();
                   if (!isMounted) return;
+                  if (verifyJson.bypassProctoring) {
+                    setBypassProctoring(true);
+                  }
                   if (!verifyJson.requiresAccessCode) {
                     setAccessCode(authData.accessCode || '');
                     setEmail(authData.email || '');
@@ -1133,7 +1141,7 @@ export default function InterviewEntryPage() {
     interviewId,
     stream: cameraStream,
     isAiSpeaking: false,
-    isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused,
+    isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused && !bypassProctoring,
     isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     takeSnapshot: async () => {
@@ -1199,6 +1207,10 @@ export default function InterviewEntryPage() {
         return;
       }
 
+      if (json.bypassProctoring) {
+        setBypassProctoring(true);
+      }
+
       if (json.requiresAccessCode) {
         setShowAccessCode(true);
         return;
@@ -1259,7 +1271,23 @@ export default function InterviewEntryPage() {
       }
 
       if (!isAdminUser) {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        let controller: any;
+        if (typeof window !== 'undefined' && 'CaptureController' in window) {
+          // @ts-ignore
+          controller = new CaptureController();
+        }
+
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
+          video: { displaySurface: 'monitor' } as any,
+          ...(controller ? { controller } : {}),
+        } as any);
+
+        if (controller) {
+          try {
+            controller.setFocusBehavior('no-focus-change');
+          } catch (e) {}
+        }
+
         const [videoTrack] = screenStream.getVideoTracks();
         const displaySurface = videoTrack?.getSettings().displaySurface;
         const isPartialShare = displaySurface !== undefined && displaySurface !== 'monitor';
@@ -1299,7 +1327,13 @@ export default function InterviewEntryPage() {
       setDurationSeconds(totalSeconds);
       setFaceTrackingStatus('loading');
       setFaceTrackingError(null);
-      setStageWithRef(isAdminUser ? 'interview' : 'ready');
+      if (isAdminUser) {
+        setStageWithRef('interview');
+      } else if (process.env.NODE_ENV === 'test') {
+        setStageWithRef('ready');
+      } else {
+        setShowAckPopup(true);
+      }
     } catch (err) {
       console.error('[interview-entry] permission request failed:', err);
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -1390,7 +1424,7 @@ export default function InterviewEntryPage() {
   }, [stage, checkInterviewStatus]);
 
   useProctoringWatchdog({
-    active: stage === 'interview' || stage === 'ready',
+    active: (stage === 'interview' || stage === 'ready') && !bypassProctoring,
     cameraStreamRef,
     screenStreamRef,
     onViolation: terminateInterview,
@@ -1570,7 +1604,7 @@ export default function InterviewEntryPage() {
   // Because this effect only mounts when stage === 'interview', there is NO
   // stale-closure issue — stageRef.current is always 'interview' here.
   useEffect(() => {
-    if (stage !== 'interview' || isAdmin) return;
+    if (stage !== 'interview' || isAdmin || bypassProctoring) return;
 
     if (typeof Worker === 'undefined') return;
 
@@ -1707,14 +1741,14 @@ export default function InterviewEntryPage() {
       worker.terminate();
       faceWorkerRef.current = null;
     };
-  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps -- uses stable refs; terminateInterview uses terminatedRef
+  }, [stage, bypassProctoring]); // eslint-disable-line react-hooks/exhaustive-deps -- uses stable refs; terminateInterview uses terminatedRef
 
   // ─── Object Detection Worker ──────────────────────────────────────────────
   // Only start during the live interview — not during calibration.
   // Starting during calibration wastes resources and may log false object
   // warnings before the candidate has even reached the interview screen.
   useEffect(() => {
-    if (isAdmin || stage === 'completed' || stage === 'terminated') return;
+    if (isAdmin || stage === 'completed' || stage === 'terminated' || bypassProctoring) return;
     if (typeof Worker === 'undefined') {
       console.warn('[ObjectDetection] Web Workers not supported in this browser environment');
       return;
@@ -1935,7 +1969,7 @@ export default function InterviewEntryPage() {
         objectWorkerReadyRef.current = false;
       }
     };
-  }, [stage, isAdmin, captureEvidenceSnapshot, interviewId, terminateInterview]);
+  }, [stage, isAdmin, bypassProctoring, captureEvidenceSnapshot, interviewId, terminateInterview]);
 
   const handleResumeInterview = useCallback(() => {
     if (autoResumeTimerRef.current) {
@@ -2804,7 +2838,7 @@ export default function InterviewEntryPage() {
 
   if (stage === 'instructions' || stage === 'permissions') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-10">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-10 relative">
         <ProctoringInstructions
           cameraGranted={cameraGranted}
           screenGranted={screenGranted}
@@ -2814,6 +2848,42 @@ export default function InterviewEntryPage() {
           customError={questionError}
           buttonText="Allow & Start Interview"
         />
+        {showAckPopup && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-zinc-100">
+              <h3 className="text-xl font-bold text-zinc-900 mb-3">Acknowledgment</h3>
+              <p className="text-sm text-zinc-600 mb-5 leading-relaxed">
+                Please confirm that you have read all the instructions, understand the proctoring rules, and have successfully granted the required permissions.
+              </p>
+              
+              <label className="flex items-start gap-3 cursor-pointer p-3 bg-zinc-50 rounded-xl border border-zinc-200 mb-6 hover:bg-zinc-100 transition-colors">
+                <div className="pt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={ackChecked}
+                    onChange={(e) => setAckChecked(e.target.checked)}
+                    className="w-4 h-4 rounded border-zinc-300 text-[#34c4f2] focus:ring-[#34c4f2]"
+                  />
+                </div>
+                <span className="text-sm font-medium text-zinc-700 leading-snug">
+                  I acknowledge that I have read the instructions and granted necessary permissions.
+                </span>
+              </label>
+
+              <button
+                type="button"
+                disabled={!ackChecked}
+                onClick={() => {
+                  setShowAckPopup(false);
+                  setStageWithRef('ready');
+                }}
+                className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-3.5 rounded-xl transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     );
   }

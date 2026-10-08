@@ -177,11 +177,13 @@ export function QuestionBankSelector({ extraction, onComplete, onBack }: Questio
         questionBankIds: string[];
         customQuestions: string[];
         hrTotalMinutes?: number;
+        bypassProctoring?: boolean;
       } = {
         questionCount,
         similarityConfirmed,
         questionBankIds: Array.from(selectedQuestionIds),
         customQuestions,
+        bypassProctoring: extraction.bypassProctoring,
       };
       if (hrTotalMinutes !== 2) {
         optionsPayload.hrTotalMinutes = hrTotalMinutes;
