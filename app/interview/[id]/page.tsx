@@ -976,18 +976,6 @@ export default function InterviewEntryPage() {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, [isAdmin, leaveWebRTC]);
 
-  // Prevent candidate from accidentally closing or refreshing tab during live interview
-  useEffect(() => {
-    if (stage !== 'interview' || isAdmin) return;
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
-      return e.returnValue;
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [stage, isAdmin]);
-
   const notifyTermination = useCallback((reason: string) => {
     const counts = proctorTrackerRef.current.getWarningCounts();
     const payload = JSON.stringify({
@@ -1009,6 +997,37 @@ export default function InterviewEntryPage() {
       keepalive: true,
     }).catch((err) => console.error('[interview-entry] terminate notify failed:', err));
   }, [interviewId]);
+
+  // Prevent candidate from accidentally closing or refreshing tab during live interview
+  useEffect(() => {
+    if (stage !== 'interview' || isAdmin) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
+      return e.returnValue;
+    };
+    
+    const handlePageHide = () => {
+      notifyTermination('The candidate refreshed or closed the page during the live interview.');
+    };
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Fallback for mobile browsers where pagehide might not fire reliably
+        notifyTermination('The candidate placed the browser in the background or minimized the window.');
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [stage, isAdmin, notifyTermination]);
 
   const terminateInterview = useCallback(async (reason: string) => {
     if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;

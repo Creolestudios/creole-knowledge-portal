@@ -158,7 +158,11 @@ export async function GET(req: Request) {
 async function broadcastTermination(interviewId: string) {
   try {
     const channel = supabaseAdmin.channel(`interview-sync-${interviewId}`);
-    await channel.subscribe();
+    await new Promise<void>((resolve) => {
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') resolve();
+      });
+    });
     await channel.send({
       type: 'broadcast',
       event: 'state-sync',

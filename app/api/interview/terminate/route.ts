@@ -148,6 +148,40 @@ export async function POST(req: Request) {
 
   await Promise.all(updatePromises);
 
+  // Broadcast termination to connected clients (admin dashboard)
+  try {
+    const channel1 = supabaseAdmin.channel(`interview-sync-${interviewId}`);
+    const channel2 = supabaseAdmin.channel(`interview-sync-${targetSessionId}`);
+    
+    const subscribeChannel = (channel: ReturnType<typeof supabaseAdmin.channel>) => {
+      return new Promise<void>((resolve) => {
+        channel.subscribe((status) => {
+          if (status === 'SUBSCRIBED') resolve();
+          // Also resolve on error so we don't hang forever
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') resolve();
+        });
+      });
+    };
+
+    await subscribeChannel(channel1);
+    if (interviewId !== targetSessionId) await subscribeChannel(channel2);
+    
+    const payload = {
+      type: 'broadcast',
+      event: 'state-sync',
+      payload: {
+        type: 'terminate',
+        reason: reason || 'Interview terminated by system.',
+      },
+    };
+    await channel1.send(payload);
+    if (interviewId !== targetSessionId) await channel2.send(payload);
+    
+    await supabaseAdmin.removeChannel(channel1);
+    if (interviewId !== targetSessionId) await supabaseAdmin.removeChannel(channel2);
+  } catch (err) {
+    console.error('[interview-terminate] Failed to broadcast termination:', err);
+  }
 
   await ensureAllQuestionsAnswered(targetSessionId);
 
