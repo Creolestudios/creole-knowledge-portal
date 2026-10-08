@@ -228,7 +228,10 @@ export default function InterviewEntryPage() {
           } catch {
             // ignore
           }
-          if (json.expired || json.used) {
+          if (json.status === 'terminated' || json.status === 'revoked' || json.status === 'cancelled') {
+            setTerminationReason(json.error || 'This interview has already ended.');
+            setStageWithRef('terminated');
+          } else if (json.expired || json.used) {
             setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
             setStageWithRef('expired');
           } else if (json.status === 'completed' || json.ended) {

@@ -66,10 +66,21 @@ export async function GET(req: Request) {
           expired: true,
         }, { status: 410 });
       }
+      if (interview.status === 'terminated') {
+        return NextResponse.json({
+          error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
+          status: 'terminated',
+        }, { status: 410 });
+      }
+      if (interview.status === 'completed') {
+        return NextResponse.json({
+          error: 'This interview has already been completed.',
+          status: 'completed',
+          ended: true,
+        }, { status: 410 });
+      }
       if (
-        (interview.used_at && interview.status !== 'in_progress') ||
-        interview.status === 'terminated' ||
-        interview.status === 'completed'
+        (interview.used_at && interview.status !== 'in_progress' && !matchesCookie(interview.id))
       ) {
         return NextResponse.json({
           error: 'This interview link has already been used and is expired',
@@ -99,10 +110,21 @@ export async function GET(req: Request) {
         expired: true,
       }, { status: 410 });
     }
+    if (invite.status === 'revoked') {
+      return NextResponse.json({
+        error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
+        status: 'terminated',
+      }, { status: 410 });
+    }
+    if (invite.status === 'completed') {
+      return NextResponse.json({
+        error: 'This interview has already been completed.',
+        status: 'completed',
+        ended: true,
+      }, { status: 410 });
+    }
     if (
-      (invite.consumed_at && invite.status !== 'in_progress') ||
-      invite.status === 'completed' ||
-      invite.status === 'revoked' ||
+      (invite.consumed_at && invite.status !== 'in_progress' && !matchesCookie(invite.session_id)) ||
       invite.status === 'expired'
     ) {
       return NextResponse.json({
@@ -130,15 +152,17 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (session) {
-      if (
-        session.status === 'completed' ||
-        session.status === 'cancelled'
-      ) {
+      if (session.status === 'cancelled') {
         return NextResponse.json({
-          error: 'This interview link has already been used and is expired',
-          note: 'Note: This interview link has already been used and is expired.',
-          expired: true,
-          used: true,
+          error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
+          status: 'terminated',
+        }, { status: 410 });
+      }
+      if (session.status === 'completed') {
+        return NextResponse.json({
+          error: 'This interview has already been completed.',
+          status: 'completed',
+          ended: true,
         }, { status: 410 });
       }
       return NextResponse.json({
@@ -240,19 +264,26 @@ export async function POST(req: Request) {
         }, { status: 410 });
       }
 
-      if (interview.status === 'terminated' || interview.status === 'completed') {
+      if (interview.status === 'terminated') {
         if (lockAcquired) releaseJoinLock(interviewId, deviceId);
         return NextResponse.json({
-          error: 'This interview has already ended',
-          note: 'Note: This interview link has already been used and is expired.',
-          expired: true,
-          used: true,
+          error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
+          status: 'terminated',
+        }, { status: 410 });
+      }
+      if (interview.status === 'completed') {
+        if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+        return NextResponse.json({
+          error: 'This interview has already been completed.',
+          status: 'completed',
           ended: true,
         }, { status: 410 });
       }
 
       if (!isRequesterAdmin) {
-        if (interview.status === 'in_progress' || interview.used_at) {
+        // Only terminate actively if the interview is 'in_progress'. 
+        // If it's pending but used_at is true, allow the same candidate to continue setting up.
+        if (interview.status === 'in_progress') {
           if (lockAcquired) releaseJoinLock(interviewId, deviceId);
           await supabaseAdmin.from('ai_interviews').update({ status: 'terminated' }).eq('id', interview.id);
           await broadcastTermination(interviewId);
@@ -263,6 +294,12 @@ export async function POST(req: Request) {
             ended: true,
             concurrent: true,
           }, { status: 410 });
+        }
+        
+        // If it's used_at but NOT in_progress, we check if they have the right deviceId or cookie lock
+        // The lockAcquired handles concurrent protection for now.
+        if (interview.used_at && interview.status !== 'in_progress') {
+           // We will let them through because lockAcquired passed, meaning no other active device is holding the lock.
         }
 
         if (!accessCode) {
@@ -333,12 +370,16 @@ export async function POST(req: Request) {
       }, { status: 410 });
     }
 
-    if (invite.status === 'completed' || invite.status === 'revoked') {
+    if (invite.status === 'revoked') {
       return NextResponse.json({
-        error: 'This interview has already ended',
-        note: 'Note: This interview link has already been used and is expired.',
-        expired: true,
-        used: true,
+        error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
+        status: 'terminated',
+      }, { status: 410 });
+    }
+    if (invite.status === 'completed') {
+      return NextResponse.json({
+        error: 'This interview has already been completed.',
+        status: 'completed',
         ended: true,
       }, { status: 410 });
     }
@@ -389,19 +430,25 @@ export async function POST(req: Request) {
       .eq('id', sessionId)
       .maybeSingle();
 
-    if (session && (session.status === 'completed' || session.status === 'cancelled')) {
+    if (session && session.status === 'cancelled') {
       if (lockAcquired) releaseJoinLock(interviewId, deviceId);
       return NextResponse.json({
-        error: 'This interview has already ended',
-        note: 'Note: This interview link has already been used and is expired.',
-        expired: true,
-        used: true,
+        error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
+        status: 'terminated',
+      }, { status: 410 });
+    }
+    if (session && session.status === 'completed') {
+      if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+      return NextResponse.json({
+        error: 'This interview has already been completed.',
+        status: 'completed',
         ended: true,
       }, { status: 410 });
     }
 
     if (!isRequesterAdmin) {
-      if (invite.status === 'in_progress' || invite.consumed_at) {
+      // Only terminate actively if the interview is 'in_progress'.
+      if (invite.status === 'in_progress') {
         if (lockAcquired) releaseJoinLock(interviewId, deviceId);
         await supabaseAdmin.from('interview_invites').update({ status: 'revoked' }).eq('id', invite.id);
         if (invite.session_id) {
@@ -415,6 +462,11 @@ export async function POST(req: Request) {
           ended: true,
           concurrent: true,
         }, { status: 410 });
+      }
+      
+      // If consumed_at is set but not in_progress, let them re-enter (setup phase).
+      if (invite.consumed_at && invite.status !== 'in_progress') {
+         // Proceed.
       }
 
       // Do not update the DB to in_progress here.
@@ -465,27 +517,25 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (session) {
-      if (
-        session.status === 'completed' ||
-        session.status === 'cancelled' ||
-        (!isRequesterAdmin && session.status === 'in_progress')
-      ) {
-        if (!isRequesterAdmin && session.status === 'in_progress') {
-          await supabaseAdmin.from('interview_sessions').update({ status: 'terminated' }).eq('id', session.id);
-          await broadcastTermination(interviewId);
-          return NextResponse.json({
-            error: 'Interview terminated due to page refresh or unauthorized re-entry.',
-            note: 'Interview terminated due to page refresh or unauthorized re-entry.',
-            status: 'terminated',
-            ended: true,
-          }, { status: 410 });
-        }
+      if (session.status === 'cancelled') {
         return NextResponse.json({
-          error: 'This interview has already ended',
-          note: 'Note: This interview link has already been used and is expired.',
-          expired: true,
-          used: true,
+          error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
+          status: 'terminated',
+        }, { status: 410 });
+      }
+      if (session.status === 'completed') {
+        return NextResponse.json({
+          error: 'This interview has already been completed.',
+          status: 'completed',
           ended: true,
+        }, { status: 410 });
+      }
+      if (!isRequesterAdmin && session.status === 'in_progress') {
+        await supabaseAdmin.from('interview_sessions').update({ status: 'cancelled' }).eq('id', session.id);
+        await broadcastTermination(interviewId);
+        return NextResponse.json({
+          error: 'Interview terminated due to page refresh or unauthorized re-entry.',
+          status: 'terminated',
         }, { status: 410 });
       }
 
