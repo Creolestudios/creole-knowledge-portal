@@ -206,11 +206,14 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     (e) => e.category === 'full_recording' || e.event_type === 'full_recording'
   );
   const recMeta = (recordingEvent?.meta || recordingEvent?.metadata || {}) as Record<string, unknown>;
-  const recording = recMeta.fileId
+  const recFileId = String(recMeta.fileId || '');
+  const recWebViewLink = (recMeta.webViewLink as string) || (recFileId ? `https://drive.google.com/file/d/${recFileId}/view` : '');
+  const recPreviewUrl = (recMeta.previewUrl as string) || (recFileId ? `https://drive.google.com/file/d/${recFileId}/preview` : '');
+  const recording = (recFileId || recWebViewLink)
     ? {
-        fileId: String(recMeta.fileId),
-        webViewLink: (recMeta.webViewLink as string) || `https://drive.google.com/file/d/${recMeta.fileId}/view`,
-        previewUrl: (recMeta.previewUrl as string) || `https://drive.google.com/file/d/${recMeta.fileId}/preview`,
+        fileId: recFileId || 'drive_file',
+        webViewLink: recWebViewLink,
+        previewUrl: recPreviewUrl,
         fileName: recMeta.fileName as string | undefined,
       }
     : null;

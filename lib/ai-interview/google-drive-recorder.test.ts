@@ -155,7 +155,7 @@ describe('google-drive-recorder', () => {
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           fileId: 'file-xyz-123',
-          requestBody: { role: 'reader', type: 'anyone' },
+          requestBody: expect.objectContaining({ role: 'reader', type: 'anyone' }),
         })
       );
     });

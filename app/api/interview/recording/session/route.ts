@@ -51,11 +51,14 @@ export async function POST(req: Request) {
 
     const candidateName = session?.candidate_name || 'candidate';
 
+    const origin = req.headers.get('origin') || (body?.origin as string | undefined) || undefined;
+
     const { uploadUrl, fileName } = await createDriveResumableUploadSession({
       interviewId: targetSessionId,
       candidateName,
       fileSize,
       mimeType,
+      origin,
     });
 
     return NextResponse.json({

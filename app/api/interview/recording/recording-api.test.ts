@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST as sessionHandler } from './session/route';
 import { POST as completeHandler } from './complete/route';
+import { POST as uploadHandler } from './upload/route';
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
@@ -31,12 +32,14 @@ vi.mock('@/lib/ai-interview/google-drive-recorder', () => ({
   getDriveCredentials: vi.fn(),
   createDriveResumableUploadSession: vi.fn(),
   finalizeDriveFile: vi.fn(),
+  uploadDriveFileDirectly: vi.fn(),
 }));
 
 import {
   getDriveCredentials,
   createDriveResumableUploadSession,
   finalizeDriveFile,
+  uploadDriveFileDirectly,
 } from '@/lib/ai-interview/google-drive-recorder';
 
 describe('Recording API Routes', () => {
@@ -133,6 +136,58 @@ describe('Recording API Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.fileId).toBe('drive-file-abc');
       expect(json.previewUrl).toBe('https://drive.google.com/file/d/drive-file-abc/preview');
+    });
+  });
+
+  describe('POST /api/interview/recording/upload (server fallback)', () => {
+    it('returns 400 if interviewId is missing', async () => {
+      const formData = new FormData();
+      formData.append('file', new Blob(['fake video content'], { type: 'video/webm' }), 'test.webm');
+
+      vi.mocked(getDriveCredentials).mockReturnValue({
+        client_email: 'service@example.com',
+        private_key: 'fake-key',
+      });
+
+      const req = new Request('http://localhost/api/interview/recording/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const res = await uploadHandler(req);
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toBe('interviewId is required');
+    });
+
+    it('uploads video buffer directly to Google Drive via service account', async () => {
+      vi.mocked(getDriveCredentials).mockReturnValue({
+        client_email: 'service@example.com',
+        private_key: 'fake-key',
+      });
+
+      vi.mocked(uploadDriveFileDirectly).mockResolvedValue({
+        fileId: 'drive-direct-file-789',
+        fileName: 'interview_alex_mercer.webm',
+        webViewLink: 'https://drive.google.com/file/d/drive-direct-file-789/view',
+        previewUrl: 'https://drive.google.com/file/d/drive-direct-file-789/preview',
+      });
+
+      const formData = new FormData();
+      formData.append('interviewId', 'session-123');
+      formData.append('file', new Blob(['video payload bytes'], { type: 'video/webm' }), 'rec.webm');
+
+      const req = new Request('http://localhost/api/interview/recording/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const res = await uploadHandler(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.fileId).toBe('drive-direct-file-789');
+      expect(json.webViewLink).toContain('drive-direct-file-789');
     });
   });
 });

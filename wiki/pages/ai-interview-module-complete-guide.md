@@ -357,5 +357,46 @@ To prevent multiple candidates or duplicate devices from accessing and taking th
        - If `myEnteredAt <= theirEnteredAt` (User 1 arrived earlier): User 1 **stays active** in the interview and broadcasts `{ type: 'candidate-presence-reject', rejectDeviceId: payload.deviceId, activeDeviceId: deviceId }`.
        - When User 2's device receives `candidate-presence-reject` targeting its `deviceId`: User 2 is immediately terminated with `"An active interview session is already in progress on another device."` and camera/mic tracks are stopped.
 
+---
 
+## 10. Full Video Recording Architecture & Continuous Google Drive Storage
+
+### 10.1 Guaranteed Recording in Every Situation
+Every interview generated and accessed via the link `/interview/[id]` is continuously recorded and securely uploaded directly to Google Drive across all termination and completion events:
+1. **Normal Question Completion**: When the candidate finishes all questions and submits the final answer, the recording is finalized, uploaded, and saved before transitioning to `completed`.
+2. **Session Timer Expiry**: When the overall session duration reaches zero, the interview executes `stopAndUploadFullVideo()` to upload the complete recording to Google Drive before closing media streams.
+3. **Proctoring Violations & 3rd Strike**: When the candidate reaches 3 warnings or triggers a fatal watchdog violation, the session uploads the full recording up to the termination point before transitioning to `terminated`.
+4. **Tab Exit & Close Protection**: `beforeunload` prompts prevent accidental browser closure during live interviews.
+
+### 10.2 Continuous Recording Across Admin Join & Leave Events
+When an admin joins or leaves an in-progress interview via WebRTC:
+- **Audio Mixing via Web Audio API**: Candidate microphone, screen audio, and incoming admin audio (`remoteStream`) are dynamically connected to a `MediaStreamAudioDestinationNode`.
+- **Dynamic Track Connection**: When an admin enters, their audio track is seamlessly blended into the ongoing recording. When the admin leaves, the remote source is detached without restarting or interrupting the active MediaRecorder.
+- **Canvas Compositing**: The video canvas captures the candidate's shared screen (which already reflects question UI, webcam feed, and admin video tile). If screen share is not active, the compositor records candidate camera with admin PiP in the top-right corner.
+
+### 10.3 3rd Warning On-Screen Display Protocol
+To ensure candidate fairness and full transparency:
+- On the **3rd warning** (Face, Object, or Unauthorized Voice), the warning banner is immediately rendered on the candidate's screen in crimson:
+  - Header: `Warning 3 / 3 — Session Terminated`
+  - Violation Description: Exact violation reason (e.g. `Candidate attention looks unstable`, `Cell phone detected`).
+  - Status Notice: `Three warnings reached. Interview terminated permanently.`
+  - Action Badge: `Terminating...`
+- The interview is paused immediately (`isInterviewPaused = true`).
+- A 4-second grace delay elapses to allow the candidate to clearly see and read the warning on screen.
+### 10.4 Multi-Device Cross-Origin Recording & Resilient Fallback Engine
+To guarantee interview recording across any candidate device (laptops, external IP addresses, local network devices, mobile devices):
+1. **Dynamic Client Origin Forwarding**:
+   - Resumable Google Drive upload sessions created via `POST /api/interview/recording/session` extract the caller's `Origin` header (`http://<device-ip>:3000` or production domain) and pass it to Google's resumable session initiation.
+   - Google Drive returns explicit `Access-Control-Allow-Origin: <origin>` and `Access-Control-Allow-Methods: PUT, OPTIONS`, eliminating browser CORS preflight blocks on non-localhost devices.
+2. **Resilient Server-Side Fallback Upload Endpoint (`POST /api/interview/recording/upload`)**:
+   - If a client device's browser blocks cross-origin requests to `googleapis.com` (e.g. ad-blockers, enterprise proxies, strict browser privacy shields), the recorder automatically catches the error.
+   - The recorder seamlessly falls back to streaming the video buffer directly to the local server endpoint `POST /api/interview/recording/upload`.
+   - The backend uses the service account client (`google.drive.files.create`) to upload the recording directly to Google Drive, finalize file sharing permissions, and log the `full_recording` event in `interview_events`.
+3. **Adaptive MIME Type Support**:
+   - Cross-browser safe MIME type negotiation probes `video/webm;codecs=vp8,opus`, `video/webm;codecs=vp9,opus`, `video/webm`, and `video/mp4`. If none match, it gracefully uses the browser's native default to prevent `NotSupportedError` crashes on Safari/iOS devices.
+4. **Reactive Screen Stream State**:
+   - React components mirror `screenStreamRef` with a reactive `useState<MediaStream | null>` to ensure that `useFullInterviewRecorder` immediately receives the live stream upon permission grant without requiring artificial re-renders.
+5. **Viewer-Only Access for Anyone with Link**:
+   - Google Drive permissions are automatically created as `role: 'reader'`, `type: 'anyone'`, and `allowFileDiscovery: false` (`supportsAllDrives: true`).
+   - Anyone possessing the link can immediately watch the full interview video in Google Drive or the embedded player without login or edit permissions.
 

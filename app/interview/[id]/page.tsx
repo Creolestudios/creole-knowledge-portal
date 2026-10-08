@@ -625,6 +625,7 @@ export default function InterviewEntryPage() {
   // anyway). The ref stays the source of truth for handlers/effects (the
   // proctoring watchdog, cleanup) that must always see the latest stream.
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
 
   const { remoteStream, leave: leaveWebRTC } = useWebRTC(
     interviewId,
@@ -663,7 +664,8 @@ export default function InterviewEntryPage() {
   } = useFullInterviewRecorder({
     interviewId,
     cameraStream: cameraStream || cameraPreview,
-    screenStream: screenStreamRef.current,
+    screenStream: screenStream || screenStreamRef.current,
+    remoteStream,
     enabled: !isAdmin,
   });
 
@@ -912,6 +914,7 @@ export default function InterviewEntryPage() {
     cameraStreamRef.current = null;
     screenStreamRef.current = null;
     setCameraStream(null);
+    setScreenStream(null);
   }, []);
 
   const handleAdminLeave = useCallback(() => {
@@ -948,6 +951,18 @@ export default function InterviewEntryPage() {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, [isAdmin, leaveWebRTC]);
 
+  // Prevent candidate from accidentally closing or refreshing tab during live interview
+  useEffect(() => {
+    if (stage !== 'interview' || isAdmin) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
+      return e.returnValue;
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [stage, isAdmin]);
+
   const notifyTermination = useCallback((reason: string) => {
     const counts = proctorTrackerRef.current.getWarningCounts();
     const payload = JSON.stringify({
@@ -970,11 +985,24 @@ export default function InterviewEntryPage() {
     }).catch((err) => console.error('[interview-entry] terminate notify failed:', err));
   }, [interviewId]);
 
-  const terminateInterview = useCallback((reason: string) => {
+  const terminateInterview = useCallback(async (reason: string) => {
     if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
     terminatedRef.current = true;
+    setIsInterviewPaused(true);
+    setTerminationReason(reason);
 
-    // Preserve candidate speech and audio recording for current question
+    // Immediately switch UI to terminated stage and stop local media tracks
+    setStageWithRef('terminated');
+    stopAllMedia();
+    notifyTermination(reason);
+
+    syncChannelRef.current?.send({
+      type: 'broadcast',
+      event: 'state-sync',
+      payload: { type: 'terminate', reason }
+    });
+
+    // In the background, preserve candidate speech and finalize question answers
     const spokenText = currentSpokenText.trim() || (interimText ? interimText.trim() : '');
     const curQ = questions[currentQuestion];
     if (curQ?.id && spokenText) {
@@ -985,21 +1013,16 @@ export default function InterviewEntryPage() {
         keepalive: true,
       }).catch(console.warn);
     }
-    void completeTurn(spokenText).catch(console.warn);
-    void stopAndUpload(spokenText).catch(console.warn);
-    void stopAndUploadFullVideo().catch(console.warn);
+    completeTurn(spokenText).catch(console.warn);
+    stopAndUpload(spokenText).catch(console.warn);
 
-    stopAllMedia();
-    notifyTermination(reason);
-    setTerminationReason(reason);
-    setStageWithRef('terminated');
-
-    syncChannelRef.current?.send({
-      type: 'broadcast',
-      event: 'state-sync',
-      payload: { type: 'terminate', reason }
-    });
-  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, stopAndUploadFullVideo, interviewId, completeTurn]);
+    // Securely stop and upload full video recording to Google Drive in the background
+    if (!isAdmin) {
+      stopAndUploadFullVideo().catch((err) => {
+        console.warn('[terminateInterview] stopAndUploadFullVideo error:', err);
+      });
+    }
+  }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, stopAndUploadFullVideo, interviewId, completeTurn, isAdmin]);
 
   const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
     const video = cameraVideoRef.current;
@@ -1130,9 +1153,14 @@ export default function InterviewEntryPage() {
         }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
       })();
 
-      if (trackerStatus.warningCount >= 3 && !terminatingRef.current) {
-        terminatingRef.current = true;
-        terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+      if (trackerStatus.warningCount >= 3) {
+        if (!terminatingRef.current) {
+          terminatingRef.current = true;
+          setIsInterviewPaused(true);
+          setTimeout(() => {
+            void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+          }, 1200);
+        }
       }
     }
   }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast, isAdmin]);
@@ -1300,6 +1328,7 @@ export default function InterviewEntryPage() {
         }
 
         screenStreamRef.current = screenStream;
+        setScreenStream(screenStream);
         setScreenGranted(true);
       } else {
         setScreenGranted(true);
@@ -1707,7 +1736,10 @@ export default function InterviewEntryPage() {
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
-              terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+              setIsInterviewPaused(true);
+              setTimeout(() => {
+                void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+              }, 1200);
             }
           }
         }
@@ -1933,7 +1965,10 @@ export default function InterviewEntryPage() {
           if (trackerStatus.warningCount >= 3) {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
-              terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+              setIsInterviewPaused(true);
+              setTimeout(() => {
+                void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+              }, 1200);
             }
           }
 
@@ -1972,6 +2007,7 @@ export default function InterviewEntryPage() {
   }, [stage, isAdmin, bypassProctoring, captureEvidenceSnapshot, interviewId, terminateInterview]);
 
   const handleResumeInterview = useCallback(() => {
+    if (isAdmin) return; // Only candidates have the option to resume
     if (autoResumeTimerRef.current) {
       clearInterval(autoResumeTimerRef.current);
       autoResumeTimerRef.current = null;
@@ -1983,23 +2019,21 @@ export default function InterviewEntryPage() {
     proctorTrackerRef.current.clearActiveViolations();
     missingFramesRef.current.clear();
     consecutiveDetectedFramesRef.current.clear();
-    if (!isAdmin) {
-      try {
-        syncChannelRef.current?.send({
-          type: 'broadcast',
-          event: 'state-sync',
-          payload: {
-            type: 'resume-interview',
-            ts: Date.now(),
-          },
-        });
-      } catch { }
-    }
+    try {
+      syncChannelRef.current?.send({
+        type: 'broadcast',
+        event: 'state-sync',
+        payload: {
+          type: 'resume-interview',
+          ts: Date.now(),
+        },
+      });
+    } catch { }
   }, [isAdmin]);
 
-  // ── Auto-Resume Interval: 30-second countdown for warnings 1 & 2 ──
+  // ── Auto-Resume Interval: 30-second countdown for warnings 1 & 2 (Candidate only) ──
   useEffect(() => {
-    if (!warningToast.show || warningToast.count >= 3 || !isInterviewPaused) {
+    if (isAdmin || !warningToast.show || warningToast.count >= 3 || !isInterviewPaused) {
       if (autoResumeTimerRef.current) {
         clearInterval(autoResumeTimerRef.current);
         autoResumeTimerRef.current = null;
@@ -2040,11 +2074,21 @@ export default function InterviewEntryPage() {
         if (remaining <= 1) {
           window.clearInterval(timer);
           completedRef.current = true;
-          stopAllMedia();
           if (!isAdmin) {
             fetch(`/api/interview/${interviewId}/score`, { method: 'POST' }).catch(() => { });
+            void (async () => {
+              try {
+                await stopAndUploadFullVideo();
+              } catch (err) {
+                console.warn('[timer-expiry] stopAndUploadFullVideo error:', err);
+              }
+              stopAllMedia();
+              setStageWithRef('completed');
+            })();
+          } else {
+            stopAllMedia();
+            setStageWithRef('completed');
           }
-          setStageWithRef('completed');
           return 0;
         }
         return durationSecondsRef.current;
@@ -2394,7 +2438,13 @@ export default function InterviewEntryPage() {
                   <p className="text-sm font-semibold">{warningToast.reason}</p>
                   {warningToast.count < 3 ? (
                     <p className="text-xs text-amber-100/90 mt-0.5">
-                      Auto-resumes in <span className="font-mono font-bold text-white">{autoResumeCountdown}s</span> if not clicked
+                      {isAdmin ? (
+                        'Candidate session paused. Awaiting candidate action.'
+                      ) : (
+                        <>
+                          Auto-resumes in <span className="font-mono font-bold text-white">{autoResumeCountdown}s</span> if not clicked
+                        </>
+                      )}
                     </p>
                   ) : (
                     <p className="text-xs text-red-100/90 mt-0.5">
@@ -2404,16 +2454,23 @@ export default function InterviewEntryPage() {
                 </div>
               </div>
               {warningToast.count < 3 ? (
-                <button
-                  type="button"
-                  onClick={handleResumeInterview}
-                  className="text-white font-bold text-xs bg-amber-600 hover:bg-amber-700 border border-amber-300/40 rounded-xl px-4 py-2 transition-all shadow-md flex-shrink-0 cursor-pointer flex items-center gap-1.5"
-                >
-                  <span>Resume Interview</span>
-                  <span className="bg-amber-700/60 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
-                    {autoResumeCountdown}s
-                  </span>
-                </button>
+                isAdmin ? (
+                  <div className="bg-amber-600/80 text-white font-semibold text-xs px-3 py-2 rounded-xl border border-amber-300/30 flex-shrink-0 flex items-center gap-1.5 shadow-xs">
+                    <Clock className="w-3.5 h-3.5 animate-pulse" />
+                    <span>Candidate Paused</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResumeInterview}
+                    className="text-white font-bold text-xs bg-amber-600 hover:bg-amber-700 border border-amber-300/40 rounded-xl px-4 py-2 transition-all shadow-md flex-shrink-0 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>Resume Interview</span>
+                    <span className="bg-amber-700/60 text-[10px] px-1.5 py-0.5 rounded-md font-mono">
+                      {autoResumeCountdown}s
+                    </span>
+                  </button>
+                )
               ) : (
                 <div className="bg-red-700 text-white font-bold text-xs px-3 py-1.5 rounded-xl border border-red-400/40 flex-shrink-0">
                   Terminating...
@@ -2671,12 +2728,12 @@ export default function InterviewEntryPage() {
             {isAdmin && (
               <div
                 id="candidate-warning-situation"
-                className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3"
+                className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm space-y-2"
               >
-                <div className="flex items-center justify-between border-b border-zinc-100 pb-2.5">
-                  <div className="flex items-center gap-2">
+                <div className="flex items-center justify-between border-b border-zinc-100 pb-1.5">
+                  <div className="flex items-center gap-1.5">
                     <ShieldAlert
-                      className={`w-4 h-4 ${
+                      className={`w-3.5 h-3.5 ${
                         candidateWarnings.length === 0
                           ? 'text-emerald-500'
                           : candidateWarnings.length === 1
@@ -2684,12 +2741,12 @@ export default function InterviewEntryPage() {
                           : 'text-red-500'
                       }`}
                     />
-                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-700">
                       Candidate Warning Status
                     </span>
                   </div>
                   <span
-                    className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                       candidateWarnings.length === 0
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                         : candidateWarnings.length === 1
@@ -2702,24 +2759,24 @@ export default function InterviewEntryPage() {
                 </div>
 
                 {/* 3-slot Strike Tracker */}
-                <div className="grid grid-cols-3 gap-2 py-1">
+                <div className="grid grid-cols-3 gap-1.5">
                   {[1, 2, 3].map((slot) => {
                     const warn = candidateWarnings.find((w) => w.count === slot) || candidateWarnings[slot - 1];
                     const isFaced = !!warn;
                     return (
                       <div
                         key={slot}
-                        className={`p-2 rounded-xl border text-center transition-all ${
+                        className={`py-1 px-1.5 rounded-lg border text-center transition-all ${
                           isFaced
-                            ? 'bg-amber-50/80 border-amber-300 text-amber-900 shadow-sm'
+                            ? 'bg-amber-50/80 border-amber-300 text-amber-900 shadow-xs'
                             : 'bg-zinc-50 border-zinc-200 text-zinc-400'
                         }`}
                       >
-                        <div className="text-[10px] uppercase font-bold tracking-wider">Strike {slot}</div>
-                        <div className="text-xs font-semibold mt-0.5">
+                        <div className="text-[9px] uppercase font-bold tracking-wider leading-tight">Strike {slot}</div>
+                        <div className="text-[10px] font-semibold mt-0.5">
                           {isFaced ? (
-                            <span className="text-amber-700 flex items-center justify-center gap-1">
-                              <AlertTriangle className="w-3 h-3 text-amber-600 inline shrink-0" />
+                            <span className="text-amber-700 flex items-center justify-center gap-0.5">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-600 inline shrink-0" />
                               Faced
                             </span>
                           ) : (
@@ -2733,45 +2790,45 @@ export default function InterviewEntryPage() {
 
                 {/* Warning Situation & List */}
                 {candidateWarnings.length === 0 ? (
-                  <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-100 text-xs text-emerald-800 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div className="py-1.5 px-2.5 rounded-lg bg-emerald-50/60 border border-emerald-100 text-[11px] text-emerald-800 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                     <span>No warnings faced yet. Candidate is compliant.</span>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider flex items-center justify-between">
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider flex items-center justify-between">
                       <span>Warnings Faced ({candidateWarnings.length})</span>
-                      <span className="text-[10px] text-zinc-400 font-normal">
-                        Max 3 before termination
+                      <span className="text-[9px] text-zinc-400 font-normal">
+                        Max 3 before auto-terminate
                       </span>
                     </div>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                    <div className="space-y-1.5 max-h-32 overflow-y-auto pr-0.5">
                       {candidateWarnings.map((warn, index) => (
                         <div
                           key={warn.id || index}
-                          className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200 text-xs text-zinc-800 space-y-1"
+                          className="p-2 rounded-lg bg-amber-50/60 border border-amber-200 text-[11px] text-zinc-800 space-y-0.5"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-amber-900 flex items-center gap-1.5">
-                              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span className="font-bold text-amber-900 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
                               Strike #{warn.count || index + 1}
-                              <span className="font-semibold text-zinc-600 capitalize text-[11px]">
+                              <span className="font-semibold text-zinc-600 capitalize text-[10px]">
                                 • {(warn.category || 'Warning').replaceAll('_', ' ')}
                               </span>
                             </span>
-                            <span className="text-[10px] text-zinc-500 tabular-nums font-medium">
+                            <span className="text-[9px] text-zinc-500 tabular-nums font-medium">
                               {warn.ts ? new Date(warn.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
                             </span>
                           </div>
-                          <p className="text-zinc-700 text-[11px] leading-relaxed pl-5 font-medium">
+                          <p className="text-zinc-700 text-[10px] leading-snug pl-4 font-medium">
                             {warn.reason}
                           </p>
                         </div>
                       ))}
                     </div>
                     {candidateWarnings.length === 2 && (
-                      <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 font-semibold flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                      <div className="py-1 px-2 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-800 font-semibold flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-red-600 shrink-0" />
                         <span>Final Warning active! Next violation causes auto-termination.</span>
                       </div>
                     )}

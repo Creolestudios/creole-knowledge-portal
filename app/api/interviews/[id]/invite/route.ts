@@ -62,9 +62,11 @@ export async function POST(
       })
       .eq('id', id);
 
+    const reqHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
+    const reqProto = req.headers.get('x-forwarded-proto') || (reqHost?.includes('localhost') ? 'http' : 'https');
     let baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+      (reqHost ? `${reqProto}://${reqHost}` : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'));
     if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
       baseUrl = `http://${baseUrl}`;
     }

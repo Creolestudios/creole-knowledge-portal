@@ -213,6 +213,7 @@ describe('GET /api/admin/ai-interviews', () => {
         status: 'active',
         expires_at: '2026-09-25T00:00:00.000Z',
         created_at: '2026-09-20T00:00:00.000Z',
+        recording_url: null,
       },
       {
         id: 'i2',
@@ -222,6 +223,7 @@ describe('GET /api/admin/ai-interviews', () => {
         status: 'draft',
         expires_at: null,
         created_at: '2026-09-19T00:00:00.000Z',
+        recording_url: null,
       },
     ]);
   });

@@ -6,6 +6,7 @@ export interface UseFullInterviewRecorderOptions {
   interviewId: string;
   cameraStream: MediaStream | null;
   screenStream: MediaStream | null;
+  remoteStream?: MediaStream | null;
   enabled?: boolean;
 }
 
@@ -33,22 +34,24 @@ function pickSupportedMimeType(): string {
       return mime;
     }
   }
-  return 'video/webm';
+  return '';
 }
 
 /**
  * useFullInterviewRecorder
  *
  * Implements the full video recording architecture:
- * 1. Off-screen canvas compositor (1280x720 @ 15fps) combining Screen (full) + Camera (PiP) + Audio.
- * 2. MediaRecorder collecting the complete continuous video in browser memory.
- * 3. Single whole-video direct upload to Google Drive via resumable upload session,
+ * 1. Off-screen canvas compositor (1280x720 @ 15fps) combining Screen (full) + Camera + Remote Admin.
+ * 2. Web Audio API mixer blending candidate mic, screen audio, and dynamic admin audio.
+ * 3. MediaRecorder collecting the complete continuous video in browser memory.
+ * 4. Single whole-video direct upload to Google Drive via resumable upload session,
  *    bypassing Next.js 4.5MB payload limits with 0%-100% progress tracking.
  */
 export function useFullInterviewRecorder({
   interviewId,
   cameraStream,
   screenStream,
+  remoteStream,
   enabled = true,
 }: UseFullInterviewRecorderOptions) {
   const [isRecording, setIsRecording] = useState(false);
@@ -62,9 +65,15 @@ export function useFullInterviewRecorder({
   const hiddenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const screenVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
   const compositeStreamRef = useRef<MediaStream | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const isRecordingRef = useRef(false);
+
+  // Web Audio mixing refs
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const remoteAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
 
   // Setup offscreen canvas and video elements for compositing
   useEffect(() => {
@@ -93,10 +102,26 @@ export function useFullInterviewRecorder({
       cameraVideoRef.current = v;
     }
 
+    if (!remoteVideoRef.current) {
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.autoplay = true;
+      remoteVideoRef.current = v;
+    }
+
     return () => {
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
         animFrameRef.current = null;
+      }
+      if (audioContextRef.current) {
+        try {
+          void audioContextRef.current.close();
+        } catch {
+          // ignore
+        }
+        audioContextRef.current = null;
       }
     };
   }, []);
@@ -128,6 +153,50 @@ export function useFullInterviewRecorder({
     }
   }, [cameraStream]);
 
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      if (remoteVideoRef.current.srcObject !== remoteStream) {
+        remoteVideoRef.current.srcObject = remoteStream;
+        try {
+          void remoteVideoRef.current.play()?.catch(() => {});
+        } catch {
+          // Ignore JSDOM synchronous play not implemented
+        }
+      }
+    }
+  }, [remoteStream]);
+
+  // Dynamically attach or detach remote admin audio when admin connects or leaves
+  useEffect(() => {
+    const audioCtx = audioContextRef.current;
+    const destination = audioDestinationRef.current;
+
+    // Disconnect previous remote source if any
+    if (remoteAudioSourceRef.current) {
+      try {
+        remoteAudioSourceRef.current.disconnect();
+      } catch {
+        // ignore
+      }
+      remoteAudioSourceRef.current = null;
+    }
+
+    if (!audioCtx || !destination || !remoteStream) return;
+
+    if (remoteStream.getAudioTracks().length > 0) {
+      try {
+        if (audioCtx.state === 'suspended') {
+          void audioCtx.resume();
+        }
+        const source = audioCtx.createMediaStreamSource(remoteStream);
+        source.connect(destination);
+        remoteAudioSourceRef.current = source;
+      } catch (err) {
+        console.warn('[useFullInterviewRecorder] Failed to dynamically connect remote audio:', err);
+      }
+    }
+  }, [remoteStream]);
+
   /**
    * Starts the offscreen canvas render loop (15 FPS target)
    */
@@ -144,6 +213,7 @@ export function useFullInterviewRecorder({
 
         const screenVid = screenVideoRef.current;
         const camVid = cameraVideoRef.current;
+        const remoteVid = remoteVideoRef.current;
 
         // Clean single-screen recording:
         // Prioritize the interview screen share (which already contains the candidate webcam and question UI)
@@ -152,6 +222,11 @@ export function useFullInterviewRecorder({
         } else if (camVid && camVid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           // Fallback to candidate camera full-screen if no screen share is present
           ctx.drawImage(camVid, 0, 0, canvas.width, canvas.height);
+          if (remoteVid && remoteVid.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+            const pipW = Math.round(canvas.width * 0.25);
+            const pipH = Math.round(canvas.height * 0.25);
+            ctx.drawImage(remoteVid, canvas.width - pipW - 16, 16, pipW, pipH);
+          }
         } else {
           // Placeholder dark slate background
           ctx.fillStyle = '#0f172a';
@@ -185,28 +260,88 @@ export function useFullInterviewRecorder({
       const canvas = hiddenCanvasRef.current;
       if (!canvas) return;
 
-      // Capture 15fps composite video stream
-      const stream = (canvas as any).captureStream ? (canvas as any).captureStream(15) : null;
+      // Capture 15fps composite video stream with cross-browser fallback
+      const captureStreamFn =
+        (canvas as any).captureStream || (canvas as any).mozCaptureStream;
+      const stream = captureStreamFn ? captureStreamFn.call(canvas, 15) : null;
       if (!stream) {
         console.warn('[useFullInterviewRecorder] canvas.captureStream not supported');
         return;
       }
 
-      // Attach audio tracks (candidate mic + screen audio)
-      const micAudioTracks = cameraStream?.getAudioTracks() ?? [];
-      const screenAudioTracks = screenStream?.getAudioTracks() ?? [];
-      [...micAudioTracks, ...screenAudioTracks].forEach((track) => {
-        stream.addTrack(track);
-      });
+      // Mix audio via AudioContext so candidate mic, screen audio, and dynamic admin audio blend seamlessly
+      let mixedAudioTrack: MediaStreamTrack | null = null;
+      try {
+        const AudioContextClass =
+          typeof window !== 'undefined'
+            ? window.AudioContext || (window as any).webkitAudioContext
+            : null;
+        if (AudioContextClass) {
+          const audioCtx = new AudioContextClass();
+          if (audioCtx.state === 'suspended') {
+            void audioCtx.resume();
+          }
+          audioContextRef.current = audioCtx;
+          const destination = audioCtx.createMediaStreamDestination();
+          audioDestinationRef.current = destination;
+
+          if (cameraStream && cameraStream.getAudioTracks().length > 0) {
+            try {
+              const micSource = audioCtx.createMediaStreamSource(cameraStream);
+              micSource.connect(destination);
+            } catch (e) {
+              console.warn('[useFullInterviewRecorder] Failed to connect camera audio:', e);
+            }
+          }
+
+          if (screenStream && screenStream.getAudioTracks().length > 0) {
+            try {
+              const screenSource = audioCtx.createMediaStreamSource(screenStream);
+              screenSource.connect(destination);
+            } catch (e) {
+              console.warn('[useFullInterviewRecorder] Failed to connect screen audio:', e);
+            }
+          }
+
+          if (remoteStream && remoteStream.getAudioTracks().length > 0) {
+            try {
+              const remoteSource = audioCtx.createMediaStreamSource(remoteStream);
+              remoteSource.connect(destination);
+              remoteAudioSourceRef.current = remoteSource;
+            } catch (e) {
+              console.warn('[useFullInterviewRecorder] Failed to connect remote audio:', e);
+            }
+          }
+
+          mixedAudioTrack = destination.stream.getAudioTracks()[0] || null;
+        }
+      } catch (err) {
+        console.warn('[useFullInterviewRecorder] Web Audio API initialization failed, falling back:', err);
+      }
+
+      if (mixedAudioTrack) {
+        stream.addTrack(mixedAudioTrack);
+      } else {
+        // Fallback: direct track attachment
+        const micAudioTracks = cameraStream?.getAudioTracks() ?? [];
+        const screenAudioTracks = screenStream?.getAudioTracks() ?? [];
+        const remoteAudioTracks = remoteStream?.getAudioTracks() ?? [];
+        [...micAudioTracks, ...screenAudioTracks, ...remoteAudioTracks].forEach((track) => {
+          stream.addTrack(track);
+        });
+      }
 
       compositeStreamRef.current = stream;
       chunksRef.current = [];
 
       const mimeType = pickSupportedMimeType();
-      const recorder = new MediaRecorder(stream, {
-        mimeType,
+      const recorderOptions: MediaRecorderOptions = {
         videoBitsPerSecond: 500_000, // 500 kbps for optimal compression & minimal RAM
-      });
+      };
+      if (mimeType) {
+        recorderOptions.mimeType = mimeType;
+      }
+      const recorder = new MediaRecorder(stream, recorderOptions);
 
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
@@ -224,7 +359,7 @@ export function useFullInterviewRecorder({
     } catch (err) {
       console.error('[useFullInterviewRecorder] Failed to start recording:', err);
     }
-  }, [enabled, cameraStream, screenStream, startCompositorLoop]);
+  }, [enabled, cameraStream, screenStream, remoteStream, startCompositorLoop]);
 
   /**
    * Stops recording and uploads the WHOLE single video directly to Google Drive
@@ -262,6 +397,8 @@ export function useFullInterviewRecorder({
           setUploadStatusText('Requesting secure Google Drive upload session...');
           setUploadProgress(5);
 
+          const clientOrigin = typeof window !== 'undefined' ? window.location.origin : undefined;
+
           // 1. Request Google Drive Resumable Upload Session from backend
           const sessionRes = await fetch('/api/interview/recording/session', {
             method: 'POST',
@@ -270,67 +407,103 @@ export function useFullInterviewRecorder({
               interviewId,
               fileSize: fullVideoBlob.size,
               mimeType,
+              origin: clientOrigin,
             }),
           });
 
           const sessionJson = await sessionRes.json().catch(() => null);
 
-          if (!sessionRes.ok || !sessionJson) {
-            const errMsg = sessionJson?.error || 'Failed to initialize Drive session';
-            console.warn('[useFullInterviewRecorder]', errMsg);
-            setIsUploading(false);
-            resolve({ success: false, error: errMsg });
-            return;
-          }
-
-          if (sessionJson.notConfigured) {
+          if (sessionJson?.notConfigured) {
             console.info('[useFullInterviewRecorder] Drive credentials not configured. Skipping upload.');
             setIsUploading(false);
             resolve({ success: true, error: 'Drive not configured' });
             return;
           }
 
-          const { uploadUrl, fileName } = sessionJson;
+          const uploadUrl = sessionJson?.uploadUrl;
+          const fileName = sessionJson?.fileName || `interview_${interviewId}.webm`;
 
-          setUploadStatusText('Uploading full interview video to Google Drive...');
-          setUploadProgress(10);
+          let fileId: string | undefined;
 
-          // 2. Direct upload WHOLE video Blob to Google Drive with real-time progress
-          const uploadPromise = new Promise<{ fileId?: string }>((uploadResolve, uploadReject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open('PUT', uploadUrl, true);
-            xhr.setRequestHeader('Content-Type', mimeType);
+          if (uploadUrl) {
+            try {
+              setUploadStatusText('Uploading full interview video to Google Drive...');
+              setUploadProgress(10);
 
-            xhr.upload.onprogress = (event) => {
-              if (event.lengthComputable && event.total > 0) {
-                // Map progress from 10% to 90%
-                const percent = Math.round(10 + (event.loaded / event.total) * 80);
-                setUploadProgress(percent);
-                setUploadStatusText(`Uploading full interview video to Google Drive... ${percent}%`);
-              }
-            };
+              // 2. Direct upload WHOLE video Blob to Google Drive with real-time progress
+              const directResult = await new Promise<{ fileId?: string }>((uploadResolve, uploadReject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('PUT', uploadUrl, true);
+                xhr.setRequestHeader('Content-Type', mimeType);
 
-            xhr.onload = () => {
-              if (xhr.status === 200 || xhr.status === 201) {
-                try {
-                  const driveFile = JSON.parse(xhr.responseText);
-                  uploadResolve({ fileId: driveFile.id });
-                } catch {
-                  uploadResolve({});
-                }
-              } else {
-                uploadReject(new Error(`Drive direct upload returned HTTP ${xhr.status}: ${xhr.responseText}`));
-              }
-            };
+                xhr.upload.onprogress = (event) => {
+                  if (event.lengthComputable && event.total > 0) {
+                    // Map progress from 10% to 90%
+                    const percent = Math.round(10 + (event.loaded / event.total) * 80);
+                    setUploadProgress(percent);
+                    setUploadStatusText(`Uploading full interview video to Google Drive... ${percent}%`);
+                  }
+                };
 
-            xhr.onerror = () => {
-              uploadReject(new Error('Network error occurred during Google Drive upload'));
-            };
+                xhr.onload = () => {
+                  if (xhr.status === 200 || xhr.status === 201) {
+                    try {
+                      const driveFile = JSON.parse(xhr.responseText);
+                      uploadResolve({ fileId: driveFile.id });
+                    } catch {
+                      uploadResolve({});
+                    }
+                  } else {
+                    uploadReject(new Error(`Drive direct upload returned HTTP ${xhr.status}: ${xhr.responseText}`));
+                  }
+                };
 
-            xhr.send(fullVideoBlob);
-          });
+                xhr.onerror = () => {
+                  uploadReject(new Error('CORS or network error occurred during Google Drive direct upload'));
+                };
 
-          const { fileId } = await uploadPromise;
+                xhr.send(fullVideoBlob);
+              });
+
+              fileId = directResult.fileId;
+            } catch (directUploadErr) {
+              console.warn('[useFullInterviewRecorder] Direct upload encountered error, using server fallback:', directUploadErr);
+            }
+          }
+
+          // Failsafe fallback: when direct upload is blocked by browser CORS or session init was rejected, stream via server
+          if (!fileId) {
+            setUploadStatusText('Uploading interview video securely via interview server...');
+            setUploadProgress(25);
+
+            const formData = new FormData();
+            formData.append('interviewId', interviewId);
+            formData.append('file', fullVideoBlob, fileName);
+
+            const fallbackRes = await fetch('/api/interview/recording/upload', {
+              method: 'POST',
+              body: formData,
+            });
+
+            const fallbackJson = await fallbackRes.json().catch(() => null);
+            if (!fallbackRes.ok || !fallbackJson?.ok) {
+              const fallbackErrMsg = fallbackJson?.error || 'Server fallback upload failed';
+              throw new Error(fallbackErrMsg);
+            }
+
+            chunksRef.current = [];
+            setUploadProgress(100);
+            setUploadStatusText('Interview recording secured successfully!');
+            setIsUploading(false);
+
+            resolve({
+              success: true,
+              fileId: fallbackJson.fileId,
+              webViewLink: fallbackJson.webViewLink,
+              previewUrl: fallbackJson.previewUrl,
+            });
+            return;
+          }
 
           // 3. Drop in-memory blobs immediately for instant garbage collection (OOM prevention)
           chunksRef.current = [];
@@ -374,6 +547,13 @@ export function useFullInterviewRecorder({
       };
 
       try {
+        if (recorder.state === 'recording') {
+          try {
+            recorder.requestData();
+          } catch {
+            // ignore
+          }
+        }
         recorder.stop();
       } catch (err) {
         console.warn('[useFullInterviewRecorder] recorder.stop exception:', err);

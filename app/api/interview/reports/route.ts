@@ -30,12 +30,13 @@ export async function GET() {
 
     const sessionIds = sessions.map((s) => s.id);
 
-    // Fetch reports, invite statuses, violation events, and warning events in parallel
+    // Fetch reports, invite statuses, violation events, warning events, and recording events in parallel
     const [
       reportMap,
       { data: invites },
       { data: violationEvents },
       { data: warningEvents },
+      { data: recordingEvents },
     ] = await Promise.all([
       getInterviewReports(sessionIds),
       supabaseAdmin
@@ -55,6 +56,13 @@ export async function GET() {
         .select('session_id, category, severity, event_type')
         .in('session_id', sessionIds)
         .eq('severity', 'warning'),
+      // Recording events for full video link in Google Drive
+      supabaseAdmin
+        .from('interview_events')
+        .select('session_id, metadata, meta')
+        .in('session_id', sessionIds)
+        .eq('event_type', 'full_recording')
+        .order('created_at', { ascending: false }),
     ]);
 
     // Build invite status map (session_id → invite status)
@@ -87,6 +95,27 @@ export async function GET() {
       if (cat === 'unauthorized_voice' || cat === 'bg_voice' || cat === 'background_voice') counts.voice++;
       else if (['gaze_away', 'no_face', 'multi_face', 'reading_suspected'].includes(cat)) counts.face++;
       else if (['object_detected', 'cell_phone', 'notes_detected'].includes(cat)) counts.object++;
+    }
+
+    // Build recording map (session_id → recording links in Google Drive)
+    const recordingMap = new Map<string, { webViewLink: string; previewUrl: string; fileId: string; fileName?: string }>();
+    for (const ev of (recordingEvents || [])) {
+      if (!recordingMap.has(ev.session_id)) {
+        const meta = (ev.metadata || ev.meta) as Record<string, unknown> | undefined;
+        if (meta?.fileId || meta?.webViewLink) {
+          const fileId = String(meta.fileId || '');
+          const webViewLink = (meta.webViewLink as string) || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : '');
+          const previewUrl = (meta.previewUrl as string) || (fileId ? `https://drive.google.com/file/d/${fileId}/preview` : '');
+          if (webViewLink) {
+            recordingMap.set(ev.session_id, {
+              fileId,
+              webViewLink,
+              previewUrl,
+              fileName: meta.fileName as string | undefined,
+            });
+          }
+        }
+      }
     }
 
     // Auto-trigger scoring in background for unscored terminal sessions
@@ -194,6 +223,11 @@ export async function GET() {
         objectWarnings,
         // hasReport: true if report data exists OR session is terminated (shows 0/no score and violation report)
         hasReport: report !== null || isTerminated,
+        // Google Drive Full Video recording link
+        recordingLink: recordingMap.get(s.id)?.webViewLink || null,
+        recordingPreviewUrl: recordingMap.get(s.id)?.previewUrl || null,
+        recordingFileId: recordingMap.get(s.id)?.fileId || null,
+        hasRecording: recordingMap.has(s.id),
       };
     });
 

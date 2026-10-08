@@ -273,6 +273,7 @@ export function ReportDetailView({
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'hr' | 'technical' | 'transcript'>('hr');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [copiedVideoLink, setCopiedVideoLink] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportGenError, setReportGenError] = useState<string | null>(null);
 
@@ -644,16 +645,33 @@ export function ReportDetailView({
                   </p>
                 </div>
               </div>
-              <a
-                id="open-drive-video-link"
-                href={recording.webViewLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-xl transition-colors shadow-sm self-start sm:self-auto cursor-pointer"
-              >
-                <span>Open in Google Drive</span>
-                <span className="text-xs">↗</span>
-              </a>
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(recording.webViewLink);
+                      setCopiedVideoLink(true);
+                      setTimeout(() => setCopiedVideoLink(false), 2000);
+                    } catch {}
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#1f1f1f] dark:hover:bg-[#333] text-zinc-700 dark:text-zinc-200 text-xs font-bold rounded-xl transition-colors border border-zinc-200 dark:border-zinc-700 cursor-pointer"
+                >
+                  {copiedVideoLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedVideoLink ? 'Copied Link' : 'Copy Video Link'}</span>
+                </button>
+                <a
+                  id="open-drive-video-link"
+                  href={recording.webViewLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 text-xs font-black rounded-xl transition-colors shadow-sm cursor-pointer uppercase tracking-wider"
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Open in Google Drive</span>
+                  <span className="text-xs">↗</span>
+                </a>
+              </div>
             </div>
 
             {/* Embedded Drive Preview Player */}
@@ -665,6 +683,15 @@ export function ReportDetailView({
                 allow="autoplay; encrypted-media"
                 allowFullScreen
               />
+            </div>
+          </div>
+        )}
+
+        {!recording && (isCompleted || isTerminated) && (
+          <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-2xl border border-dashed border-zinc-200 dark:border-[#4a4a4a] p-4 flex items-center justify-between text-zinc-500 text-xs">
+            <div className="flex items-center gap-2.5">
+              <Video className="w-4 h-4 text-zinc-400" />
+              <span>Full interview recording not attached or upload pending for this session.</span>
             </div>
           </div>
         )}

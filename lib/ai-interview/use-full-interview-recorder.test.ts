@@ -40,4 +40,35 @@ describe('useFullInterviewRecorder', () => {
     expect(res.success).toBe(false);
     expect(res.error).toBe('No active recorder');
   });
+
+  it('accepts remoteStream and updates dynamically when admin joins and leaves', () => {
+    const mockAudioTrack = { kind: 'audio', stop: vi.fn(), enabled: true };
+    const mockAdminStream = {
+      getAudioTracks: () => [mockAudioTrack],
+      getVideoTracks: () => [],
+    } as unknown as MediaStream;
+
+    const { rerender } = renderHook(
+      ({ remoteStream }) =>
+        useFullInterviewRecorder({
+          interviewId: 'test-interview-1',
+          cameraStream: null,
+          screenStream: null,
+          remoteStream,
+        }),
+      {
+        initialProps: { remoteStream: null as MediaStream | null },
+      }
+    );
+
+    // Admin joins
+    expect(() => {
+      rerender({ remoteStream: mockAdminStream });
+    }).not.toThrow();
+
+    // Admin leaves
+    expect(() => {
+      rerender({ remoteStream: null });
+    }).not.toThrow();
+  });
 });

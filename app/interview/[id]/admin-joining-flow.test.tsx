@@ -128,6 +128,9 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
     // Admin displays exact warning toast matching user screen
     expect(await screen.findByText('Warning 2 / 3')).toBeInTheDocument();
     expect(screen.getAllByText('Unauthorized object detected: Cell phone').length).toBeGreaterThanOrEqual(1);
+    // Admin should not have option to resume timer
+    expect(screen.queryByRole('button', { name: /resume interview/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Candidate Paused')).toBeInTheDocument();
   });
 
   it('synchronizes candidate completion immediately onto admin screen with Return to Dashboard button', async () => {

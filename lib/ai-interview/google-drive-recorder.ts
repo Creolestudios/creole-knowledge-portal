@@ -110,6 +110,7 @@ export async function createDriveResumableUploadSession(params: {
   candidateName?: string;
   mimeType?: string;
   fileSize?: number;
+  origin?: string;
 }): Promise<{ uploadUrl: string; fileName: string }> {
   const credentials = getDriveCredentials();
   if (!credentials) {
@@ -152,15 +153,30 @@ export async function createDriveResumableUploadSession(params: {
     'X-Upload-Content-Type': mimeType,
   };
 
+  if (params.origin) {
+    headers['Origin'] = params.origin;
+  }
+
   if (typeof params.fileSize === 'number' && Number.isFinite(params.fileSize) && params.fileSize > 0) {
     headers['X-Upload-Content-Length'] = params.fileSize.toString();
   }
 
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
+  let res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
     method: 'POST',
     headers,
     body: JSON.stringify(metadata),
   });
+
+  // If Google Drive rejected the Origin header (e.g. localhost or non-registered origin returned 400),
+  // retry immediately without the Origin header so session creation never fails.
+  if (!res.ok && headers['Origin']) {
+    delete headers['Origin'];
+    res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(metadata),
+    });
+  }
 
   if (!res.ok) {
     const errorText = await res.text().catch(() => '');
@@ -176,6 +192,67 @@ export async function createDriveResumableUploadSession(params: {
 }
 
 /**
+ * Directly streams a video file buffer to Google Drive via server-side service account client.
+ * Serves as an unblockable fallback when client-side direct upload encounters CORS or network errors.
+ */
+export async function uploadDriveFileDirectly(params: {
+  interviewId: string;
+  candidateName?: string;
+  mimeType?: string;
+  buffer: Buffer;
+}): Promise<{ fileId: string; fileName: string; webViewLink: string; previewUrl: string }> {
+  const credentials = getDriveCredentials();
+  if (!credentials) {
+    throw new Error('Google Drive service account credentials are missing.');
+  }
+
+  const drive = getDriveClient();
+  const safeName = (params.candidateName || 'candidate')
+    .replace(/[^a-zA-Z0-9_-]/g, '_')
+    .toLowerCase();
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const fileName = `interview_${safeName}_${params.interviewId.slice(0, 8)}_${dateStr}.webm`;
+  const mimeType = params.mimeType || 'video/webm';
+  const folderId = getRecordingFolderId();
+
+  const requestBody: Record<string, unknown> = {
+    name: fileName,
+    mimeType,
+    description: `Full AI Interview video recording for session ${params.interviewId}`,
+  };
+
+  if (folderId) {
+    requestBody.parents = [folderId];
+  }
+
+  const { Readable } = await import('stream');
+  const stream = Readable.from(params.buffer);
+
+  const res = await drive.files.create({
+    requestBody,
+    media: {
+      mimeType,
+      body: stream,
+    },
+    fields: 'id, name, webViewLink',
+    supportsAllDrives: true,
+  });
+
+  const fileId = res.data.id;
+  if (!fileId) {
+    throw new Error('Google Drive did not return a file ID.');
+  }
+
+  const finalized = await finalizeDriveFile(fileId);
+  return {
+    fileId,
+    fileName,
+    webViewLink: finalized.webViewLink,
+    previewUrl: finalized.previewUrl,
+  };
+}
+
+/**
  * Sets file permissions to anyone-with-link read-only and retrieves webViewLink & webContentLink.
  */
 export async function finalizeDriveFile(fileId: string): Promise<{
@@ -186,23 +263,39 @@ export async function finalizeDriveFile(fileId: string): Promise<{
 }> {
   const drive = getDriveClient();
 
-  // Make file viewable by anyone with the link (or domain) so HR can review smoothly
+  // Make file viewable by anyone with the link (viewer only, read-only)
   try {
     await drive.permissions.create({
       fileId,
       requestBody: {
-        role: 'reader',
-        type: 'anyone',
+        role: 'reader', // 'reader' = viewer only in Google Drive
+        type: 'anyone', // 'anyone' = anyone with this link
+        allowFileDiscovery: false, // Accessible strictly via the direct link (not searchable)
       },
+      supportsAllDrives: true,
     });
   } catch (err: unknown) {
-    console.warn(`[google-drive-recorder] Setting permission for file ${fileId} notice:`, err);
+    console.warn(`[google-drive-recorder] Setting 'anyone' viewer permission for file ${fileId} notice:`, err);
+    // Fallback: retry without allowFileDiscovery in case of Workspace domain restriction
+    try {
+      await drive.permissions.create({
+        fileId,
+        requestBody: {
+          role: 'reader',
+          type: 'anyone',
+        },
+        supportsAllDrives: true,
+      });
+    } catch (retryErr: unknown) {
+      console.warn(`[google-drive-recorder] Fallback permission creation for file ${fileId} notice:`, retryErr);
+    }
   }
 
   // Fetch file metadata with webViewLink and webContentLink
   const fileMeta = await drive.files.get({
     fileId,
     fields: 'id, name, webViewLink, webContentLink',
+    supportsAllDrives: true,
   });
 
   const webViewLink = fileMeta.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;

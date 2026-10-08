@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   TrendingUp,
   Clock,
+  Video,
 } from 'lucide-react';
 
 interface ReportSummary {
@@ -35,6 +36,7 @@ interface ReportSummary {
   faceWarnings: number;
   objectWarnings: number;
   hasReport: boolean;
+  recordingLink?: string | null;
 }
 
 function ScoreRing({ value, color }: { value: number | null; color: string }) {
@@ -282,6 +284,23 @@ export default function InterviewReportsPage() {
                       <p className="text-xs text-zinc-500 font-medium">
                         {new Date(r.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
+
+                      {/* Full Interview Video Recording Link */}
+                      {r.recordingLink && (
+                        <div className="mt-2">
+                          <a
+                            href={r.recordingLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold rounded-lg transition-colors shadow-2xs"
+                          >
+                            <Video className="w-3.5 h-3.5 text-red-600" />
+                            <span>Watch Interview Video</span>
+                            <span className="text-[10px]">↗</span>
+                          </a>
+                        </div>
+                      )}
 
                       {/* Termination reason shown on main page */}
                       {isTerminated && r.terminationReason && (
