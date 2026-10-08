@@ -76,7 +76,6 @@ export async function GET(req: Request) {
           note: 'Note: This interview link has already been used and is expired.',
           expired: true,
           used: true,
-          status: interview.status,
         }, { status: 410 });
       }
       return NextResponse.json({
@@ -111,7 +110,6 @@ export async function GET(req: Request) {
         note: 'Note: This interview link has already been used and is expired.',
         expired: true,
         used: true,
-        status: invite.status,
       }, { status: 410 });
     }
     return NextResponse.json({
@@ -141,7 +139,6 @@ export async function GET(req: Request) {
           note: 'Note: This interview link has already been used and is expired.',
           expired: true,
           used: true,
-          status: session.status,
         }, { status: 410 });
       }
       return NextResponse.json({
@@ -156,6 +153,24 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+}
+
+async function broadcastTermination(interviewId: string) {
+  try {
+    const channel = supabaseAdmin.channel(`interview-sync-${interviewId}`);
+    await channel.subscribe();
+    await channel.send({
+      type: 'broadcast',
+      event: 'state-sync',
+      payload: {
+        type: 'terminate',
+        reason: 'Interview terminated due to page refresh or unauthorized re-entry.',
+      },
+    });
+    await supabaseAdmin.removeChannel(channel);
+  } catch {
+    // ignore
+  }
 }
 
 export async function POST(req: Request) {
@@ -235,11 +250,13 @@ export async function POST(req: Request) {
       if (!isRequesterAdmin) {
         if (interview.status === 'in_progress' || interview.used_at) {
           if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+          await supabaseAdmin.from('ai_interviews').update({ status: 'terminated' }).eq('id', interview.id);
+          await broadcastTermination(interviewId);
           return NextResponse.json({
-            error: 'This interview link has already been used and cannot be re-opened',
-            note: 'Note: This interview link has already been used and is expired.',
-            expired: true,
-            used: true,
+            error: 'Interview terminated due to page refresh or unauthorized re-entry.',
+            note: 'Interview terminated due to page refresh or unauthorized re-entry.',
+            status: 'terminated',
+            ended: true,
             concurrent: true,
           }, { status: 410 });
         }
@@ -325,11 +342,16 @@ export async function POST(req: Request) {
     if (!isRequesterAdmin) {
       if (invite.status === 'in_progress' || invite.consumed_at) {
         if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+        await supabaseAdmin.from('interview_invites').update({ status: 'revoked' }).eq('id', invite.id);
+        if (invite.session_id) {
+          await supabaseAdmin.from('interview_sessions').update({ status: 'terminated' }).eq('id', invite.session_id);
+        }
+        await broadcastTermination(interviewId);
         return NextResponse.json({
-          error: 'This interview link has already been used and cannot be re-opened',
-          note: 'Note: This interview link has already been used and is expired.',
-          expired: true,
-          used: true,
+          error: 'Interview terminated due to page refresh or unauthorized re-entry.',
+          note: 'Interview terminated due to page refresh or unauthorized re-entry.',
+          status: 'terminated',
+          ended: true,
           concurrent: true,
         }, { status: 410 });
       }
@@ -377,11 +399,16 @@ export async function POST(req: Request) {
     if (!isRequesterAdmin) {
       if (invite.status === 'in_progress' || invite.consumed_at) {
         if (lockAcquired) releaseJoinLock(interviewId, deviceId);
+        await supabaseAdmin.from('interview_invites').update({ status: 'revoked' }).eq('id', invite.id);
+        if (invite.session_id) {
+          await supabaseAdmin.from('interview_sessions').update({ status: 'terminated' }).eq('id', invite.session_id);
+        }
+        await broadcastTermination(interviewId);
         return NextResponse.json({
-          error: 'This interview link has already been used and cannot be re-opened',
-          note: 'Note: This interview link has already been used and is expired.',
-          expired: true,
-          used: true,
+          error: 'Interview terminated due to page refresh or unauthorized re-entry.',
+          note: 'Interview terminated due to page refresh or unauthorized re-entry.',
+          status: 'terminated',
+          ended: true,
           concurrent: true,
         }, { status: 410 });
       }
@@ -439,6 +466,16 @@ export async function POST(req: Request) {
         session.status === 'cancelled' ||
         (!isRequesterAdmin && session.status === 'in_progress')
       ) {
+        if (!isRequesterAdmin && session.status === 'in_progress') {
+          await supabaseAdmin.from('interview_sessions').update({ status: 'terminated' }).eq('id', session.id);
+          await broadcastTermination(interviewId);
+          return NextResponse.json({
+            error: 'Interview terminated due to page refresh or unauthorized re-entry.',
+            note: 'Interview terminated due to page refresh or unauthorized re-entry.',
+            status: 'terminated',
+            ended: true,
+          }, { status: 410 });
+        }
         return NextResponse.json({
           error: 'This interview has already ended',
           note: 'Note: This interview link has already been used and is expired.',
