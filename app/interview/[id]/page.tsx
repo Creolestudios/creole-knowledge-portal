@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   KeyRound,
@@ -38,6 +38,15 @@ type InterviewQuestion = {
   time_limit_sec?: number;
 };
 
+export type CandidateWarning = {
+  id: string;
+  count: number;
+  category: string;
+  reason: string;
+  ts: number;
+  snapshotPath?: string | null;
+};
+
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
@@ -53,7 +62,21 @@ export default function InterviewEntryPage() {
   const router = useRouter();
   const interviewId = params?.id as string;
 
-  const [stage, setStage] = useState<Stage>('passcode');
+  const [stage, setStage] = useState<Stage>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        if (
+          localStorage.getItem(`interview_used_${interviewId}`) === 'true' ||
+          sessionStorage.getItem(`interview_used_${interviewId}`) === 'true'
+        ) {
+          return 'expired';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return 'passcode';
+  });
   // Always reflects the latest stage so worker callbacks never
   // capture a stale value from their closure.
   const stageRef = useRef<Stage>(stage);
@@ -138,9 +161,14 @@ export default function InterviewEntryPage() {
     count: 0,
     reason: '',
   });
+  const [candidateWarnings, setCandidateWarnings] = useState<CandidateWarning[]>([]);
+  const candidateWarningsRef = useRef<CandidateWarning[]>([]);
+  useEffect(() => {
+    candidateWarningsRef.current = candidateWarnings;
+  }, [candidateWarnings]);
   const [isCheckingStatus, setIsCheckingStatus] = useState(false);
   const [statusCheckMessage, setStatusCheckMessage] = useState<string | null>(null);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const syncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -238,6 +266,19 @@ export default function InterviewEntryPage() {
     channel
       .on('broadcast', { event: 'state-sync' }, ({ payload }: { payload: any }) => {
         if (isAdmin) {
+          if (payload.type === 'sync-state') {
+            if (typeof payload.questionIndex === 'number') {
+              setCurrentQuestion(payload.questionIndex);
+            }
+            if (Array.isArray(payload.warnings) && payload.warnings.length > 0) {
+              setCandidateWarnings((prev) => {
+                const map = new Map<number, CandidateWarning>();
+                prev.forEach((w) => map.set(w.count, w));
+                payload.warnings.forEach((w: CandidateWarning) => map.set(w.count, w));
+                return Array.from(map.values()).sort((a, b) => a.count - b.count);
+              });
+            }
+          }
           if (stageRef.current === 'not_started') {
             if (
               payload.type === 'sync-state' ||
@@ -253,6 +294,14 @@ export default function InterviewEntryPage() {
           if (payload.type === 'sync-state') {
             if (typeof payload.questionIndex === 'number') {
               setCurrentQuestion(payload.questionIndex);
+            }
+            if (Array.isArray(payload.warnings) && payload.warnings.length > 0) {
+              setCandidateWarnings((prev) => {
+                const map = new Map<number, CandidateWarning>();
+                prev.forEach((w) => map.set(w.count, w));
+                payload.warnings.forEach((w: CandidateWarning) => map.set(w.count, w));
+                return Array.from(map.values()).sort((a, b) => a.count - b.count);
+              });
             }
           }
           if (payload.type === 'question-change') {
@@ -274,6 +323,19 @@ export default function InterviewEntryPage() {
               show: true,
               count: payload.count,
               reason: payload.reason,
+            });
+            const incomingWarning: CandidateWarning = {
+              id: payload.id || `${Date.now()}-${Math.random()}`,
+              count: payload.count,
+              category: payload.category || 'warning',
+              reason: payload.reason,
+              ts: payload.ts || Date.now(),
+            };
+            setCandidateWarnings((prev) => {
+              const map = new Map<number, CandidateWarning>();
+              prev.forEach((w) => map.set(w.count, w));
+              map.set(incomingWarning.count, incomingWarning);
+              return Array.from(map.values()).sort((a, b) => a.count - b.count);
             });
             setLiveEvents((prev) => [
               {
@@ -323,6 +385,8 @@ export default function InterviewEntryPage() {
                   type: 'sync-state',
                   questionIndex: currentQuestionRef.current,
                   remainingSec: questionRemainingSecRef.current,
+                  warningCount: candidateWarningsRef.current.length,
+                  warnings: candidateWarningsRef.current,
                 },
               });
             } catch {
@@ -447,6 +511,67 @@ export default function InterviewEntryPage() {
       }
     }
   }, [stage, isAdmin, deviceId]);
+
+  // When admin joins or is in the interview room, fetch historical proctoring events and warnings from DB
+  useEffect(() => {
+    if (!interviewId || !isAdmin || stage !== 'interview') return;
+    let isMounted = true;
+
+    fetch(`/api/interview/events?interviewId=${encodeURIComponent(interviewId)}`)
+      .then(async (res) => {
+        if (!res.ok || !isMounted || stageRef.current !== 'interview') return;
+        const data = await res.json().catch(() => ({}));
+        if (!isMounted || stageRef.current !== 'interview') return;
+        if (data.warnings && Array.isArray(data.warnings) && isMounted) {
+          setCandidateWarnings((prev) => {
+            const map = new Map<number, CandidateWarning>();
+            data.warnings.forEach((w: CandidateWarning) => map.set(w.count, w));
+            prev.forEach((w) => map.set(w.count, w));
+            return Array.from(map.values()).sort((a, b) => a.count - b.count);
+          });
+        } else if (data.events && Array.isArray(data.events) && isMounted) {
+          const map = new Map<number, CandidateWarning>();
+          data.events.forEach((evt: any) => {
+            const meta = (evt.meta || evt.metadata || {}) as Record<string, unknown>;
+            if (evt.severity === 'warning' || typeof meta.warningCount === 'number') {
+              const count = Number(meta.warningCount) || 1;
+              map.set(count, {
+                id: evt.id || `warn-${count}`,
+                count,
+                category: evt.category || evt.event_type || 'warning',
+                reason: (meta.reason as string) || evt.reason || 'Proctoring rule violation',
+                ts: evt.ts_ms || (evt.created_at ? new Date(evt.created_at).getTime() : Date.now()),
+              });
+            }
+          });
+          if (map.size > 0) {
+            setCandidateWarnings((prev) => {
+              const merged = new Map<number, CandidateWarning>();
+              map.forEach((w, k) => merged.set(k, w));
+              prev.forEach((w) => merged.set(w.count, w));
+              return Array.from(merged.values()).sort((a, b) => a.count - b.count);
+            });
+          }
+        }
+        if (data.events && Array.isArray(data.events) && isMounted) {
+          setLiveEvents(
+            data.events.map((evt: any) => ({
+              id: evt.id || `${Date.now()}-${Math.random()}`,
+              category: evt.category || 'event',
+              meta: evt.meta || { reason: evt.reason },
+              ts: evt.created_at ? new Date(evt.created_at).getTime() : Date.now(),
+            }))
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn('[interview] Failed to fetch events for admin:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [interviewId, isAdmin, stage]);
 
 
 
@@ -867,6 +992,19 @@ export default function InterviewEntryPage() {
     );
 
     if (trackerStatus.shouldTriggerWarning) {
+      const voiceWarning: CandidateWarning = {
+        id: `${Date.now()}-${Math.random()}`,
+        count: trackerStatus.warningCount,
+        category: 'unauthorized_voice',
+        reason: trackerStatus.reason,
+        ts: Date.now(),
+      };
+      candidateWarningsRef.current = [
+        ...candidateWarningsRef.current.filter((w) => w.count !== trackerStatus.warningCount),
+        voiceWarning,
+      ];
+      setCandidateWarnings(candidateWarningsRef.current);
+
       setWarningToast({
         show: true,
         count: trackerStatus.warningCount,
@@ -885,6 +1023,7 @@ export default function InterviewEntryPage() {
               reason: trackerStatus.reason,
               category: 'unauthorized_voice',
               ts: Date.now(),
+              warnings: candidateWarningsRef.current,
             },
           });
         } catch {
@@ -1178,7 +1317,7 @@ export default function InterviewEntryPage() {
   }, [stage, checkInterviewStatus]);
 
   useProctoringWatchdog({
-    active: stage === 'interview',
+    active: stage === 'interview' || stage === 'ready',
     cameraStreamRef,
     screenStreamRef,
     onViolation: terminateInterview,
@@ -1400,6 +1539,19 @@ export default function InterviewEntryPage() {
         const trackerStatus = proctorTrackerRef.current.processResult(msg, Date.now());
 
         if (trackerStatus.shouldTriggerWarning) {
+          const faceWarning: CandidateWarning = {
+            id: `${Date.now()}-${Math.random()}`,
+            count: trackerStatus.warningCount,
+            category: trackerStatus.category,
+            reason: trackerStatus.reason,
+            ts: Date.now(),
+          };
+          candidateWarningsRef.current = [
+            ...candidateWarningsRef.current.filter((w) => w.count !== trackerStatus.warningCount),
+            faceWarning,
+          ];
+          setCandidateWarnings(candidateWarningsRef.current);
+
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
@@ -1418,6 +1570,7 @@ export default function InterviewEntryPage() {
                   reason: trackerStatus.reason,
                   category: trackerStatus.category,
                   ts: Date.now(),
+                  warnings: candidateWarningsRef.current,
                 },
               });
             } catch { }
@@ -1598,6 +1751,19 @@ export default function InterviewEntryPage() {
           // 1. Direct synchronous capture snapshot from live video frame FIRST
           const snapshotPromise = captureEvidenceSnapshot('object');
 
+          const objectWarning: CandidateWarning = {
+            id: `${Date.now()}-${Math.random()}`,
+            count: trackerStatus.warningCount,
+            category: 'object',
+            reason: trackerStatus.reason,
+            ts: Date.now(),
+          };
+          candidateWarningsRef.current = [
+            ...candidateWarningsRef.current.filter((w) => w.count !== trackerStatus.warningCount),
+            objectWarning,
+          ];
+          setCandidateWarnings(candidateWarningsRef.current);
+
           // 2. Direct show warning toast to user
           setWarningToast({
             show: true,
@@ -1617,6 +1783,7 @@ export default function InterviewEntryPage() {
                   reason: trackerStatus.reason,
                   category: 'object',
                   ts: Date.now(),
+                  warnings: candidateWarningsRef.current,
                 },
               });
             } catch { }
@@ -2264,6 +2431,119 @@ export default function InterviewEntryPage() {
                 settingsEnabled={false}
               />
             </div>
+
+            {/* Candidate Warning Status Card (Admin Overview of Candidate Warnings) */}
+            {isAdmin && (
+              <div
+                id="candidate-warning-situation"
+                className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3"
+              >
+                <div className="flex items-center justify-between border-b border-zinc-100 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert
+                      className={`w-4 h-4 ${
+                        candidateWarnings.length === 0
+                          ? 'text-emerald-500'
+                          : candidateWarnings.length === 1
+                          ? 'text-amber-500'
+                          : 'text-red-500'
+                      }`}
+                    />
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-700">
+                      Candidate Warning Status
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                      candidateWarnings.length === 0
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : candidateWarnings.length === 1
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                        : 'bg-red-50 text-red-700 border border-red-200 animate-pulse'
+                    }`}
+                  >
+                    {candidateWarnings.length} / 3 Strikes
+                  </span>
+                </div>
+
+                {/* 3-slot Strike Tracker */}
+                <div className="grid grid-cols-3 gap-2 py-1">
+                  {[1, 2, 3].map((slot) => {
+                    const warn = candidateWarnings.find((w) => w.count === slot) || candidateWarnings[slot - 1];
+                    const isFaced = !!warn;
+                    return (
+                      <div
+                        key={slot}
+                        className={`p-2 rounded-xl border text-center transition-all ${
+                          isFaced
+                            ? 'bg-amber-50/80 border-amber-300 text-amber-900 shadow-sm'
+                            : 'bg-zinc-50 border-zinc-200 text-zinc-400'
+                        }`}
+                      >
+                        <div className="text-[10px] uppercase font-bold tracking-wider">Strike {slot}</div>
+                        <div className="text-xs font-semibold mt-0.5">
+                          {isFaced ? (
+                            <span className="text-amber-700 flex items-center justify-center gap-1">
+                              <AlertTriangle className="w-3 h-3 text-amber-600 inline shrink-0" />
+                              Faced
+                            </span>
+                          ) : (
+                            <span className="text-zinc-400">Clean</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Warning Situation & List */}
+                {candidateWarnings.length === 0 ? (
+                  <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-100 text-xs text-emerald-800 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>No warnings faced yet. Candidate is compliant.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider flex items-center justify-between">
+                      <span>Warnings Faced ({candidateWarnings.length})</span>
+                      <span className="text-[10px] text-zinc-400 font-normal">
+                        Max 3 before termination
+                      </span>
+                    </div>
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {candidateWarnings.map((warn, index) => (
+                        <div
+                          key={warn.id || index}
+                          className="p-2.5 rounded-xl bg-amber-50/60 border border-amber-200 text-xs text-zinc-800 space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-900 flex items-center gap-1.5">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              Strike #{warn.count || index + 1}
+                              <span className="font-semibold text-zinc-600 capitalize text-[11px]">
+                                • {(warn.category || 'Warning').replaceAll('_', ' ')}
+                              </span>
+                            </span>
+                            <span className="text-[10px] text-zinc-500 tabular-nums font-medium">
+                              {warn.ts ? new Date(warn.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
+                            </span>
+                          </div>
+                          <p className="text-zinc-700 text-[11px] leading-relaxed pl-5 font-medium">
+                            {warn.reason}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {candidateWarnings.length === 2 && (
+                      <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 font-semibold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+                        <span>Final Warning active! Next violation causes auto-termination.</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Admin Live Activity & Proctoring Feed */}
             {isAdmin && (

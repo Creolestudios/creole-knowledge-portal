@@ -21,6 +21,14 @@ const { state, mockFrom, mockChannel, mockSubscribe, mockSend, mockRemoveChannel
         single: async () => ({ data: state.eventData, error: state.error }),
       }),
     }),
+    select: () => ({
+      eq: () => ({
+        order: async () => ({
+          data: Array.isArray(state.eventData) ? state.eventData : (state.eventData ? [state.eventData] : []),
+          error: state.error,
+        }),
+      }),
+    }),
   }));
 
   return { state, mockFrom, mockChannel, mockSubscribe, mockSend, mockRemoveChannel };
@@ -34,7 +42,7 @@ vi.mock('@/lib/supabase/admin', () => ({
   },
 }));
 
-import { POST } from './route';
+import { POST, GET } from './route';
 
 function makeRequest(body: unknown): Request {
   return new Request('http://localhost/api/interview/events', {
@@ -112,3 +120,37 @@ describe('POST /api/interview/events', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('GET /api/interview/events', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.eventData = [
+      { id: 'evt-1', category: 'object', severity: 'warning', meta: { warningCount: 1, reason: 'cell phone' } },
+      { id: 'evt-2', category: 'voice', severity: 'warning', meta: { warningCount: 2, reason: 'Background voice' } },
+    ];
+    state.error = null;
+  });
+
+  it('returns 400 when interviewId query param is missing', async () => {
+    const req = new Request('http://localhost/api/interview/events');
+    const res = await GET(req);
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.error).toBe('interviewId is required');
+  });
+
+  it('returns past events and warnings for the given session', async () => {
+    const req = new Request('http://localhost/api/interview/events?interviewId=test-iv-123');
+    const res = await GET(req);
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.events).toHaveLength(2);
+    expect(body.events[0].category).toBe('object');
+    expect(body.warnings).toHaveLength(2);
+    expect(body.warnings[0].count).toBe(1);
+    expect(body.warnings[0].reason).toBe('cell phone');
+    expect(body.totalWarnings).toBe(2);
+  });
+});
+

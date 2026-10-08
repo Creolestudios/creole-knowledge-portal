@@ -192,6 +192,7 @@ To ensure audit accuracy and zero cross-contamination:
    - Guaranteed coverage: if a question was skipped or timed out, a record with `transcript: ''` is automatically preserved so no question is ever missing.
 4. **`interview_events`**:
    - Audits every proctoring incident with snapshot image paths and metadata (`warningCount: 1, 2, 3`).
+   - Serves structured warnings (`warnings: CandidateWarning[]`, `totalWarnings`) via `GET /api/interview/events` to ensure admins entering mid-session can immediately view candidate strikes.
    - Also serves as the resilient secondary storage fallback for `scoring_report` payloads when `interview_reports` is missing from the database schema.
 5. **`interview_reports`**:
    - Primary storage for interview reports, cognitive scores, fluency CEFR ratings, and recommendations.
@@ -305,11 +306,18 @@ An admin or interviewer can join an ongoing candidate interview directly using t
      - **Candidate View**: Interviewer stream is displayed in the top tile (`Interviewer`), and the candidate's preview is in the bottom tile (`You`).
    - When an admin leaves, `admin-left` signals clean up the remote stream so the candidate reverts to single camera preview without session interruption.
 
-3. **Real-Time Proctoring Warnings Synchronization**:
+3. **Real-Time Proctoring Warnings Synchronization & Mid-Session Admin Join Awareness**:
    - When any proctoring violation occurs (Face Tracking, Unauthorized Object Detection, or Unauthorized Voice Detection):
      - Candidate displays the warning toast banner (`Warning X / 3: <reason>`).
      - Candidate broadcasts a `warning-alert` payload across `interview-sync-${interviewId}`.
      - Admin screen displays the exact same warning toast banner (`Warning X / 3: <reason>`) with countdown and dismiss controls, as well as logging it to the Live Proctoring feed.
+   - **Mid-Session Admin Join Awareness**:
+     - When an admin joins an in-progress interview midway, the admin client queries `GET /api/interview/events?interviewId=...` and syncs with the candidate's `sync-state` broadcast containing prior warnings.
+     - The admin screen prominently displays the **Candidate Warning Status** card:
+       - Visual 3-slot Strike tracker showing clean vs faced status for Strikes 1, 2, and 3.
+       - Overall strike indicator badge (e.g. `0 / 3 Strikes (Clean)`, `1 / 3 Strikes`, `2 / 3 Strikes (Final Warning)`).
+       - Chronological warning list detailing the Strike #, category (Voice, Object, Face), exact reason description, and timestamp for all faced warnings.
+       - Critical warning callout if the candidate is on Strike 2 (notifying the admin that the next infraction triggers auto-termination).
 
 4. **Synchronized Terminate & Completed States**:
    - **On Completion**: When candidate completes questions or timer elapses, both candidate and admin transition to the identical "Interview complete" screen. Admin is provided a "Return to Admin Dashboard" action.

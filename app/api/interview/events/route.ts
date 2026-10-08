@@ -75,3 +75,77 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ success: true, event: eventData });
 }
+
+/**
+ * GET /api/interview/events?interviewId=...
+ *
+ * Retrieves proctoring events and warnings for the given interview session.
+ */
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const interviewId = searchParams.get('interviewId');
+
+  if (!interviewId) {
+    return NextResponse.json({ error: 'interviewId is required' }, { status: 400 });
+  }
+
+  const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
+
+  const { data: events, error } = await supabaseAdmin
+    .from('interview_events')
+    .select('id, session_id, category, event_type, severity, confidence, snapshot_path, meta, metadata, ts_ms, created_at')
+    .eq('session_id', targetSessionId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[interview-events] DB query failed:', error);
+    return NextResponse.json({ error: 'Failed to fetch events' }, { status: 500 });
+  }
+
+  const rawEvents = events || [];
+  const warningsMap = new Map<number, {
+    id: string;
+    count: number;
+    category: string;
+    reason: string;
+    ts: number;
+  }>();
+
+  // Process events sorted chronologically (earliest to latest)
+  const sortedEvents = [...rawEvents].sort((a, b) => {
+    const aTs = a.ts_ms || (a.created_at ? new Date(a.created_at).getTime() : 0);
+    const bTs = b.ts_ms || (b.created_at ? new Date(b.created_at).getTime() : 0);
+    return aTs - bTs;
+  });
+
+  for (const evt of sortedEvents) {
+    const metaObj = (evt.meta && typeof evt.meta === 'object' ? evt.meta : (evt.metadata && typeof evt.metadata === 'object' ? evt.metadata : {})) as Record<string, unknown>;
+    const isWarning = evt.severity === 'warning' || typeof metaObj.warningCount === 'number';
+    if (!isWarning) continue;
+
+    const count = typeof metaObj.warningCount === 'number'
+      ? metaObj.warningCount
+      : (typeof metaObj.count === 'number' ? metaObj.count : (warningsMap.size + 1));
+
+    const category = (evt.category || evt.event_type || 'warning') as string;
+    const reason = (metaObj.reason as string) || (evt.reason as string) || 'Proctoring rule violation';
+    const ts = evt.ts_ms || (evt.created_at ? new Date(evt.created_at).getTime() : Date.now());
+
+    warningsMap.set(count, {
+      id: evt.id || `warn-${count}`,
+      count,
+      category,
+      reason,
+      ts,
+    });
+  }
+
+  const warnings = Array.from(warningsMap.values()).sort((a, b) => a.count - b.count);
+
+  return NextResponse.json({
+    success: true,
+    events: events || [],
+    warnings,
+    totalWarnings: warnings.length,
+  });
+}

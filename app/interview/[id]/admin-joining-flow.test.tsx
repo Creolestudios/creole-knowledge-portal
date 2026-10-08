@@ -88,6 +88,12 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
           }),
         });
       }
+      if (typeof url === 'string' && url.includes('/events')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ events: [], warnings: [], totalWarnings: 0 }),
+        });
+      }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     }) as any;
 
@@ -510,6 +516,85 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
 
     // Admin should connect to the live interview
     expect(await screen.findByText('Live candidate interview question')).toBeInTheDocument();
+  });
+
+  it('displays list of previous warnings on screen when admin joins in between after candidate faced warnings', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/verify')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ verified: true, isAdmin: true, interviewId: 'session-123', status: 'in_progress', inProgress: true }),
+        });
+      }
+      if (typeof url === 'string' && url.includes('/questions')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [
+              { id: 'q1', question_text: 'Admin observation question', category: 'system_design', question_order: 1 },
+            ],
+          }),
+        });
+      }
+      if (typeof url === 'string' && url.includes('/events')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            events: [
+              { id: 'evt-1', category: 'unauthorized_voice', severity: 'warning', meta: { warningCount: 1, reason: 'Secondary background voice detected' }, created_at: new Date().toISOString() },
+            ],
+            warnings: [
+              { id: 'warn-1', count: 1, category: 'unauthorized_voice', reason: 'Secondary background voice detected', ts: Date.now() },
+            ],
+            totalWarnings: 1,
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), {
+      target: { value: 'admin@creolestudios.com' },
+    });
+    fireEvent.click(screen.getByText('Continue'));
+
+    // Wait until admin enters interview stage
+    await screen.findByText('Admin observation question');
+
+    // Admin screen displays Candidate Warning Status card
+    expect(await screen.findByText('Candidate Warning Status')).toBeInTheDocument();
+    expect(await screen.findByText('1 / 3 Strikes')).toBeInTheDocument();
+    expect(screen.getAllByText('Secondary background voice detected').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Strike #1/i)).toBeInTheDocument();
+  });
+
+  it('synchronizes candidate warnings via sync-state when admin joins midway and displays final warning banner', async () => {
+    await setupAdminInInterview();
+
+    expect(mockBroadcastCallback).not.toBeNull();
+
+    // Candidate responds to admin-joined with sync-state containing 2 warnings
+    act(() => {
+      mockBroadcastCallback!({
+        payload: {
+          type: 'sync-state',
+          questionIndex: 0,
+          warningCount: 2,
+          warnings: [
+            { id: 'w1', count: 1, category: 'unauthorized_voice', reason: 'Secondary voice heard in background', ts: Date.now() - 60000 },
+            { id: 'w2', count: 2, category: 'object', reason: 'Unauthorized object detected: Cell phone', ts: Date.now() - 30000 },
+          ],
+        },
+      });
+    });
+
+    // Admin should see both warnings listed and the critical 2/3 final warning alert
+    expect(await screen.findByText('2 / 3 Strikes')).toBeInTheDocument();
+    expect(screen.getByText('Secondary voice heard in background')).toBeInTheDocument();
+    expect(screen.getByText('Unauthorized object detected: Cell phone')).toBeInTheDocument();
+    expect(screen.getByText(/Final Warning active! Next violation causes auto-termination/i)).toBeInTheDocument();
   });
 });
 
