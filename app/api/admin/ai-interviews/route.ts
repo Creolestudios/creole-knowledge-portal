@@ -157,6 +157,30 @@ export async function GET() {
       return NextResponse.json({ error: 'Failed to load interviews', interviews: [] }, { status: 500 });
     }
 
+    const sessionIds = (data || []).map((row: any) => row.id);
+    const recordingsMap: Record<string, string> = {};
+    if (sessionIds.length > 0) {
+      try {
+        const { data: recEvents } = await supabaseAdmin
+          .from('interview_events')
+          .select('session_id, meta, metadata')
+          .in('session_id', sessionIds)
+          .or('category.eq.full_recording,event_type.eq.full_recording');
+
+        if (recEvents) {
+          for (const evt of recEvents) {
+            const m = (evt.meta || evt.metadata || {}) as Record<string, any>;
+            const link = m.webViewLink || m.webContentLink || (m.fileId ? `https://drive.google.com/file/d/${m.fileId}/view` : null);
+            if (link && evt.session_id) {
+              recordingsMap[evt.session_id] = link;
+            }
+          }
+        }
+      } catch (recErr) {
+        console.warn('[ai-interviews] Failed to load recording links:', recErr);
+      }
+    }
+
     const interviews = (data || []).map((row: any) => {
       const invite = row.interview_invites?.[0] ?? null;
       let status = invite?.status ?? row.status;
@@ -176,6 +200,7 @@ export async function GET() {
         status,
         expires_at: invite?.expires_at ?? null,
         created_at: row.created_at,
+        recording_url: recordingsMap[row.id] ?? null,
       };
     });
 

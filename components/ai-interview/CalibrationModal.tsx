@@ -21,15 +21,15 @@ export function CalibrationModal({ calibrationProgress, onComplete }: Calibratio
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/80 backdrop-blur-md px-4">
-      <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-2xl border border-zinc-100 text-center space-y-6 animate-in fade-in zoom-in duration-200">
+      <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-3xl p-8 shadow-2xl border border-zinc-100 dark:border-[#4a4a4a] text-center space-y-6 animate-in fade-in zoom-in duration-200">
         <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-2xl flex items-center justify-center mx-auto text-[#34c4f2]">
           <Target className="w-6 h-6 animate-pulse" />
         </div>
 
         <div className="space-y-2">
-          <h2 className="text-xl font-bold text-zinc-900">Webcam &amp; Eye Calibration</h2>
-          <p className="text-sm text-zinc-500 leading-relaxed">
-            Please sit comfortably and <strong className="text-zinc-800">look directly at the center dot</strong> for 3 seconds so we can calibrate your baseline position.
+          <h2 className="text-xl font-bold text-zinc-900 dark:text-white">Webcam &amp; Eye Calibration</h2>
+          <p className="text-sm text-zinc-500 dark:text-[#9f9f9f] leading-relaxed">
+            Please sit comfortably and <strong className="text-zinc-800 dark:text-[#d9d9d9]">look directly at the center dot</strong> for 3 seconds so we can calibrate your baseline position.
           </p>
         </div>
 
@@ -45,11 +45,11 @@ export function CalibrationModal({ calibrationProgress, onComplete }: Calibratio
 
         {/* Progress Indicator */}
         <div className="space-y-2">
-          <div className="flex justify-between text-xs font-semibold text-zinc-500">
+          <div className="flex justify-between text-xs font-semibold text-zinc-500 dark:text-[#9f9f9f]">
             <span>Calibrating baseline...</span>
             <span>{progressPct}%</span>
           </div>
-          <div className="h-2 w-full bg-zinc-100 rounded-full overflow-hidden">
+          <div className="h-2 w-full bg-zinc-100 dark:bg-[#2b2b2b] rounded-full overflow-hidden">
             <div
               className="h-full bg-[#34c4f2] transition-all duration-200 ease-out"
               style={{ width: `${progressPct}%` }}

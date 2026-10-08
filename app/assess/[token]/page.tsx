@@ -148,6 +148,9 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     count: 0,
     reason: '',
   });
+  const [isInterviewPaused, setIsInterviewPaused] = useState(false);
+  const isInterviewPausedRef = useRef(false);
+  const resumeCooldownUntilRef = useRef<number>(0);
 
   const [durationSeconds, setDurationSeconds] = useState(15 * 60);
   const durationSecondsRef = useRef(15 * 60);
@@ -476,7 +479,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
 
   // ── Countdown timer for current question & auto-advancement on time completion ──
   useEffect(() => {
-    if (stage !== 'interview') return;
+    if (stage !== 'interview' || isInterviewPaused) return;
     const timer = window.setInterval(() => {
       // 1. Overall interview duration tracking
       if (durationSecondsRef.current > 0) {
@@ -521,7 +524,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
       }
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [stage]);
+  }, [stage, isInterviewPaused]);
 
   useProctoringWatchdog({
     active: ['ready', 'calibration', 'interview'].includes(stage),
@@ -698,11 +701,18 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         setIsMouthMoving(Boolean(msg.mouthMoving));
 
         // stageRef always reflects current stage — no stale closure
-        if (stageRef.current !== 'interview' || terminatingRef.current) return;
+        if (
+          stageRef.current !== 'interview' ||
+          terminatingRef.current ||
+          isInterviewPausedRef.current ||
+          Date.now() < resumeCooldownUntilRef.current
+        ) return;
 
         const trackerStatus = proctorTrackerRef.current.processResult(msg, Date.now());
 
         if (trackerStatus.shouldTriggerWarning) {
+          setIsInterviewPaused(true);
+          isInterviewPausedRef.current = true;
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
@@ -840,7 +850,13 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         return;
       }
 
-      if (msg.type !== 'result' || !msg.detections || terminatingRef.current) return;
+      if (
+        msg.type !== 'result' ||
+        !msg.detections ||
+        terminatingRef.current ||
+        isInterviewPausedRef.current ||
+        Date.now() < resumeCooldownUntilRef.current
+      ) return;
 
       if (msg.detections.length > 0) {
         console.log(
@@ -872,6 +888,8 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         );
 
         if (trackerStatus.shouldTriggerWarning) {
+          setIsInterviewPaused(true);
+          isInterviewPausedRef.current = true;
           console.warn(
             `%c[ObjectDetection] ⚠️ PROCTORING ALERT #${trackerStatus.warningCount}: ${trackerStatus.reason}`,
             'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
@@ -886,11 +904,6 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
             count: trackerStatus.warningCount,
             reason: trackerStatus.reason,
           });
-
-          // Auto-dismiss warning toast after 5 seconds
-          window.setTimeout(() => {
-            setWarningToast((prev) => (prev.count === trackerStatus.warningCount ? { ...prev, show: false } : prev));
-          }, 5000);
 
           // Evidence snapshot + DB event with snapshot_path
           void (async () => {
@@ -951,20 +964,38 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     };
   }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Auto-dismiss warning toast after 5 seconds ──
-  useEffect(() => {
-    if (!warningToast.show) return;
-    const timer = window.setTimeout(() => {
-      setWarningToast((prev) => ({ ...prev, show: false }));
-    }, 5000);
-    return () => window.clearTimeout(timer);
-  }, [warningToast.show, warningToast.count]);
+  const handleResumeInterview = useCallback(() => {
+    setWarningToast((prev) => ({ ...prev, show: false }));
+    setIsInterviewPaused(false);
+    isInterviewPausedRef.current = false;
+    resumeCooldownUntilRef.current = Date.now() + 3000; // 3-second grace cooldown break
+    proctorTrackerRef.current.clearActiveViolations();
+    missingFramesRef.current.clear();
+    consecutiveDetectedFramesRef.current.clear();
+  }, []);
 
   // ── Real-time Speech-to-Text & Audio Voice Guard ──
-  const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number }) => {
-    if (stageRef.current !== 'interview' || terminatingRef.current) return;
+  const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number; durationMs?: number }) => {
+    if (
+      stageRef.current !== 'interview' ||
+      terminatingRef.current ||
+      isInterviewPausedRef.current ||
+      Date.now() < resumeCooldownUntilRef.current
+    ) return;
     const nowMs = Date.now();
-    const voiceReason = 'Background voice detected';
+
+    let voiceReason = info.reason;
+    if (info.reason.includes('music')) {
+      voiceReason = 'Background music detected.';
+    } else if (info.reason.includes('typing')) {
+      voiceReason = 'Keyboard typing sounds detected.';
+    } else if (info.durationMs && info.durationMs >= 10000) {
+      voiceReason = 'Background voice detected.';
+    } else {
+      voiceReason =
+        'Background voice detected. Please ensure that no other person or voice is present during the interview.';
+    }
+
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
       'unauthorized_voice',
       'voice',
@@ -975,6 +1006,8 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     );
 
     if (trackerStatus.shouldTriggerWarning) {
+      setIsInterviewPaused(true);
+      isInterviewPausedRef.current = true;
       setWarningToast({
         show: true,
         count: trackerStatus.warningCount,
@@ -1013,7 +1046,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     isAiSpeaking: false,
     // Guard is active during the entire interview stage. The optimistic UI means
     // there's no longer a 1-4s blocking window; transitions are instant.
-    isCandidateTurn: stage === 'interview',
+    isCandidateTurn: stage === 'interview' && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     takeSnapshot: async () => {
@@ -1254,10 +1287,18 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
 
     return (
       <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
+        {/* Full Screen Blur Overlay on Pause */}
+        {isInterviewPaused && (
+          <div
+            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md transition-all duration-300 pointer-events-auto"
+            aria-hidden="true"
+          />
+        )}
+
         {/* ── Warning Toast Banner ── */}
         {warningToast.show && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
-            <div className="bg-amber-500 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-amber-400">
+            <div className="bg-amber-500 text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border border-amber-400 gap-4">
               <div className="flex items-center space-x-3">
                 <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
                 <div>
@@ -1269,10 +1310,10 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
               </div>
               <button
                 type="button"
-                onClick={() => setWarningToast((prev) => ({ ...prev, show: false }))}
-                className="text-amber-100 hover:text-white font-bold text-xs bg-amber-600/50 hover:bg-amber-600 rounded-lg px-2.5 py-1.5 transition-colors"
+                onClick={handleResumeInterview}
+                className="text-white font-bold text-xs bg-amber-600 hover:bg-amber-700 border border-amber-300/40 rounded-xl px-4 py-2 transition-all shadow-md flex-shrink-0 cursor-pointer"
               >
-                Dismiss
+                Resume Interview
               </button>
             </div>
           </div>
@@ -1287,7 +1328,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
                 <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-400">
                   Question {currentIndex + 1} of {questions.length}
                 </span>
-                <p className="mt-1 text-xs font-bold uppercase tracking-[0.15em] text-[#0c7ea6]">
+                <p className="mt-1 text-xs font-bold uppercase tracking-[0.15em] text-[#34c4f2]">
                   {currentQuestion?.category?.replaceAll('_', ' ')}
                 </p>
               </div>
@@ -1299,7 +1340,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
                   className={`rounded-xl px-3.5 py-1.5 text-xs sm:text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${
                     questionRemainingSec <= 30
                       ? 'bg-red-600 text-white animate-pulse'
-                      : 'bg-blue-600 text-white'
+                      : 'bg-[#34c4f2] text-zinc-900 border border-[#34c4f2]/30'
                   }`}
                   aria-label="Remaining time"
                   title="Time remaining for this question"
@@ -1355,7 +1396,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
                   <p className="whitespace-pre-wrap">
                     {answerText && <span>{answerText} </span>}
                     {interimText && (
-                      <span className="text-blue-600 italic font-medium animate-pulse">
+                      <span className="text-[#34c4f2] italic font-medium animate-pulse">
                         {interimText}...
                       </span>
                     )}
@@ -1443,9 +1484,9 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
               id="assess-submit-answer"
               type="button"
               onClick={handleSubmitAnswer}
-              disabled={savingAnswer}
+              disabled={savingAnswer || !hasGivenAnswer}
               className={[
-                'w-full text-zinc-900 font-black py-4 rounded-2xl transition-all flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer',
+                'w-full text-zinc-900 font-black py-4 rounded-2xl transition-all flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed',
                 hasGivenAnswer
                   ? 'bg-[#34c4f2] hover:bg-[#2db0db] shadow-xl shadow-[#34c4f2]/40 ring-2 ring-[#34c4f2]/50'
                   : 'bg-[#34c4f2] hover:bg-[#2db0db] shadow-xl shadow-[#34c4f2]/30',

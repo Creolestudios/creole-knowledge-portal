@@ -76,7 +76,7 @@ export function MeetingVideoTile({
       </video>
 
       {!hasVideo && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-900 text-zinc-500 dark:text-[#9f9f9f]">
           <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center">
             <User className="w-6 h-6" />
           </div>

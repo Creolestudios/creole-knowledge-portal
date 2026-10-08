@@ -13,6 +13,7 @@ import {
   Link2,
   ClipboardPaste,
   X,
+  Video,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -22,19 +23,19 @@ import { KeywordAnalysisOverview, KeywordResults } from '@/components/ai-intervi
 import { QuestionBankSelector } from '@/components/ai-interview/question-bank-selector';
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
-  completed: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-  expired: 'bg-red-50 text-red-500 border-red-100',
-  terminated: 'bg-red-50 text-red-600 border-red-100',
-  revoked: 'bg-red-50 text-red-600 border-red-100',
-  cancelled: 'bg-red-50 text-red-600 border-red-100',
-  in_progress: 'bg-blue-50 text-blue-600 border-blue-100',
-  ready: 'bg-amber-50 text-amber-600 border-amber-100',
-  pending: 'bg-amber-50 text-amber-600 border-amber-100',
-  active: 'bg-amber-50 text-amber-600 border-amber-100',
-  draft: 'bg-zinc-50 text-zinc-500 border-zinc-100',
-  questions_generated: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+  completed: 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-500/20',
+  expired: 'bg-red-50 dark:bg-red-500/10 text-red-500 dark:text-red-400 border-red-100 dark:border-red-500/20',
+  terminated: 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-100 dark:border-red-500/20',
+  revoked: 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-100 dark:border-red-500/20',
+  cancelled: 'bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border-red-100 dark:border-red-500/20',
+  in_progress: 'bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-100 dark:border-blue-500/20',
+  ready: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/20',
+  pending: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/20',
+  active: 'bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-100 dark:border-amber-500/20',
+  draft: 'bg-zinc-50 dark:bg-[#1f1f1f] text-zinc-500 dark:text-[#9f9f9f] border-zinc-100 dark:border-[#4a4a4a]',
+  questions_generated: 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-500/20',
 };
-const DEFAULT_STATUS_BADGE_STYLE = 'bg-zinc-50 text-zinc-500 border-zinc-100';
+const DEFAULT_STATUS_BADGE_STYLE = 'bg-zinc-50 dark:bg-[#1f1f1f] text-zinc-500 dark:text-[#9f9f9f] border-zinc-100 dark:border-[#4a4a4a]';
 
 export default function AIInterviewManager() {
   const [candidateName, setCandidateName] = useState('');
@@ -287,15 +288,15 @@ export default function AIInterviewManager() {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-card border border-zinc-100 overflow-hidden">
-      <div className="p-8 border-b border-zinc-50">
+    <div className="bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-[#d9d9d9] dark:border-[#4a4a4a] overflow-hidden">
+      <div className="p-8 border-b border-[#d9d9d9] dark:border-[#4a4a4a]">
         <div className="flex items-center space-x-3 mb-2">
           <div className="p-2 bg-[#34c4f2]/10 rounded-lg">
             <UploadCloud className="text-[#34c4f2] w-5 h-5" />
           </div>
-          <h2 className="text-2xl font-bold text-zinc-900">AI Interview — Create Session</h2>
+          <h2 className="text-2xl font-bold text-[#1f1f1f] dark:text-white">AI Interview — Create Session</h2>
         </div>
-        <p className="text-zinc-500 text-sm leading-relaxed max-w-2xl">
+        <p className="text-[#4a4a4a] dark:text-[#9f9f9f] text-sm leading-relaxed max-w-2xl">
           Upload the candidate&apos;s resume and the job description. We&apos;ll generate a
           private interview link and a one-time passcode you can share with the candidate.
         </p>
@@ -307,7 +308,7 @@ export default function AIInterviewManager() {
         </div>
       ) : extractionResult ? (
         <div className="p-8 space-y-8">
-          <div className="rounded-2xl bg-slate-950 p-5">
+          <div className="rounded-2xl bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] p-5 shadow-sm">
             <KeywordAnalysisOverview extraction={extractionResult} onReset={handleStartOver} />
           </div>
           <QuestionBankSelector
@@ -325,7 +326,7 @@ export default function AIInterviewManager() {
             value={candidateName}
             onChange={(e) => setCandidateName(e.target.value)}
             placeholder="Candidate name (optional)"
-            className="px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 text-sm"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
           />
           <input
             id="candidate-email"
@@ -333,7 +334,7 @@ export default function AIInterviewManager() {
             value={candidateEmail}
             onChange={(e) => setCandidateEmail(e.target.value)}
             placeholder="Candidate email (optional)"
-            className="px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 text-sm"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
           />
           <input
             id="job-title"
@@ -341,19 +342,19 @@ export default function AIInterviewManager() {
             value={jobTitle}
             onChange={(e) => setJobTitle(e.target.value)}
             placeholder="Job title (optional)"
-            className="px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 text-sm"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
           />
         </div>
 
         <label
           htmlFor="resume-upload"
-          className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-zinc-200 rounded-2xl cursor-pointer hover:border-[#34c4f2]/40 hover:bg-[#34c4f2]/5 transition-all"
+          className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5 bg-zinc-50 dark:bg-[#1f1f1f] transition-all"
         >
-          <FileText className="w-6 h-6 text-zinc-400" />
-          <span className="text-sm font-bold text-zinc-700">
+          <FileText className="w-6 h-6 text-[#34c4f2]" />
+          <span className="text-sm font-bold text-[#1f1f1f] dark:text-white">
             {resume ? resume.name : 'Upload Resume'}
           </span>
-          <span className="text-[10px] uppercase tracking-widest text-zinc-400">
+          <span className="text-[10px] uppercase tracking-widest text-[#4a4a4a] dark:text-[#9f9f9f]">
             PDF, DOC, DOCX, TXT — max 10 MB
           </span>
           <input
@@ -370,16 +371,16 @@ export default function AIInterviewManager() {
 
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-widest text-zinc-400">
+            <span className="text-xs font-bold uppercase tracking-widest text-[#4a4a4a] dark:text-[#9f9f9f]">
               Job Description
             </span>
-            <div className="flex bg-zinc-100 rounded-lg p-1">
+            <div className="flex bg-zinc-100 dark:bg-[#1f1f1f] rounded-lg p-1">
               <button
                 id="jd-mode-text"
                 type="button"
                 onClick={() => setJdMode('text')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                  jdMode === 'text' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  jdMode === 'text' ? 'bg-[#34c4f2] text-[#1f1f1f] shadow-sm' : 'text-[#4a4a4a] dark:text-[#9f9f9f]'
                 }`}
               >
                 <ClipboardPaste className="w-3.5 h-3.5" />
@@ -389,8 +390,8 @@ export default function AIInterviewManager() {
                 id="jd-mode-file"
                 type="button"
                 onClick={() => setJdMode('file')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
-                  jdMode === 'file' ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-500'
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                  jdMode === 'file' ? 'bg-[#34c4f2] text-[#1f1f1f] shadow-sm' : 'text-[#4a4a4a] dark:text-[#9f9f9f]'
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
@@ -410,18 +411,18 @@ export default function AIInterviewManager() {
               placeholder="Paste the job description here..."
               rows={6}
               maxLength={20000}
-              className="w-full p-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 text-sm resize-y"
+              className="w-full p-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm resize-y"
             />
           ) : (
             <label
               htmlFor="jd-upload"
-              className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-zinc-200 rounded-2xl cursor-pointer hover:border-[#34c4f2]/40 hover:bg-[#34c4f2]/5 transition-all"
+              className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5 bg-zinc-50 dark:bg-[#1f1f1f] transition-all"
             >
-              <FileText className="w-6 h-6 text-zinc-400" />
-              <span className="text-sm font-bold text-zinc-700">
+              <FileText className="w-6 h-6 text-[#34c4f2]" />
+              <span className="text-sm font-bold text-[#1f1f1f] dark:text-white">
                 {jd ? jd.name : 'Upload Job Description'}
               </span>
-              <span className="text-[10px] uppercase tracking-widest text-zinc-400">
+              <span className="text-[10px] uppercase tracking-widest text-[#4a4a4a] dark:text-[#9f9f9f]">
                 PDF, DOC, DOCX, TXT — max 10 MB
               </span>
               <input
@@ -476,34 +477,34 @@ export default function AIInterviewManager() {
       </form>
       )}
 
-      <div className="p-8 bg-zinc-50/50 border-t border-zinc-100">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-400 mb-4">
+      <div className="p-8 bg-zinc-50/50 dark:bg-[#1f1f1f] border-t border-[#d9d9d9] dark:border-[#4a4a4a]">
+        <h3 className="text-xs font-bold uppercase tracking-widest text-[#4a4a4a] dark:text-[#9f9f9f] mb-4">
           Recent Interviews
         </h3>
         {loadingList ? (
           <div className="flex justify-center py-6">
-            <Loader2 className="w-5 h-5 animate-spin text-zinc-300" />
+            <Loader2 className="w-5 h-5 animate-spin text-[#34c4f2]" />
           </div>
         ) : interviews.length === 0 ? (
-          <p className="text-sm text-zinc-400">No interviews created yet.</p>
+          <p className="text-sm text-[#4a4a4a] dark:text-[#9f9f9f]">No interviews created yet.</p>
         ) : (
           <div className="space-y-2">
             {interviews.map((iv) => (
               <div
                 key={iv.id}
-                className="flex items-center justify-between bg-white p-4 rounded-xl border border-zinc-100 text-sm"
+                className="flex items-center justify-between bg-white dark:bg-[#2b2b2b] p-4 rounded-xl border border-[#d9d9d9] dark:border-[#4a4a4a] text-sm"
               >
                 <div>
                   <button
                     id={`interview-row-name-${iv.id}`}
                     type="button"
                     onClick={() => void openInterview(iv)}
-                    className="font-bold text-zinc-800 hover:text-[#34c4f2] hover:underline text-left transition-colors"
+                    className="font-bold text-[#1f1f1f] dark:text-white hover:text-[#34c4f2] hover:underline text-left transition-colors cursor-pointer"
                   >
                     {iv.candidate_name || 'Unnamed candidate'}{' '}
-                    {iv.job_title && <span className="text-zinc-400 font-normal">— {iv.job_title}</span>}
+                    {iv.job_title && <span className="text-[#4a4a4a] dark:text-[#9f9f9f] font-normal">— {iv.job_title}</span>}
                   </button>
-                  <p className="text-zinc-400 text-xs font-mono">
+                  <p className="text-[#4a4a4a] dark:text-[#9f9f9f] text-xs font-mono">
                     {iv.expires_at
                       ? `Expires ${new Date(iv.expires_at).toLocaleDateString()}`
                       : 'No link generated yet'}
@@ -518,14 +519,29 @@ export default function AIInterviewManager() {
                     {iv.status.replace('_', ' ')}
                   </span>
                   {(iv.status === 'completed' || iv.status === 'terminated' || iv.status === 'revoked' || iv.status === 'cancelled' || iv.status === 'in_progress') && (
-                    <Link
-                      id={`view-report-${iv.id}`}
-                      href={`/admin/reports/${iv.id}`}
-                      className="px-3 py-1.5 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      View Report
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        id={`view-report-${iv.id}`}
+                        href={`/admin/reports/${iv.id}`}
+                        className="px-3 py-1.5 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        View Report
+                      </Link>
+                      {iv.recording_url && (
+                        <a
+                          id={`view-recording-${iv.id}`}
+                          href={iv.recording_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                          title="Open full Google Drive interview video"
+                        >
+                          <Video className="w-3.5 h-3.5" />
+                          Video
+                        </a>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -549,71 +565,71 @@ export default function AIInterviewManager() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               id="interview-link-modal"
-              className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-zinc-100 p-6 space-y-4"
+              className="w-full max-w-md bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-2xl border border-zinc-100 dark:border-[#4a4a4a] p-6 space-y-4"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="text-lg font-bold text-zinc-900">
+                  <h3 className="text-lg font-bold text-zinc-900 dark:text-white">
                     {selectedInterview.candidate_name || 'Unnamed candidate'}
                   </h3>
                   {selectedInterview.job_title && (
-                    <p className="text-xs text-zinc-400">{selectedInterview.job_title}</p>
+                    <p className="text-xs text-zinc-400 dark:text-[#9f9f9f]">{selectedInterview.job_title}</p>
                   )}
                 </div>
                 <button
                   id="interview-link-modal-close"
                   type="button"
                   onClick={closeInterviewModal}
-                  className="p-1.5 text-zinc-400 hover:text-zinc-700 rounded-lg hover:bg-zinc-100"
+                  className="p-1.5 text-zinc-400 dark:text-[#9f9f9f] hover:text-zinc-700 dark:hover:text-white rounded-lg hover:bg-zinc-100 dark:hover:bg-[#1f1f1f]"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
               {inviteLoading ? (
-                <div className="flex items-center justify-center gap-2 py-6 text-sm text-zinc-400">
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-zinc-400 dark:text-[#9f9f9f]">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Generating a fresh interview link...
                 </div>
               ) : inviteError ? (
-                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-lg text-red-500 text-xs">
+                <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-lg text-red-500 text-xs">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
                   <span>{inviteError}</span>
                 </div>
               ) : selectedInvite ? (
                 <>
-                  <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
-                    <Link2 className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                    <span className="flex-1 truncate text-zinc-700 font-mono text-xs">
+                  <div className="flex items-center gap-2 bg-zinc-50 dark:bg-[#1f1f1f] rounded-lg border border-zinc-100 dark:border-[#4a4a4a] p-3">
+                    <Link2 className="w-4 h-4 text-zinc-400 dark:text-[#9f9f9f] flex-shrink-0" />
+                    <span className="flex-1 truncate text-zinc-700 dark:text-white font-mono text-xs">
                       {selectedInvite.link}
                     </span>
                     <button
                       id="interview-link-modal-copy-link"
                       type="button"
                       onClick={() => copyModalValue(selectedInvite.link, 'link')}
-                      className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
+                      className="p-1.5 text-zinc-400 dark:text-[#9f9f9f] hover:text-[#34c4f2] flex-shrink-0"
                     >
                       {modalCopied === 'link' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
 
-                  <div className="flex items-center gap-2 bg-zinc-50 rounded-lg border border-zinc-100 p-3">
-                    <KeyRound className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-                    <span className="flex-1 font-mono text-lg font-black tracking-[0.3em] text-zinc-900">
+                  <div className="flex items-center gap-2 bg-zinc-50 dark:bg-[#1f1f1f] rounded-lg border border-zinc-100 dark:border-[#4a4a4a] p-3">
+                    <KeyRound className="w-4 h-4 text-zinc-400 dark:text-[#9f9f9f] flex-shrink-0" />
+                    <span className="flex-1 font-mono text-lg font-black tracking-[0.3em] text-zinc-900 dark:text-white">
                       {selectedInvite.passcode}
                     </span>
                     <button
                       id="interview-link-modal-copy-code"
                       type="button"
                       onClick={() => copyModalValue(selectedInvite.passcode, 'code')}
-                      className="p-1.5 text-zinc-400 hover:text-[#34c4f2] flex-shrink-0"
+                      className="p-1.5 text-zinc-400 dark:text-[#9f9f9f] hover:text-[#34c4f2] flex-shrink-0"
                     >
                       {modalCopied === 'code' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
                     </button>
                   </div>
 
-                  <p className="text-xs text-zinc-400">
+                  <p className="text-xs text-zinc-400 dark:text-[#9f9f9f]">
                     This passcode is only shown once — share it with the candidate now.
                   </p>
                 </>

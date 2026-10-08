@@ -17,6 +17,8 @@ const INSTRUCTIONS = [
   'Do not switch tabs, minimize the window, or open other applications during the assessment.',
   'Ensure a stable internet connection before you begin; the session cannot be paused once started.',
   'Answer every question yourself in your own voice — external help, notes, or additional devices are strictly prohibited.',
+  '3-Warning Termination Policy: Any proctoring infraction triggers a strike. On the 3rd warning, the interview is immediately and permanently terminated with no option to resume.',
+  '30-Second Auto-Resume: If an infraction pauses your interview (warnings 1 or 2), you have up to 30 seconds to click "Resume Interview". If not clicked within 30 seconds, the session will automatically resume.',
   'When you finish speaking your answer, click "Next Question" to proceed, or the interview will automatically advance when your answer is complete or time expires.',
 ];
 
@@ -43,7 +45,7 @@ const DETECTION_RULES = [
     icon: 'ShieldAlert',
     title: '3-Warning Termination Policy',
     description:
-      'Up to 3 warnings are issued for proctoring infractions. A 4th violation or interrupting media streams will immediately end your interview.',
+      'Warnings 1 & 2 offer a 30s resume window (auto-resumes if unclicked). A 3rd warning terminates the interview immediately with no resume alert.',
   },
 ];
 
@@ -71,18 +73,18 @@ export function ProctoringInstructions({
   buttonText = 'Allow Camera, Mic & Screen Share',
 }: ProctoringInstructionsProps) {
   return (
-    <div className="max-w-lg w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 space-y-6">
+    <div className="max-w-lg w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 space-y-6">
       <div className="text-center space-y-2">
         <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
           <ListChecks className="w-6 h-6 text-[#34c4f2]" />
         </div>
-        <h1 className="text-xl font-bold text-zinc-900">{title}</h1>
-        <p className="text-sm text-zinc-500">{subtitle}</p>
+        <h1 className="text-xl font-bold text-zinc-900 dark:text-white">{title}</h1>
+        <p className="text-sm text-zinc-500 dark:text-[#9f9f9f]">{subtitle}</p>
       </div>
 
       <ul className="space-y-3">
         {INSTRUCTIONS.map((instruction) => (
-          <li key={instruction} className="flex items-start space-x-3 text-sm text-zinc-700">
+          <li key={instruction} className="flex items-start space-x-3 text-sm text-zinc-700 dark:text-[#d9d9d9]">
             <CheckCircle2 className="w-4 h-4 text-[#34c4f2] flex-shrink-0 mt-0.5" />
             <span>{instruction}</span>
           </li>
@@ -110,9 +112,9 @@ export function ProctoringInstructions({
             return (
               <div
                 key={rule.title}
-                className="bg-white/95 border border-sky-100 rounded-lg p-2.5 space-y-1 shadow-2xs"
+                className="bg-white dark:bg-[#2b2b2b]/95 border border-sky-100 rounded-lg p-2.5 space-y-1 shadow-2xs"
               >
-                <div className="flex items-center gap-1.5 font-bold text-zinc-900 text-[11px]">
+                <div className="flex items-center gap-1.5 font-bold text-zinc-900 dark:text-white text-[11px]">
                   <IconComponent className="w-3.5 h-3.5 text-[#0c7ea6] shrink-0" />
                   <span>{rule.title}</span>
                 </div>
@@ -123,11 +125,11 @@ export function ProctoringInstructions({
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-4 space-y-3">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">
+      <div className="rounded-xl border border-zinc-100 dark:border-[#4a4a4a] bg-zinc-50 dark:bg-[#1f1f1f] p-4 space-y-3">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500 dark:text-[#9f9f9f]">
           Required permissions
         </p>
-        <div className="flex items-center justify-between text-sm text-zinc-700">
+        <div className="flex items-center justify-between text-sm text-zinc-700 dark:text-[#d9d9d9]">
           <span className="flex items-center space-x-2">
             <Camera className="w-4 h-4" />
             <Mic className="w-4 h-4" />
@@ -136,10 +138,10 @@ export function ProctoringInstructions({
           {cameraGranted ? (
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           ) : (
-            <span className="text-xs text-zinc-400">Not granted</span>
+            <span className="text-xs text-zinc-400 dark:text-[#9f9f9f]">Not granted</span>
           )}
         </div>
-        <div className="flex items-center justify-between text-sm text-zinc-700">
+        <div className="flex items-center justify-between text-sm text-zinc-700 dark:text-[#d9d9d9]">
           <span className="flex items-center space-x-2">
             <MonitorUp className="w-4 h-4" />
             <span>Entire screen share</span>
@@ -147,7 +149,7 @@ export function ProctoringInstructions({
           {screenGranted ? (
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           ) : (
-            <span className="text-xs text-zinc-400">Not granted</span>
+            <span className="text-xs text-zinc-400 dark:text-[#9f9f9f]">Not granted</span>
           )}
         </div>
       </div>
@@ -171,7 +173,7 @@ export function ProctoringInstructions({
         type="button"
         onClick={() => onRequestPermissions()}
         disabled={requestingPermissions}
-        className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
+        className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
       >
         {requestingPermissions ? (
           <Loader2 className="w-5 h-5 animate-spin" />

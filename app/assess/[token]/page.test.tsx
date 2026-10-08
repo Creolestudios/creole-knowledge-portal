@@ -34,11 +34,15 @@ async function joinFromReadyLobby() {
 
 describe('CandidateAssessmentPage', () => {
   beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
     vi.stubGlobal('fetch', vi.fn());
   });
 
   afterEach(() => {
     cleanup();
+    localStorage.clear();
+    sessionStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     localStorage.clear();

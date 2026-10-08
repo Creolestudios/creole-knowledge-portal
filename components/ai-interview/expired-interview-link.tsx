@@ -11,13 +11,13 @@ export function ExpiredInterviewLink({
 }: ExpiredInterviewLinkProps) {
   return (
     <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-amber-200/80 p-8 text-center space-y-5">
+      <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-amber-200/80 p-8 text-center space-y-5">
         <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center mx-auto text-amber-600">
           <ClockAlert className="w-8 h-8" />
         </div>
 
         <div className="space-y-1">
-          <h1 className="text-2xl font-bold text-zinc-900 tracking-tight">Link is expired</h1>
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white tracking-tight">Link is expired</h1>
           <p className="text-xs font-semibold uppercase tracking-wider text-amber-600">
             {isUsed ? 'Single-use link already accessed' : 'Interview link expired'}
           </p>
@@ -32,7 +32,7 @@ export function ExpiredInterviewLink({
           </p>
         </div>
 
-        <p className="text-xs text-zinc-400 leading-relaxed">
+        <p className="text-xs text-zinc-400 dark:text-[#9f9f9f] leading-relaxed">
           If you experienced technical issues or believe this was a mistake, please reach out to your interviewer or recruitment coordinator to request a new link.
         </p>
       </div>

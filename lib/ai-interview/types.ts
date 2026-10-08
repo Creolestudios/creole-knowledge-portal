@@ -294,6 +294,7 @@ export interface IInterviewSummary {
   status: string;
   expires_at: string | null;
   created_at: string;
+  recording_url?: string | null;
 }
 
 export interface ICreatedInterview {
