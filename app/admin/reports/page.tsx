@@ -288,17 +288,19 @@ export default function InterviewReportsPage() {
                       {/* Full Interview Video Recording Link */}
                       {r.recordingLink && (
                         <div className="mt-2">
-                          <a
-                            href={r.recordingLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold rounded-lg transition-colors shadow-2xs"
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              window.open(r.recordingLink, '_blank', 'noopener,noreferrer');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold rounded-lg transition-colors shadow-2xs cursor-pointer"
                           >
                             <Video className="w-3.5 h-3.5 text-red-600" />
                             <span>Watch Interview Video</span>
                             <span className="text-[10px]">↗</span>
-                          </a>
+                          </button>
                         </div>
                       )}
 
