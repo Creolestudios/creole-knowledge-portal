@@ -92,10 +92,10 @@ export function ProctoringInstructions({
       </ul>
 
       {/* ── Active Proctoring & AI Detections Notice ── */}
-      <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4 space-y-3">
+      <div className="rounded-xl border border-sky-100 dark:border-sky-900/40 bg-sky-50/70 dark:bg-sky-950/30 p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <ShieldAlert className="w-4 h-4 text-sky-700 shrink-0" />
-          <p className="text-xs font-bold uppercase tracking-[0.15em] text-sky-900">
+          <ShieldAlert className="w-4 h-4 text-sky-700 dark:text-sky-400 shrink-0" />
+          <p className="text-xs font-bold uppercase tracking-[0.15em] text-sky-900 dark:text-sky-200">
             Active Proctoring & AI Detections
           </p>
         </div>
@@ -112,13 +112,13 @@ export function ProctoringInstructions({
             return (
               <div
                 key={rule.title}
-                className="bg-white dark:bg-[#2b2b2b]/95 border border-sky-100 rounded-lg p-2.5 space-y-1 shadow-2xs"
+                className="bg-white dark:bg-[#1f1f1f] border border-sky-100 dark:border-sky-900/30 rounded-lg p-2.5 space-y-1 shadow-2xs"
               >
                 <div className="flex items-center gap-1.5 font-bold text-zinc-900 dark:text-white text-[11px]">
-                  <IconComponent className="w-3.5 h-3.5 text-[#0c7ea6] shrink-0" />
+                  <IconComponent className="w-3.5 h-3.5 text-[#0c7ea6] dark:text-[#34c4f2] shrink-0" />
                   <span>{rule.title}</span>
                 </div>
-                <p className="text-[11px] text-zinc-600 leading-snug">{rule.description}</p>
+                <p className="text-[11px] text-zinc-600 dark:text-zinc-300 leading-snug">{rule.description}</p>
               </div>
             );
           })}
@@ -155,14 +155,14 @@ export function ProctoringInstructions({
       </div>
 
       {permissionError && (
-        <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
+        <div className="flex items-center space-x-2 p-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-100 dark:border-red-900/40">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <p className="font-medium">{permissionError}</p>
         </div>
       )}
 
       {customError && (
-        <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
+        <div className="flex items-center space-x-2 p-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-100 dark:border-red-900/40">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <p className="font-medium">{customError}</p>
         </div>

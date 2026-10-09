@@ -12,20 +12,98 @@ export const runtime = 'nodejs';
  * Status is derived from BOTH session.status and invite.status to handle
  * all the real-world status values in the DB.
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Fetch all interview sessions
-    const { data: sessions, error: sessErr } = await supabaseAdmin
+    const url = request?.url ? new URL(request.url) : null;
+    const pageParam = Number(url?.searchParams.get('page'));
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? Math.floor(pageParam) : 1;
+    const limitParam = Number(url?.searchParams.get('limit'));
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(100, Math.floor(limitParam)) : 10;
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    // Fetch paginated interview sessions
+    let sessionsQuery = supabaseAdmin
       .from('interview_sessions')
-      .select('id, candidate_name, candidate_email, status, created_at, updated_at, parsed_jd, voice_warning_count, face_warning_count, object_warning_count')
+      .select('id, candidate_name, candidate_email, status, created_at, updated_at, parsed_jd, voice_warning_count, face_warning_count, object_warning_count', { count: 'exact' })
       .order('updated_at', { ascending: false });
+
+    if (typeof (sessionsQuery as unknown as { range: unknown }).range === 'function') {
+      sessionsQuery = (sessionsQuery as unknown as { range: (from: number, to: number) => typeof sessionsQuery }).range(from, to);
+    }
+
+    const { data: sessions, error: sessErr, count } = await sessionsQuery;
 
     if (sessErr) {
       return NextResponse.json({ error: sessErr.message }, { status: 500 });
     }
 
+    const totalSessions = count ?? (sessions?.length ?? 0);
+
+    // Compute summary stats across all sessions
+    let stats = {
+      total: totalSessions,
+      completed: 0,
+      terminated: 0,
+      avgCognitive: null as number | null,
+    };
+
+    try {
+      const [
+        completedRes,
+        cancelledRes,
+        terminatedRes,
+        avgScoresRes,
+      ] = await Promise.all([
+        supabaseAdmin.from('interview_sessions').select('*', { count: 'exact', head: true }).eq('status', 'completed'),
+        supabaseAdmin.from('interview_sessions').select('*', { count: 'exact', head: true }).eq('status', 'cancelled'),
+        supabaseAdmin.from('interview_sessions').select('*', { count: 'exact', head: true }).eq('status', 'terminated'),
+        supabaseAdmin.from('interview_reports').select('cognitive_composite'),
+      ]);
+
+      const compCount = completedRes?.count ?? 0;
+      const cancCount = cancelledRes?.count ?? 0;
+      const termCount = terminatedRes?.count ?? 0;
+      const repScores = avgScoresRes?.data;
+
+      let avgCog: number | null = null;
+      if (Array.isArray(repScores) && repScores.length > 0) {
+        const validScores = repScores
+          .map((r: { cognitive_composite?: number | null }) => r?.cognitive_composite)
+          .filter((s): s is number => typeof s === 'number' && !Number.isNaN(s));
+        if (validScores.length > 0) {
+          avgCog = Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length);
+        }
+      }
+
+      stats = {
+        total: totalSessions,
+        completed: compCount,
+        terminated: cancCount + termCount,
+        avgCognitive: avgCog,
+      };
+    } catch {
+      const completedOnPage = (sessions || []).filter((s) => s.status === 'completed').length;
+      const terminatedOnPage = (sessions || []).filter((s) => s.status === 'cancelled' || s.status === 'terminated').length;
+      stats = {
+        total: totalSessions,
+        completed: completedOnPage,
+        terminated: terminatedOnPage,
+        avgCognitive: null,
+      };
+    }
+
     if (!sessions || sessions.length === 0) {
-      return NextResponse.json({ reports: [] });
+      return NextResponse.json({
+        reports: [],
+        pagination: {
+          page,
+          limit,
+          total: stats.total,
+          totalPages: Math.max(1, Math.ceil(stats.total / limit)),
+        },
+        stats,
+      });
     }
 
     const sessionIds = sessions.map((s) => s.id);
@@ -231,7 +309,16 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ reports: merged });
+    return NextResponse.json({
+      reports: merged,
+      pagination: {
+        page,
+        limit,
+        total: stats.total,
+        totalPages: Math.max(1, Math.ceil(stats.total / limit)),
+      },
+      stats,
+    });
   } catch (err) {
     console.error('[interview-reports] GET error:', err);
     return NextResponse.json({ error: 'Failed to load reports.' }, { status: 500 });

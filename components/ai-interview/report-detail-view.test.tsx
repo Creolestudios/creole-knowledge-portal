@@ -267,9 +267,11 @@ describe('ReportDetailView', () => {
 
     // Video recording card has link and copy button (no embedded video player)
     expect(screen.getByText('Full Interview Video Recording')).toBeInTheDocument();
+    expect(screen.getByText('Google Drive Video Link')).toBeInTheDocument();
     const driveLink = screen.getByRole('link', { name: /Open in Google Drive/i });
     expect(driveLink).toHaveAttribute('href', 'https://drive.google.com/file/d/drive-file-999/view');
     expect(screen.getByText('Copy Video Link')).toBeInTheDocument();
+    expect(document.querySelector('video')).toBeNull();
 
     // Zoho Recruit single button in candidate info header
     const zohoLink = screen.getByRole('link', { name: /Open in Zoho Recruit/i });
@@ -423,5 +425,38 @@ describe('ReportDetailView', () => {
     fireEvent.click(closeBtn);
 
     expect(screen.queryByTestId('mock-chat-copilot')).not.toBeInTheDocument();
+  });
+
+  it('renders report with increased text size classes for optimal readability', () => {
+    render(
+      <ReportDetailView
+        session={mockSession}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        voiceWarningCount={0}
+        faceWarningCount={0}
+        objectWarningCount={0}
+        totalWarnings={0}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    // 1. Title heading has enlarged font classes
+    const headerTitle = screen.getByText('Jane Doe — Interview Result');
+    expect(headerTitle).toHaveClass('text-lg');
+
+    // 2. Question text has enlarged font classes (not text-sm)
+    const questionText = screen.getByText('Please introduce yourself and highlight your experience.');
+    expect(questionText).toHaveClass('text-base');
+
+    // 3. Verbatim answer text has enlarged font classes (text-sm sm:text-base)
+    const verbatimAnswer = screen.getByText(/I have 6 years of experience building distributed systems in TypeScript and Go\./i);
+    expect(verbatimAnswer.closest('p')).toHaveClass('text-sm');
+
+    // 4. Executive summary paragraph has enlarged font classes
+    const execSummary = screen.getByText(/Jane demonstrated deep engineering acumen with scalable architecture concepts\./i);
+    expect(execSummary.closest('div')).toHaveClass('text-sm');
   });
 });

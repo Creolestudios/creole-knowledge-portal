@@ -210,34 +210,34 @@ export default function GatekeeperPage() {
   const getStatusBadge = (status: Submission['status']) => {
     const badges = {
       APPROVED: {
-        bg: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+        bg: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800/60',
         label: 'Approved',
         icon: CheckCircle2,
       },
       PENDING_QUIZ: {
-        bg: 'bg-amber-50 text-amber-700 border-amber-100',
+        bg: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-800/60',
         label: 'Comprehension Quiz Pending',
         icon: HelpCircle,
       },
       REJECTED_QUIZ: {
-        bg: 'bg-orange-50 text-orange-700 border-orange-100',
+        bg: 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400 border-orange-100 dark:border-orange-800/60',
         label: 'Quiz Failed',
         icon: XCircle,
       },
       REJECTED_AI: {
-        bg: 'bg-red-50 text-red-700 border-red-100',
+        bg: 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-100 dark:border-red-900/60',
         label: 'AI Rejected',
         icon: XCircle,
       },
       FLAGGED: {
-        bg: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+        bg: 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700',
         label: 'Flagged / Moderation',
         icon: AlertTriangle,
       },
     };
 
     const badge = badges[status] || {
-      bg: 'bg-zinc-100 text-zinc-700 border-zinc-200',
+      bg: 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700',
       label: status,
       icon: FileText,
     };
@@ -255,17 +255,17 @@ export default function GatekeeperPage() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center space-y-4">
+      <div className="min-h-screen bg-white dark:bg-[#121212] flex flex-col items-center justify-center space-y-4">
         <Loader2 className="w-8 h-8 text-brand animate-spin" />
-        <p className="text-zinc-500 font-medium">Initializing Gatekeeper UI...</p>
+        <p className="text-zinc-500 dark:text-zinc-400 font-medium">Initializing Gatekeeper UI...</p>
       </div>
     );
   }
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f8f9fa] flex">
+    <div className="h-screen overflow-hidden bg-[#f8f9fa] dark:bg-[#121212] flex transition-colors">
       {/* Sidebar */}
-      <aside className="w-72 bg-[#0a0a0a] text-white flex flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden">
+      <aside className="w-72 bg-white dark:bg-[#0a0a0a] text-zinc-900 dark:text-white flex flex-col p-8 hidden md:flex border-r border-zinc-200 dark:border-zinc-800 relative overflow-hidden shrink-0 transition-colors">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
 
         <div className="flex items-center gap-3 mb-12 relative z-10">
@@ -283,7 +283,7 @@ export default function GatekeeperPage() {
         <nav className="flex-1 space-y-1 relative z-10">
           <button
             onClick={() => router.push('/dashboard')}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer"
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer"
           >
             <Home size={20} />
             <span className="font-medium text-sm">Morning Brief</span>
@@ -291,14 +291,14 @@ export default function GatekeeperPage() {
 
           <button
             onClick={() => router.push('/dashboard/gatekeeper')}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-900/50 text-brand border border-brand/20 shadow-sm"
+            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group bg-zinc-100 dark:bg-zinc-900/50 text-brand border border-brand/20 shadow-sm"
           >
             <ShieldCheck size={20} />
             <span className="font-semibold text-sm">Blog Submissions</span>
           </button>
           <button
             onClick={() => router.push('/dashboard/quizzes')}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer text-left"
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-all group cursor-pointer text-left"
           >
             <Trophy size={20} className="group-hover:scale-110 transition-transform" />
             <span className="font-semibold text-sm">My Quizzes</span>
@@ -306,17 +306,17 @@ export default function GatekeeperPage() {
 
           <div className="h-4" />
 
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group">
+          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-all group">
             <Bell size={20} className="group-hover:rotate-12 transition-transform" />
             <span className="font-medium text-sm">Notifications</span>
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group">
+          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-all group">
             <Settings size={20} className="group-hover:rotate-90 transition-transform" />
             <span className="font-medium text-sm">Settings</span>
           </button>
         </nav>
 
-        <div className="pt-8 border-t border-zinc-800 relative z-10">
+        <div className="pt-8 border-t border-zinc-200 dark:border-zinc-800 relative z-10">
           <LogoutButton variant="sidebar" />
         </div>
       </aside>
@@ -335,17 +335,17 @@ export default function GatekeeperPage() {
           <div className="max-w-5xl mx-auto">
             {/* Header info */}
             <div className="mb-10">
-              <h2 className="text-3xl font-black text-zinc-900 tracking-tight mb-2">
+              <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tight mb-2">
                 Validate & Share Your Knowledge
               </h2>
-              <p className="text-zinc-500 text-base">
+              <p className="text-zinc-500 dark:text-zinc-400 text-base">
                 Submit technical articles to our newsletter. The AI Gatekeeper automatically screens
                 content quality and structures a comprehension check.
               </p>
             </div>
 
             {/* Nav tabs */}
-            <div className="flex border-b border-zinc-200 mb-8">
+            <div className="flex border-b border-zinc-200 dark:border-zinc-800 mb-8">
               <button
                 onClick={() => {
                   setActiveTab('history');
@@ -355,7 +355,7 @@ export default function GatekeeperPage() {
                 className={`py-3.5 px-6 font-bold text-sm border-b-2 transition-all cursor-pointer ${
                   activeTab === 'history' && !activeQuizSubmission
                     ? 'border-brand text-brand font-black'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-900'
+                    : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
               >
                 Submission History
@@ -369,7 +369,7 @@ export default function GatekeeperPage() {
                 className={`py-3.5 px-6 font-bold text-sm border-b-2 transition-all cursor-pointer ${
                   activeTab === 'submit' || activeQuizSubmission
                     ? 'border-brand text-brand font-black'
-                    : 'border-transparent text-zinc-500 hover:text-zinc-900'
+                    : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
                 }`}
               >
                 {activeQuizSubmission ? 'Active Comprehension Quiz' : 'Submit New Blog'}
@@ -378,8 +378,8 @@ export default function GatekeeperPage() {
 
             {/* Error alerts */}
             {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-700 text-sm font-semibold flex items-start gap-2">
-                <XCircle className="shrink-0 mt-0.5" size={16} />
+              <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/40 border border-red-100 dark:border-red-900/50 rounded-xl text-red-700 dark:text-red-300 text-sm font-semibold flex items-start gap-2">
+                <XCircle className="shrink-0 mt-0.5 text-red-500" size={16} />
                 <span>{error}</span>
               </div>
             )}
@@ -393,24 +393,24 @@ export default function GatekeeperPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="bg-white rounded-3xl border border-zinc-200 p-8 shadow-card"
+                  className="bg-white dark:bg-[#1f1f1f] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-8 shadow-card transition-colors"
                 >
-                  <div className="mb-6 pb-6 border-b border-zinc-100 flex justify-between items-start">
+                  <div className="mb-6 pb-6 border-b border-zinc-100 dark:border-zinc-800 flex justify-between items-start">
                     <div>
                       <span className="text-[10px] font-bold tracking-widest text-brand uppercase px-2 py-0.5 bg-brand/10 border border-brand/20 rounded">
                         Comprehension Verification
                       </span>
-                      <h3 className="text-2xl font-black text-zinc-900 mt-2">
+                      <h3 className="text-2xl font-black text-zinc-900 dark:text-white mt-2">
                         Quiz: {activeQuizSubmission.title}
                       </h3>
-                      <p className="text-zinc-500 text-sm mt-1">
+                      <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
                         Please answer the questions generated directly from your content to
                         authorize publication.
                       </p>
                     </div>
                     <button
                       onClick={() => setActiveQuizSubmission(null)}
-                      className="px-4 py-2 text-zinc-500 hover:text-zinc-900 border border-zinc-200 rounded-xl text-xs font-bold transition-all"
+                      className="px-4 py-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
                     >
                       Back to Dashboard
                     </button>
@@ -420,7 +420,7 @@ export default function GatekeeperPage() {
                     <form onSubmit={handleQuizSubmit} className="space-y-8">
                       {(activeQuizSubmission.quiz?.questions || []).map((q, qIndex) => (
                         <div key={q.id} className="space-y-3">
-                          <p className="text-base font-bold text-zinc-950">
+                          <p className="text-base font-bold text-zinc-950 dark:text-white">
                             {qIndex + 1}. {q.question}
                           </p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -433,17 +433,17 @@ export default function GatekeeperPage() {
                                   onClick={() =>
                                     setQuizAnswers((prev) => ({ ...prev, [q.id]: oIndex }))
                                   }
-                                  className={`p-4 rounded-2xl text-left text-sm font-medium border transition-all flex items-start gap-3 ${
+                                  className={`p-4 rounded-2xl text-left text-sm font-medium border transition-all flex items-start gap-3 cursor-pointer ${
                                     isSelected
                                       ? 'bg-brand/5 border-brand text-brand ring-2 ring-brand/10'
-                                      : 'bg-zinc-50 border-zinc-200 hover:bg-zinc-100/50 text-zinc-700'
+                                      : 'bg-zinc-50 dark:bg-zinc-800/70 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100/50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200'
                                   }`}
                                 >
                                   <span
                                     className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-xs font-bold ${
                                       isSelected
                                         ? 'bg-brand text-black'
-                                        : 'bg-zinc-200 text-zinc-600'
+                                        : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'
                                     }`}
                                   >
                                     {String.fromCodePoint(65 + oIndex)}
@@ -456,11 +456,11 @@ export default function GatekeeperPage() {
                         </div>
                       ))}
 
-                      <div className="pt-6 border-t border-zinc-100 flex justify-end">
+                      <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
                         <button
                           type="submit"
                           disabled={submittingQuiz}
-                          className="px-8 py-4 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 active:scale-98 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2"
+                          className="px-8 py-4 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 active:scale-98 transition-all text-sm uppercase tracking-widest disabled:opacity-50 flex items-center gap-2 cursor-pointer"
                         >
                           {submittingQuiz ? (
                             <>
@@ -479,7 +479,7 @@ export default function GatekeeperPage() {
                   ) : (
                     // Quiz Result State
                     <div className="text-center py-10 space-y-6">
-                      <div className="mx-auto w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-zinc-50 border">
+                      <div className="mx-auto w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
                         {quizResult.passed ? (
                           <CheckCircle2 className="text-emerald-500 w-12 h-12" />
                         ) : (
@@ -488,27 +488,27 @@ export default function GatekeeperPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <h4 className="text-2xl font-black text-zinc-950">
+                        <h4 className="text-2xl font-black text-zinc-950 dark:text-white">
                           {quizResult.passed
                             ? 'Author Verification Succeeded!'
                             : 'Verification Failed'}
                         </h4>
-                        <p className="text-zinc-500 text-sm max-w-md mx-auto">
+                        <p className="text-zinc-500 dark:text-zinc-400 text-sm max-w-md mx-auto">
                           You scored{' '}
-                          <span className="font-bold text-zinc-800">{quizResult.score}/3</span>.
+                          <span className="font-bold text-zinc-800 dark:text-zinc-200">{quizResult.score}/3</span>.
                           {quizResult.passed
                             ? ' Your technical blog is approved and is now live on the Creole Knowledge Portal!'
                             : ' You need at least 2 correct answers out of 3. You can review and re-submit your blog later.'}
                         </p>
                       </div>
 
-                      <div className="pt-6 border-t border-zinc-100 flex justify-center gap-4">
+                      <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800 flex justify-center gap-4">
                         <button
                           onClick={() => {
                             setActiveQuizSubmission(null);
                             setActiveTab('history');
                           }}
-                          className="px-6 py-3 bg-zinc-900 hover:bg-zinc-850 text-white text-xs font-bold rounded-xl transition-all"
+                          className="px-6 py-3 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-850 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 text-xs font-bold rounded-xl transition-all cursor-pointer"
                         >
                           Back to Submissions
                         </button>
@@ -523,13 +523,13 @@ export default function GatekeeperPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="bg-white rounded-3xl border border-zinc-200 p-8 shadow-card"
+                  className="bg-white dark:bg-[#1f1f1f] rounded-3xl border border-zinc-200 dark:border-zinc-800 p-8 shadow-card transition-colors"
                 >
                   {submitting ? (
                     // Submission loading / checker sequence
                     <div className="py-20 text-center space-y-8 max-w-sm mx-auto">
                       <div className="relative w-24 h-24 mx-auto">
-                        <div className="absolute inset-0 rounded-full border-4 border-zinc-100" />
+                        <div className="absolute inset-0 rounded-full border-4 border-zinc-100 dark:border-zinc-800" />
                         <div className="absolute inset-0 rounded-full border-4 border-brand border-t-transparent animate-spin" />
                         <div className="absolute inset-4 rounded-full bg-brand/10 flex items-center justify-center text-brand">
                           <UploadCloud size={24} />
@@ -537,17 +537,17 @@ export default function GatekeeperPage() {
                       </div>
 
                       <div className="space-y-3">
-                        <h4 className="text-xl font-bold text-zinc-950">AI Gatekeeper Screening</h4>
+                        <h4 className="text-xl font-bold text-zinc-950 dark:text-white">AI Gatekeeper Screening</h4>
 
                         {/* Loading stepper checks */}
-                        <div className="space-y-2 text-left bg-zinc-50 border border-zinc-150 p-4 rounded-2xl text-xs font-medium text-zinc-500">
+                        <div className="space-y-2 text-left bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 p-4 rounded-2xl text-xs font-medium text-zinc-500 dark:text-zinc-400">
                           <div className="flex items-center gap-2">
                             {submitStep >= 1 ? (
                               <Loader2 className="animate-spin text-brand" size={13} />
                             ) : (
-                              <div className="w-3.5 h-3.5 rounded-full bg-zinc-200" />
+                              <div className="w-3.5 h-3.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                             )}
-                            <span className={submitStep >= 1 ? 'text-zinc-800 font-bold' : ''}>
+                            <span className={submitStep >= 1 ? 'text-zinc-800 dark:text-zinc-100 font-bold' : ''}>
                               Analyzing quality, grammar & structure
                             </span>
                           </div>
@@ -555,9 +555,9 @@ export default function GatekeeperPage() {
                             {submitStep >= 2 ? (
                               <Loader2 className="animate-spin text-brand" size={13} />
                             ) : (
-                              <div className="w-3.5 h-3.5 rounded-full bg-zinc-200" />
+                              <div className="w-3.5 h-3.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                             )}
-                            <span className={submitStep >= 2 ? 'text-zinc-800 font-bold' : ''}>
+                            <span className={submitStep >= 2 ? 'text-zinc-800 dark:text-zinc-100 font-bold' : ''}>
                               Scanning anti-plagiarism indices
                             </span>
                           </div>
@@ -565,9 +565,9 @@ export default function GatekeeperPage() {
                             {submitStep >= 3 ? (
                               <Loader2 className="animate-spin text-brand" size={13} />
                             ) : (
-                              <div className="w-3.5 h-3.5 rounded-full bg-zinc-200" />
+                              <div className="w-3.5 h-3.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                             )}
-                            <span className={submitStep >= 3 ? 'text-zinc-800 font-bold' : ''}>
+                            <span className={submitStep >= 3 ? 'text-zinc-800 dark:text-zinc-100 font-bold' : ''}>
                               Generating technical check quiz questions
                             </span>
                           </div>
@@ -578,7 +578,7 @@ export default function GatekeeperPage() {
                     // Input Form
                     <form onSubmit={handleBlogSubmit} className="space-y-6">
                       <div className="space-y-2">
-                        <label htmlFor="gatekeeper-blog-title" className="text-sm font-bold text-zinc-700 block">Blog Title</label>
+                        <label htmlFor="gatekeeper-blog-title" className="text-sm font-bold text-zinc-700 dark:text-zinc-300 block">Blog Title</label>
                         <input
                           id="gatekeeper-blog-title"
                           type="text"
@@ -586,12 +586,12 @@ export default function GatekeeperPage() {
                           value={title}
                           onChange={(e) => setTitle(e.target.value)}
                           placeholder="e.g. Building micro-frontends with Module Federation"
-                          className="w-full px-5 py-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand text-zinc-900 font-medium placeholder:text-zinc-300 placeholder:font-normal transition-all"
+                          className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand text-zinc-900 dark:text-white font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all"
                         />
                       </div>
 
                       <div className="space-y-2">
-                        <label htmlFor="gatekeeper-blog-content" className="text-sm font-bold text-zinc-700 block">
+                        <label htmlFor="gatekeeper-blog-content" className="text-sm font-bold text-zinc-700 dark:text-zinc-300 block">
                           Blog Content (Markdown supported)
                         </label>
                         <textarea
@@ -601,14 +601,14 @@ export default function GatekeeperPage() {
                           value={content}
                           onChange={(e) => setContent(e.target.value)}
                           placeholder="Write or paste your markdown blog post content here..."
-                          className="w-full px-5 py-4 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand text-zinc-900 font-medium placeholder:text-zinc-300 placeholder:font-normal transition-all font-mono text-sm leading-relaxed"
+                          className="w-full px-5 py-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand text-zinc-900 dark:text-white font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500 transition-all font-mono text-sm leading-relaxed"
                         />
                       </div>
 
-                      <div className="pt-4 border-t border-zinc-100 flex justify-end">
+                      <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
                         <button
                           type="submit"
-                          className="px-10 py-5 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 active:scale-98 transition-all text-sm uppercase tracking-widest"
+                          className="px-10 py-5 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover hover:scale-105 active:scale-98 transition-all text-sm uppercase tracking-widest cursor-pointer"
                         >
                           Submit to Gatekeeper
                         </button>
@@ -626,18 +626,18 @@ export default function GatekeeperPage() {
                   className="space-y-4"
                 >
                   {submissions.length === 0 ? (
-                    <div className="bg-white border border-zinc-200 rounded-[32px] p-12 text-center space-y-4 shadow-sm">
-                      <div className="w-16 h-16 bg-zinc-50 rounded-2xl mx-auto flex items-center justify-center text-zinc-400">
+                    <div className="bg-white dark:bg-[#1f1f1f] border border-zinc-200 dark:border-zinc-800 rounded-[32px] p-12 text-center space-y-4 shadow-sm transition-colors">
+                      <div className="w-16 h-16 bg-zinc-50 dark:bg-zinc-800 rounded-2xl mx-auto flex items-center justify-center text-zinc-400 dark:text-zinc-500">
                         <BookOpen size={28} />
                       </div>
-                      <h3 className="text-xl font-extrabold text-zinc-900">No submissions yet</h3>
-                      <p className="text-zinc-500 max-w-sm mx-auto text-sm">
+                      <h3 className="text-xl font-extrabold text-zinc-900 dark:text-white">No submissions yet</h3>
+                      <p className="text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto text-sm">
                         You have not submitted any articles for validation. Share your technical
                         insights with the team today!
                       </p>
                       <button
                         onClick={() => setActiveTab('submit')}
-                        className="px-6 py-3 bg-brand text-black font-bold rounded-xl text-xs uppercase tracking-wider shadow-brand hover:bg-brand-hover transition-all"
+                        className="px-6 py-3 bg-brand text-black font-bold rounded-xl text-xs uppercase tracking-wider shadow-brand hover:bg-brand-hover transition-all cursor-pointer"
                       >
                         Create First Submission
                       </button>
@@ -646,27 +646,27 @@ export default function GatekeeperPage() {
                     submissions.map((sub) => (
                       <div
                         key={sub.id}
-                        className="bg-white border border-zinc-150 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-brand/40 hover:shadow-card transition-all"
+                        className="bg-white dark:bg-[#1f1f1f] border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 hover:border-brand/40 hover:shadow-card transition-all"
                       >
                         <div className="space-y-3 flex-1 min-w-0">
                           <div className="flex items-center gap-3 flex-wrap">
-                            <span className="text-xs text-zinc-400 font-medium">
+                            <span className="text-xs text-zinc-400 dark:text-zinc-500 font-medium">
                               {new Date(sub.createdAt).toLocaleDateString()}
                             </span>
                             {getStatusBadge(sub.status)}
                           </div>
 
-                          <h3 className="text-xl font-bold text-zinc-900 truncate">{sub.title}</h3>
+                          <h3 className="text-xl font-bold text-zinc-900 dark:text-white truncate">{sub.title}</h3>
 
                           {sub.validationReport && (
-                            <div className="flex items-center gap-4 text-xs font-semibold text-zinc-500">
+                            <div className="flex items-center gap-4 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                               <span className="flex items-center gap-1">
                                 Quality Score:{' '}
                                 <span
                                   className={`font-black ${
                                     sub.validationReport.qualityScore >= 70
-                                      ? 'text-emerald-600'
-                                      : 'text-zinc-800'
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-zinc-800 dark:text-zinc-200'
                                   }`}
                                 >
                                   {sub.validationReport.qualityScore}/100
@@ -677,8 +677,8 @@ export default function GatekeeperPage() {
                                 <span
                                   className={`font-black ${
                                     sub.validationReport.plagiarismOverlap > 30
-                                      ? 'text-red-500'
-                                      : 'text-emerald-600'
+                                      ? 'text-red-500 dark:text-red-400'
+                                      : 'text-emerald-600 dark:text-emerald-400'
                                   }`}
                                 >
                                   {sub.validationReport.plagiarismOverlap}%
@@ -689,8 +689,8 @@ export default function GatekeeperPage() {
 
                           {sub.validationReport?.reason &&
                             (sub.status === 'REJECTED_AI' || sub.status === 'FLAGGED') && (
-                              <p className="text-xs text-red-600 bg-red-50 border border-red-100/30 px-3.5 py-2 rounded-xl mt-2 leading-relaxed">
-                                <span className="font-bold uppercase tracking-widest text-[9px] block text-red-500 mb-0.5">
+                              <p className="text-xs text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-100/30 dark:border-red-900/50 px-3.5 py-2 rounded-xl mt-2 leading-relaxed">
+                                <span className="font-bold uppercase tracking-widest text-[9px] block text-red-500 dark:text-red-400 mb-0.5">
                                   Rejection Details:
                                 </span>
                                 {sub.validationReport.reason}
@@ -702,7 +702,7 @@ export default function GatekeeperPage() {
                           <div className="shrink-0">
                             <button
                               onClick={() => startQuiz(sub)}
-                              className="w-full md:w-auto px-5 py-3 bg-brand text-black font-black rounded-xl shadow-brand hover:bg-brand-hover text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-98"
+                              className="w-full md:w-auto px-5 py-3 bg-brand text-black font-black rounded-xl shadow-brand hover:bg-brand-hover text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-98 cursor-pointer"
                             >
                               Take Verification Quiz
                               <ArrowRight size={14} />

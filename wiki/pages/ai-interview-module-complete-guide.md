@@ -243,16 +243,27 @@ The AI inspects competencies where the candidate scored $\le 3/5$ and generates 
 ## 6. Admin & HR Reporting Dashboard
 
 Located at `/admin/reports/[id]`:
+- **Readable & Scaled Typography Hierarchy**:
+  - **Header & Title**: Candidate name and "Interview Result" headline styled at `text-lg sm:text-xl font-black` with clear session ID metadata.
+  - **Performance Profile & Summary**: Executive 2–3 paragraph evaluation paragraphs rendered in readable `text-sm sm:text-base text-zinc-700 leading-relaxed font-normal` with generous padding.
+  - **Candidate Overview**: Quick-glance metadata cards with prominent `text-sm sm:text-base font-bold` data values and `text-xs font-bold uppercase` labels.
+  - **Questions & Verbatim Answers**:
+    - Filter pills (All, HR, Technical) at `text-xs sm:text-sm font-bold`.
+    - Question statements enlarged to `text-base sm:text-lg font-bold leading-relaxed`.
+    - Verbatim spoken transcripts displayed at `text-sm sm:text-base leading-relaxed` with highlighted filler hesitation badges and legible legends.
 - **HR & Non-Technical View**:
-  - CEFR rating & badge.
-  - English communication breakdown (Grammar, Vocabulary, Coherence, Fluency).
-  - Speaking pace (WPM).
-  - **Continuous Warning Counter**: Visual strike tracker (Strike 1, Strike 2, Strike 3) with exact breakdown across Face, Object, and Voice.
+  - CEFR rating & badge with clear `text-base` descriptors.
+  - English communication breakdown (Grammar, Vocabulary, Coherence, Fluency) with `text-xs sm:text-sm` metric labels and band scores.
+  - Speaking pace and filler word frequency parameters at `text-xs sm:text-sm`.
+  - **Continuous Warning Counter & Incident Log**: Strict incident log with `text-xs sm:text-sm` strike timestamps, violation categories, and in-video timestamp navigation.
 - **Technical Evaluation View**:
-  - Question-by-question score (1–5) with evidence quotes and bluff indicators.
+  - Question-by-question score with evidence quotes and bluff indicators.
   - Recommended Round 2 technical deep-dive questions.
-- **Full Transcript View**:
+- **Full Transcript & Recording View**:
   - Chronological review of candidate speech answers with timestamps.
+  - Full Google Drive video recording link card with quick-copy and direct jump buttons.
+- **Interactive AI Copilot**:
+  - Grounded chat modal drawer with enlarged `text-sm sm:text-base` conversation bubbles, suggested questions, and input area.
 
 ---
 
@@ -493,3 +504,47 @@ During the live interview stage (`stage === 'interview'`), candidate actions and
    - If the candidate refreshes *that* termination screen, or closes and re-opens the link in any browser tab or window, the refresh bypass keys are no longer present.
    - The page immediately renders `<ExpiredInterviewLink>` with the `🔒 Single-Use Consumed` badge and "Link is expired" message.
    - All once-used, completed, or previously terminated links continue to consistently display the expired link screen upon any reopening.
+
+---
+
+## 13. Interview Reports Listing: Server-Side Pagination & Optimization
+
+### 13.1 Filter Bar Removal & Clean Layout
+- The legacy search and filter pills bar (`Search candidate name, email or role…`, Status filters, and Verdict pills) has been removed from `/admin/reports`.
+- This streamlines the evaluation summaries page and eliminates client-side DOM overhead from unindexed in-memory filters.
+
+### 13.2 High-Performance Server-Side Pagination
+- **API Endpoint**: `GET /api/interview/reports?page={page}&limit={limit}` (defaults: `page = 1`, `limit = 10`).
+- **Database Query Range**: Utilizes Supabase `.range(from, to)` with exact counts to retrieve only the sessions corresponding to the current active page:
+  - `from = (page - 1) * limit`
+  - `to = from + limit - 1`
+- **Scoped Joins & Event Lookups**: Relational queries (`interview_reports`, `interview_invites`, `interview_events` for warnings, violations, and recordings) are strictly filtered `in('session_id', sessionIds)` for the active page's subset rather than the entire database.
+- **Resource Protection**: Asynchronous background auto-scoring is only considered for unscored terminal sessions on the requested page, preventing database lockups and API rate limit exhaustion.
+- **Lightweight Global Stats**: Global metrics (`Total Interviews`, `Completed`, `Terminated`, `Avg. Cognitive Score`) are computed via lightweight `head: true` count queries and dedicated score column projections rather than downloading all historical session and event rows.
+
+### 13.3 Interactive UI Pagination Controls
+- **Summary Indicator**: Displays `Showing {start}–{end} of {total} candidates` with current `Page {page} of {totalPages}`.
+- **Navigation Controls**: Includes smart numbered page buttons with ellipsis handling (`1, 2, 3 ... N`), along with `Previous` and `Next` buttons with disabled boundaries.
+- **Smooth Viewport Transition**: Page transitions safely invoke `window.scrollTo({ top: 0, behavior: 'smooth' })` to keep recruiters focused on the top of the newly loaded page.
+- **SonarQube & React 19 Compliance**: Deferred effect fetching using `setTimeout(..., 0)` avoids cascading render cycles, and video recording action links use dedicated button handlers to prevent nested `<a>` inside `<Link>` hydration issues.
+
+---
+
+## 14. Report Typography & Comprehensive Theme Support (Dark & Light)
+
+### 14.1 Interview Report Typography & Legibility Enhancement
+- **Candidate Answers**: In `highlighted-verbatim-answer.tsx`, answer text sizes were scaled up from `text-sm` to `text-base sm:text-lg font-medium leading-relaxed` with enhanced token badges (`text-xs sm:text-sm font-semibold`) for effortless readability by hiring managers and interviewers.
+- **Executive Summaries**: In `report-detail-view.tsx`, executive summaries, candidate details, question titles (`text-lg sm:text-xl font-bold`), and proctoring warning notices were enlarged with improved contrast and breathing room.
+
+### 14.2 Site-Wide Theme Harmonization (Light & Dark Themes)
+- **Candidate Verification & Lobby Flow**: Resolved hardcoded dark background (`bg-[#0b0f14]`) by introducing responsive palette support (`bg-[#f8f9fa] dark:bg-[#0b0f14]`, `text-zinc-900 dark:text-white`, `border-zinc-200 dark:border-zinc-800`, `bg-white dark:bg-[#2b2b2b]` cards) across:
+  - Candidate Entry & Verification (`app/interview/[id]/page.tsx`, `app/assess/[token]/page.tsx`)
+  - Calibration Modal (`components/ai-interview/CalibrationModal.tsx`)
+  - Meeting Control Bar (`components/ai-interview/meeting-control-bar.tsx`)
+  - Instructions & Termination Screens (`proctoring-instructions.tsx`, `terminated-interview.tsx`, `expired-interview-link.tsx`)
+- **Interactive Quiz Runner & Moderation**:
+  - Converted hardcoded black backgrounds to responsive zinc palettes in `app/dashboard/quiz/[blogId]/page.tsx`, `components/quiz/quiz-runner.tsx`, and `components/dashboard/QuizModal.tsx`.
+  - Harmonized card states, question steppers, score meters, and review panels for both dark and light modes.
+- **Admin & Dashboard Portals**:
+  - Unified theme styling across `app/admin/reports/`, `app/admin/dashboard/`, `app/dashboard/`, `app/dashboard/quizzes/`, `app/dashboard/gatekeeper/`, `components/user-management.tsx`, and `components/submissions-moderation.tsx`.
+

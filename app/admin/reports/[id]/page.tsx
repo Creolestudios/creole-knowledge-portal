@@ -259,30 +259,37 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
   // Cap to 3 strikes for this attempt
   const finalStrikes = debouncedStrikes.slice(0, 3);
 
-  // 1. Explicit recording start timestamp from recording metadata
-  const explicitRecStart = recMeta.recordingStartTime || recMeta.startedAt
-    ? Number(recMeta.recordingStartTime || recMeta.startedAt)
-    : undefined;
+  // 1. Check for most recent explicit recording_started or session_started event for this run
+  const relevantRecStart = [...attemptEvents].reverse().find(
+    (e) => e.category === 'recording_started' || e.event_type === 'recording_started'
+  );
+
+  const recStartServerMs = relevantRecStart?.ts_ms
+    ? Number(relevantRecStart.ts_ms)
+    : (relevantRecStart?.created_at ? new Date(relevantRecStart.created_at).getTime() : 0);
 
   // 2. Explicit duration from recording metadata
   const explicitDurationSec = typeof recMeta.durationSeconds === 'number' && recMeta.durationSeconds > 0
     ? recMeta.durationSeconds
     : (typeof recMeta.duration === 'number' && recMeta.duration > 0 ? recMeta.duration : undefined);
 
-  // 3. Check for explicit recording_started or session_started event for this run
-  const relevantRecStart = attemptEvents.find(
-    (e) => e.category === 'recording_started' || e.event_type === 'recording_started'
-  );
+  // 3. Fallback server-estimated recording start from upload time - duration
+  const estimatedRecStartServerMs = (recUploadTs > 0 && explicitDurationSec && explicitDurationSec > 0)
+    ? Math.max(0, recUploadTs - explicitDurationSec * 1000)
+    : 0;
+
+  // 4. Explicit recording start timestamp from recording metadata or recording_started meta (moment MediaRecorder started capturing screen)
+  const explicitRecStart = recMeta.recordingStartTime || recMeta.startedAt || (relevantRecStart?.meta as Record<string, unknown> | undefined)?.startedAt
+    ? Number(recMeta.recordingStartTime || recMeta.startedAt || (relevantRecStart?.meta as Record<string, unknown> | undefined)?.startedAt)
+    : undefined;
 
   let videoStartMs: number;
   if (explicitRecStart && explicitRecStart > 0) {
     videoStartMs = explicitRecStart;
-  } else if (relevantRecStart) {
-    videoStartMs = relevantRecStart.ts_ms
-      ? Number(relevantRecStart.ts_ms)
-      : new Date(relevantRecStart.created_at).getTime();
-  } else if (explicitDurationSec && explicitDurationSec > 0 && recUploadTs > 0) {
-    videoStartMs = Math.max(0, recUploadTs - explicitDurationSec * 1000);
+  } else if (estimatedRecStartServerMs > 0) {
+    videoStartMs = estimatedRecStartServerMs;
+  } else if (recStartServerMs > 0) {
+    videoStartMs = recStartServerMs;
   } else if (finalStrikes.length > 0) {
     const firstStrikeTs = finalStrikes[0].ts_ms
       ? Number(finalStrikes[0].ts_ms)
@@ -355,7 +362,7 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       reason = rawReason || 'The candidate clicked outside the interview window or switched tabs.';
     } else {
       category = 'general';
-      categoryLabel = cat.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Integrity Violation';
+      categoryLabel = cat.replaceAll('_', ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Integrity Violation';
       reason = rawReason || `${categoryLabel} recorded during interview.`;
     }
 
@@ -365,14 +372,27 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       ? storedStrikeNum
       : (index + 1);
 
-    const rawTsMs = w.ts_ms
-      ? Number(w.ts_ms)
-      : (w.created_at ? new Date(w.created_at).getTime() : undefined);
+    const directOffsetSec = typeof meta.screenToastOffsetSec === 'number' && meta.screenToastOffsetSec >= 0
+      ? meta.screenToastOffsetSec
+      : (typeof meta.offsetSeconds === 'number' && meta.offsetSeconds >= 0
+        ? meta.offsetSeconds
+        : (typeof meta.videoOffsetSec === 'number' && meta.videoOffsetSec >= 0 ? meta.videoOffsetSec : undefined));
 
-    const computedOffset = (rawTsMs && videoStartMs > 0 && rawTsMs >= videoStartMs)
-      ? Math.floor((rawTsMs - videoStartMs) / 1000)
-      : 0;
-    const offsetSeconds = Math.max(0, Math.min(computedOffset, maxVideoDurationSec));
+    const rawTsMs = (typeof meta.client_ts === 'number' && meta.client_ts > 0)
+      ? meta.client_ts
+      : (w.ts_ms
+        ? Number(w.ts_ms)
+        : (w.created_at ? new Date(w.created_at).getTime() : undefined));
+
+    let offsetSeconds: number;
+    if (directOffsetSec !== undefined) {
+      offsetSeconds = Math.min(directOffsetSec, maxVideoDurationSec);
+    } else {
+      const computedOffset = (rawTsMs && videoStartMs > 0 && rawTsMs >= videoStartMs)
+        ? Math.floor((rawTsMs - videoStartMs) / 1000)
+        : 0;
+      offsetSeconds = Math.max(0, Math.min(computedOffset, maxVideoDurationSec));
+    }
 
     const mins = Math.floor(offsetSeconds / 60);
     const secs = offsetSeconds % 60;
@@ -404,13 +424,27 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
   // If there were NO strikes found, but the session was terminated by proctoring guard,
   // show exactly ONE terminal violation incident rather than leaving it empty
   if (proctoringWarnings.length === 0 && isTerminated) {
-    const rawTermTsMs = violationEvent?.ts_ms
-      ? Number(violationEvent.ts_ms)
-      : (violationEvent?.created_at ? new Date(violationEvent.created_at).getTime() : undefined);
-    const termComputed = (rawTermTsMs && videoStartMs > 0 && rawTermTsMs >= videoStartMs)
-      ? Math.floor((rawTermTsMs - videoStartMs) / 1000)
-      : maxVideoDurationSec;
-    const termOffset = Math.max(0, Math.min(termComputed, maxVideoDurationSec));
+    const vMeta = (violationEvent?.metadata || violationEvent?.meta || {}) as Record<string, unknown>;
+    const directTermOffset = typeof vMeta.screenToastOffsetSec === 'number' && vMeta.screenToastOffsetSec >= 0
+      ? vMeta.screenToastOffsetSec
+      : (typeof vMeta.offsetSeconds === 'number' && vMeta.offsetSeconds >= 0
+        ? vMeta.offsetSeconds
+        : (typeof vMeta.videoOffsetSec === 'number' && vMeta.videoOffsetSec >= 0 ? vMeta.videoOffsetSec : undefined));
+    const rawTermTsMs = (typeof vMeta.client_ts === 'number' && vMeta.client_ts > 0)
+      ? vMeta.client_ts
+      : (violationEvent?.ts_ms
+        ? Number(violationEvent.ts_ms)
+        : (violationEvent?.created_at ? new Date(violationEvent.created_at).getTime() : undefined));
+
+    let termOffset: number;
+    if (directTermOffset !== undefined) {
+      termOffset = Math.min(directTermOffset, maxVideoDurationSec);
+    } else {
+      const termComputed = (rawTermTsMs && videoStartMs > 0 && rawTermTsMs >= videoStartMs)
+        ? Math.floor((rawTermTsMs - videoStartMs) / 1000)
+        : maxVideoDurationSec;
+      termOffset = Math.max(0, Math.min(termComputed, maxVideoDurationSec));
+    }
     const tMins = Math.floor(termOffset / 60);
     const tSecs = termOffset % 60;
     const tElapsedLabel = `${String(tMins).padStart(2, '0')}:${String(tSecs).padStart(2, '0')}`;

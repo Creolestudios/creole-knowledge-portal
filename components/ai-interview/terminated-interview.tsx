@@ -18,11 +18,11 @@ export function TerminatedInterview({
   uploadStatusText = '',
 }: TerminatedInterviewProps) {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-      <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-red-100 p-8 text-center space-y-4">
+    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 transition-colors">
+      <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-red-100 dark:border-red-900/40 p-8 text-center space-y-4">
         <ShieldAlert className="w-10 h-10 text-red-500 mx-auto" />
         <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Interview terminated</h1>
-        <p className="text-sm text-zinc-600 font-medium">
+        <p className="text-sm text-zinc-600 dark:text-zinc-300 font-medium">
           {terminationReason ?? 'A monitoring rule was violated.'}
         </p>
         <p className="text-xs text-zinc-400 dark:text-[#9f9f9f]">

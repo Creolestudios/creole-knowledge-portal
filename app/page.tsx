@@ -88,7 +88,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col md:flex-row bg-white font-sans">
+    <main className="min-h-screen flex flex-col md:flex-row bg-white dark:bg-black font-sans transition-colors">
       {/* Left Column - Branding & Atmosphere */}
       <section className="relative w-full md:w-1/2 bg-zinc-900 dark:bg-[#0a0a0a] flex flex-col justify-center px-10 md:px-16 py-20 text-white overflow-hidden min-h-[400px]">
         {/* This panel stays dark in both themes by design (brand hero) —
@@ -126,17 +126,17 @@ export default function LoginPage() {
       </section>
 
       {/* Right Column - Authentication Card */}
-      <section className="w-full md:w-1/2 flex flex-col justify-center items-center bg-[#f8f9fa] border-l border-zinc-200 p-6 md:p-10">
+      <section className="w-full md:w-1/2 flex flex-col justify-center items-center bg-[#f8f9fa] dark:bg-[#121212] border-l border-zinc-200 dark:border-zinc-800 p-6 md:p-10 transition-colors">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.2 }}
           className="w-full max-w-md"
         >
-          <div className="bg-white p-8 md:p-12 rounded-2xl shadow-card border border-zinc-100">
+          <div className="bg-white dark:bg-[#1e1e1e] p-8 md:p-12 rounded-2xl shadow-card border border-zinc-100 dark:border-zinc-800 transition-colors">
             <div className="mb-10">
-              <h3 id="signin-heading" className="text-2xl font-bold text-zinc-900 mb-2">Welcome Back</h3>
-              <p className="text-zinc-500 text-sm">Sign in to access your knowledge network.</p>
+              <h3 id="signin-heading" className="text-2xl font-bold text-zinc-900 dark:text-white mb-2">Welcome Back</h3>
+              <p className="text-zinc-500 dark:text-zinc-400 text-sm">Sign in to access your knowledge network.</p>
             </div>
 
             <div className="space-y-6">
@@ -144,7 +144,7 @@ export default function LoginPage() {
                 <button
                   id="google-login-button"
                   onClick={() => handleOAuthLogin('google')}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors shadow-sm text-zinc-700 font-semibold text-sm active:scale-[0.98]"
+                  className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors shadow-sm text-zinc-700 dark:text-zinc-200 font-semibold text-sm active:scale-[0.98] cursor-pointer"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path
@@ -166,31 +166,20 @@ export default function LoginPage() {
                   </svg>
                   Continue with Google
                 </button>
-
-                {/* <button
-                  id="apple-login-button"
-                  onClick={() => handleOAuthLogin('apple')}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-black border border-black rounded-lg hover:bg-zinc-900 transition-colors shadow-sm text-white font-semibold text-sm active:scale-[0.98]"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <path d="M17.05 12.08c-.03-3.01 2.46-4.45 2.57-4.52-1.4-2.05-3.58-2.33-4.35-2.36-1.85-.19-3.61 1.09-4.55 1.09-.94 0-2.39-1.06-3.93-1.03-2.02.03-3.88 1.17-4.92 2.98-2.1 3.64-.54 9.03 1.51 11.98 1 1.44 2.19 3.06 3.76 3 1.51-.06 2.08-.97 3.9-.97s2.34.97 3.93.94c1.62-.03 2.65-1.47 3.64-2.92 1.15-1.68 1.62-3.31 1.65-3.39-.04-.02-3.17-1.22-3.21-4.8zM14.06 3.25c.83-1.01 1.39-2.41 1.24-3.8-1.2.05-2.65.8-3.51 1.81-.77.89-1.44 2.32-1.26 3.68 1.34.1 2.7-.68 3.53-1.69z" />
-                  </svg>
-                  Continue with Apple
-                </button> */}
               </div>
 
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t border-zinc-100"></span>
+                  <span className="w-full border-t border-zinc-100 dark:border-zinc-800"></span>
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-4 text-zinc-400 font-bold tracking-widest">or</span>
+                  <span className="bg-white dark:bg-[#1e1e1e] px-4 text-zinc-400 dark:text-zinc-500 font-bold tracking-widest">or</span>
                 </div>
               </div>
 
               <form onSubmit={handleLogin} className="space-y-6">
                 <div>
-                  <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2 ml-1">
+                  <label htmlFor="email" className="block text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-2 ml-1">
                     Email Address
                   </label>
                   <input
@@ -200,7 +189,7 @@ export default function LoginPage() {
                     placeholder="name@creole.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition-all text-zinc-900 placeholder:text-zinc-300"
+                    className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition-all text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
                     disabled={loading || success}
                   />
                 </div>
@@ -211,7 +200,7 @@ export default function LoginPage() {
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="flex items-center gap-2 p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100"
+                      className="flex items-center gap-2 p-3 text-sm text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-950/40 rounded-lg border border-red-100 dark:border-red-900/50"
                     >
                       <AlertCircle className="w-4 h-4 flex-shrink-0" />
                       <p>{error}</p>
@@ -222,7 +211,7 @@ export default function LoginPage() {
                     <motion.div
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="flex items-center gap-3 p-4 text-sm text-emerald-600 bg-emerald-50 rounded-lg border border-emerald-100"
+                      className="flex items-center gap-3 p-4 text-sm text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 rounded-lg border border-emerald-100 dark:border-emerald-900/50"
                     >
                       <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
                       <p className="font-medium">Check your inbox — a login link has been sent!</p>
@@ -234,7 +223,7 @@ export default function LoginPage() {
                   id="submit-button"
                   type="submit"
                   disabled={loading || success}
-                  className="w-full bg-brand hover:bg-brand-hover text-black font-bold py-3.5 rounded-lg transition-all shadow-lg shadow-brand/20 flex items-center justify-center space-x-2 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed group"
+                  className="w-full bg-brand hover:bg-brand-hover text-black font-bold py-3.5 rounded-lg transition-all shadow-lg shadow-brand/20 flex items-center justify-center space-x-2 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed group cursor-pointer"
                 >
                   {loading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -259,7 +248,7 @@ export default function LoginPage() {
               </form>
             </div>
 
-            <p className="mt-8 text-center text-[10px] text-zinc-400 leading-relaxed">
+            <p className="mt-8 text-center text-[10px] text-zinc-400 dark:text-zinc-500 leading-relaxed">
               By signing in, you agree to our Internal Data Handling Policies and Security Protocols.
             </p>
           </div>

@@ -136,15 +136,15 @@ export default function SubmissionsModeration() {
 
   const getStatusBadge = (status: Submission['status']) => {
     const badges = {
-      APPROVED: { bg: 'bg-emerald-50 text-emerald-700 border-emerald-100', label: 'Approved' },
-      PENDING_QUIZ: { bg: 'bg-blue-50 text-blue-700 border-blue-100', label: 'Quiz Pending' },
-      REJECTED_QUIZ: { bg: 'bg-orange-50 text-orange-700 border-orange-100', label: 'Quiz Failed' },
-      REJECTED_AI: { bg: 'bg-red-50 text-red-700 border-red-100', label: 'AI Rejected' },
-      FLAGGED: { bg: 'bg-zinc-150 text-zinc-700 border-zinc-250', label: 'Flagged / Rejected' },
+      APPROVED: { bg: 'bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40', label: 'Approved' },
+      PENDING_QUIZ: { bg: 'bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800/40', label: 'Quiz Pending' },
+      REJECTED_QUIZ: { bg: 'bg-orange-50 text-orange-700 border-orange-100 dark:bg-orange-950/40 dark:text-orange-400 dark:border-orange-800/40', label: 'Quiz Failed' },
+      REJECTED_AI: { bg: 'bg-red-50 text-red-700 border-red-100 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800/40', label: 'AI Rejected' },
+      FLAGGED: { bg: 'bg-zinc-150 text-zinc-700 border-zinc-250 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700', label: 'Flagged / Rejected' },
     };
 
     const badge = badges[status] || {
-      bg: 'bg-zinc-50 text-zinc-700 border-zinc-100',
+      bg: 'bg-zinc-50 text-zinc-700 border-zinc-100 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
       label: status,
     };
 
@@ -171,7 +171,7 @@ export default function SubmissionsModeration() {
     return (
       <div className="py-20 flex flex-col items-center justify-center space-y-4">
         <Loader2 className="w-8 h-8 text-[#34c4f2] animate-spin" />
-        <p className="text-zinc-500 font-medium">Fetching submission logs...</p>
+        <p className="text-zinc-500 dark:text-zinc-400 font-medium">Fetching submission logs...</p>
       </div>
     );
   }
@@ -179,14 +179,14 @@ export default function SubmissionsModeration() {
   return (
     <div className="space-y-6">
       {/* Tab select and Filters */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-100 pb-5">
-        <div className="flex bg-zinc-100 p-1 rounded-xl">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-100 dark:border-zinc-800 pb-5">
+        <div className="flex bg-zinc-100 dark:bg-zinc-800/80 p-1 rounded-xl">
           <button
             onClick={() => setActiveSubTab('list')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeSubTab === 'list'
-                ? 'bg-white text-zinc-900 shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-900'
+                ? 'bg-white dark:bg-[#1e1e1e] text-zinc-900 dark:text-white shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
             }`}
           >
             <BookOpen size={14} />
@@ -196,8 +196,8 @@ export default function SubmissionsModeration() {
             onClick={() => setActiveSubTab('logs')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
               activeSubTab === 'logs'
-                ? 'bg-white text-zinc-900 shadow-sm'
-                : 'text-zinc-500 hover:text-zinc-900'
+                ? 'bg-white dark:bg-[#1e1e1e] text-zinc-900 dark:text-white shadow-sm'
+                : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
             }`}
           >
             <Activity size={14} />
@@ -218,7 +218,7 @@ export default function SubmissionsModeration() {
                 placeholder="Search title or author..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="pl-9 pr-4 py-2.5 bg-white border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2]"
+                className="pl-9 pr-4 py-2.5 bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2]"
               />
             </div>
 
@@ -228,7 +228,7 @@ export default function SubmissionsModeration() {
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-white border border-zinc-200 rounded-xl px-3 py-2.5 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2]"
+                className="bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2.5 text-xs font-medium text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2]"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="PENDING_QUIZ">Quiz Pending</option>
@@ -260,9 +260,9 @@ export default function SubmissionsModeration() {
             className="space-y-4"
           >
             {filteredSubmissions.length === 0 ? (
-              <div className="text-center py-20 bg-white border rounded-2xl p-8">
-                <FileText className="mx-auto text-zinc-300 w-12 h-12 mb-4" />
-                <p className="text-zinc-500 font-medium">No matching submissions found.</p>
+              <div className="text-center py-20 bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8">
+                <FileText className="mx-auto text-zinc-300 dark:text-zinc-600 w-12 h-12 mb-4" />
+                <p className="text-zinc-500 dark:text-zinc-400 font-medium">No matching submissions found.</p>
               </div>
             ) : (
               filteredSubmissions.map((sub) => {
@@ -272,7 +272,7 @@ export default function SubmissionsModeration() {
                 return (
                   <div
                     key={sub.id}
-                    className="bg-white border border-zinc-150 rounded-2xl overflow-hidden shadow-sm hover:shadow-card hover:border-[#34c4f2]/30 transition-all"
+                    className="bg-white dark:bg-[#1e1e1e] border border-zinc-150 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-card hover:border-[#34c4f2]/30 transition-all"
                   >
                     {/* Header line */}
                     <div
@@ -285,7 +285,7 @@ export default function SubmissionsModeration() {
                           setExpandedId(isExpanded ? null : sub.id);
                         }
                       }}
-                      className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-zinc-50/50 transition-colors"
+                      className="p-6 flex items-center justify-between gap-4 cursor-pointer hover:bg-zinc-50/50 dark:hover:bg-zinc-800/40 transition-colors"
                     >
                       <div className="min-w-0 flex-1 space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -295,12 +295,12 @@ export default function SubmissionsModeration() {
                           <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
                             •
                           </span>
-                          <span className="text-xs text-zinc-500 font-medium truncate max-w-xs">
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium truncate max-w-xs">
                             {sub.author}
                           </span>
                           {getStatusBadge(sub.status)}
                         </div>
-                        <h3 className="text-lg font-bold text-zinc-900 truncate">{sub.title}</h3>
+                        <h3 className="text-lg font-bold text-zinc-900 dark:text-white truncate">{sub.title}</h3>
                       </div>
 
                       <div className="flex items-center gap-3 shrink-0">
@@ -312,8 +312,8 @@ export default function SubmissionsModeration() {
                             <p
                               className={`text-base font-black ${
                                 sub.validationReport.qualityScore >= 70
-                                  ? 'text-emerald-500'
-                                  : 'text-zinc-800'
+                                  ? 'text-emerald-500 dark:text-emerald-400'
+                                  : 'text-zinc-800 dark:text-zinc-200'
                               }`}
                             >
                               {sub.validationReport.qualityScore}/100
@@ -330,11 +330,11 @@ export default function SubmissionsModeration() {
 
                     {/* Collapsible Content block */}
                     {isExpanded && (
-                      <div className="border-t border-zinc-100 p-6 bg-zinc-50/30 space-y-6">
+                      <div className="border-t border-zinc-100 dark:border-zinc-800 p-6 bg-zinc-50/40 dark:bg-zinc-900/40 space-y-6">
                         {/* Validation report parameters */}
                         {sub.validationReport && (
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="bg-white border rounded-xl p-4 shadow-sm">
+                            <div className="bg-white dark:bg-[#252525] border border-zinc-150 dark:border-zinc-700/60 rounded-xl p-4 shadow-sm">
                               <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">
                                 Quality Score
                               </span>
@@ -342,17 +342,17 @@ export default function SubmissionsModeration() {
                                 <Sparkles
                                   className={
                                     sub.validationReport.qualityScore >= 70
-                                      ? 'text-emerald-500'
-                                      : 'text-amber-500'
+                                      ? 'text-emerald-500 dark:text-emerald-400'
+                                      : 'text-amber-500 dark:text-amber-400'
                                   }
                                   size={16}
                                 />
-                                <span className="text-lg font-black">
+                                <span className="text-lg font-black text-zinc-900 dark:text-white">
                                   {sub.validationReport.qualityScore}/100
                                 </span>
                               </div>
                             </div>
-                            <div className="bg-white border rounded-xl p-4 shadow-sm">
+                            <div className="bg-white dark:bg-[#252525] border border-zinc-150 dark:border-zinc-700/60 rounded-xl p-4 shadow-sm">
                               <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">
                                 Anti-Spam / Quality
                               </span>
@@ -362,35 +362,35 @@ export default function SubmissionsModeration() {
                                 sub.validationReport.aiSpamDetected ? (
                                   <>
                                     <XCircle className="text-red-500" size={15} />
-                                    <span className="text-red-600">Failed Screen</span>
+                                    <span className="text-red-600 dark:text-red-400">Failed Screen</span>
                                   </>
                                 ) : (
                                   <>
                                     <CheckCircle2 className="text-emerald-500" size={15} />
-                                    <span className="text-emerald-600">Passed Screen</span>
+                                    <span className="text-emerald-600 dark:text-emerald-400">Passed Screen</span>
                                   </>
                                 )}
                               </div>
                             </div>
-                            <div className="bg-white border rounded-xl p-4 shadow-sm">
+                            <div className="bg-white dark:bg-[#252525] border border-zinc-150 dark:border-zinc-700/60 rounded-xl p-4 shadow-sm">
                               <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">
                                 Plagiarism Check
                               </span>
                               <span
                                 className={`text-base font-black ${
                                   sub.validationReport.plagiarismOverlap > 30
-                                    ? 'text-red-500'
-                                    : 'text-emerald-600'
+                                    ? 'text-red-500 dark:text-red-400'
+                                    : 'text-emerald-600 dark:text-emerald-400'
                                 }`}
                               >
                                 {sub.validationReport.plagiarismOverlap}% overlap
                               </span>
                             </div>
-                            <div className="bg-white border rounded-xl p-4 shadow-sm">
+                            <div className="bg-white dark:bg-[#252525] border border-zinc-150 dark:border-zinc-700/60 rounded-xl p-4 shadow-sm">
                               <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">
                                 Quiz Status
                               </span>
-                              <span className="text-xs font-bold">
+                              <span className="text-xs font-bold text-zinc-900 dark:text-white">
                                 {sub.quiz?.score !== undefined
                                   ? `Scored ${sub.quiz.score}/3`
                                   : 'Quiz Not Attempted'}
@@ -401,29 +401,29 @@ export default function SubmissionsModeration() {
 
                         {/* Detailed validation reason */}
                         {sub.validationReport?.reason && (
-                          <div className="bg-white border border-zinc-150 rounded-xl p-4">
+                          <div className="bg-white dark:bg-[#252525] border border-zinc-150 dark:border-zinc-700/60 rounded-xl p-4">
                             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-1">
                               AI Gatekeeper Rationale
                             </span>
-                            <p className="text-xs font-semibold text-zinc-600 leading-relaxed">
+                            <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 leading-relaxed">
                               {sub.validationReport.reason}
                             </p>
                           </div>
                         )}
 
                         {/* Full blog content block */}
-                        <div className="bg-white border border-zinc-150 rounded-2xl p-6">
+                        <div className="bg-white dark:bg-[#252525] border border-zinc-150 dark:border-zinc-700/60 rounded-2xl p-6">
                           <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-3">
                             Blog Content Preview
                           </span>
-                          <div className="prose prose-sm max-w-none max-h-72 overflow-y-auto text-zinc-700 font-mono text-xs whitespace-pre-wrap leading-relaxed border-t pt-3">
+                          <div className="prose prose-sm max-w-none max-h-72 overflow-y-auto text-zinc-700 dark:text-zinc-300 font-mono text-xs whitespace-pre-wrap leading-relaxed border-t border-zinc-150 dark:border-zinc-700/60 pt-3">
                             {sub.content}
                           </div>
                         </div>
 
                         {/* Quiz representation */}
                         {sub.quiz && (
-                          <div className="bg-white border border-zinc-150 rounded-xl p-6">
+                          <div className="bg-white dark:bg-[#252525] border border-zinc-150 dark:border-zinc-700/60 rounded-xl p-6">
                             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest block mb-3">
                               Comprehension Quiz Setup
                             </span>
@@ -433,9 +433,9 @@ export default function SubmissionsModeration() {
                                 return (
                                   <div
                                     key={q.id}
-                                    className="text-xs border-b pb-3 last:border-0 last:pb-0"
+                                    className="text-xs border-b border-zinc-100 dark:border-zinc-700/60 pb-3 last:border-0 last:pb-0"
                                   >
-                                    <p className="font-bold text-zinc-900 mb-2">
+                                    <p className="font-bold text-zinc-900 dark:text-white mb-2">
                                       {idx + 1}. {q.question}
                                     </p>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-3">
@@ -447,20 +447,20 @@ export default function SubmissionsModeration() {
                                             key={oIdx}
                                             className={`p-2 rounded border flex items-center justify-between ${
                                               isCorrect
-                                                ? 'bg-emerald-50 border-emerald-100 text-emerald-800'
+                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-800/40 text-emerald-800 dark:text-emerald-300'
                                                 : isSelected
-                                                  ? 'bg-red-50 border-red-100 text-red-800'
-                                                  : 'bg-zinc-50 border-zinc-200 text-zinc-500'
+                                                  ? 'bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-800/40 text-red-800 dark:text-red-300'
+                                                  : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400'
                                             }`}
                                           >
                                             <span>{opt}</span>
                                             {isCorrect && (
-                                              <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded">
+                                              <span className="text-[9px] font-black uppercase text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded">
                                                 Correct
                                               </span>
                                             )}
                                             {isSelected && !isCorrect && (
-                                              <span className="text-[9px] font-black uppercase text-red-600 bg-red-100 px-1.5 py-0.5 rounded">
+                                              <span className="text-[9px] font-black uppercase text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/60 px-1.5 py-0.5 rounded">
                                                 User Picked
                                               </span>
                                             )}
@@ -477,7 +477,7 @@ export default function SubmissionsModeration() {
 
                         {/* Moderation manual override block */}
                         {canOverride && (
-                          <div className="pt-6 border-t border-zinc-100 flex flex-col md:flex-row items-end md:items-center gap-4 bg-zinc-50/50 -mx-6 -mb-6 p-6">
+                          <div className="pt-6 border-t border-zinc-150 dark:border-zinc-800 flex flex-col md:flex-row items-end md:items-center gap-4 bg-zinc-50/50 dark:bg-zinc-900/60 -mx-6 -mb-6 p-6">
                             <div className="flex-1 w-full relative">
                               <MessageSquare
                                 className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400"
@@ -493,7 +493,7 @@ export default function SubmissionsModeration() {
                                     [sub.id]: e.target.value,
                                   }))
                                 }
-                                className="w-full pl-10 pr-4 py-3 bg-white border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2]"
+                                className="w-full pl-10 pr-4 py-3 bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2]"
                               />
                             </div>
 
@@ -501,7 +501,7 @@ export default function SubmissionsModeration() {
                               <button
                                 onClick={() => handleModerate(sub.id, 'REJECT')}
                                 disabled={modifyingId === sub.id}
-                                className="flex-1 md:flex-none px-5 py-3 border border-red-200 hover:bg-red-50 text-red-600 rounded-xl text-xs font-bold transition-all active:scale-98 disabled:opacity-50"
+                                className="flex-1 md:flex-none px-5 py-3 border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 rounded-xl text-xs font-bold transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
                               >
                                 {modifyingId === sub.id ? (
                                   <Loader2 className="animate-spin inline" size={12} />
@@ -512,7 +512,7 @@ export default function SubmissionsModeration() {
                               <button
                                 onClick={() => handleModerate(sub.id, 'APPROVE')}
                                 disabled={modifyingId === sub.id}
-                                className="flex-1 md:flex-none px-6 py-3 bg-brand text-black font-black shadow-brand hover:bg-brand-hover rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 disabled:opacity-50"
+                                className="flex-1 md:flex-none px-6 py-3 bg-brand text-black font-black shadow-brand hover:bg-brand-hover rounded-xl text-xs uppercase tracking-wider transition-all active:scale-98 disabled:opacity-50 cursor-pointer"
                               >
                                 {modifyingId === sub.id ? (
                                   <Loader2 className="animate-spin inline" size={12} />
@@ -537,15 +537,15 @@ export default function SubmissionsModeration() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm max-w-3xl mx-auto"
+            className="bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm max-w-3xl mx-auto transition-colors"
           >
             {auditLogs.length === 0 ? (
               <div className="text-center py-10">
-                <Clock className="mx-auto text-zinc-300 w-10 h-10 mb-2" />
-                <p className="text-zinc-500 font-medium">No audit logs recorded yet.</p>
+                <Clock className="mx-auto text-zinc-300 dark:text-zinc-600 w-10 h-10 mb-2" />
+                <p className="text-zinc-500 dark:text-zinc-400 font-medium">No audit logs recorded yet.</p>
               </div>
             ) : (
-              <div className="relative border-l-2 border-zinc-100 pl-6 space-y-6 py-2">
+              <div className="relative border-l-2 border-zinc-150 dark:border-zinc-800 pl-6 space-y-6 py-2">
                 {auditLogs.map((log) => {
                   const actionColors = {
                     SUBMITTED: 'bg-blue-500',
@@ -560,28 +560,28 @@ export default function SubmissionsModeration() {
                     <div key={log.id} className="relative">
                       {/* Timeline dot */}
                       <div
-                        className={`absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full border-2 border-white ring-4 ring-zinc-50 ${color}`}
+                        className={`absolute -left-[31px] top-1 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-[#1e1e1e] ring-4 ring-zinc-50 dark:ring-zinc-800 ${color}`}
                       />
 
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                          <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                             {new Date(log.timestamp).toLocaleTimeString([], {
                               hour: '2-digit',
                               minute: '2-digit',
                             })}{' '}
                             • {new Date(log.timestamp).toLocaleDateString()}
                           </span>
-                          <span className="text-xs font-black text-zinc-800 px-2 py-0.5 rounded bg-zinc-100 uppercase tracking-widest scale-90">
+                          <span className="text-xs font-black text-zinc-800 dark:text-zinc-200 px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 uppercase tracking-widest scale-90">
                             {log.action}
                           </span>
                         </div>
 
-                        <p className="text-xs font-semibold text-zinc-800 leading-normal">
+                        <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-200 leading-normal">
                           {log.details}
                         </p>
 
-                        <p className="text-[10px] font-mono text-zinc-400">
+                        <p className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500">
                           Performed by: {log.performedBy}
                         </p>
                       </div>

@@ -199,10 +199,10 @@ export default function UserManagement() {
             exit={{ opacity: 0, x: -20 }}
             className="space-y-6"
           >
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-100 pb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-150 dark:border-zinc-800 pb-6">
               <div>
-                <h2 className="text-2xl font-black text-zinc-900 tracking-tight">All Users</h2>
-                <p className="text-zinc-500 text-sm">Click on a user to view and manage their profile details.</p>
+                <h2 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">All Users</h2>
+                <p className="text-zinc-500 dark:text-zinc-400 text-sm">Click on a user to view and manage their profile details.</p>
               </div>
               <div className="relative w-full md:w-80">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
@@ -211,16 +211,16 @@ export default function UserManagement() {
                   placeholder="Search by email or interests..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-sm transition-all"
+                  className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-sm text-zinc-900 dark:text-white transition-all"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3">
               {filteredUsers.length === 0 ? (
-                <div className="text-center py-20 bg-zinc-50 rounded-3xl border border-dashed border-zinc-200">
-                  <User className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-                  <p className="text-zinc-500 font-medium tracking-tight">No users found</p>
+                <div className="text-center py-20 bg-zinc-50 dark:bg-zinc-900/40 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                  <User className="w-12 h-12 text-zinc-300 dark:text-zinc-600 mx-auto mb-4" />
+                  <p className="text-zinc-500 dark:text-zinc-400 font-medium tracking-tight">No users found</p>
                 </div>
               ) : (
                 filteredUsers.map((user) => {
@@ -229,39 +229,39 @@ export default function UserManagement() {
                     <button
                       key={user.user_id}
                       onClick={() => handleUserClick(user)}
-                      className="flex items-center justify-between p-5 bg-white border border-zinc-100 rounded-2xl hover:border-[#34c4f2]/30 hover:shadow-card transition-all text-left group"
+                      className="flex items-center justify-between p-5 bg-white dark:bg-[#1e1e1e] border border-zinc-150 dark:border-zinc-800 rounded-2xl hover:border-[#34c4f2]/30 hover:shadow-card transition-all text-left group cursor-pointer"
                     >
                       <div className="flex items-center gap-4">
                         <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${
-                          complete ? 'bg-emerald-50 text-emerald-500' : 'bg-zinc-50 text-zinc-400'
+                          complete ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500 dark:text-emerald-400' : 'bg-zinc-50 dark:bg-zinc-800 text-zinc-400'
                         }`}>
                           <User size={24} />
                         </div>
                         <div>
-                          <p className="font-bold text-zinc-900 group-hover:text-[#34c4f2] transition-colors">{user.email}</p>
+                          <p className="font-bold text-zinc-900 dark:text-white group-hover:text-[#34c4f2] transition-colors">{user.email}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${
                               complete 
-                                ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
-                                : 'bg-amber-50 text-amber-600 border-amber-100'
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800/40' 
+                                : 'bg-amber-50 text-amber-600 border-amber-100 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800/40'
                             }`}>
                               {complete ? 'Profile Complete' : 'Profile Incomplete'}
                             </span>
                             <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${
                               user.role === 'admin'
-                                ? 'bg-purple-50 text-purple-600 border-purple-100'
-                                : 'bg-blue-50 text-blue-600 border-blue-100'
+                                ? 'bg-purple-50 text-purple-600 border-purple-100 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-800/40'
+                                : 'bg-blue-50 text-blue-600 border-blue-100 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800/40'
                             }`}>
                               {user.role === 'admin' ? 'Admin' : 'User'}
                             </span>
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest flex items-center gap-1">
+                            <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-widest flex items-center gap-1">
                               <Clock size={10} />
                               {new Date(user.updated_at).toLocaleDateString()}
                             </span>
                           </div>
                         </div>
                       </div>
-                      <ChevronRight className="text-zinc-300 group-hover:text-[#34c4f2] group-hover:translate-x-1 transition-all" size={20} />
+                      <ChevronRight className="text-zinc-300 dark:text-zinc-600 group-hover:text-[#34c4f2] group-hover:translate-x-1 transition-all" size={20} />
                     </button>
                   );
                 })
@@ -278,22 +278,22 @@ export default function UserManagement() {
           >
             <button 
               onClick={() => setSelectedUser(null)}
-              className="flex items-center gap-2 text-zinc-400 hover:text-zinc-600 font-bold text-xs uppercase tracking-widest transition-colors mb-4"
+              className="flex items-center gap-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 font-bold text-xs uppercase tracking-widest transition-colors mb-4 cursor-pointer"
             >
               <ArrowLeft size={14} />
               Back to User List
             </button>
 
-            <div className="bg-white p-8 rounded-3xl border border-zinc-100 shadow-card">
-              <div className="mb-10 pb-6 border-b border-zinc-50 flex items-center justify-between">
+            <div className="bg-white dark:bg-[#1e1e1e] p-8 rounded-3xl border border-zinc-150 dark:border-zinc-800 shadow-card transition-colors">
+              <div className="mb-10 pb-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-black text-zinc-900 tracking-tight mb-1">Edit User Profile</h3>
-                  <p className="text-zinc-500 flex items-center gap-2 font-medium">
+                  <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight mb-1">Edit User Profile</h3>
+                  <p className="text-zinc-500 dark:text-zinc-400 flex items-center gap-2 font-medium">
                     <Mail size={14} />
                     {selectedUser.email}
                   </p>
                 </div>
-                <div className="w-14 h-14 bg-zinc-50 rounded-2xl flex items-center justify-center text-zinc-400 border border-zinc-100">
+                <div className="w-14 h-14 bg-zinc-50 dark:bg-zinc-800 rounded-2xl flex items-center justify-center text-zinc-400 border border-zinc-100 dark:border-zinc-700">
                   <User size={28} />
                 </div>
               </div>
@@ -306,14 +306,14 @@ export default function UserManagement() {
                       <ShieldCheck size={14} />
                       System Access Role
                     </label>
-                    <div className="flex bg-zinc-100 p-1.5 rounded-2xl max-w-md border border-zinc-200/60 relative">
+                    <div className="flex bg-zinc-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl max-w-md border border-zinc-200/60 dark:border-zinc-700 relative">
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, role: 'user' })}
-                        className={`flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                        className={`flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer ${
                           formData.role === 'user'
                             ? 'bg-[#34c4f2] text-zinc-900 shadow-md shadow-[#34c4f2]/20 font-bold scale-[1.02]'
-                            : 'text-zinc-500 hover:text-zinc-800 font-semibold'
+                            : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 font-semibold'
                         }`}
                       >
                         <User size={16} />
@@ -322,10 +322,10 @@ export default function UserManagement() {
                       <button
                         type="button"
                         onClick={() => setFormData({ ...formData, role: 'admin' })}
-                        className={`flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                        className={`flex-1 flex items-center justify-center gap-2.5 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all cursor-pointer ${
                           formData.role === 'admin'
                             ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20 font-bold scale-[1.02]'
-                            : 'text-zinc-500 hover:text-zinc-800 font-semibold'
+                            : 'text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 font-semibold'
                         }`}
                       >
                         <ShieldCheck size={16} />
@@ -346,7 +346,7 @@ export default function UserManagement() {
                         value={formData.current_role}
                         onChange={(e) => setFormData({ ...formData, current_role: e.target.value })}
                         placeholder="e.g. Senior Frontend Developer"
-                        className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all"
+                        className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all"
                       />
                     </div>
 
@@ -361,7 +361,7 @@ export default function UserManagement() {
                         min="0"
                         value={formData.years_of_experience}
                         onChange={(e) => setFormData({ ...formData, years_of_experience: Number.parseInt(e.target.value) || 0 })}
-                        className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all font-mono"
+                        className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all font-mono"
                       />
                     </div>
                   </div>
@@ -379,7 +379,7 @@ export default function UserManagement() {
                         onChange={(e) => setPrimaryTechInput(e.target.value)}
                         onKeyDown={addPrimaryTechTag}
                         placeholder="Type a core skill and press Enter or comma"
-                        className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all"
+                        className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all"
                       />
                       <div className="flex flex-wrap gap-2">
                         <AnimatePresence>
@@ -395,7 +395,7 @@ export default function UserManagement() {
                               <button 
                                 type="button" 
                                 onClick={() => removePrimaryTechTag(tag)}
-                                className="hover:scale-120 transition-transform"
+                                className="hover:scale-120 transition-transform cursor-pointer"
                               >
                                 <X size={12} />
                               </button>
@@ -403,7 +403,7 @@ export default function UserManagement() {
                           ))}
                         </AnimatePresence>
                         {formData.primary_tech_stack.length === 0 && (
-                          <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">No tags added yet</span>
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium uppercase tracking-widest py-2">No tags added yet</span>
                         )}
                       </div>
                     </div>
@@ -422,7 +422,7 @@ export default function UserManagement() {
                         onChange={(e) => setSecondaryTechInput(e.target.value)}
                         onKeyDown={addSecondaryTechTag}
                         placeholder="Type an additional skill and press Enter or comma"
-                        className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all"
+                        className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all"
                       />
                       <div className="flex flex-wrap gap-2">
                         <AnimatePresence>
@@ -432,13 +432,13 @@ export default function UserManagement() {
                               initial={{ opacity: 0, scale: 0.8 }}
                               animate={{ opacity: 1, scale: 1 }}
                               exit={{ opacity: 0, scale: 0.8 }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-200 text-zinc-700 text-xs font-bold rounded-lg shadow-sm"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-bold rounded-lg shadow-sm"
                             >
                               {tag}
                               <button 
                                 type="button" 
                                 onClick={() => removeSecondaryTechTag(tag)}
-                                className="hover:scale-120 transition-transform"
+                                className="hover:scale-120 transition-transform cursor-pointer"
                               >
                                 <X size={12} />
                               </button>
@@ -446,7 +446,7 @@ export default function UserManagement() {
                           ))}
                         </AnimatePresence>
                         {formData.secondary_tech_stack.length === 0 && (
-                          <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-widest py-2">No tags added yet</span>
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium uppercase tracking-widest py-2">No tags added yet</span>
                         )}
                       </div>
                     </div>
@@ -463,12 +463,12 @@ export default function UserManagement() {
                       value={formData.future_interests}
                       onChange={(e) => setFormData({ ...formData, future_interests: e.target.value })}
                       placeholder="e.g. Wants to learn AI/ML and cloud architecture"
-                      className="w-full px-5 py-3.5 bg-zinc-50 border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 transition-all resize-none font-medium"
+                      className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all resize-none font-medium"
                     />
                   </div>
                 </div>
 
-                <div className="pt-8 border-t border-zinc-50 flex items-center justify-between gap-6">
+                <div className="pt-8 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between gap-6">
                   <div className="flex-1">
                     <AnimatePresence>
                       {toast && (
@@ -477,7 +477,7 @@ export default function UserManagement() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -20 }}
                           className={`flex items-center gap-2 font-bold text-sm ${
-                            toast.type === 'success' ? 'text-emerald-600' : 'text-red-600'
+                            toast.type === 'success' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
                           }`}
                         >
                           {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
@@ -491,14 +491,14 @@ export default function UserManagement() {
                     <button
                       type="button"
                       onClick={() => setSelectedUser(null)}
-                      className="px-6 py-3.5 text-zinc-400 hover:text-zinc-600 font-bold text-sm uppercase tracking-widest transition-all"
+                      className="px-6 py-3.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 font-bold text-sm uppercase tracking-widest transition-all cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={saving}
-                      className="flex items-center justify-center gap-2 px-10 py-3.5 bg-[#34c4f2] text-zinc-900 font-black rounded-2xl shadow-xl shadow-[#34c4f2]/30 hover:bg-[#2db0db] hover:scale-[1.02] active:scale-[0.98] transition-all text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex items-center justify-center gap-2 px-10 py-3.5 bg-[#34c4f2] text-zinc-900 font-black rounded-2xl shadow-xl shadow-[#34c4f2]/30 hover:bg-[#2db0db] hover:scale-[1.02] active:scale-[0.98] transition-all text-sm uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                     >
                       {saving ? (
                         <Loader2 size={18} className="animate-spin" />

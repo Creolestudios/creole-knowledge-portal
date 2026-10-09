@@ -20,7 +20,17 @@ export async function POST(req: Request) {
   const severity = rawSeverity === 'error' ? 'warning' : rawSeverity;
   const confidence = typeof body?.confidence === 'number' ? body.confidence : 1.0;
   const snapshotPath = body?.snapshotPath as string | undefined;
-  const meta = body?.meta || {};
+  const rawMeta = (body?.meta || {}) as Record<string, unknown>;
+  const clientTs = typeof body?.ts_ms === 'number' && body.ts_ms > 0 ? body.ts_ms : undefined;
+  const directOffsetSec = typeof body?.offsetSeconds === 'number' && body.offsetSeconds >= 0
+    ? body.offsetSeconds
+    : (typeof rawMeta.offsetSeconds === 'number' && rawMeta.offsetSeconds >= 0 ? rawMeta.offsetSeconds : undefined);
+
+  const meta = {
+    ...rawMeta,
+    ...(directOffsetSec !== undefined ? { offsetSeconds: directOffsetSec } : {}),
+    ...(clientTs ? { client_ts: clientTs } : {}),
+  };
 
   if (!interviewId || !category) {
     return NextResponse.json({ error: 'interviewId and category are required' }, { status: 400 });

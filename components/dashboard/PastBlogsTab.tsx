@@ -203,33 +203,33 @@ export default function PastBlogsTab({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 items-start">
       <div className="lg:col-span-1 space-y-4">
-        <div className="bg-white rounded-[32px] p-6 border border-zinc-100 shadow-card">
+        <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-6 border border-zinc-100 dark:border-zinc-800 shadow-card transition-colors">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-black text-zinc-900 flex items-center gap-2">
+            <h3 className="text-sm font-black text-zinc-900 dark:text-white flex items-center gap-2">
               <Calendar size={16} className="text-brand" />
               Past Briefings
             </h3>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
-                className="p-1 hover:bg-zinc-50 border rounded text-zinc-600 transition-colors cursor-pointer text-[10px] font-bold"
+                className="p-1 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer text-[10px] font-bold"
               >
                 &lt;
               </button>
-              <span className="text-[10px] font-bold text-zinc-700 min-w-[70px] text-center">
+              <span className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 min-w-[70px] text-center">
                 {monthNames[month]} {year}
               </span>
               <button
                 onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
-                className="p-1 hover:bg-zinc-50 border rounded text-zinc-600 transition-colors cursor-pointer text-[10px] font-bold"
+                className="p-1 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer text-[10px] font-bold"
               >
                 &gt;
               </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-extrabold text-zinc-400 uppercase tracking-wider mb-2">
-            <span className="text-zinc-300">S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span className="text-zinc-300">S</span>
+          <div className="grid grid-cols-7 gap-1 text-center text-[9px] font-extrabold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-2">
+            <span className="text-zinc-300 dark:text-zinc-600">S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span className="text-zinc-300 dark:text-zinc-600">S</span>
           </div>
 
           <div className="grid grid-cols-7 gap-1">
@@ -246,9 +246,9 @@ export default function PastBlogsTab({
                 const hasBlog = blogDates.has(dateStr);
 
                 if (cellDate > today) {
-                  bgClass = 'bg-zinc-50 text-zinc-300 border border-zinc-100';
+                  bgClass = 'bg-zinc-50 dark:bg-zinc-800/40 text-zinc-300 dark:text-zinc-600 border border-zinc-100 dark:border-zinc-800';
                 } else if (!isBriefingDay(cellDate) && !hasBlog) {
-                  bgClass = 'bg-zinc-100 text-zinc-400 cursor-not-allowed';
+                  bgClass = 'bg-zinc-100 dark:bg-zinc-800/60 text-zinc-400 dark:text-zinc-500 cursor-not-allowed';
                 } else {
                   isClickable = true;
                   if (hasBlog) {
@@ -268,12 +268,12 @@ export default function PastBlogsTab({
                       bgClass = 'bg-red-500 text-white hover:bg-red-600 cursor-pointer shadow-sm';
                     }
                   } else {
-                    bgClass = 'bg-zinc-50 text-zinc-500 hover:bg-zinc-100 cursor-pointer';
+                    bgClass = 'bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer';
                   }
                 }
 
                 if (isSelected) {
-                  bgClass += ' scale-110 shadow-md font-black z-10 border-2 border-zinc-900';
+                  bgClass += ' scale-110 shadow-md font-black z-10 border-2 border-zinc-900 dark:border-white';
                 }
               }
 
@@ -303,23 +303,23 @@ export default function PastBlogsTab({
           </div>
         </div>
 
-        <div className="bg-white rounded-[32px] p-6 border border-zinc-100 shadow-card space-y-3">
-          <h4 className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3">Activity Legend</h4>
+        <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-6 border border-zinc-100 dark:border-zinc-800 shadow-card space-y-3 transition-colors">
+          <h4 className="text-[10px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-3">Activity Legend</h4>
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded bg-green-500 flex-shrink-0 shadow-sm"></div>
-            <span className="text-xs font-bold text-zinc-700">Mastered (Passed Quiz)</span>
+            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Mastered (Passed Quiz)</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded bg-blue-500 flex-shrink-0 shadow-sm"></div>
-            <span className="text-xs font-bold text-zinc-700">Completed quiz (practice)</span>
+            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Completed quiz (practice)</span>
           </div>
           <div className="flex items-center gap-3">
             <div className="w-4 h-4 rounded bg-red-500 flex-shrink-0 shadow-sm"></div>
-            <span className="text-xs font-bold text-zinc-700">Missed quiz</span>
+            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Missed quiz</span>
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-4 h-4 rounded bg-zinc-100 border border-zinc-200 flex-shrink-0"></div>
-            <span className="text-xs font-bold text-zinc-700">Weekend (No Briefing)</span>
+            <div className="w-4 h-4 rounded bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex-shrink-0"></div>
+            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Weekend (No Briefing)</span>
           </div>
         </div>
       </div>
@@ -333,7 +333,7 @@ export default function PastBlogsTab({
         ) : blog ? (
           <div className="space-y-6">
             <div className="mb-2 space-y-1">
-              <p className="text-sm font-bold text-zinc-500 tracking-wide">
+              <p className="text-sm font-bold text-zinc-500 dark:text-zinc-400 tracking-wide">
                 Welcome,{' '}
                 {(
                   profile?.full_name ||
@@ -342,20 +342,20 @@ export default function PastBlogsTab({
                   'there'
                 ).trim() || 'there'}
               </p>
-              <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+              <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white tracking-tight">
                 Morning Briefing
               </h1>
             </div>
-            <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card">
-            <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
+            <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-10 border border-zinc-100 dark:border-zinc-800 shadow-card transition-colors">
+            <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight mb-3">
               {blog.title}
             </h2>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8 flex items-center gap-2">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-8 flex items-center gap-2">
               <CalendarDays size={14} />
               Fetched {formatFetchedLabel(toDateKey(blog.digest_date || blog.published_at || selectedDate))}
               {blog.estimated_read_minutes != null && (
                 <>
-                  <span className="text-zinc-300">·</span>
+                  <span className="text-zinc-300 dark:text-zinc-600">·</span>
                   {Math.max(1, Math.round(Number(blog.estimated_read_minutes)))} min read
                 </>
               )}
@@ -364,9 +364,9 @@ export default function PastBlogsTab({
             </div>
           </div>
         ) : (
-          <div className="bg-white rounded-[32px] p-8 sm:p-16 border border-zinc-100 shadow-card text-center space-y-3">
-            <CalendarSearch size={32} className="text-zinc-300 mx-auto" />
-            <p className="text-zinc-500 font-semibold">
+          <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-8 sm:p-16 border border-zinc-100 dark:border-zinc-800 shadow-card text-center space-y-3 transition-colors">
+            <CalendarSearch size={32} className="text-zinc-300 dark:text-zinc-600 mx-auto" />
+            <p className="text-zinc-500 dark:text-zinc-400 font-semibold">
               Pick a highlighted date from the calendar to read that day&apos;s past briefing.
             </p>
           </div>

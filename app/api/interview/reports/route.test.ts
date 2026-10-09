@@ -109,7 +109,7 @@ describe('GET /api/interview/reports', () => {
   });
 
   it('returns reports list with termination reasons and scores for terminated candidates', async () => {
-    const res = await GET();
+    const res = await GET(new Request('http://localhost/api/interview/reports'));
     expect(res.status).toBe(200);
 
     const json = (await res.json()) as { reports: Array<Record<string, unknown>> };
@@ -129,5 +129,40 @@ describe('GET /api/interview/reports', () => {
     expect(terminated?.cognitiveScore).toBe(0);
     expect(terminated?.fluencyScore).toBe(0);
     expect(terminated?.recommendation).toBe('no');
+  });
+
+  it('returns pagination metadata and summary stats', async () => {
+    const req = new Request('http://localhost/api/interview/reports?page=1&limit=10');
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as {
+      reports: Array<Record<string, unknown>>;
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+      stats: { total: number; completed: number; terminated: number; avgCognitive: number | null };
+    };
+
+    expect(json.pagination).toBeDefined();
+    expect(json.pagination.page).toBe(1);
+    expect(json.pagination.limit).toBe(10);
+    expect(json.pagination.total).toBe(2);
+    expect(json.pagination.totalPages).toBe(1);
+
+    expect(json.stats).toBeDefined();
+    expect(json.stats.total).toBe(2);
+    expect(json.reports).toHaveLength(2);
+  });
+
+  it('handles custom page and limit query parameters gracefully', async () => {
+    const req = new Request('http://localhost/api/interview/reports?page=2&limit=5');
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as {
+      pagination: { page: number; limit: number; total: number; totalPages: number };
+    };
+
+    expect(json.pagination.page).toBe(2);
+    expect(json.pagination.limit).toBe(5);
   });
 });

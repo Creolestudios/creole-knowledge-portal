@@ -365,7 +365,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
           >
             <div className="lg:col-span-2 space-y-6 min-w-0">
               <div className="mb-2 space-y-1">
-                <p className="text-sm font-bold text-zinc-500 tracking-wide">
+                <p className="text-sm font-bold text-zinc-500 dark:text-zinc-400 tracking-wide">
                   Welcome,{' '}
                   {(
                     profile?.full_name ||
@@ -374,25 +374,25 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                     'there'
                   ).trim() || 'there'}
                 </p>
-                <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 tracking-tight">
+                <h1 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white tracking-tight">
                   Morning Briefing
                 </h1>
               </div>
-              <div className="bg-white rounded-[32px] p-10 border border-zinc-100 shadow-card overflow-hidden">
-                <h2 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight mb-3">
+              <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-10 border border-zinc-100 dark:border-zinc-800 shadow-card overflow-hidden transition-colors">
+                <h2 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight mb-3">
                   {brief.title}
                 </h2>
-                <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-8 flex items-center gap-2">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500 mb-8 flex items-center gap-2">
                   <CalendarDays size={14} className="text-brand" />
                   Fetched {formatFetchedLabel(brief.digest_date || brief.published_at)}
-                  <span className="text-zinc-300">·</span>
+                  <span className="text-zinc-300 dark:text-zinc-600">·</span>
                   {estimatedMinutes} min read
                 </p>
                 <div className="overflow-x-auto max-w-full">
                   <PremiumMarkdownRenderer content={brief.content} />
                 </div>
 
-                <div className="mt-10 pt-10 border-t border-zinc-100 flex flex-col items-center gap-4">
+                <div className="mt-10 pt-10 border-t border-zinc-100 dark:border-zinc-800 flex flex-col items-center gap-4">
                   {(() => {
                     const attemptsCount = quizStatus?.attemptsCount || 0;
                     const attemptsRemaining =
@@ -407,7 +407,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                       <button
                         onClick={handleReviewQuiz}
                         disabled={quizLoading}
-                        className="px-8 py-4 bg-zinc-950 hover:bg-zinc-900 text-white font-black rounded-2xl shadow-lg hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                        className="px-8 py-4 bg-zinc-950 dark:bg-zinc-100 hover:bg-zinc-900 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 font-black rounded-2xl shadow-lg hover:scale-105 transition-all text-sm uppercase tracking-widest flex items-center gap-2 cursor-pointer disabled:opacity-50"
                       >
                         {quizLoading ? (
                           <>
@@ -426,7 +426,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                     if (isPassed) {
                       return (
                         <div className="text-center space-y-3">
-                          <p className="text-sm font-bold text-green-600">
+                          <p className="text-sm font-bold text-green-600 dark:text-green-400">
                             Quiz Passed! ({quizStatus.result?.score}/{quizStatus.result?.total} pts •{' '}
                             {quizStatus.result?.percentage}%) 🎉
                           </p>
@@ -440,13 +440,13 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                     if (isFailedAll) {
                       return (
                         <div className="text-center space-y-3">
-                          <p className="text-sm font-bold text-red-500">
+                          <p className="text-sm font-bold text-red-500 dark:text-red-400">
                             Quiz Failed (Max Attempts Reached) ❌
                           </p>
                           <div className="flex flex-wrap items-center justify-center gap-3">
                             <button
                               disabled
-                              className="px-8 py-4 bg-zinc-200 text-zinc-500 font-black rounded-2xl text-sm uppercase tracking-widest flex items-center gap-2 cursor-not-allowed opacity-75"
+                              className="px-8 py-4 bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-black rounded-2xl text-sm uppercase tracking-widest flex items-center gap-2 cursor-not-allowed opacity-75"
                             >
                               <CheckCircle size={18} />
                               Max Attempts Reached (0/3 left)
@@ -460,7 +460,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                     return (
                       <div className="text-center space-y-3">
                         {attemptsCount > 0 && (
-                          <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+                          <p className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
                             Attempt {attemptsCount} of 3 completed • {attemptsRemaining}{' '}
                             {attemptsRemaining === 1 ? 'attempt' : 'attempts'} left
                           </p>
@@ -494,8 +494,8 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
             </div>
 
             <div className="space-y-8">
-              <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                <h3 className="text-lg font-black text-zinc-900 mb-4 flex items-center gap-2">
+              <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-8 border border-zinc-100 dark:border-zinc-800 shadow-card transition-colors">
+                <h3 className="text-lg font-black text-zinc-900 dark:text-white mb-4 flex items-center gap-2">
                   <BookOpen size={18} className="text-brand" />
                   Curation Focus
                 </h3>
@@ -503,7 +503,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                   {brief.tags?.map((tag: string, idx: number) => (
                     <span
                       key={idx}
-                      className="px-3.5 py-1.5 bg-zinc-50 border text-zinc-600 rounded-xl text-xs font-bold capitalize"
+                      className="px-3.5 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl text-xs font-bold capitalize"
                     >
                       {tag}
                     </span>
@@ -511,11 +511,11 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                 </div>
               </div>
 
-                <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest block mb-2">
+              <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-8 border border-zinc-100 dark:border-zinc-800 shadow-card transition-colors">
+                <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-widest block mb-2">
                   Sources evaluated
                 </span>
-                <h4 className="text-lg font-black text-zinc-900 mb-4">Network Context</h4>
+                <h4 className="text-lg font-black text-zinc-900 dark:text-white mb-4">Network Context</h4>
                 <div className="space-y-3">
                   {(brief.sources?.length
                     ? brief.sources
@@ -535,14 +535,14 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                           href={href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="p-4 bg-zinc-50 border rounded-2xl flex items-center justify-between group hover:border-brand/40 transition-colors"
+                          className="p-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-2xl flex items-center justify-between group hover:border-brand/40 transition-colors"
                         >
                           <div className="min-w-0 pr-3">
-                            <p className="text-xs font-bold text-zinc-900 leading-tight truncate">
+                            <p className="text-xs font-bold text-zinc-900 dark:text-white leading-tight truncate">
                               {title}
                             </p>
                             {domain ? (
-                              <p className="text-[10px] text-zinc-400 font-semibold mt-1 truncate">
+                              <p className="text-[10px] text-zinc-400 dark:text-zinc-500 font-semibold mt-1 truncate">
                                 {domain}
                               </p>
                             ) : null}
@@ -556,7 +556,7 @@ export default function DailyBlogTab({ user, profile }: { user?: any; profile?: 
                     },
                   )}
                   {!brief.sources?.length && (
-                    <p className="text-xs text-zinc-400 font-medium">
+                    <p className="text-xs text-zinc-400 dark:text-zinc-500 font-medium">
                       No source links available for today&apos;s briefing.
                     </p>
                   )}

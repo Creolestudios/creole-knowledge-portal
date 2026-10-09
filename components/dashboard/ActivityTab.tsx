@@ -73,26 +73,26 @@ export default function ActivityTab({ user }: { user?: any }) {
       </div>
 
       {/* Daily Activity Table */}
-      <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-        <h2 className="text-xl font-black text-zinc-900 flex items-center gap-2 mb-6">
+      <div className="bg-white dark:bg-[#1e1e1e] rounded-[32px] p-8 border border-zinc-100 dark:border-zinc-800 shadow-card dark:shadow-none">
+        <h2 className="text-xl font-black text-zinc-900 dark:text-white flex items-center gap-2 mb-6">
           <Activity size={20} className="text-brand" />
           Daily Activity Log
         </h2>
 
-        <div className="overflow-x-auto rounded-2xl border border-zinc-100">
+        <div className="overflow-x-auto rounded-2xl border border-zinc-100 dark:border-zinc-800">
           <table className="w-full min-w-[480px] text-sm">
             <thead>
-              <tr className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-400 font-extrabold">
+              <tr className="bg-zinc-50 dark:bg-zinc-900/50 text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500 font-extrabold">
                 <th className="text-left px-5 py-3">Date</th>
                 <th className="text-left px-5 py-3">Read time</th>
                 <th className="text-left px-5 py-3">Quiz</th>
                 <th className="text-right px-5 py-3">Correct</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {records.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-zinc-500 font-medium">No activity recorded yet.</td>
+                  <td colSpan={4} className="px-5 py-8 text-center text-zinc-500 dark:text-zinc-400 font-medium">No activity recorded yet.</td>
                 </tr>
               ) : records.slice(0, displayLimit).flatMap((r, idx) => {
                 const attempts = (r.attempts || []) as any[];
@@ -100,9 +100,9 @@ export default function ActivityTab({ user }: { user?: any }) {
                 // A day with no attempt still gets a single row.
                 if (attempts.length === 0) {
                   return [(
-                    <tr key={`${r.date}-none`} className="hover:bg-zinc-50/60 transition-colors">
-                      <td className="px-5 py-4 font-bold text-zinc-900">{formatDay(r.date)}</td>
-                      <td className="px-5 py-4 text-zinc-600 font-semibold tabular-nums">
+                    <tr key={`${r.date}-none`} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 transition-colors">
+                      <td className="px-5 py-4 font-bold text-zinc-900 dark:text-zinc-100">{formatDay(r.date)}</td>
+                      <td className="px-5 py-4 text-zinc-600 dark:text-zinc-400 font-semibold tabular-nums">
                         {r.read_seconds ? formatDuration(r.read_seconds) : '—'}
                       </td>
                       <td className="px-5 py-4">
@@ -110,7 +110,7 @@ export default function ActivityTab({ user }: { user?: any }) {
                           <MinusCircle size={14} /> Skipped
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-right font-black text-zinc-900 tabular-nums">—</td>
+                      <td className="px-5 py-4 text-right font-black text-zinc-900 dark:text-zinc-100 tabular-nums">—</td>
                     </tr>
                   )];
                 }
@@ -120,19 +120,19 @@ export default function ActivityTab({ user }: { user?: any }) {
                 return attempts.map((a, aIdx) => (
                   <tr
                     key={`${r.date}-${a.attempt_number}-${aIdx}`}
-                    className={`hover:bg-zinc-50/60 transition-colors ${aIdx > 0 ? 'bg-zinc-50/30' : ''}`}
+                    className={`hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 transition-colors ${aIdx > 0 ? 'bg-zinc-50/30 dark:bg-zinc-900/20' : ''}`}
                   >
-                    <td className="px-5 py-4 font-bold text-zinc-900">
+                    <td className="px-5 py-4 font-bold text-zinc-900 dark:text-zinc-100">
                       {aIdx === 0 ? formatDay(r.date) : (
-                        <span className="text-zinc-300 font-semibold">↳</span>
+                        <span className="text-zinc-300 dark:text-zinc-600 font-semibold">↳</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-zinc-600 font-semibold tabular-nums">
+                    <td className="px-5 py-4 text-zinc-600 dark:text-zinc-400 font-semibold tabular-nums">
                       {aIdx === 0 ? (r.read_seconds ? formatDuration(r.read_seconds) : '—') : ''}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
-                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-zinc-400 bg-zinc-100 rounded px-1.5 py-0.5 shrink-0">
+                        <span className="text-[9px] font-extrabold uppercase tracking-widest text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 rounded px-1.5 py-0.5 shrink-0">
                           Try {a.attempt_number}
                         </span>
                         {a.in_progress ? (
@@ -140,17 +140,17 @@ export default function ActivityTab({ user }: { user?: any }) {
                             <MinusCircle size={14} /> In progress
                           </span>
                         ) : a.passed ? (
-                          <span className="inline-flex items-center gap-1.5 text-green-600 font-semibold text-xs">
+                          <span className="inline-flex items-center gap-1.5 text-green-600 dark:text-green-400 font-semibold text-xs">
                             <CheckCircle size={14} /> Passed
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 text-red-600 font-semibold text-xs">
+                          <span className="inline-flex items-center gap-1.5 text-red-600 dark:text-red-400 font-semibold text-xs">
                             <XCircle size={14} /> Failed
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-right font-black text-zinc-900 tabular-nums">
+                    <td className="px-5 py-4 text-right font-black text-zinc-900 dark:text-zinc-100 tabular-nums">
                       {a.in_progress ? '—' : `${a.correct_answers}/${a.total_questions}`}
                     </td>
                   </tr>
@@ -164,7 +164,7 @@ export default function ActivityTab({ user }: { user?: any }) {
           <div className="mt-6 flex justify-center">
             <button 
               onClick={() => setDisplayLimit(prev => prev + 15)}
-              className="px-6 py-2.5 bg-zinc-950 hover:bg-zinc-800 text-white rounded-full text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer shadow-md"
+              className="px-6 py-2.5 bg-zinc-950 hover:bg-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-white rounded-full text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer shadow-md"
             >
               Load Older Activity
             </button>

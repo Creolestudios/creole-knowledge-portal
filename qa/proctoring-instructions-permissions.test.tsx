@@ -59,6 +59,16 @@ async function goToInstructions() {
   await screen.findByText('Before you begin');
 }
 
+async function goToLiveInterview() {
+  await goToInstructions();
+  fireEvent.click(screen.getByText('Allow & Start Interview'));
+  await screen.findByText("You're verified");
+  const joinBtn = screen.queryByRole('button', { name: 'Join Interview' });
+  if (joinBtn) {
+    fireEvent.click(joinBtn);
+  }
+}
+
 function liveTrack(overrides: Partial<MediaStreamTrack> = {}) {
   return {
     kind: 'video',
@@ -106,6 +116,8 @@ afterEach(() => {
     configurable: true,
   });
   Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+  sessionStorage.clear();
+  localStorage.clear();
 });
 
 describe('Passcode gate', () => {
@@ -177,7 +189,9 @@ describe('Instructions & permissions gate', () => {
 
     expect(await screen.findByText("You're verified")).toBeInTheDocument();
     expect(media.getUserMedia).toHaveBeenCalledWith({ video: true, audio: true });
-    expect(media.getDisplayMedia).toHaveBeenCalledWith({ video: true });
+    expect(media.getDisplayMedia).toHaveBeenCalledWith({
+      video: { displaySurface: 'monitor' },
+    });
   });
 
   it('TC-PROC-06 rejects a partial (tab/window) screen share and asks for the entire screen', async () => {
@@ -305,9 +319,7 @@ describe('Instructions & permissions gate', () => {
     const sendBeacon = vi.fn().mockReturnValue(true);
     Object.defineProperty(global.navigator, 'sendBeacon', { value: sendBeacon, configurable: true });
 
-    await goToInstructions();
-    fireEvent.click(screen.getByText('Allow & Start Interview'));
-    await screen.findByText("You're verified");
+    await goToLiveInterview();
 
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
     fireEvent(document, new Event('visibilitychange'));
@@ -320,13 +332,11 @@ describe('Instructions & permissions gate', () => {
   });
 });
 
-describe('In-session proctoring (ready stage)', () => {
+describe('In-session proctoring (live stage)', () => {
   it('TC-PROC-10 terminates the interview when the tab is hidden (switch/minimize)', async () => {
     global.fetch = verifiedFetchMock();
     mockMediaDevices({});
-    await goToInstructions();
-    fireEvent.click(screen.getByText('Allow & Start Interview'));
-    await screen.findByText("You're verified");
+    await goToLiveInterview();
 
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
     fireEvent(document, new Event('visibilitychange'));
@@ -350,9 +360,7 @@ describe('In-session proctoring (ready stage)', () => {
     mockMediaDevices({
       getUserMedia: vi.fn().mockResolvedValue(fakeStream([cameraTrack as unknown as MediaStreamTrack])),
     });
-    await goToInstructions();
-    fireEvent.click(screen.getByText('Allow & Start Interview'));
-    await screen.findByText("You're verified");
+    await goToLiveInterview();
 
     act(() => {
       endedHandler?.();
@@ -381,9 +389,7 @@ describe('In-session proctoring (ready stage)', () => {
         getTracks: () => [screenTrack],
       }),
     });
-    await goToInstructions();
-    fireEvent.click(screen.getByText('Allow & Start Interview'));
-    await screen.findByText("You're verified");
+    await goToLiveInterview();
 
     act(() => {
       endedHandler?.();
@@ -396,9 +402,7 @@ describe('In-session proctoring (ready stage)', () => {
   it('TC-PROC-13 termination is a one-way state — coming back to the tab afterwards does not un-terminate', async () => {
     global.fetch = verifiedFetchMock();
     mockMediaDevices({});
-    await goToInstructions();
-    fireEvent.click(screen.getByText('Allow & Start Interview'));
-    await screen.findByText("You're verified");
+    await goToLiveInterview();
 
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
     fireEvent(document, new Event('visibilitychange'));
@@ -438,9 +442,7 @@ describe('In-session proctoring (ready stage)', () => {
   it('TC-PROC-18 still terminates when an unfocused page is also hidden (real tab switch)', async () => {
     global.fetch = verifiedFetchMock();
     mockMediaDevices({});
-    await goToInstructions();
-    fireEvent.click(screen.getByText('Allow & Start Interview'));
-    await screen.findByText("You're verified");
+    await goToLiveInterview();
 
     const hasFocus = vi.spyOn(document, 'hasFocus').mockReturnValue(false);
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });

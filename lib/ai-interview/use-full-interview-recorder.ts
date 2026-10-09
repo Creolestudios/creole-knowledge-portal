@@ -639,6 +639,14 @@ export function useFullInterviewRecorder({
     };
   }, [isUploading]);
 
+  /**
+   * Returns current elapsed seconds of active recording (0 if not active)
+   */
+  const getRecordingOffsetSeconds = useCallback((): number => {
+    if (!recordingStartTimeRef.current) return 0;
+    return Math.max(0, Math.floor((Date.now() - recordingStartTimeRef.current) / 1000));
+  }, []);
+
   return {
     isRecording,
     isUploading,
@@ -646,5 +654,6 @@ export function useFullInterviewRecorder({
     uploadStatusText,
     startRecording,
     stopAndUploadRecording,
+    getRecordingOffsetSeconds,
   };
 }

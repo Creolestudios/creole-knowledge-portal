@@ -141,8 +141,20 @@ export async function POST(req: Request) {
         category: 'proctoring_violation',
         severity: 'critical',
         ts_ms: typeof body?.ts_ms === 'number' && body.ts_ms > 0 ? body.ts_ms : Date.now(),
-        metadata: { reason, warningCounts },
-        meta: { reason, warningCounts },
+        metadata: {
+          reason,
+          warningCounts,
+          ...(typeof body?.offsetSeconds === 'number' ? { offsetSeconds: body.offsetSeconds } : {}),
+          ...(typeof body?.screenToastOffsetSec === 'number' ? { screenToastOffsetSec: body.screenToastOffsetSec } : {}),
+          ...(typeof body?.client_ts === 'number' ? { client_ts: body.client_ts } : {}),
+        },
+        meta: {
+          reason,
+          warningCounts,
+          ...(typeof body?.offsetSeconds === 'number' ? { offsetSeconds: body.offsetSeconds } : {}),
+          ...(typeof body?.screenToastOffsetSec === 'number' ? { screenToastOffsetSec: body.screenToastOffsetSec } : {}),
+          ...(typeof body?.client_ts === 'number' ? { client_ts: body.client_ts } : {}),
+        },
       })
       .then((r) => r),
   ];

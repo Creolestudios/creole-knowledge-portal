@@ -39,9 +39,9 @@ export function MetricTooltip({
       {/* Floating Tooltip Bubble */}
       {isVisible && (
         <span
-          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2.5 rounded-xl bg-zinc-900/95 dark:bg-[#1a1a1a]/95 text-white dark:text-zinc-100 text-[11px] leading-relaxed shadow-xl border border-zinc-700/60 dark:border-zinc-700 pointer-events-none backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 block text-left font-normal"
+          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 rounded-xl bg-zinc-900/95 dark:bg-[#1a1a1a]/95 text-white dark:text-zinc-100 text-xs sm:text-[13px] leading-relaxed shadow-xl border border-zinc-700/60 dark:border-zinc-700 pointer-events-none backdrop-blur-md animate-in fade-in zoom-in-95 duration-150 block text-left font-normal"
         >
-          <strong className="block font-bold text-xs text-[#34c4f2] mb-0.5">{label}</strong>
+          <strong className="block font-bold text-xs sm:text-sm text-[#34c4f2] mb-1">{label}</strong>
           <span>{explanation}</span>
           <span className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-zinc-900/95 dark:border-t-[#1a1a1a]/95" />
         </span>

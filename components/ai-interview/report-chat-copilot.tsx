@@ -60,7 +60,7 @@ function FormattedMessage({ text }: { text: string }) {
   const lines = text.split('\n');
 
   return (
-    <div className="space-y-2 text-xs sm:text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-200">
+    <div className="space-y-2.5 text-sm sm:text-base leading-relaxed text-zinc-800 dark:text-zinc-200 font-normal">
       {lines.map((line, idx) => {
         const trimmed = line.trim();
 
@@ -72,14 +72,14 @@ function FormattedMessage({ text }: { text: string }) {
         // Headings (e.g. ### Title)
         if (trimmed.startsWith('### ')) {
           return (
-            <h4 key={`line-${idx}`} className="font-bold text-sm text-zinc-900 dark:text-white mt-2 pt-1 border-b border-zinc-100 dark:border-zinc-800 pb-0.5">
+            <h4 key={`line-${idx}`} className="font-bold text-base text-zinc-900 dark:text-white mt-2 pt-1 border-b border-zinc-100 dark:border-zinc-800 pb-0.5">
               {renderInlineStyles(trimmed.slice(4))}
             </h4>
           );
         }
         if (trimmed.startsWith('## ')) {
           return (
-            <h3 key={`line-${idx}`} className="font-black text-sm text-zinc-900 dark:text-white mt-3 pt-1">
+            <h3 key={`line-${idx}`} className="font-black text-lg text-zinc-900 dark:text-white mt-3 pt-1">
               {renderInlineStyles(trimmed.slice(3))}
             </h3>
           );
@@ -89,7 +89,7 @@ function FormattedMessage({ text }: { text: string }) {
         if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
           return (
             <div key={`line-${idx}`} className="flex items-start gap-2 pl-2">
-              <span className="text-[#34c4f2] font-bold text-sm leading-none mt-0.5">•</span>
+              <span className="text-[#34c4f2] font-bold text-base leading-none mt-0.5">•</span>
               <span className="flex-1">{renderInlineStyles(trimmed.slice(2))}</span>
             </div>
           );
@@ -100,7 +100,7 @@ function FormattedMessage({ text }: { text: string }) {
         if (numMatch) {
           return (
             <div key={`line-${idx}`} className="flex items-start gap-2 pl-2">
-              <span className="text-[#1689aa] dark:text-[#34c4f2] font-bold text-xs mt-0.5">{numMatch[1]}.</span>
+              <span className="text-[#1689aa] dark:text-[#34c4f2] font-bold text-sm mt-0.5">{numMatch[1]}.</span>
               <span className="flex-1">{renderInlineStyles(numMatch[2])}</span>
             </div>
           );
@@ -141,7 +141,7 @@ function renderInlineStyles(text: string): React.ReactNode {
       return (
         <code
           key={i}
-          className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[#1689aa] dark:text-[#34c4f2] font-mono text-[11px]"
+          className="px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[#1689aa] dark:text-[#34c4f2] font-mono text-xs"
         >
           {part.slice(1, -1)}
         </code>
@@ -286,14 +286,14 @@ Feel free to ask any specific question below or click one of the suggested promp
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-black text-zinc-900 dark:text-white">
+              <h2 className="text-base font-black text-zinc-900 dark:text-white">
                 Interview Copilot & Admin Q&A
               </h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#34c4f2]/15 text-[#1689aa] dark:text-[#34c4f2] border border-[#34c4f2]/30 uppercase tracking-wider">
+              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#34c4f2]/15 text-[#1689aa] dark:text-[#34c4f2] border border-[#34c4f2]/30 uppercase tracking-wider">
                 Grounded AI
               </span>
             </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">
               Real-time intelligence on {candidateName || 'candidate’s'} answers, competencies, and flags
             </p>
           </div>
@@ -302,18 +302,18 @@ Feel free to ask any specific question below or click one of the suggested promp
         <button
           type="button"
           onClick={handleResetChat}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
           title="Reset conversation"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
+          <RotateCcw className="w-4 h-4" />
           <span>Reset</span>
         </button>
       </div>
 
       {/* ── Suggested Quick Question Pills ────────────────────────── */}
       <div className="px-6 py-3 bg-zinc-50/80 dark:bg-[#252525] border-b border-zinc-200 dark:border-[#4a4a4a] overflow-x-auto scrollbar-none flex items-center gap-2">
-        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider flex-shrink-0 flex items-center gap-1">
-          <Sparkles className="w-3 h-3 text-[#34c4f2]" />
+        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex-shrink-0 flex items-center gap-1">
+          <Sparkles className="w-3.5 h-3.5 text-[#34c4f2]" />
           Suggested:
         </span>
         {SUGGESTED_QUESTIONS.map((s, idx) => {
@@ -324,9 +324,9 @@ Feel free to ask any specific question below or click one of the suggested promp
               type="button"
               disabled={isLoading}
               onClick={() => handleSendMessage(s.query)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-[#444] text-[11px] font-bold text-zinc-700 dark:text-zinc-300 hover:border-[#34c4f2] hover:text-[#1689aa] dark:hover:text-[#34c4f2] transition-all flex-shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-[#444] text-xs sm:text-[13px] font-bold text-zinc-700 dark:text-zinc-300 hover:border-[#34c4f2] hover:text-[#1689aa] dark:hover:text-[#34c4f2] transition-all flex-shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
             >
-              <Icon className="w-3 h-3 text-[#34c4f2]" />
+              <Icon className="w-3.5 h-3.5 text-[#34c4f2]" />
               <span>{s.label}</span>
             </button>
           );
@@ -363,7 +363,7 @@ Feel free to ask any specific question below or click one of the suggested promp
               >
                 <div className="flex items-center justify-between gap-4 mb-1">
                   <span
-                    className={`text-[10px] font-bold uppercase tracking-wider ${
+                    className={`text-xs font-bold uppercase tracking-wider ${
                       isUser
                         ? 'text-zinc-300 dark:text-zinc-600'
                         : 'text-[#1689aa] dark:text-[#34c4f2]'
@@ -388,7 +388,7 @@ Feel free to ask any specific question below or click one of the suggested promp
                 </div>
 
                 {isUser ? (
-                  <p className="text-xs sm:text-[13px] leading-relaxed whitespace-pre-wrap font-medium">
+                  <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap font-medium">
                     {m.content}
                   </p>
                 ) : (
@@ -416,7 +416,7 @@ Feel free to ask any specific question below or click one of the suggested promp
                   className="w-2 h-2 rounded-full bg-[#34c4f2] animate-bounce"
                   style={{ animationDelay: '0.4s' }}
                 />
-                <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium ml-2">
+                <span className="text-sm text-zinc-500 dark:text-zinc-400 font-medium ml-2">
                   Analyzing transcript & interview scoring...
                 </span>
               </div>
@@ -426,7 +426,7 @@ Feel free to ask any specific question below or click one of the suggested promp
 
         {/* Error notification */}
         {errorMessage && (
-          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+          <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />
             <span>{errorMessage}</span>
           </div>
@@ -451,19 +451,19 @@ Feel free to ask any specific question below or click one of the suggested promp
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={`Ask anything about ${candidateName || 'this candidate’s'} answers, technical skills, or proctoring... (Enter to send)`}
-            className="w-full resize-none rounded-xl border border-zinc-200 dark:border-[#4a4a4a] bg-zinc-50 dark:bg-[#1f1f1f] px-3.5 py-2.5 text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#34c4f2] transition-all"
+            className="w-full resize-none rounded-xl border border-zinc-200 dark:border-[#4a4a4a] bg-zinc-50 dark:bg-[#1f1f1f] px-4 py-3 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#34c4f2] transition-all"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="h-10 px-4 rounded-xl bg-[#34c4f2] text-zinc-900 font-black text-xs hover:bg-[#2db0db] disabled:opacity-40 transition-all shadow-md shadow-[#34c4f2]/20 flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+            className="h-11 px-4.5 rounded-xl bg-[#34c4f2] text-zinc-900 font-black text-sm hover:bg-[#2db0db] disabled:opacity-40 transition-all shadow-md shadow-[#34c4f2]/20 flex items-center gap-1.5 cursor-pointer flex-shrink-0"
           >
-            <Send className="w-3.5 h-3.5" />
+            <Send className="w-4 h-4" />
             <span>Send</span>
           </button>
         </form>
-        <p className="text-[10px] text-zinc-400 mt-2 text-center">
+        <p className="text-xs text-zinc-400 mt-2 text-center">
           Grounds answers on verified session transcripts, competency rubrics, and proctoring events.
         </p>
       </div>

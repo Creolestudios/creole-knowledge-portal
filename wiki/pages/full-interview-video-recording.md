@@ -47,8 +47,9 @@ The **Full Interview Video Recording** module continuously captures candidate sc
    - Shows a **"Video"** link badge next to "View Report" for any session with a recorded video.
 2. **Evaluation Report View** (`components/ai-interview/report-detail-view.tsx`):
    - Displays a dedicated **Full Interview Video Recording** card.
-   - Embeds a responsive preview player (`https://drive.google.com/file/d/{fileId}/preview`).
-   - Provides a direct "Open in Google Drive" external link.
+   - Provides direct, clean link access with "Copy Video Link" and "Open in Google Drive" actions.
+   - Deep-links proctoring violation incidents directly to timestamped Google Drive playback (`?t=XmYs`).
+   - Synchronizes video offsets with the exact moment the **warning banner was displayed on screen** in the recorded video (`screenToastOffsetSec` / `explicitRecStart`), allowing viewers to jump directly to the visible toast overlay.
 
 ---
 

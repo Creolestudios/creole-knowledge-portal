@@ -1424,11 +1424,11 @@ export default function CandidateAssessmentPage() {
 
   if (stage === 'completed') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 text-center space-y-4">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 transition-colors">
+        <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 text-center space-y-4">
           <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
-          <h1 className="text-xl font-bold text-zinc-900">Interview complete</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Interview complete</h1>
+          <p className="text-sm text-zinc-500 dark:text-[#9f9f9f]">
             Thank you{candidateName ? `, ${candidateName}` : ''}. Your responses have been
             submitted. You may close this tab now.
           </p>
@@ -1440,7 +1440,7 @@ export default function CandidateAssessmentPage() {
   // ── Calibration stage ─────────────────────────────────────────────────────
   if (stage === 'calibration') {
     return (
-      <main className="min-h-screen bg-[#f8f9fa] flex items-center justify-center relative">
+      <main className="min-h-screen bg-[#f8f9fa] dark:bg-[#121212] flex items-center justify-center relative transition-colors">
         <video
           ref={cameraVideoRef}
           autoPlay
@@ -1481,7 +1481,7 @@ export default function CandidateAssessmentPage() {
     const answerWordCount = (answerText ? answerText.trim().split(/\s+/).filter(Boolean).length : 0) + (interimText ? interimText.trim().split(/\s+/).filter(Boolean).length : 0);
 
     return (
-      <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
+      <main className="min-h-screen bg-[#f8f9fa] dark:bg-[#121212] px-4 py-8 relative transition-colors">
         {/* Full Screen Blur Overlay on Pause */}
         {isInterviewPaused && (
           <div
@@ -1706,22 +1706,22 @@ export default function CandidateAssessmentPage() {
 
           {/* Video & Controls Panel — Side by side to question */}
           <div className="md:col-span-5 lg:col-span-4 space-y-4 md:sticky md:top-6">
-            <div className="rounded-2xl border border-zinc-100 bg-zinc-900 shadow-card p-4 space-y-3">
-              <div className="flex items-center justify-between text-xs text-zinc-300 font-semibold px-1">
+            <div className="rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] bg-white dark:bg-[#2b2b2b] shadow-card p-4 space-y-3">
+              <div className="flex items-center justify-between text-xs text-zinc-700 dark:text-zinc-300 font-semibold px-1">
                 <span className="flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-zinc-400" />
+                  <Camera className="w-3.5 h-3.5 text-zinc-500 dark:text-[#9f9f9f]" />
                   Live Video
                 </span>
                 {/* Face tracking status indicator */}
                 <div className={[
                   'text-[10px] font-semibold flex items-center gap-1.5 px-2 py-0.5 rounded-full',
                   faceTrackingStatus === 'tracking' && faceDetected
-                    ? 'bg-emerald-900/80 text-emerald-300'
-                    : 'bg-amber-900/80 text-amber-300',
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/80 dark:text-emerald-300 dark:border-transparent'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/80 dark:text-amber-300 dark:border-transparent',
                 ].join(' ')}>
                   <span className={[
                     'inline-block w-1.5 h-1.5 rounded-full',
-                    faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-300',
+                    faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-500 dark:bg-emerald-400 animate-pulse' : 'bg-amber-500 dark:bg-amber-300',
                   ].join(' ')} />
                   {faceTrackingStatus === 'loading' && 'Face loading…'}
                   {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face')}
@@ -1735,13 +1735,13 @@ export default function CandidateAssessmentPage() {
             </div>
 
             {faceTrackingError && (
-              <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-xs text-red-700 leading-relaxed">
+              <div className="rounded-xl border border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 p-3 text-xs text-red-700 dark:text-red-300 leading-relaxed">
                 <strong className="font-semibold block mb-0.5">Alert:</strong>
                 {faceTrackingError}
               </div>
             )}
 
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded-xl p-3 leading-relaxed">
+            <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-800/60 rounded-xl p-3 leading-relaxed">
               Keep your camera, microphone, and screen share active. Stopping media or leaving this window will end your interview.
             </p>
           </div>
@@ -1752,7 +1752,7 @@ export default function CandidateAssessmentPage() {
 
   if (stage === 'instructions' || stage === 'permissions') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-10 relative">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 py-10 relative">
         <ProctoringInstructions
           cameraGranted={cameraGranted}
           screenGranted={screenGranted}
@@ -1762,13 +1762,13 @@ export default function CandidateAssessmentPage() {
         />
         {showAckPopup && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-zinc-100">
-              <h3 className="text-xl font-bold text-zinc-900 mb-3">Acknowledgment</h3>
-              <p className="text-sm text-zinc-600 mb-5 leading-relaxed">
+            <div className="bg-white dark:bg-[#2b2b2b] rounded-2xl max-w-md w-full shadow-2xl p-6 border border-zinc-100 dark:border-[#4a4a4a]">
+              <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-3">Acknowledgment</h3>
+              <p className="text-sm text-zinc-600 dark:text-zinc-300 mb-5 leading-relaxed">
                 Please confirm that you have read all the instructions, understand the proctoring rules, and have successfully granted the required permissions.
               </p>
               
-              <label className="flex items-start gap-3 cursor-pointer p-3 bg-zinc-50 rounded-xl border border-zinc-200 mb-6 hover:bg-zinc-100 transition-colors">
+              <label className="flex items-start gap-3 cursor-pointer p-3 bg-zinc-50 dark:bg-zinc-800/60 rounded-xl border border-zinc-200 dark:border-zinc-700 mb-6 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                 <div className="pt-0.5">
                   <input
                     type="checkbox"
@@ -1777,7 +1777,7 @@ export default function CandidateAssessmentPage() {
                     className="w-4 h-4 rounded border-zinc-300 text-[#34c4f2] focus:ring-[#34c4f2]"
                   />
                 </div>
-                <span className="text-sm font-medium text-zinc-700 leading-snug">
+                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200 leading-snug">
                   I acknowledge that I have read the instructions and granted necessary permissions.
                 </span>
               </label>
@@ -1802,11 +1802,11 @@ export default function CandidateAssessmentPage() {
 
   if (stage === 'ready') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#0b0f14] px-4 py-10">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#0b0f14] transition-colors px-4 py-10">
         <div className="max-w-lg w-full space-y-5">
           <div className="text-center space-y-1">
-            <h1 className="text-xl font-bold text-white">You&apos;re ready to join</h1>
-            <p className="text-sm text-zinc-400">
+            <h1 className="text-xl font-bold text-zinc-900 dark:text-white">You&apos;re ready to join</h1>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
               Check how you look and sound below, then join when you&apos;re ready.
               Calibration will start automatically.
             </p>
@@ -1845,17 +1845,17 @@ export default function CandidateAssessmentPage() {
 
   // ── Passcode entry (default) ──────────────────────────────────────────────
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
+    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4">
       <form
         onSubmit={handleSubmitPasscode}
-        className="max-w-md w-full bg-white rounded-2xl shadow-card border border-zinc-100 p-8 space-y-6"
+        className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 space-y-6"
       >
         <div className="text-center space-y-2">
           <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
             <KeyRound className="w-6 h-6 text-[#34c4f2]" />
           </div>
-          <h1 className="text-xl font-bold text-zinc-900">Enter your passcode</h1>
-          <p className="text-sm text-zinc-500">
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Enter your passcode</h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Enter the 6-digit passcode shared with you to start your interview.
           </p>
         </div>
@@ -1868,11 +1868,11 @@ export default function CandidateAssessmentPage() {
           value={passcode}
           onChange={(e) => setPasscode(e.target.value.replace(/\D/g, ''))}
           placeholder="000000"
-          className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 border border-zinc-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900"
+          className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-100 dark:border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 dark:text-white"
         />
 
         {error && (
-          <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
+          <div className="flex items-center space-x-2 p-4 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 rounded-xl border border-red-100 dark:border-red-900/50">
             <AlertCircle className="w-5 h-5 flex-shrink-0" />
             <p className="font-medium">{error}</p>
           </div>

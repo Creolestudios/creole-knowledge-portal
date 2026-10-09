@@ -49,7 +49,7 @@ export function CalibrationModal({ calibrationProgress, onComplete }: Calibratio
             <span>Calibrating baseline...</span>
             <span>{progressPct}%</span>
           </div>
-          <div className="h-2 w-full bg-zinc-100 dark:bg-[#2b2b2b] rounded-full overflow-hidden">
+          <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
             <div
               className="h-full bg-[#34c4f2] transition-all duration-200 ease-out"
               style={{ width: `${progressPct}%` }}
@@ -58,7 +58,7 @@ export function CalibrationModal({ calibrationProgress, onComplete }: Calibratio
         </div>
 
         {dotsCompleted && (
-          <div className="flex items-center justify-center space-x-2 text-emerald-600 text-sm font-semibold pt-2">
+          <div className="flex items-center justify-center space-x-2 text-emerald-600 dark:text-emerald-400 text-sm font-semibold pt-2">
             <CheckCircle2 className="w-5 h-5" />
             <span>Calibration successful!</span>
           </div>

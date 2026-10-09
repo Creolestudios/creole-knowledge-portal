@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -20,6 +20,7 @@ import {
   Video,
   Bot,
   X,
+  ExternalLink,
 } from 'lucide-react';
 import { ReportChatCopilot } from './report-chat-copilot';
 import { MetricTooltip, METRIC_EXPLANATIONS } from './metric-tooltip';
@@ -196,9 +197,9 @@ function ScoreGauge({
   const explanation = tooltipKey ? METRIC_EXPLANATIONS[tooltipKey] : undefined;
 
   return (
-    <div className="flex flex-col items-center gap-1.5">
-      <div className="relative w-20 h-20">
-        <svg className="w-20 h-20 -rotate-90" viewBox="0 0 100 100">
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-22 h-22 sm:w-24 sm:h-24">
+        <svg className="w-22 h-22 sm:w-24 sm:h-24 -rotate-90" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r={r} fill="none" stroke="#f1f5f9" strokeWidth="8" className="dark:stroke-[#333]" />
           <circle
             cx="50"
@@ -214,20 +215,20 @@ function ScoreGauge({
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-black text-zinc-900 dark:text-white">
+          <span className="text-2xl font-black text-zinc-900 dark:text-white">
             {value === null ? '—' : value}
           </span>
-          <span className="text-[10px] text-zinc-500 dark:text-[#9f9f9f] font-bold">/{max}</span>
+          <span className="text-xs text-zinc-500 dark:text-[#9f9f9f] font-bold">/{max}</span>
         </div>
       </div>
       {explanation ? (
         <MetricTooltip label={label} explanation={explanation} showIcon={false}>
-          <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-200 uppercase tracking-wider text-center underline decoration-dotted decoration-zinc-400 dark:decoration-zinc-600 cursor-help hover:text-[#34c4f2] transition-colors">
+          <p className="text-xs sm:text-[13px] font-bold text-zinc-700 dark:text-zinc-200 uppercase tracking-wider text-center underline decoration-dotted decoration-zinc-400 dark:decoration-zinc-600 cursor-help hover:text-[#34c4f2] transition-colors">
             {label}
           </p>
         </MetricTooltip>
       ) : (
-        <p className="text-[11px] font-bold text-zinc-700 dark:text-zinc-200 uppercase tracking-wider text-center">
+        <p className="text-xs sm:text-[13px] font-bold text-zinc-700 dark:text-zinc-200 uppercase tracking-wider text-center">
           {label}
         </p>
       )}
@@ -385,19 +386,21 @@ export function ReportDetailView({
   const [questionFilter, setQuestionFilter] = useState<'all' | 'hr' | 'technical'>('all');
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [copiedVideoLink, setCopiedVideoLink] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoStreamFailed, setVideoStreamFailed] = useState(false);
 
   const jumpToVideoOffset = (offsetSeconds?: number) => {
     if (offsetSeconds === undefined) return;
+    const url = buildDriveTimestampUrl(recording, offsetSeconds);
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (recording?.webViewLink) {
+      window.open(recording.webViewLink, '_blank', 'noopener,noreferrer');
+      return;
+    }
     const card = document.getElementById('report-video-recording-card');
     if (card) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-    const video = videoRef.current;
-    if (video) {
-      video.currentTime = Math.max(0, offsetSeconds);
-      void video.play().catch(() => {});
     }
   };
 
@@ -659,7 +662,7 @@ export function ReportDetailView({
           <div className="flex items-center gap-4">
             <Link
               href="/admin/reports"
-              className="p-2 rounded-xl text-zinc-400 dark:text-[#9f9f9f] hover:text-zinc-900 dark:text-white hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] transition-colors"
+              className="p-2 rounded-xl text-zinc-400 dark:text-[#9f9f9f] hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
@@ -668,10 +671,10 @@ export function ReportDetailView({
                 <FileText className="w-5 h-5" />
               </div>
               <div>
-                <h1 className="text-base font-black text-zinc-900 dark:text-white leading-tight">
+                <h1 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white leading-tight">
                   {session.candidate_name ?? 'Candidate'} — Interview Result
                 </h1>
-                <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] font-medium">
+                <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f] font-medium">
                   Session {session.id.slice(0, 8)}…
                 </p>
               </div>
@@ -679,7 +682,7 @@ export function ReportDetailView({
           </div>
           <div className="flex items-center gap-2">
             <span
-              className={`px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border ${
+              className={`px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider border ${
                 isCompleted
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
                   : isTerminated
@@ -702,14 +705,14 @@ export function ReportDetailView({
                 <ShieldAlert className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold text-red-900 dark:text-red-200 mb-1">
+                <h2 className="text-base sm:text-lg font-bold text-red-900 dark:text-red-200 mb-1">
                   Interview Terminated by Proctoring Guard
                 </h2>
-                <p className="text-red-800 dark:text-red-300 text-xs leading-relaxed max-w-2xl">
+                <p className="text-red-800 dark:text-red-300 text-xs sm:text-sm leading-relaxed max-w-2xl">
                   The automated proctoring guard terminated this interview session due to integrity violations. This candidate is flagged for HR review.
                 </p>
                 {(session.termination_reason || report?.recommendation_rationale) && (
-                  <p className="mt-2 text-xs font-bold text-red-700 dark:text-red-400 uppercase tracking-wider">
+                  <p className="mt-2 text-xs sm:text-sm font-bold text-red-700 dark:text-red-400 uppercase tracking-wider">
                     {session.termination_reason || report?.recommendation_rationale}
                   </p>
                 )}
@@ -728,19 +731,19 @@ export function ReportDetailView({
                   <Sparkles className="w-5 h-5 text-[#0284c7] dark:text-[#38bdf8]" />
                 </div>
                 <div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider bg-[#34c4f2]/10 text-[#0284c7] dark:text-[#38bdf8] border border-[#34c4f2]/30 mb-1">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wider bg-[#34c4f2]/10 text-[#0284c7] dark:text-[#38bdf8] border border-[#34c4f2]/30 mb-1.5">
                     Candidate Performance Profile
                   </span>
-                  <h2 className="text-2xl font-black text-zinc-900 dark:text-white leading-tight">
+                  <h2 className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-white leading-tight">
                     {verdictHeadline}
                   </h2>
                 </div>
               </div>
 
               {/* 2 to 3 paragraphs of 2 to 3 lines each - purely on answers and performance, NO warnings */}
-              <div className="space-y-2.5 text-xs text-zinc-600 dark:text-[#d9d9d9] leading-relaxed font-medium">
+              <div className="space-y-3 text-base sm:text-lg text-zinc-700 dark:text-[#e0e0e0] leading-relaxed font-normal">
                 {executiveSummaryParagraphs.map((para, pIdx) => (
-                  <p key={pIdx} className="bg-zinc-50/70 dark:bg-[#1f1f1f]/70 border border-zinc-200/60 dark:border-[#4a4a4a]/60 rounded-xl p-3">
+                  <p key={pIdx} className="bg-zinc-50/70 dark:bg-[#1f1f1f]/70 border border-zinc-200/60 dark:border-[#4a4a4a]/60 rounded-xl p-4 sm:p-5">
                     {para}
                   </p>
                 ))}
@@ -780,20 +783,20 @@ export function ReportDetailView({
               <div className="w-8 h-8 rounded-lg bg-[#34c4f2]/10 flex items-center justify-center text-[#1689aa] dark:text-[#38bdf8]">
                 <User className="w-4 h-4" />
               </div>
-              <h2 className="text-sm font-black text-zinc-900 dark:text-white">Candidate Information</h2>
+              <h2 className="text-base sm:text-lg font-black text-zinc-900 dark:text-white">Candidate Information</h2>
             </div>
             {session.zoho_recruiter_link ? (
               <a
                 href={session.zoho_recruiter_link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#008f5d]/10 hover:bg-[#008f5d]/20 text-[#008f5d] dark:text-[#2ecc71] border border-[#008f5d]/30 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-xs"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#008f5d]/10 hover:bg-[#008f5d]/20 text-[#008f5d] dark:text-[#2ecc71] border border-[#008f5d]/30 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer shadow-xs"
               >
                 <span>Open in Zoho Recruit</span>
-                <span className="text-xs">↗</span>
+                <span className="text-xs sm:text-sm">↗</span>
               </a>
             ) : (
-              <span className="inline-flex items-center gap-1 px-3 py-1 bg-zinc-100 dark:bg-[#1f1f1f] text-zinc-400 dark:text-[#9f9f9f] text-[11px] font-semibold rounded-xl border border-zinc-200 dark:border-zinc-700">
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-zinc-100 dark:bg-[#1f1f1f] text-zinc-400 dark:text-[#9f9f9f] text-xs font-semibold rounded-xl border border-zinc-200 dark:border-zinc-700">
                 Zoho Recruit: Not Attached
               </span>
             )}
@@ -814,18 +817,18 @@ export function ReportDetailView({
             ].map(({ label, value }) => (
               <div
                 key={label}
-                className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3 border border-zinc-200 dark:border-[#4a4a4a]"
+                className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3.5 sm:p-4 border border-zinc-200 dark:border-[#4a4a4a]"
               >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f] mb-0.5">
+                <p className="text-xs sm:text-sm font-bold uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f] mb-1">
                   {label}
                 </p>
-                <p className="font-bold text-zinc-900 dark:text-white text-xs truncate">{value}</p>
+                <p className="font-bold text-zinc-900 dark:text-white text-base sm:text-lg truncate">{value}</p>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── 4. Full Interview Video Recording Card with In-Portal Player & Seeking ──── */}
+        {/* ── 4. Full Interview Video Recording Card (Link Only) ──── */}
         {recording && (
           <div
             id="report-video-recording-card"
@@ -837,18 +840,18 @@ export function ReportDetailView({
                   <Video className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="font-black text-amber-900 dark:text-amber-200 text-sm">
+                  <h3 className="font-black text-amber-900 dark:text-amber-200 text-base sm:text-lg">
                     Video Recording Archived (90-Day Retention Policy)
                   </h3>
-                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed max-w-2xl">
+                  <p className="text-sm text-amber-800 dark:text-amber-300 leading-relaxed max-w-2xl">
                     In compliance with the 90-day corporate candidate data retention policy, this full interview video was automatically purged from Google Drive.
                     {recording.purged_at && (
-                      <span className="block mt-0.5 font-semibold text-[11px] text-amber-900/80 dark:text-amber-200/80">
+                      <span className="block mt-0.5 font-semibold text-xs text-amber-900/80 dark:text-amber-200/80">
                         Purge completed on {new Date(recording.purged_at).toLocaleDateString()}.
                       </span>
                     )}
                   </p>
-                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 pt-1 font-medium">
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 pt-1 font-medium">
                     All question verbatim transcripts, evaluation scores, and proctoring incident records remain permanently preserved in this report.
                   </p>
                 </div>
@@ -857,14 +860,19 @@ export function ReportDetailView({
               <>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-red-500/10 text-red-600 flex items-center justify-center font-black shadow-sm">
+                    <div className="w-10 h-10 rounded-xl bg-red-500/10 text-red-600 flex items-center justify-center font-black shadow-sm">
                       <Video className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="font-black text-zinc-900 dark:text-white text-sm">
-                        Full Interview Video Recording
-                      </h3>
-                      <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] font-medium">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-black text-zinc-900 dark:text-white text-base sm:text-lg">
+                          Full Interview Video Recording
+                        </h3>
+                        <span className="text-xs font-bold px-2.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                          Google Drive Video Link
+                        </span>
+                      </div>
+                      <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f] font-medium">
                         Continuous Screen Share + Candidate Camera (PiP) + Audio stored in Google Drive
                       </p>
                     </div>
@@ -879,9 +887,9 @@ export function ReportDetailView({
                           setTimeout(() => setCopiedVideoLink(false), 2000);
                         } catch {}
                       }}
-                      className="inline-flex items-center gap-1.5 px-3 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#1f1f1f] dark:hover:bg-[#333] text-zinc-700 dark:text-zinc-200 text-xs font-bold rounded-xl transition-colors border border-zinc-200 dark:border-zinc-700 cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-[#1f1f1f] dark:hover:bg-[#333] text-zinc-700 dark:text-zinc-200 text-xs sm:text-sm font-bold rounded-xl transition-colors border border-zinc-200 dark:border-zinc-700 cursor-pointer"
                     >
-                      {copiedVideoLink ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedVideoLink ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                       <span>{copiedVideoLink ? 'Copied Link' : 'Copy Video Link'}</span>
                     </button>
                     <a
@@ -889,41 +897,13 @@ export function ReportDetailView({
                       href={recording.webViewLink}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 text-xs font-black rounded-xl transition-colors shadow-sm cursor-pointer uppercase tracking-wider"
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 text-xs sm:text-sm font-black rounded-xl transition-colors shadow-sm cursor-pointer uppercase tracking-wider"
                     >
-                      <Video className="w-3.5 h-3.5" />
+                      <Video className="w-4 h-4" />
                       <span>Open in Google Drive</span>
-                      <span className="text-xs">↗</span>
+                      <span className="text-xs sm:text-sm">↗</span>
                     </a>
                   </div>
-                </div>
-
-                {/* Embedded Native HTML5 Video Player with instant timestamp jump */}
-                <div className="relative rounded-xl overflow-hidden bg-black border border-zinc-200 dark:border-zinc-700 aspect-video max-h-[480px] w-full flex items-center justify-center shadow-inner">
-                  {!videoStreamFailed && recording.fileId && recording.fileId !== 'drive_file' ? (
-                    <video
-                      ref={videoRef}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      src={`/api/interview/recording/${recording.fileId}/stream`}
-                      onError={() => setVideoStreamFailed(true)}
-                      className="w-full h-full object-contain"
-                    >
-                      Your browser does not support HTML5 video playback.
-                    </video>
-                  ) : recording.previewUrl ? (
-                    <iframe
-                      src={recording.previewUrl}
-                      className="w-full h-full border-0"
-                      allow="autoplay; encrypted-media"
-                      title="Interview Recording Video"
-                    />
-                  ) : (
-                    <div className="text-center p-6 text-zinc-400 text-xs">
-                      Video preview not available. Please open in Google Drive.
-                    </div>
-                  )}
                 </div>
               </>
             )}
@@ -938,7 +918,7 @@ export function ReportDetailView({
               <button
                 type="button"
                 onClick={() => setQuestionFilter('all')}
-                className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                   questionFilter === 'all'
                     ? 'bg-[#34c4f2] text-zinc-900 shadow-md shadow-[#34c4f2]/20 font-black'
                     : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-[#1f1f1f]'
@@ -951,7 +931,7 @@ export function ReportDetailView({
               <button
                 type="button"
                 onClick={() => setQuestionFilter('hr')}
-                className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                   questionFilter === 'hr'
                     ? 'bg-[#34c4f2] text-zinc-900 shadow-md shadow-[#34c4f2]/20 font-black'
                     : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-[#1f1f1f]'
@@ -964,7 +944,7 @@ export function ReportDetailView({
               <button
                 type="button"
                 onClick={() => setQuestionFilter('technical')}
-                className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                className={`px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
                   questionFilter === 'technical'
                     ? 'bg-[#34c4f2] text-zinc-900 shadow-md shadow-[#34c4f2]/20 font-black'
                     : 'text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-[#1f1f1f]'
@@ -984,19 +964,19 @@ export function ReportDetailView({
                   <MessageSquare className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-base font-black text-zinc-900 dark:text-white">
+                  <h2 className="text-lg sm:text-xl font-black text-zinc-900 dark:text-white">
                     {questionFilter === 'all'
                       ? 'Interview Questions & Verbatim Answers'
                       : questionFilter === 'hr'
                       ? 'HR & Behavioral Questions & Answers'
                       : 'Technical Questions & Answers'}
                   </h2>
-                  <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] font-medium">
+                  <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f] font-medium">
                     Questions asked by AI, candidate spoken responses, and objective evaluation scores
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-[#1f1f1f] px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-[#4a4a4a]">
+              <span className="text-xs sm:text-sm font-bold text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-[#1f1f1f] px-3.5 py-1.5 rounded-xl border border-zinc-200 dark:border-[#4a4a4a]">
                 {displayedQuestions.length} Question{displayedQuestions.length === 1 ? '' : 's'}
               </span>
             </div>
@@ -1018,9 +998,9 @@ export function ReportDetailView({
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1.5">
                             <span
-                              className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md ${
+                              className={`text-xs font-black uppercase px-2.5 py-0.5 rounded-md ${
                                 isHR
                                   ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300'
                                   : 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'
@@ -1028,25 +1008,25 @@ export function ReportDetailView({
                             >
                               {isHR ? 'HR' : 'Technical'}
                             </span>
-                            <p className="text-[11px] font-black uppercase tracking-widest text-[#1689aa] dark:text-[#38bdf8]">
+                            <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-[#1689aa] dark:text-[#38bdf8]">
                               Question {ord} · {(q.competency || q.category || 'Competency').replaceAll('_', ' ')}
                             </p>
                           </div>
-                          <p className="text-sm font-bold text-zinc-900 dark:text-white leading-relaxed">
+                          <p className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-white leading-relaxed">
                             {q.question_text}
                           </p>
                         </div>
                       </div>
 
                       {/* Candidate Answer Box */}
-                      <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-4 border border-zinc-200 dark:border-[#4a4a4a]">
-                        <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f] mb-1">
+                      <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-4 sm:p-5 border border-zinc-200 dark:border-[#4a4a4a]">
+                        <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f] mb-2">
                           Candidate Answer (Verbatim):
                         </p>
                         {candidateAnswer ? (
                           <HighlightedVerbatimAnswer text={candidateAnswer} />
                         ) : (
-                          <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] italic leading-relaxed">
+                          <p className="text-sm sm:text-base text-zinc-500 dark:text-[#9f9f9f] italic leading-relaxed">
                             No verbal response recorded for this question (skipped or did not respond).
                           </p>
                         )}
@@ -1057,7 +1037,7 @@ export function ReportDetailView({
               </div>
             ) : (
               <div className="text-center py-8 text-zinc-500 dark:text-[#9f9f9f]">
-                <p className="text-xs font-bold">No questions found for the selected filter.</p>
+                <p className="text-sm font-bold">No questions found for the selected filter.</p>
               </div>
             )}
           </div>
@@ -1073,10 +1053,10 @@ export function ReportDetailView({
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
-                  <h3 className="font-black text-zinc-900 dark:text-white text-sm">English Communication</h3>
+                  <h3 className="font-black text-zinc-900 dark:text-white text-base sm:text-lg">English Communication</h3>
                   <MetricTooltip label="English Communication" explanation={METRIC_EXPLANATIONS.communication} />
                 </div>
-                <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] font-medium">Fluency, vocabulary, and speaking clarity</p>
+                <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f] font-medium">Fluency, vocabulary, and speaking clarity</p>
               </div>
             </div>
 
@@ -1086,18 +1066,18 @@ export function ReportDetailView({
                 <span className={`text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r ${overallFluencyColorCfg.badgeGradient}`}>
                   {cefr}
                 </span>
-                <p className="text-sm font-bold text-zinc-900 dark:text-white mt-1">{cefrInfo.label}</p>
-                <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed max-w-md mx-auto">{cefrInfo.desc}</p>
+                <p className="text-base font-bold text-zinc-900 dark:text-white mt-1">{cefrInfo.label}</p>
+                <p className="text-sm text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed max-w-md mx-auto">{cefrInfo.desc}</p>
               </div>
             ) : (
               <div className={`text-center py-3.5 rounded-xl p-4 border transition-all ${overallFluencyColorCfg.heroBg} ${overallFluencyColorCfg.heroBorder} ${overallFluencyColorCfg.glow}`}>
                 <span className={`text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r ${overallFluencyColorCfg.badgeGradient}`}>
                   {overallFluencyScore > 0 ? `${overallFluencyScore} / 100` : '0 / 100'}
                 </span>
-                <p className="text-xs font-bold text-zinc-800 dark:text-zinc-100 mt-1">
+                <p className="text-sm font-bold text-zinc-800 dark:text-zinc-100 mt-1">
                   {overallFluencyScore > 0 ? 'Spoken Fluency Score' : 'No Verbal Responses Recorded'}
                 </p>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed max-w-md mx-auto">
+                <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed max-w-md mx-auto">
                   {overallFluencyScore > 0
                     ? 'Evaluated across candidate spoken answers and speech cadence.'
                     : 'Candidate skipped questions or microphone audio was absent during interview turns.'}
@@ -1125,7 +1105,7 @@ export function ReportDetailView({
 
                 return (
                   <div key={key}>
-                    <div className="flex justify-between items-center text-xs font-semibold mb-1.5">
+                    <div className="flex justify-between items-center text-xs sm:text-sm font-semibold mb-1.5">
                       <MetricTooltip
                         label={label}
                         explanation={METRIC_EXPLANATIONS[tooltipKey] || ''}
@@ -1134,7 +1114,7 @@ export function ReportDetailView({
                           {label}
                         </span>
                       </MetricTooltip>
-                      <span className={`font-bold ${subCfg.textColor}`}>{bandScore}/100</span>
+                      <span className={`font-bold text-xs sm:text-sm ${subCfg.textColor}`}>{bandScore}/100</span>
                     </div>
                     <ProgressBar value={bandScore} />
                   </div>
@@ -1144,8 +1124,8 @@ export function ReportDetailView({
 
             {/* Linguistic Summary note if available */}
             {fluencyBreakdown?.summary && (
-              <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3 border border-zinc-200 dark:border-[#4a4a4a] text-xs">
-                <p className="text-[10px] font-black uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f] mb-0.5">
+              <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3.5 border border-zinc-200 dark:border-[#4a4a4a] text-xs sm:text-sm">
+                <p className="text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f] mb-1">
                   Linguistic Evaluation Note
                 </p>
                 <p className="text-zinc-700 dark:text-[#d9d9d9] leading-relaxed font-medium">
@@ -1154,13 +1134,13 @@ export function ReportDetailView({
               </div>
             )}
 
-            <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3 text-xs text-zinc-700 dark:text-[#d9d9d9] flex items-center justify-between border border-zinc-200 dark:border-[#4a4a4a]">
+            <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3 sm:p-3.5 text-xs sm:text-sm text-zinc-700 dark:text-[#d9d9d9] flex items-center justify-between border border-zinc-200 dark:border-[#4a4a4a]">
               <MetricTooltip label="Speaking Pace" explanation={METRIC_EXPLANATIONS.pace}>
                 <span className="font-bold text-zinc-800 dark:text-[#d9d9d9] cursor-help">
                   Speaking Pace:
                 </span>
               </MetricTooltip>
-              <span>
+              <span className="font-semibold">
                 {report?.local_metrics?.wpm
                   ? `${report.local_metrics.wpm} words/min`
                   : report?.fluency_score === 0
@@ -1170,14 +1150,14 @@ export function ReportDetailView({
             </div>
 
             {/* Filler Word Frequency Parameter */}
-            <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3 text-xs text-zinc-700 dark:text-[#d9d9d9] flex items-center justify-between border border-zinc-200 dark:border-[#4a4a4a]">
+            <div className="bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-3 sm:p-3.5 text-xs sm:text-sm text-zinc-700 dark:text-[#d9d9d9] flex items-center justify-between border border-zinc-200 dark:border-[#4a4a4a]">
               <MetricTooltip label="Filler Word Frequency" explanation={METRIC_EXPLANATIONS.fillers}>
                 <span className="font-bold text-zinc-800 dark:text-[#d9d9d9] cursor-help">
                   Filler Word Frequency:
                 </span>
               </MetricTooltip>
               <div className="flex items-center gap-2">
-                <span className="font-bold text-zinc-900 dark:text-white">
+                <span className="font-bold text-zinc-900 dark:text-white text-xs sm:text-sm">
                   {report?.local_metrics?.fillerRatio !== undefined
                     ? `${(report.local_metrics.fillerRatio * 100).toFixed(1)}%`
                     : report?.fluency_score === 0
@@ -1185,11 +1165,11 @@ export function ReportDetailView({
                     : 'Low (< 3%)'}
                 </span>
                 {typeof report?.local_metrics?.fillerCount === 'number' && report.local_metrics.fillerCount > 0 ? (
-                  <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                  <span className="text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
                     {report.local_metrics.fillerCount} detected
                   </span>
                 ) : (
-                  <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                  <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
                     Optimal flow
                   </span>
                 )}
@@ -1210,24 +1190,24 @@ export function ReportDetailView({
                 {totalWarnings === 0 ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
               </div>
               <div>
-                <h3 className="font-black text-zinc-900 dark:text-white text-sm">Session Integrity & Proctoring</h3>
-                <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] font-medium">Continuous 3-strike violation audit</p>
+                <h3 className="font-black text-zinc-900 dark:text-white text-base sm:text-lg">Session Integrity & Proctoring</h3>
+                <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f] font-medium">Continuous 3-strike violation audit</p>
               </div>
             </div>
 
             {totalWarnings === 0 ? (
-              <div className="rounded-xl p-4 text-xs font-bold flex items-center gap-2.5 bg-emerald-50 text-emerald-900 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200 shadow-sm">
+              <div className="rounded-xl p-4 text-xs sm:text-sm font-bold flex items-center gap-2.5 bg-emerald-50 text-emerald-900 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200 shadow-sm">
                 <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
                 <span>Verified Clean Session — No proctoring violations recorded</span>
               </div>
             ) : (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-[11px] font-black uppercase tracking-wider text-zinc-800 dark:text-[#d9d9d9] flex items-center gap-1.5">
+                  <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-800 dark:text-[#d9d9d9] flex items-center gap-1.5">
                     <ShieldAlert className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                     Proctoring Incident Log
                   </h4>
-                  <span className="text-[10px] font-bold text-zinc-500 dark:text-[#9f9f9f]">
+                  <span className="text-xs font-bold text-zinc-500 dark:text-[#9f9f9f]">
                     Automated Event Log
                   </span>
                 </div>
@@ -1244,14 +1224,14 @@ export function ReportDetailView({
                     return (
                       <div
                         key={warn.id || `strike-${strikeNum}`}
-                        className="p-3.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/90 dark:bg-[#2a171a] flex items-start gap-3 text-xs shadow-sm"
+                        className="p-3.5 sm:p-4 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/90 dark:bg-[#2a171a] flex items-start gap-3 text-xs sm:text-sm shadow-sm"
                       >
-                        <span className="px-2 py-0.5 rounded-md bg-red-600 text-white font-black text-[10px] uppercase tracking-wider flex-shrink-0 mt-0.5 shadow-xs">
+                        <span className="px-2.5 py-0.5 rounded-md bg-red-600 text-white font-black text-xs uppercase tracking-wider flex-shrink-0 mt-0.5 shadow-xs">
                           Strike {strikeNum}
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
-                            <span className="font-black text-red-950 dark:text-red-100 text-xs">
+                            <span className="font-black text-red-950 dark:text-red-100 text-xs sm:text-sm">
                               {warn.categoryLabel || 'Security Violation'}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1259,17 +1239,18 @@ export function ReportDetailView({
                                 <button
                                   type="button"
                                   onClick={() => jumpToVideoOffset(warn?.offsetSeconds)}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100/90 dark:bg-red-900/50 hover:bg-red-200 text-red-900 dark:text-red-200 font-bold text-[10px] transition-colors hover:underline cursor-pointer"
-                                  title={`Jump directly to ${warn.elapsedLabel} in video player`}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-100/90 dark:bg-red-900/50 hover:bg-red-200 text-red-900 dark:text-red-200 font-bold text-xs transition-colors hover:underline cursor-pointer"
+                                  title={`In-Video Timestamp: ${warn.elapsedLabel} (Click to jump)`}
                                 >
                                   <span>⏱️ {warn.elapsedLabel}</span>
-                                  <span className="text-[9px]">▶</span>
+                                  <span className="text-[10px]">▶</span>
                                 </button>
                               )}
                               {(warn.rawTsMs || warn.timestamp) && (
                                 <span
                                   suppressHydrationWarning
-                                  className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1 flex-shrink-0"
+                                  className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1 flex-shrink-0"
+                                  title="Exact Meeting Timestamp"
                                 >
                                   <span>
                                     🕒{' '}
@@ -1285,14 +1266,14 @@ export function ReportDetailView({
                               )}
                             </div>
                           </div>
-                          <p className="text-[11px] font-semibold text-red-950 dark:text-red-200 leading-relaxed">
+                          <p className="text-sm sm:text-base font-semibold text-red-950 dark:text-red-200 leading-relaxed">
                             {warn.reason || 'Integrity violation recorded during interview.'}
                           </p>
                           <div className="mt-2.5 flex items-center gap-3 flex-wrap">
                             <button
                               type="button"
                               onClick={() => jumpToVideoOffset(warn?.offsetSeconds)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/10 hover:bg-red-600/20 text-red-700 dark:text-red-300 border border-red-300/80 dark:border-red-800 text-[11px] font-black transition-colors hover:underline cursor-pointer"
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/10 hover:bg-red-600/20 text-red-700 dark:text-red-300 border border-red-300/80 dark:border-red-800 text-xs sm:text-sm font-black transition-colors hover:underline cursor-pointer"
                               title={`Jump directly to ${warn.elapsedLabel || 'incident'} in recorded video`}
                             >
                               <span>▶ Jump directly to {warn.elapsedLabel ?? 'Offset'} in Video</span>
@@ -1302,11 +1283,11 @@ export function ReportDetailView({
                                 href={videoJumpUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 font-semibold transition-colors hover:underline"
+                                className="inline-flex items-center gap-1 text-xs sm:text-sm text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 font-semibold transition-colors hover:underline"
                                 title={`Open video in Google Drive`}
                               >
                                 <span>Google Drive</span>
-                                <span className="text-[9px]">↗</span>
+                                <span className="text-xs">↗</span>
                               </a>
                             )}
                           </div>
@@ -1323,18 +1304,18 @@ export function ReportDetailView({
         {/* ── Integrity Flags (if any) ────────────────────── */}
         {(report?.flags ?? []).length > 0 && (
           <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded-2xl p-5">
-            <h3 className="font-bold text-amber-900 dark:text-amber-200 text-sm mb-1.5 flex items-center gap-2">
+            <h3 className="font-bold text-amber-900 dark:text-amber-200 text-base sm:text-lg mb-1.5 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-400" />
               Integrity Flags for HR Review
             </h3>
-            <p className="text-xs text-amber-700 dark:text-amber-300 mb-3 leading-relaxed">
+            <p className="text-xs sm:text-sm text-amber-700 dark:text-amber-300 mb-3 leading-relaxed">
               These items were flagged during the automated interview session:
             </p>
             <div className="flex flex-wrap gap-2">
               {(report!.flags as string[]).map((f) => (
                 <span
                   key={f}
-                  className="bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded-lg px-2.5 py-1 text-xs font-bold"
+                  className="bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-bold"
                 >
                   {f.replaceAll('_', ' ').replace(/(^\w)/, (c) => c.toUpperCase())}
                 </span>
@@ -1347,9 +1328,9 @@ export function ReportDetailView({
         <div className="flex items-center justify-between border-t border-zinc-200 dark:border-[#4a4a4a] pt-6">
           <Link
             href="/admin/reports"
-            className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-[#9f9f9f] hover:text-zinc-900 dark:hover:text-white transition-colors"
+            className="flex items-center gap-2 text-xs sm:text-sm font-bold text-zinc-500 dark:text-[#9f9f9f] hover:text-zinc-900 dark:hover:text-white transition-colors"
           >
-            <ArrowLeft className="w-3.5 h-3.5" />
+            <ArrowLeft className="w-4 h-4" />
             Back to Result Board
           </Link>
         </div>
@@ -1360,14 +1341,14 @@ export function ReportDetailView({
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-200">
+            <span className="text-xs sm:text-sm font-bold text-zinc-700 dark:text-zinc-200">
               {session.candidate_name ?? 'Candidate'} · Evaluation Report
             </span>
           </div>
           <button
             type="button"
             onClick={() => setIsCopilotOpen(true)}
-            className="px-4 py-2 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 text-xs font-black rounded-xl transition-all shadow-md shadow-[#34c4f2]/20 flex items-center gap-2 cursor-pointer"
+            className="px-4.5 py-2.5 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 text-xs sm:text-sm font-black rounded-xl transition-all shadow-md shadow-[#34c4f2]/20 flex items-center gap-2 cursor-pointer"
           >
             <Bot className="w-4 h-4" />
             <span>🤖 Ask AI Copilot</span>
@@ -1393,10 +1374,10 @@ export function ReportDetailView({
                   <Bot className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-black text-sm text-zinc-900 dark:text-white leading-tight">
+                  <h3 className="font-black text-base sm:text-lg text-zinc-900 dark:text-white leading-tight">
                     Report AI Copilot
                   </h3>
-                  <p className="text-[11px] text-zinc-500 dark:text-[#9f9f9f]">
+                  <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f]">
                     Ask any question about {session.candidate_name ?? 'the candidate'}&apos;s performance
                   </p>
                 </div>

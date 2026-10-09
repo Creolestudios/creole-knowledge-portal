@@ -65,17 +65,12 @@ Recording 30-60 minutes of video natively in a browser introduces severe hardwar
 
 ---
 
-## 4. Report Integration: In-Portal Video Playback & Deep Seeking
+## 4. Report Integration: Direct Video Link Access & Timestamped Navigation
 
-### In-Portal Video Playback & HTTP 206 Byte-Range Streaming
-- **Native HTML5 Player**: An interactive `<video controls playsInline>` player is embedded directly in the "Full Interview Video Recording" card on the candidate report page.
-- **Streaming Route (`/api/interview/recording/[fileId]/stream`)**: Streams Google Drive recorded files via the service account with full HTTP 206 Partial Content (range requests) support, enabling smooth buffer scrubbing and instant seeking in the browser without downloading the whole file.
-- **Instant Timestamp Seeking**: When an admin clicks on any violation timestamp badge (`⏱️ MM:SS ▶`) or the `▶ Jump directly to MM:SS in Video` button, the portal:
-  1. Smoothly scrolls the viewport to the video player.
-  2. Sets `video.currentTime = offsetSeconds` directly.
-  3. Immediately plays the video from that exact second.
-  4. Avoids Google Drive external viewer quirks where `?t=` parameters are ignored.
-- **External Google Drive Access**: An `"Open in Google Drive ↗"` action remains alongside for backup, download, and external management.
+### Google Drive Video Link Card
+- **Direct Video Link Integration**: The candidate evaluation report features a dedicated "Full Interview Video Recording" card providing direct, clean access to the Google Drive video via copyable link, inline URL, and one-click "Open in Google Drive ↗" button, removing heavy in-portal video player buffering.
+- **Deep-Linked Timestamp Seeking**: When an admin clicks on any violation timestamp badge (`⏱️ MM:SS ▶`) or the jump action, the portal directly opens the recording in Google Drive targeting the exact second (`?t=XmYs`).
+- **External Google Drive Access**: High-performance, authenticated streaming and sharing via Google Drive.
 
 ### Serial Strike Ordering & Accurate Timing
 - **Chronological Serial Order**: Warnings are strictly numbered in chronological sequence:
@@ -83,12 +78,14 @@ Recording 30-60 minutes of video natively in a browser introduces severe hardwar
   - **Strike 2**: The second violation that occurred.
   - **Strike 3**: The third violation (or terminal violation that triggered auto-termination).
   - Strike numbers use `meta.warningCount` / `meta.strikeNumber` and are sorted strictly ascending by `ts_ms`.
-- **Accurate Duration Clamping**:
-  - `offsetSeconds` is calculated from the true recording start time (`recordingStartTime`).
-  - Offsets are strictly clamped to the actual video duration (`recMeta.durationSeconds`). If a video is only 4 seconds long, offsets never exceed 4 seconds (e.g., `00:03` or `00:04`, never an artificial `00:20`).
+- **On-Screen Warning Banner Synchronization**:
+  - `offsetSeconds` strictly reflects when the **warning banner was displayed on screen** to the candidate (`screenToastOffsetSec` / `explicitRecStart`), matching the exact second in the video recording where the visual warning toast is visible.
+  - Does NOT reflect background detector threshold accumulation or sidebar feed logging, ensuring that seeking to the timestamp jumps directly to when the warning is visible on the candidate's screen.
+  - Direct frame offsets (`meta.screenToastOffsetSec` / `meta.offsetSeconds`) captured synchronously by the browser's MediaRecorder at `setWarningToast` invocation are preserved and prioritized.
+  - Offsets are strictly clamped to actual video duration (`recMeta.durationSeconds`).
 - **Display Integrity & Timezone Accuracy**:
-  - The overall wall-clock timestamp (e.g. `🕒 10:00:07 PM`) uses `rawTsMs` to dynamically format the time in the user's browser timezone (IST/local) with `suppressHydrationWarning`.
-  - Strikes display exact violation titles and warning messages derived from the database (`interview_events`).
+  - In-video timestamp seeking buttons (`⏱️ MM:SS ▶`) target the exact video second where the warning appears on screen.
+  - Meeting timestamps (e.g. `🕒 03:55:51 PM`) use `rawTsMs` dynamically formatted in the user's browser timezone (IST/local) with explicit tooltips.
 
 ### Single Zoho Recruit Integration
 - If an admin provided a Zoho Recruit URL during interview creation (`parsed_resume.zohoRecruiterLink`), a single `"Open in Zoho Recruit ↗"` button appears in the Candidate Information card header.

@@ -22,34 +22,34 @@ import DashboardShell from '@/components/dashboard/DashboardShell';
 import type { RouletteBlog, BlogStatus } from '@/lib/blog-roulette/types';
 
 const STATUS_STYLES: Record<BlogStatus, { label: string; cls: string }> = {
-  DRAFT: { label: 'Draft', cls: 'bg-zinc-100 text-zinc-700 border-zinc-200' },
+  DRAFT: { label: 'Draft', cls: 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700' },
   SUBMITTED: {
     label: 'Submitted',
-    cls: 'bg-amber-50 text-amber-700 border-amber-200',
+    cls: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800/60',
   },
   QUIZ_IN_PROGRESS: {
     label: 'Quiz In Progress',
-    cls: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    cls: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/60',
   },
   REJECTED: {
     label: 'Rejected (Blind AI)',
-    cls: 'bg-red-50 text-red-700 border-red-200',
+    cls: 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/60',
   },
   PASSED: {
     label: 'Passed Quiz',
-    cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    cls: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60',
   },
   PUBLISHING: {
     label: 'Publishing…',
-    cls: 'bg-blue-50 text-blue-700 border-blue-200',
+    cls: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/60',
   },
   PUBLISHED: {
     label: 'Published',
-    cls: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    cls: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/60',
   },
   PUBLISH_FAILED: {
     label: 'Publish Failed',
-    cls: 'bg-red-50 text-red-700 border-red-200',
+    cls: 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/60',
   },
 };
 
@@ -137,10 +137,10 @@ function BlogRouletteListPageContent() {
               <Sparkles size={10} />
               Blog Roulette
             </div>
-            <h1 className="text-4xl font-black text-zinc-900 tracking-tight mb-3">
+            <h1 className="text-4xl font-black text-zinc-900 dark:text-white tracking-tight mb-3">
               Your Technical Blogs
             </h1>
-            <p className="text-zinc-500 text-base">
+            <p className="text-zinc-500 dark:text-zinc-400 text-base">
               Write deep-dive technical blogs. Pass the AI vetting quiz. Get
               published to marketing.
             </p>
@@ -156,9 +156,9 @@ function BlogRouletteListPageContent() {
         </div>
 
         {loading ? (
-          <div className="bg-white rounded-[32px] p-20 border border-zinc-100 shadow-card flex flex-col items-center justify-center text-center space-y-4">
+          <div className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-20 border border-zinc-100 dark:border-zinc-800 shadow-card flex flex-col items-center justify-center text-center space-y-4 transition-colors">
             <Loader2 className="w-10 h-10 text-brand animate-spin" />
-            <p className="text-zinc-500 font-semibold text-lg">
+            <p className="text-zinc-500 dark:text-zinc-400 font-semibold text-lg">
               Loading your blogs...
             </p>
           </div>
@@ -210,7 +210,7 @@ function BlogRouletteListPageContent() {
                       router.push(href);
                     }
                   }}
-                  className="cursor-pointer bg-white rounded-[28px] p-8 border border-zinc-100 shadow-card hover:shadow-lg hover:border-brand/30 transition-all group block"
+                  className="cursor-pointer bg-white dark:bg-[#1f1f1f] rounded-[28px] p-8 border border-zinc-100 dark:border-zinc-800 shadow-card hover:shadow-lg hover:border-brand/30 transition-all group block"
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
@@ -234,11 +234,11 @@ function BlogRouletteListPageContent() {
                     ) : null}
                   </div>
 
-                  <h3 className="text-xl font-black text-zinc-900 leading-tight tracking-tight mb-3 group-hover:text-brand transition-colors line-clamp-2">
+                  <h3 className="text-xl font-black text-zinc-900 dark:text-white leading-tight tracking-tight mb-3 group-hover:text-brand transition-colors line-clamp-2">
                     {b.title || 'Untitled draft'}
                   </h3>
 
-                  <div className="flex items-center gap-4 text-[11px] text-zinc-400 font-bold uppercase tracking-widest">
+                  <div className="flex items-center gap-4 text-[11px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-widest">
                     <span className="flex items-center gap-1.5">
                       <Clock size={12} />
                       {b.reading_time || 0} min

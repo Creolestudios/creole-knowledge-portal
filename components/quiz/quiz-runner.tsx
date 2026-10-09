@@ -769,12 +769,12 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   if (result) {
     return (
       <div className="space-y-6 mt-8">
-        <div className="bg-[#0f0f11] border border-zinc-800 rounded-2xl p-8 max-w-3xl mx-auto text-center shadow-2xl">
+        <div className="bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 max-w-3xl mx-auto text-center shadow-lg dark:shadow-2xl transition-colors">
           <div className="w-20 h-20 bg-brand/10 text-brand rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 size={40} />
           </div>
-          <h2 className="text-3xl font-black text-white mb-2">Quiz Completed!</h2>
-          <p className="text-zinc-400 mb-4">Your AI evaluation is complete.</p>
+          <h2 className="text-3xl font-black text-zinc-900 dark:text-white mb-2">Quiz Completed!</h2>
+          <p className="text-zinc-600 dark:text-zinc-400 mb-4">Your AI evaluation is complete.</p>
 
           {(() => {
             const count = result.attemptsCount || 1;
@@ -782,7 +782,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             const isPassed = Boolean(result.passed);
             return (
               <div className="mb-6 space-y-2">
-                <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${isPassed ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+                <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider ${isPassed ? 'bg-emerald-500/20 text-emerald-600 dark:text-green-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'}`}>
                   {isPassed ? 'Quiz Passed! 🎉' : `Attempt ${count} of 3 Completed • ${remaining} ${remaining === 1 ? 'attempt' : 'attempts'} remaining`}
                 </span>
               </div>
@@ -790,20 +790,20 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           })()}
 
           <div className="grid grid-cols-2 gap-4 mb-8">
-            <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800">
+            <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800">
               <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Correct Answers</div>
-              <div className="text-2xl font-black text-green-400">{result.correctAnswers} / {result.totalQuestions || 5}</div>
+              <div className="text-2xl font-black text-emerald-600 dark:text-green-400">{result.correctAnswers} / {result.totalQuestions || 5}</div>
             </div>
-            <div className="bg-zinc-900/50 rounded-xl p-4 border border-zinc-800">
+            <div className="bg-zinc-50 dark:bg-zinc-900/50 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800">
               <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-1">Time Taken</div>
-              <div className="text-2xl font-black text-white">{formatDuration(result.timeTaken ?? elapsedSeconds)}</div>
+              <div className="text-2xl font-black text-zinc-900 dark:text-white">{formatDuration(result.timeTaken ?? elapsedSeconds)}</div>
             </div>
           </div>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <button 
               onClick={() => router.push('/dashboard')}
-              className="w-full sm:w-1/2 py-4 bg-zinc-800 hover:bg-zinc-700 text-white font-black uppercase tracking-widest text-xs rounded-xl transition-all cursor-pointer"
+              className="w-full sm:w-1/2 py-4 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-black uppercase tracking-widest text-xs rounded-xl transition-all cursor-pointer border border-zinc-200 dark:border-transparent"
             >
               Back to Dashboard
             </button>
@@ -835,44 +835,44 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
         {result.reviewData && result.reviewData.length > 0 && (
           <div className="max-w-3xl mx-auto space-y-4">
-            <h3 className="text-xl font-black text-white mb-6 border-b border-zinc-800 pb-2">Detailed Review</h3>
+            <h3 className="text-xl font-black text-zinc-900 dark:text-white mb-6 border-b border-zinc-200 dark:border-zinc-800 pb-2">Detailed Review</h3>
             {result.reviewData.map((review: any, idx: number) => (
-              <div key={review.questionId} className={`p-6 rounded-xl border ${review.isCorrect ? 'bg-green-950/20 border-green-900/50' : 'bg-red-950/20 border-red-900/50'} text-left`}>
+              <div key={review.questionId} className={`p-6 rounded-xl border ${review.isCorrect ? 'bg-emerald-50/70 border-emerald-200 dark:bg-green-950/20 dark:border-green-900/50' : 'bg-red-50/70 border-red-200 dark:bg-red-950/20 dark:border-red-900/50'} text-left`}>
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-zinc-400 text-sm font-bold uppercase tracking-wider">Question {idx + 1}</span>
+                  <span className="text-zinc-500 dark:text-zinc-400 text-sm font-bold uppercase tracking-wider">Question {idx + 1}</span>
                   <div className="flex items-center gap-2">
 
-                    <span className={`text-sm font-bold px-3 py-1 rounded-full ${review.isCorrect ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    <span className={`text-sm font-bold px-3 py-1 rounded-full ${review.isCorrect ? 'bg-emerald-500/20 text-emerald-700 dark:text-green-400' : 'bg-red-500/20 text-red-700 dark:text-red-400'}`}>
                       {review.isCorrect ? 'Correct' : 'Incorrect'} ({review.pointsAwarded} pts)
                     </span>
                   </div>
                 </div>
-                <p className="text-white font-medium mb-6 text-lg">{review.question}</p>
+                <p className="text-zinc-900 dark:text-white font-medium mb-6 text-lg">{review.question}</p>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  <div className="bg-black/20 p-4 rounded-lg border border-white/5 relative">
+                  <div className="bg-white/80 dark:bg-black/20 p-4 rounded-lg border border-zinc-200 dark:border-white/5 relative">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-xs text-zinc-500 uppercase font-bold tracking-wider block">Your Answer</span>
                       {['conceptual', 'code', 'descriptive'].includes(review.questionType) && review.matchPercentage !== undefined && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${review.matchPercentage >= 70 ? 'bg-green-500/20 text-green-400 border-green-500/30' : review.matchPercentage >= 50 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'}`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${review.matchPercentage >= 70 ? 'bg-green-500/20 text-green-700 dark:text-green-400 border-green-500/30' : review.matchPercentage >= 50 ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30' : 'bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/30'}`}>
                           {review.matchPercentage}% AI Semantic Match
                         </span>
                       )}
                     </div>
-                    <div className="text-zinc-300 font-medium">{Array.isArray(review.userAnswer) ? review.userAnswer.join(', ') : review.userAnswer || 'No answer provided'}</div>
+                    <div className="text-zinc-800 dark:text-zinc-300 font-medium">{Array.isArray(review.userAnswer) ? review.userAnswer.join(', ') : review.userAnswer || 'No answer provided'}</div>
                   </div>
-                  <div className="bg-emerald-950/20 p-4 rounded-lg border border-emerald-900/30">
-                    <span className="text-xs text-emerald-500 uppercase font-bold tracking-wider mb-2 block">Correct Answer</span>
-                    <div className="text-emerald-400 font-medium">{Array.isArray(review.correctAnswers) ? review.correctAnswers.join(', ') : review.correctAnswers}</div>
+                  <div className="bg-emerald-50 dark:bg-emerald-950/20 p-4 rounded-lg border border-emerald-200 dark:border-emerald-900/30">
+                    <span className="text-xs text-emerald-600 dark:text-emerald-500 uppercase font-bold tracking-wider mb-2 block">Correct Answer</span>
+                    <div className="text-emerald-700 dark:text-emerald-400 font-medium">{Array.isArray(review.correctAnswers) ? review.correctAnswers.join(', ') : review.correctAnswers}</div>
                   </div>
                 </div>
 
                 {(review.evaluationReason || review.explanation) && (
-                  <div className="bg-black/40 p-5 rounded-lg mt-4 border border-zinc-800">
+                  <div className="bg-white/90 dark:bg-black/40 p-5 rounded-lg mt-4 border border-zinc-200 dark:border-zinc-800">
                     <span className="text-xs text-brand uppercase font-bold tracking-wider mb-2 block flex items-center gap-2">
                       <Target size={14} /> AI Explanation
                     </span>
-                    <p className="text-zinc-400 text-sm leading-relaxed">{review.evaluationReason || review.explanation}</p>
+                    <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed">{review.evaluationReason || review.explanation}</p>
                   </div>
                 )}
               </div>
@@ -885,7 +885,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
   if (initializing) {
     return (
-      <div className="bg-[#0f0f11] border border-zinc-800 rounded-2xl p-12 max-w-2xl mx-auto mt-8 text-center shadow-2xl flex flex-col items-center justify-center space-y-4">
+      <div className="bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-zinc-800 rounded-2xl p-12 max-w-2xl mx-auto mt-8 text-center shadow-lg dark:shadow-2xl flex flex-col items-center justify-center space-y-4 transition-colors">
         <div className="w-10 h-10 border-4 border-brand border-t-transparent rounded-full animate-spin"></div>
         <p className="text-zinc-500 font-bold uppercase tracking-widest text-sm">Initializing Quiz Environment...</p>
       </div>
@@ -895,39 +895,39 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   if (!attemptId) {
     if (setupStep === 'instructions') {
       return (
-        <div className="bg-[#0f0f11] border border-brand/20 rounded-2xl p-8 mt-8 max-w-2xl mx-auto shadow-brand space-y-6">
+        <div className="bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-brand/20 rounded-2xl p-8 mt-8 max-w-2xl mx-auto shadow-lg dark:shadow-brand space-y-6 transition-colors">
           <div className="text-center space-y-3">
             <div className="w-16 h-16 bg-brand/10 border border-brand/20 rounded-2xl mx-auto flex items-center justify-center text-brand">
               <AlertCircle size={32} />
             </div>
-            <h3 className="text-xl font-black text-white">Quiz instructions</h3>
-            <p className="text-zinc-400 text-sm leading-relaxed">
+            <h3 className="text-xl font-black text-zinc-900 dark:text-white">Quiz instructions</h3>
+            <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed">
               Read these rules carefully before you start. Scoring and answers work the same as usual —
               this only covers monitoring while you take the quiz.
             </p>
           </div>
 
-          <ul className="space-y-3 text-left text-sm text-zinc-300 leading-relaxed">
+          <ul className="space-y-3 text-left text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
             <li className="flex gap-3">
               <span className="text-brand font-black">1.</span>
               <span>
-                Keep your <strong className="text-white">entire screen shared</strong> and your{' '}
-                <strong className="text-white">camera on</strong> until you finish the quiz.
+                Keep your <strong className="text-zinc-900 dark:text-white">entire screen shared</strong> and your{' '}
+                <strong className="text-zinc-900 dark:text-white">camera on</strong> until you finish the quiz.
               </span>
             </li>
             <li className="flex gap-3">
               <span className="text-brand font-black">2.</span>
               <span>
-                If you <strong className="text-white">stop screen sharing</strong> or{' '}
-                <strong className="text-white">turn off the camera</strong>, the quiz will{' '}
-                <strong className="text-white">pause</strong> with a warning until you turn it back on.
+                If you <strong className="text-zinc-900 dark:text-white">stop screen sharing</strong> or{' '}
+                <strong className="text-zinc-900 dark:text-white">turn off the camera</strong>, the quiz will{' '}
+                <strong className="text-zinc-900 dark:text-white">pause</strong> with a warning until you turn it back on.
               </span>
             </li>
             <li className="flex gap-3">
               <span className="text-brand font-black">3.</span>
               <span>
-                If you switch away from this tab <strong className="text-white">even once</strong>, the quiz will be{' '}
-                <strong className="text-white">auto-submitted</strong> with the score you have earned up to that point
+                If you switch away from this tab <strong className="text-zinc-900 dark:text-white">even once</strong>, the quiz will be{' '}
+                <strong className="text-zinc-900 dark:text-white">auto-submitted</strong> with the score you have earned up to that point
                 (answers saved so far).
               </span>
             </li>
@@ -937,13 +937,13 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             </li>
           </ul>
 
-          {error && <p className="text-red-400 text-sm font-medium text-center">{error}</p>}
+          {error && <p className="text-red-500 dark:text-red-400 text-sm font-medium text-center">{error}</p>}
 
           <button
             type="button"
             onClick={() => void handleAcknowledgeInstructions()}
             disabled={loading}
-            className="w-full px-6 py-3 bg-white text-black hover:bg-zinc-200 transition-colors font-bold text-sm rounded-xl disabled:opacity-50"
+            className="w-full px-6 py-3.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition-colors font-bold text-sm rounded-xl disabled:opacity-50 cursor-pointer"
           >
             {loading ? 'Starting quiz...' : 'I understand — start quiz'}
           </button>
@@ -953,23 +953,23 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
     if (setupStep === 'camera') {
       return (
-        <div className="bg-[#0f0f11] border border-brand/20 rounded-2xl p-8 mt-8 max-w-2xl mx-auto shadow-brand text-center space-y-5">
+        <div className="bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-brand/20 rounded-2xl p-8 mt-8 max-w-2xl mx-auto shadow-lg dark:shadow-brand text-center space-y-5 transition-colors">
           <div className="w-16 h-16 bg-brand/10 border border-brand/20 rounded-2xl mx-auto flex items-center justify-center text-brand">
             <Camera size={32} />
           </div>
           <div className="space-y-2">
-            <h3 className="text-lg font-bold text-white">Allow camera access</h3>
-            <p className="text-zinc-400 text-sm leading-relaxed">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Allow camera access</h3>
+            <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed">
               Screen sharing is on. Next, allow your camera. It stays on as a monitoring lock —
               we do not record or store the video.
             </p>
           </div>
-          {error && <p className="text-red-400 text-sm font-medium">{error}</p>}
+          {error && <p className="text-red-500 dark:text-red-400 text-sm font-medium">{error}</p>}
           <button
             type="button"
             onClick={() => void handleEnableCamera()}
             disabled={loading}
-            className="px-6 py-3 bg-white text-black hover:bg-zinc-200 transition-colors font-bold text-sm rounded-xl disabled:opacity-50"
+            className="px-6 py-3.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition-colors font-bold text-sm rounded-xl disabled:opacity-50 cursor-pointer"
           >
             {loading ? 'Waiting for camera...' : 'Allow camera to continue'}
           </button>
@@ -978,25 +978,25 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
     }
 
     return (
-      <div className="bg-[#0f0f11] border border-brand/20 rounded-2xl p-8 mt-8 max-w-2xl mx-auto shadow-brand text-center space-y-5">
+      <div className="bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-brand/20 rounded-2xl p-8 mt-8 max-w-2xl mx-auto shadow-lg dark:shadow-brand text-center space-y-5 transition-colors">
         <div className="w-16 h-16 bg-brand/10 border border-brand/20 rounded-2xl mx-auto flex items-center justify-center text-brand">
           <Monitor size={32} />
         </div>
         <div className="space-y-2">
-          <h3 className="text-lg font-bold text-white flex items-center justify-center gap-2">
+          <h3 className="text-lg font-bold text-zinc-900 dark:text-white flex items-center justify-center gap-2">
             <Target className="text-brand" /> Test Your Knowledge
           </h3>
-          <p className="text-zinc-400 text-sm leading-relaxed">
+          <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed">
             Share your entire screen first, then allow your camera, then read the quiz rules.
             We do not record or store the shared video.
           </p>
         </div>
-        {error && <p className="text-red-400 text-sm font-medium">{error}</p>}
+        {error && <p className="text-red-500 dark:text-red-400 text-sm font-medium">{error}</p>}
         <button
           type="button"
           onClick={() => void handleShareScreen()}
           disabled={loading}
-          className="px-6 py-3 bg-white text-black hover:bg-zinc-200 transition-colors font-bold text-sm rounded-xl disabled:opacity-50"
+          className="px-6 py-3.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition-colors font-bold text-sm rounded-xl disabled:opacity-50 cursor-pointer"
         >
           {loading ? 'Waiting for screen share...' : 'Share entire screen to begin'}
         </button>
@@ -1008,19 +1008,19 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
   if (!q) {
     return (
-      <div className="bg-[#0f0f11] border border-zinc-800 rounded-2xl p-12 max-w-2xl mx-auto mt-8 text-center shadow-2xl flex flex-col items-center justify-center space-y-4">
-        <p className="text-zinc-400 font-bold uppercase tracking-widest text-sm">No questions available for this attempt.</p>
+      <div className="bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-zinc-800 rounded-2xl p-12 max-w-2xl mx-auto mt-8 text-center shadow-lg dark:shadow-2xl flex flex-col items-center justify-center space-y-4 transition-colors">
+        <p className="text-zinc-600 dark:text-zinc-400 font-bold uppercase tracking-widest text-sm">No questions available for this attempt.</p>
         <div className="flex gap-4">
           <button 
             onClick={() => router.push('/dashboard')}
-            className="px-6 py-3 bg-zinc-800 text-white hover:bg-zinc-700 transition-colors font-bold text-sm rounded-xl"
+            className="px-6 py-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white transition-colors font-bold text-sm rounded-xl cursor-pointer"
           >
             Back to Dashboard
           </button>
           <button 
             onClick={() => void handleShareScreen()}
             disabled={loading}
-            className="px-6 py-3 bg-brand text-black hover:bg-brand/90 transition-colors font-bold text-sm rounded-xl"
+            className="px-6 py-3 bg-brand text-black hover:bg-brand/90 transition-colors font-bold text-sm rounded-xl cursor-pointer"
           >
             {loading ? 'Waiting for screen share...' : 'Restart Quiz'}
           </button>
@@ -1033,7 +1033,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
   const isDescriptive = ['conceptual', 'code', 'descriptive'].includes(q.question_type);
 
   return (
-    <div className="bg-[#0f0f11] border border-zinc-800 rounded-2xl overflow-hidden mt-8 max-w-4xl mx-auto shadow-2xl relative">
+    <div className="bg-white dark:bg-[#0f0f11] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden mt-8 max-w-4xl mx-auto shadow-lg dark:shadow-2xl relative transition-colors">
       <QuizCameraPreview
         stream={cameraPreviewStream}
         visible={Boolean(attemptId && !result && !haltCamera && cameraPreviewStream)}
@@ -1051,9 +1051,9 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#16161a] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-6"
+              className="bg-white dark:bg-[#16161a] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-6"
             >
-              <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-2xl mx-auto flex items-center justify-center text-amber-400">
+              <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-2xl mx-auto flex items-center justify-center text-amber-500 dark:text-amber-400">
                 {haltScreen && haltCamera ? (
                   <AlertCircle size={32} />
                 ) : haltScreen ? (
@@ -1063,10 +1063,10 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
                 )}
               </div>
               <div className="space-y-2">
-                <h3 className="text-2xl font-black text-white tracking-tight">
+                <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">
                   Quiz paused
                 </h3>
-                <p className="text-zinc-400 text-sm leading-relaxed">
+                <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed">
                   {haltScreen && haltCamera
                     ? 'Screen sharing and camera both stopped. Restore both to continue. Your timer is paused.'
                     : haltScreen
@@ -1074,7 +1074,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
                       : 'Camera stopped. Allow camera access again to continue. Your timer is paused.'}
                 </p>
               </div>
-              {error && <p className="text-red-400 text-sm font-medium">{error}</p>}
+              {error && <p className="text-red-500 dark:text-red-400 text-sm font-medium">{error}</p>}
               <div className="space-y-3 pt-2">
                 {haltScreen && (
                   <button
@@ -1091,7 +1091,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
                     type="button"
                     onClick={() => void handleRestoreCamera()}
                     disabled={loading}
-                    className="w-full py-4 bg-white hover:bg-zinc-200 text-black font-black uppercase tracking-widest text-xs rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                    className="w-full py-4 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-black uppercase tracking-widest text-xs rounded-xl transition-all cursor-pointer disabled:opacity-50"
                   >
                     {loading ? 'Waiting...' : 'Restore camera'}
                   </button>
@@ -1115,22 +1115,22 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-[#16161a] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-6"
+              className="bg-white dark:bg-[#16161a] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center space-y-6"
             >
-              <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-2xl mx-auto flex items-center justify-center text-amber-400">
+              <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/30 rounded-2xl mx-auto flex items-center justify-center text-amber-500 dark:text-amber-400">
                 <Clock size={32} />
               </div>
 
               <div className="space-y-2">
-                <h3 className="text-2xl font-black text-white tracking-tight">
+                <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">
                   Still working on your quiz?
                 </h3>
-                <p className="text-zinc-400 text-sm leading-relaxed">
+                <p className="text-zinc-600 dark:text-zinc-400 text-sm leading-relaxed">
                   You have been on this attempt for 15 minutes. Please confirm if you would like to keep working.
                 </p>
               </div>
 
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-400 text-xs font-mono font-bold flex items-center justify-center gap-2">
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-600 dark:text-amber-400 text-xs font-mono font-bold flex items-center justify-center gap-2">
                 <AlertCircle size={16} /> Auto-submitting in {idleCountdown}s...
               </div>
 
@@ -1145,7 +1145,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
                 <button
                   type="button"
                   onClick={() => handleSubmitQuiz()}
-                  className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                  className="w-full py-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-300 font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer border border-zinc-200 dark:border-transparent"
                 >
                   Submit Quiz Now
                 </button>
@@ -1156,16 +1156,16 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       </AnimatePresence>
 
       {/* Header */}
-      <div className="px-6 py-4 border-b border-zinc-800 flex items-center justify-between bg-[#16161a]">
-        <div className="text-sm font-bold text-zinc-400 uppercase tracking-widest">
+      <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/80 dark:bg-[#16161a] transition-colors">
+        <div className="text-sm font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-widest">
           Question {currentIndex + 1} of {questions.length}
         </div>
         <div className="flex items-center gap-2">
-          <div className={`flex items-center gap-2 font-mono text-xs font-bold px-3 py-1.5 rounded-lg border ${haltScreen ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'}`}>
+          <div className={`flex items-center gap-2 font-mono text-xs font-bold px-3 py-1.5 rounded-lg border ${haltScreen ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20'}`}>
             <Monitor size={14} />
             {haltScreen ? 'Screen off' : 'Screen on'}
           </div>
-          <div className={`flex items-center gap-2 font-mono text-xs font-bold px-3 py-1.5 rounded-lg border ${haltCamera ? 'text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'}`}>
+          <div className={`flex items-center gap-2 font-mono text-xs font-bold px-3 py-1.5 rounded-lg border ${haltCamera ? 'text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20' : 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20'}`}>
             <Camera size={14} />
             {haltCamera ? 'Camera off' : 'Camera on'}
           </div>
@@ -1178,7 +1178,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       </div>
 
       {warning && (
-        <div className="px-6 py-3 bg-amber-500/10 border-b border-amber-500/20 flex items-start gap-3 text-amber-400">
+        <div className="px-6 py-3 bg-amber-500/10 border-b border-amber-500/20 flex items-start gap-3 text-amber-600 dark:text-amber-400">
           <AlertCircle size={18} className="mt-0.5 flex-shrink-0" />
           <div className="text-xs leading-relaxed font-medium">
             {warning}
@@ -1187,7 +1187,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       )}
 
       {/* Progress */}
-      <div className="h-1 w-full bg-zinc-900">
+      <div className="h-1 w-full bg-zinc-200 dark:bg-zinc-900">
         <motion.div 
           className="h-full bg-brand"
           initial={{ width: 0 }}
@@ -1197,17 +1197,17 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
 
       {/* Question Content */}
       <div className="p-8">
-        <span className="inline-block px-3 py-1 bg-zinc-800 text-zinc-300 text-[10px] font-bold uppercase tracking-widest rounded-md mb-4">
+        <span className="inline-block px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold uppercase tracking-widest rounded-md mb-4 border border-zinc-200 dark:border-transparent">
           {q.question_type} • {q.difficulty}
         </span>
-        <h2 className="text-xl md:text-2xl font-semibold text-white leading-relaxed mb-6">
+        <h2 className="text-xl md:text-2xl font-semibold text-zinc-900 dark:text-white leading-relaxed mb-6">
           {q.question}
         </h2>
 
         {q.code_snippet && (
-          <div className="mb-6 rounded-xl overflow-hidden border border-zinc-800 font-mono text-sm shadow-lg">
-            <div className="px-4 py-2 bg-zinc-900 border-b border-zinc-800 text-zinc-500 text-xs">Code Snippet</div>
-            <pre className="p-4 bg-[#0a0a0c] text-zinc-300 overflow-x-auto">
+          <div className="mb-6 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 font-mono text-sm shadow-sm dark:shadow-lg">
+            <div className="px-4 py-2 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500 text-xs font-semibold">Code Snippet</div>
+            <pre className="p-4 bg-zinc-50 dark:bg-[#0a0a0c] text-zinc-800 dark:text-zinc-300 overflow-x-auto">
               <code>{q.code_snippet}</code>
             </pre>
           </div>
@@ -1221,7 +1221,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             placeholder="Type your detailed answer here... (AI evaluated)"
             aria-label="Your detailed answer"
             disabled={isHalted}
-            className="w-full h-40 bg-zinc-900/50 border border-zinc-700 rounded-xl p-4 text-white placeholder-zinc-500 focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none disabled:opacity-50"
+            className="w-full h-40 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl p-4 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none disabled:opacity-50 transition-colors"
           />
         ) : (
           <div className="space-y-3" role={isMultiple ? "group" : "radiogroup"}>
@@ -1236,12 +1236,12 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
                   onClick={() => handleOptionSelect(q.id, opt, isMultiple)}
                   className={`w-full text-left p-4 rounded-xl border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                     isSelected 
-                      ? 'bg-brand/10 border-brand text-white shadow-brand' 
-                      : 'bg-zinc-900/30 border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:bg-zinc-900'
+                      ? 'bg-brand/10 border-brand text-zinc-900 dark:text-white shadow-sm dark:shadow-brand font-medium' 
+                      : 'bg-zinc-50/60 dark:bg-zinc-900/30 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-900'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-5 h-5 flex items-center justify-center border rounded flex-shrink-0 ${isMultiple ? 'rounded-md' : 'rounded-full'} ${isSelected ? 'border-brand bg-brand text-black' : 'border-zinc-600'}`}>
+                    <div className={`w-5 h-5 flex items-center justify-center border rounded flex-shrink-0 ${isMultiple ? 'rounded-md' : 'rounded-full'} ${isSelected ? 'border-brand bg-brand text-black' : 'border-zinc-400 dark:border-zinc-600'}`}>
                       {isSelected && <CheckCircle2 size={14} strokeWidth={4} />}
                     </div>
                     <span className="text-[15px] font-medium leading-relaxed">{opt}</span>
@@ -1254,11 +1254,11 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       </div>
 
       {/* Footer Controls */}
-      <div className="px-8 py-5 border-t border-zinc-800 bg-[#16161a] flex items-center justify-between">
+      <div className="px-8 py-5 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/80 dark:bg-[#16161a] flex items-center justify-between transition-colors">
         <button 
           onClick={handlePrev}
           disabled={currentIndex === 0 || loading || isHalted}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors text-sm font-semibold disabled:opacity-30 disabled:hover:text-zinc-400"
+          className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors text-sm font-semibold disabled:opacity-30 disabled:hover:text-zinc-400 cursor-pointer"
         >
           <ArrowLeft size={16} /> Previous
         </button>
@@ -1273,7 +1273,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
             <button 
               onClick={() => handleSubmitQuiz()}
               disabled={loading || !hasAnsweredAll() || isHalted}
-              className="flex items-center gap-2 bg-brand text-black hover:bg-brand/90 transition-colors px-6 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider disabled:opacity-30 disabled:hover:bg-brand disabled:cursor-not-allowed"
+              className="flex items-center gap-2 bg-brand text-black hover:bg-brand/90 transition-colors px-6 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider disabled:opacity-30 disabled:hover:bg-brand disabled:cursor-not-allowed cursor-pointer"
             >
               {loading ? 'Submitting...' : 'Submit Quiz'} <Send size={16} />
             </button>
@@ -1282,7 +1282,7 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           <button 
             onClick={handleNext}
             disabled={saving || isHalted}
-            className="flex items-center gap-2 bg-white text-black hover:bg-zinc-200 transition-colors px-6 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-white dark:text-black dark:hover:bg-zinc-200 transition-colors px-6 py-2.5 rounded-lg text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           >
             {saving ? 'Saving...' : 'Next'} <ArrowRight size={16} />
           </button>

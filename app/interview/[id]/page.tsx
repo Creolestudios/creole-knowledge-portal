@@ -745,6 +745,7 @@ export default function InterviewEntryPage() {
     uploadStatusText: fullVideoUploadStatusText,
     startRecording: startFullVideoRecording,
     stopAndUploadRecording: stopAndUploadFullVideo,
+    getRecordingOffsetSeconds,
   } = useFullInterviewRecorder({
     interviewId,
     cameraStream: cameraStream || cameraPreview,
@@ -1063,6 +1064,9 @@ export default function InterviewEntryPage() {
       interviewId,
       reason,
       warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+      offsetSeconds: getRecordingOffsetSeconds(),
+      screenToastOffsetSec: getRecordingOffsetSeconds(),
+      client_ts: Date.now(),
       ts_ms: Date.now(),
     });
     if (navigator.sendBeacon) {
@@ -1317,6 +1321,8 @@ export default function InterviewEntryPage() {
       setCandidateWarnings(candidateWarningsRef.current);
       setIsInterviewPaused(true);
       isInterviewPausedRef.current = true;
+      const toastShownOffsetSec = getRecordingOffsetSeconds();
+      const toastShownTs = Date.now();
       setWarningToast({
         show: true,
         count: trackerStatus.warningCount,
@@ -1334,7 +1340,7 @@ export default function InterviewEntryPage() {
               count: trackerStatus.warningCount,
               reason: trackerStatus.reason,
               category: 'unauthorized_voice',
-              ts: Date.now(),
+              ts: toastShownTs,
               warnings: candidateWarningsRef.current,
             },
           });
@@ -1343,7 +1349,7 @@ export default function InterviewEntryPage() {
         }
       }
 
-      const warnEventTs = Date.now();
+      const warnEventTs = toastShownTs;
       void (async () => {
         let snapshotPath: string | null = null;
         try {
@@ -1367,6 +1373,9 @@ export default function InterviewEntryPage() {
               warningCount: trackerStatus.warningCount,
               strikeNumber: trackerStatus.warningCount,
               reason: info.reason,
+              offsetSeconds: toastShownOffsetSec,
+              screenToastOffsetSec: toastShownOffsetSec,
+              client_ts: toastShownTs,
             },
             ts_ms: warnEventTs,
           }),
@@ -1935,6 +1944,8 @@ export default function InterviewEntryPage() {
           setCandidateWarnings(candidateWarningsRef.current);
           setIsInterviewPaused(true);
           isInterviewPausedRef.current = true;
+          const toastShownOffsetSec = getRecordingOffsetSeconds();
+          const toastShownTs = Date.now();
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
@@ -1952,14 +1963,14 @@ export default function InterviewEntryPage() {
                   count: trackerStatus.warningCount,
                   reason: trackerStatus.reason,
                   category: trackerStatus.category,
-                  ts: Date.now(),
+                  ts: toastShownTs,
                   warnings: candidateWarningsRef.current,
                 },
               });
             } catch { }
           }
 
-          const warnEventTs = Date.now();
+          const warnEventTs = toastShownTs;
           void (async () => {
             let snapshotPath: string | null = null;
             try {
@@ -1982,6 +1993,9 @@ export default function InterviewEntryPage() {
                   warningCount: trackerStatus.warningCount,
                   strikeNumber: trackerStatus.warningCount,
                   reason: trackerStatus.reason,
+                  offsetSeconds: toastShownOffsetSec,
+                  screenToastOffsetSec: toastShownOffsetSec,
+                  client_ts: toastShownTs,
                 },
                 ts_ms: warnEventTs,
               }),
@@ -2171,6 +2185,8 @@ export default function InterviewEntryPage() {
           setCandidateWarnings(candidateWarningsRef.current);
 
           // 2. Direct show warning toast to user
+          const toastShownOffsetSec = getRecordingOffsetSeconds();
+          const toastShownTs = Date.now();
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
@@ -2188,7 +2204,7 @@ export default function InterviewEntryPage() {
                   count: trackerStatus.warningCount,
                   reason: trackerStatus.reason,
                   category: 'object',
-                  ts: Date.now(),
+                  ts: toastShownTs,
                   warnings: candidateWarningsRef.current,
                 },
               });
@@ -2196,7 +2212,7 @@ export default function InterviewEntryPage() {
           }
 
           // Evidence snapshot + DB event with snapshot_path
-          const warnEventTs = Date.now();
+          const warnEventTs = toastShownTs;
           void (async () => {
             let snapshotPath: string | null = null;
             try {
@@ -2223,6 +2239,9 @@ export default function InterviewEntryPage() {
                   warningCount: trackerStatus.warningCount,
                   strikeNumber: trackerStatus.warningCount,
                   reason: trackerStatus.reason || `Unauthorized object (${rule.object}) detected in camera view.`,
+                  offsetSeconds: toastShownOffsetSec,
+                  screenToastOffsetSec: toastShownOffsetSec,
+                  client_ts: toastShownTs,
                 },
                 ts_ms: warnEventTs,
               }),
@@ -2461,7 +2480,7 @@ export default function InterviewEntryPage() {
 
   if (stage === 'calibration') {
     return (
-      <main className="min-h-screen bg-[#f8f9fa] flex items-center justify-center relative">
+      <main className="min-h-screen bg-[#f8f9fa] dark:bg-[#121212] flex items-center justify-center relative">
         <video
           ref={cameraVideoRef}
           autoPlay
@@ -2502,7 +2521,7 @@ export default function InterviewEntryPage() {
 
   if (stage === 'completed') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4">
         <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 text-center space-y-4">
           <div className="w-16 h-16 bg-emerald-500/10 rounded-2xl flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-10 h-10 text-emerald-500" />
@@ -2550,7 +2569,7 @@ export default function InterviewEntryPage() {
 
   if (stage === 'not_started') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-8">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 py-8">
         <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 text-center space-y-6">
           <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
             <span className="absolute inline-flex h-full w-full rounded-full bg-[#34c4f2]/20 animate-ping opacity-75" />
@@ -2560,7 +2579,7 @@ export default function InterviewEntryPage() {
           </div>
 
           <div className="space-y-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/60">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               Waiting for Candidate
             </span>
@@ -2570,7 +2589,7 @@ export default function InterviewEntryPage() {
             </p>
           </div>
 
-          <div className="bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl p-4 text-xs text-zinc-600 text-left space-y-2">
+          <div className="bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl p-4 text-xs text-zinc-600 dark:text-[#9f9f9f] text-left space-y-2">
             <div className="flex items-center justify-between font-semibold text-zinc-700 dark:text-[#d9d9d9]">
               <span>Live Observation Mode</span>
               <span className="text-[#0284c7] flex items-center gap-1">
@@ -2582,7 +2601,7 @@ export default function InterviewEntryPage() {
               Keep this tab open. When the candidate enters and verifies their identity, this room will instantly transition to the real-time proctoring view.
             </p>
             {statusCheckMessage && (
-              <p className="text-xs font-medium text-[#0284c7] pt-1 border-t border-zinc-200/60">
+              <p className="text-xs font-medium text-[#0284c7] pt-1 border-t border-zinc-200/60 dark:border-zinc-700/60">
                 {statusCheckMessage}
               </p>
             )}
@@ -2615,12 +2634,12 @@ export default function InterviewEntryPage() {
 
   if (stage === 'ready') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#0b0f14] px-4 py-10">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#0b0f14] px-4 py-10 transition-colors">
         <div className="max-w-lg w-full space-y-5">
           <div className="text-center space-y-1">
-            <ShieldCheck className="w-8 h-8 text-emerald-400 mx-auto mb-1" />
-            <h1 className="text-xl font-bold text-white">You&apos;re verified</h1>
-            <p className="text-sm text-zinc-400 dark:text-[#9f9f9f]">
+            <ShieldCheck className="w-8 h-8 text-emerald-500 dark:text-emerald-400 mx-auto mb-1" />
+            <h1 className="text-xl font-bold text-zinc-900 dark:text-white">You&apos;re verified</h1>
+            <p className="text-sm text-zinc-600 dark:text-[#9f9f9f]">
               Your camera, mic, and screen share are live. Click Join Interview below to begin the calibration test.
             </p>
           </div>
@@ -2642,13 +2661,13 @@ export default function InterviewEntryPage() {
                 setCalibrationProgress(0);
                 setStageWithRef(process.env.NODE_ENV === 'test' ? 'interview' : 'calibration');
               }}
-              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer"
+              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer"
             >
               <span>Join Interview</span>
             </button>
           )}
 
-          <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-center">
+          <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl px-4 py-2.5 text-center font-medium">
             Stay on this tab and keep your camera, microphone, and screen share on — switching
             tabs, minimizing the window, or stopping any of them will immediately end your
             interview.
@@ -2679,7 +2698,7 @@ export default function InterviewEntryPage() {
     const question = questions[currentQuestion];
 
     return (
-      <main className="min-h-screen bg-[#f8f9fa] px-4 py-8 relative">
+      <main className="min-h-screen bg-[#f8f9fa] dark:bg-[#121212] px-4 py-8 relative transition-colors">
         {/* Full Video Uploading to Google Drive Overlay */}
         {isUploadingFullVideo && (
           <div
@@ -2961,19 +2980,21 @@ export default function InterviewEntryPage() {
 
           {/* Camera Panel — sticky on the right, side-by-side to question */}
           <div className="md:col-span-5 lg:col-span-4 space-y-4 md:sticky md:top-6">
-            <div className="rounded-2xl border border-zinc-100 dark:border-[#4a4a4a] bg-zinc-900 shadow-card p-4 space-y-3">
-              <div className="flex items-center justify-between text-xs text-zinc-300 font-semibold px-1">
+            <div className="rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] bg-white dark:bg-[#2b2b2b] shadow-card p-4 space-y-3">
+              <div className="flex items-center justify-between text-xs text-zinc-700 dark:text-zinc-300 font-semibold px-1">
                 <span className="flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-zinc-400 dark:text-[#9f9f9f]" />
+                  <Camera className="w-3.5 h-3.5 text-zinc-500 dark:text-[#9f9f9f]" />
                   Live Video
                 </span>
                 <span className={[
                   'text-[10px] font-semibold flex items-center gap-1.5 px-2 py-0.5 rounded-full',
-                  faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-900/80 text-emerald-300' : 'bg-amber-900/80 text-amber-300',
+                  faceTrackingStatus === 'tracking' && faceDetected
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/80 dark:text-emerald-300 dark:border-transparent'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/80 dark:text-amber-300 dark:border-transparent',
                 ].join(' ')}>
                   <span className={[
                     'inline-block w-1.5 h-1.5 rounded-full',
-                    faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-300',
+                    faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-500 dark:bg-emerald-400 animate-pulse' : 'bg-amber-500 dark:bg-amber-300',
                   ].join(' ')} />
                   {faceTrackingStatus === 'loading' && 'Face loading…'}
                   {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
@@ -3062,9 +3083,9 @@ export default function InterviewEntryPage() {
             {isAdmin && (
               <div
                 id="candidate-warning-situation"
-                className="rounded-xl border border-zinc-200 bg-white p-3 shadow-sm space-y-2"
+                className="rounded-xl border border-zinc-200 dark:border-[#4a4a4a] bg-white dark:bg-[#2b2b2b] p-3 shadow-sm space-y-2"
               >
-                <div className="flex items-center justify-between border-b border-zinc-100 pb-1.5">
+                <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 pb-1.5">
                   <div className="flex items-center gap-1.5">
                     <ShieldAlert
                       className={`w-3.5 h-3.5 ${
@@ -3075,17 +3096,17 @@ export default function InterviewEntryPage() {
                           : 'text-red-500'
                       }`}
                     />
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-700">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-200">
                       Candidate Warning Status
                     </span>
                   </div>
                   <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                       candidateWarnings.length === 0
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
                         : candidateWarnings.length === 1
-                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                        : 'bg-red-50 text-red-700 border border-red-200 animate-pulse'
+                        ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800'
+                        : 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800 animate-pulse'
                     }`}
                   >
                     {candidateWarnings.length} / 3 Strikes
@@ -3102,19 +3123,19 @@ export default function InterviewEntryPage() {
                         key={slot}
                         className={`py-1 px-1.5 rounded-lg border text-center transition-all ${
                           isFaced
-                            ? 'bg-amber-50/80 border-amber-300 text-amber-900 shadow-xs'
-                            : 'bg-zinc-50 border-zinc-200 text-zinc-400'
+                            ? 'bg-amber-50/80 border-amber-300 text-amber-900 dark:bg-amber-950/50 dark:border-amber-800 dark:text-amber-200 shadow-xs'
+                            : 'bg-zinc-50 border-zinc-200 text-zinc-500 dark:bg-[#1f1f1f] dark:border-zinc-700 dark:text-zinc-400'
                         }`}
                       >
                         <div className="text-[9px] uppercase font-bold tracking-wider leading-tight">Strike {slot}</div>
                         <div className="text-[10px] font-semibold mt-0.5">
                           {isFaced ? (
-                            <span className="text-amber-700 flex items-center justify-center gap-0.5">
-                              <AlertTriangle className="w-2.5 h-2.5 text-amber-600 inline shrink-0" />
+                            <span className="text-amber-700 dark:text-amber-300 flex items-center justify-center gap-0.5">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400 inline shrink-0" />
                               Faced
                             </span>
                           ) : (
-                            <span className="text-zinc-400">Clean</span>
+                            <span className="text-zinc-400 dark:text-zinc-500">Clean</span>
                           )}
                         </div>
                       </div>
@@ -3212,12 +3233,12 @@ export default function InterviewEntryPage() {
 
             {/* Inline alerts below camera */}
             {faceTrackingError && (
-              <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-xs leading-relaxed text-red-700">
-                <strong className="block mb-1 font-semibold text-red-800">Alert</strong>
+              <div className="rounded-2xl border border-red-100 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 p-4 text-xs leading-relaxed text-red-700 dark:text-red-300">
+                <strong className="block mb-1 font-semibold text-red-800 dark:text-red-200">Alert</strong>
                 {faceTrackingError}
               </div>
             )}
-            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-xs leading-relaxed text-amber-800">
+            <div className="rounded-2xl border border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/30 p-4 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
               Keep this tab open and keep your camera, microphone, and screen share active.
             </div>
           </div>
@@ -3229,7 +3250,7 @@ export default function InterviewEntryPage() {
 
   if (stage === 'instructions' || stage === 'permissions') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4 py-10 relative">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 py-10 relative transition-colors">
         <ProctoringInstructions
           cameraGranted={cameraGranted}
           screenGranted={screenGranted}
@@ -3247,13 +3268,13 @@ export default function InterviewEntryPage() {
         />
         {showAckPopup && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl p-6 border border-zinc-100">
-              <h3 className="text-xl font-bold text-zinc-900 mb-3">Acknowledgment</h3>
-              <p className="text-sm text-zinc-600 mb-5 leading-relaxed">
+            <div className="bg-white dark:bg-[#2b2b2b] rounded-2xl max-w-md w-full shadow-2xl p-6 border border-zinc-100 dark:border-[#4a4a4a]">
+              <h3 className="text-xl font-bold text-zinc-900 dark:text-white mb-3">Acknowledgment</h3>
+              <p className="text-sm text-zinc-600 dark:text-[#9f9f9f] mb-5 leading-relaxed">
                 Please confirm that you have read all the instructions, understand the proctoring rules, and have successfully granted the required permissions.
               </p>
               
-              <label className="flex items-start gap-3 cursor-pointer p-3 bg-zinc-50 rounded-xl border border-zinc-200 mb-6 hover:bg-zinc-100 transition-colors">
+              <label className="flex items-start gap-3 cursor-pointer p-3 bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl border border-zinc-200 dark:border-[#4a4a4a] mb-6 hover:bg-zinc-100 dark:hover:bg-[#242424] transition-colors">
                 <div className="pt-0.5">
                   <input
                     type="checkbox"
@@ -3262,7 +3283,7 @@ export default function InterviewEntryPage() {
                     className="w-4 h-4 rounded border-zinc-300 text-[#34c4f2] focus:ring-[#34c4f2]"
                   />
                 </div>
-                <span className="text-sm font-medium text-zinc-700 leading-snug">
+                <span className="text-sm font-medium text-zinc-700 dark:text-[#d9d9d9] leading-snug">
                   I acknowledge that I have read the instructions and granted necessary permissions.
                 </span>
               </label>
@@ -3279,7 +3300,7 @@ export default function InterviewEntryPage() {
                   setShowAckPopup(false);
                   setStageWithRef('ready');
                 }}
-                className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-black py-3.5 rounded-xl transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+                className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold py-3.5 rounded-xl transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm cursor-pointer"
               >
                 Next
               </button>
@@ -3291,7 +3312,7 @@ export default function InterviewEntryPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
+    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 transition-colors">
       <form
         onSubmit={handleSubmit}
         className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 space-y-6"
