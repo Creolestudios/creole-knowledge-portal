@@ -4,6 +4,51 @@ import { Readable } from 'stream';
 
 export const runtime = 'nodejs';
 
+function nodeStreamToWebStream(nodeStream: Readable, signal?: AbortSignal): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (signal) {
+        if (signal.aborted) {
+          nodeStream.destroy();
+          try {
+            controller.close();
+          } catch {}
+          return;
+        }
+        signal.addEventListener('abort', () => {
+          nodeStream.destroy();
+          try {
+            controller.close();
+          } catch {}
+        });
+      }
+
+      nodeStream.on('data', (chunk: Buffer | Uint8Array) => {
+        try {
+          controller.enqueue(new Uint8Array(chunk));
+        } catch {
+          nodeStream.destroy();
+        }
+      });
+
+      nodeStream.on('end', () => {
+        try {
+          controller.close();
+        } catch {}
+      });
+
+      nodeStream.on('error', (err: unknown) => {
+        try {
+          controller.error(err);
+        } catch {}
+      });
+    },
+    cancel() {
+      nodeStream.destroy();
+    },
+  });
+}
+
 /**
  * GET /api/interview/recording/[fileId]/stream
  *
@@ -53,7 +98,7 @@ export async function GET(
         );
 
         const nodeStream = driveRes.data as unknown as Readable;
-        const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+        const webStream = nodeStreamToWebStream(nodeStream, req.signal);
 
         return new NextResponse(webStream, {
           status: 206,
@@ -73,7 +118,7 @@ export async function GET(
     );
 
     const nodeStream = driveRes.data as unknown as Readable;
-    const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+    const webStream = nodeStreamToWebStream(nodeStream, req.signal);
 
     const headers: Record<string, string> = {
       'Content-Type': mimeType,
