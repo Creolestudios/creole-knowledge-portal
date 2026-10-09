@@ -468,7 +468,11 @@ Candidate onboarding follows a strict pre-interview setup sequence prior to live
    - The server confirms the interview is `active` (HTTP 200), purging any stale local `interview_used` keys.
    - Candidate credentials and acknowledgments stored in `sessionStorage` are automatically restored.
    - The UI presents a tailored "Reconnect Devices & Permissions" prompt explaining the browser refresh.
-   - Upon granting permissions, candidates are resumed directly to their pre-refresh setup stage (`calibration` or `ready`), with zero flash of the "Link is expired" screen.
+4. **Deterministic Option B Setup Flow on Refresh**:
+   - Upon granting permissions after a reload during calibration, candidates are presented with the Acknowledgment modal ("Confirm Box") with a required checkbox.
+   - Acknowledging the modal transitions the candidate to the Ready Lobby ("Join Interview" screen) with live webcam video preview and microphone check.
+   - Clicking "Join Interview" starts the Calibration stage with a fresh baseline.
+   - This ensures the candidate can properly check camera angles, lighting, and audio levels before calibration begins, eliminating abrupt jumps into calibration.
 
 
 

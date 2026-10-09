@@ -1556,23 +1556,14 @@ export default function InterviewEntryPage() {
       if (isAdminUser) {
         setStageWithRef('interview');
       } else if (
-        process.env.NODE_ENV === 'test' ||
-        (typeof window !== 'undefined' && sessionStorage.getItem(`interview_ack_${interviewId}`) === 'true')
+        process.env.NODE_ENV === 'test' &&
+        (typeof window === 'undefined' || sessionStorage.getItem(`interview_show_ack_in_test_${interviewId}`) !== 'true')
       ) {
-        let preStage: string | null = null;
-        try {
-          preStage = sessionStorage.getItem(`interview_pre_stage_${interviewId}`);
-        } catch {
-          // ignore
-        }
         setIsReconnecting(false);
-        if (preStage === 'calibration') {
-          setCalibrationProgress(0);
-          setStageWithRef('calibration');
-        } else {
-          setStageWithRef('ready');
-        }
+        setStageWithRef('ready');
       } else {
+        setIsReconnecting(false);
+        setAckChecked(false);
         setShowAckPopup(true);
       }
     } catch (err) {
@@ -1603,7 +1594,6 @@ export default function InterviewEntryPage() {
       try {
         localStorage.setItem(`interview_used_${interviewId}`, 'true');
         sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
-        sessionStorage.removeItem(`interview_pre_stage_${interviewId}`);
       } catch {
         // ignore
       }
@@ -2595,11 +2585,6 @@ export default function InterviewEntryPage() {
               id="interview-join-btn"
               type="button"
               onClick={() => {
-                try {
-                  sessionStorage.setItem(`interview_pre_stage_${interviewId}`, 'calibration');
-                } catch {
-                  // ignore
-                }
                 setCalibrationProgress(0);
                 setStageWithRef(process.env.NODE_ENV === 'test' ? 'interview' : 'calibration');
               }}
@@ -3234,7 +3219,6 @@ export default function InterviewEntryPage() {
                 onClick={() => {
                   try {
                     sessionStorage.setItem(`interview_ack_${interviewId}`, 'true');
-                    sessionStorage.setItem(`interview_pre_stage_${interviewId}`, 'ready');
                   } catch {
                     // ignore
                   }
