@@ -128,7 +128,7 @@ export async function GET(req: Request) {
       : (typeof metaObj.count === 'number' ? metaObj.count : (warningsMap.size + 1));
 
     const category = (evt.category || evt.event_type || 'warning') as string;
-    const reason = (metaObj.reason as string) || (evt.reason as string) || 'Proctoring rule violation';
+    const reason = (metaObj.reason as string) || ((evt as any).reason as string) || 'Proctoring rule violation';
     const ts = evt.ts_ms || (evt.created_at ? new Date(evt.created_at).getTime() : Date.now());
 
     warningsMap.set(count, {

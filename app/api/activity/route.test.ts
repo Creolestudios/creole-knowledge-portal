@@ -647,7 +647,7 @@ describe('POST /api/activity', () => {
 });
 
 // Additional unit tests for exported helpers to improve coverage on new code
-import { isMissingTableError, digestDateFromBlog, loadBlogDigestDateById, recordQuizOnBlogService } from './route';
+import { isMissingTableError, digestDateFromBlog, loadBlogDigestDateById, recordQuizOnBlogService } from './helpers';
 
 describe('activity route helpers (unit)', () => {
   it('isMissingTableError recognizes expected codes', () => {

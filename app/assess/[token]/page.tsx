@@ -48,13 +48,21 @@ import { ProctoringInstructions } from '@/components/ai-interview/proctoring-ins
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
 
-export default function CandidateAssessmentPage({ initialToken }: { initialToken?: string } = {}) {
+export default function CandidateAssessmentPage() {
   const params = useParams();
-  const token = initialToken || (params?.token as string) || (params?.id as string);
+  const token = (params?.token as string) || (params?.id as string);
 
   const [stage, setStage] = useState<Stage>(() => {
     if (typeof window !== 'undefined' && token) {
       try {
+        const refreshReason =
+          sessionStorage.getItem(`assess_refresh_terminated_${token}`) ||
+          (sessionStorage.getItem(`assess_live_active_${token}`) === 'true'
+            ? 'The candidate refreshed or closed the page during the live interview.'
+            : null);
+        if (refreshReason) {
+          return 'terminated';
+        }
         if (
           localStorage.getItem(`assess_used_${token}`) === 'true' ||
           sessionStorage.getItem(`assess_used_${token}`) === 'true'
@@ -86,10 +94,10 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     if (process.env.NODE_ENV === 'test') return false;
     if (typeof window !== 'undefined' && token) {
       try {
-        if (
-          localStorage.getItem(`assess_used_${token}`) === 'true' ||
-          sessionStorage.getItem(`assess_used_${token}`) === 'true'
-        ) {
+        const hasRefreshReason =
+          Boolean(sessionStorage.getItem(`assess_refresh_terminated_${token}`)) ||
+          sessionStorage.getItem(`assess_live_active_${token}`) === 'true';
+        if (hasRefreshReason) {
           return false;
         }
       } catch {
@@ -139,7 +147,21 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const [showAckPopup, setShowAckPopup] = useState(false);
   const [ackChecked, setAckChecked] = useState(false);
 
-  const [terminationReason, setTerminationReason] = useState<string | null>(null);
+  const [terminationReason, setTerminationReason] = useState<string | null>(() => {
+    if (typeof window !== 'undefined' && token) {
+      try {
+        return (
+          sessionStorage.getItem(`assess_refresh_terminated_${token}`) ||
+          (sessionStorage.getItem(`assess_live_active_${token}`) === 'true'
+            ? 'The candidate refreshed or closed the page during the live interview.'
+            : null)
+        );
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  });
 
   const [micOn, setMicOn] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -219,6 +241,16 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   const terminateInterview = useCallback((reason: string) => {
     if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
     terminatedRef.current = true;
+    try {
+      localStorage.setItem(`assess_used_${token}`, 'true');
+      sessionStorage.setItem(`assess_used_${token}`, 'true');
+      sessionStorage.setItem(
+        `assess_refresh_terminated_${token}`,
+        sessionStorage.getItem(`assess_refresh_terminated_${token}`) || reason
+      );
+    } catch {
+      // ignore
+    }
 
     // Flush and save candidate's current answer if any speech was recorded
     const curQ = questions[currentIndex];
@@ -317,7 +349,27 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
           }
           if (json.expired || json.used || json.expirationReason) {
             setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
+
+            // If the candidate refreshed during the live interview, they are viewing the termination screen.
+            // Keep the termination screen displayed! Do not switch to the expired link screen.
+            if (stageRef.current === 'terminated') {
+              try {
+                sessionStorage.removeItem(`assess_refresh_terminated_${token}`);
+                sessionStorage.removeItem(`assess_live_active_${token}`);
+              } catch {
+                // ignore
+              }
+              return;
+            }
+
             setStageWithRef('expired');
+          }
+        } else if (res.ok) {
+          try {
+            localStorage.removeItem(`assess_used_${token}`);
+            sessionStorage.removeItem(`assess_used_${token}`);
+          } catch {
+            // ignore
           }
         }
       })
@@ -384,13 +436,6 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
       if (!res.ok) {
         setError(json.error ?? 'Verification failed');
         return;
-      }
-
-      try {
-        localStorage.setItem(`assess_used_${token}`, 'true');
-        sessionStorage.setItem(`assess_used_${token}`, 'true');
-      } catch {
-        // ignore
       }
 
       if (json.session_id) {
@@ -585,11 +630,87 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   }, [stage, isInterviewPaused]);
 
   useProctoringWatchdog({
-    active: ['ready', 'calibration', 'interview'].includes(stage),
+    active: stage === 'interview',
     cameraStreamRef,
     screenStreamRef,
     onViolation: terminateInterview,
   });
+
+  // Track active live interview in sessionStorage so refresh can be distinguished from reopening
+  useEffect(() => {
+    if (stage === 'interview' && token) {
+      try {
+        sessionStorage.setItem(`assess_live_active_${token}`, 'true');
+        sessionStorage.removeItem(`assess_refresh_terminated_${token}`);
+      } catch {
+        // ignore
+      }
+    }
+  }, [stage, token]);
+
+  // Mark link used and clean up refresh tracking flags once terminated or completed stage is reached
+  useEffect(() => {
+    if ((stage === 'terminated' || stage === 'completed') && token) {
+      try {
+        localStorage.setItem(`assess_used_${token}`, 'true');
+        sessionStorage.setItem(`assess_used_${token}`, 'true');
+        sessionStorage.removeItem(`assess_refresh_terminated_${token}`);
+        sessionStorage.removeItem(`assess_live_active_${token}`);
+      } catch {
+        // ignore
+      }
+    }
+  }, [stage, token]);
+
+  // Prevent candidate from accidentally closing or refreshing tab during live interview
+  useEffect(() => {
+    if (stage !== 'interview') return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      try {
+        sessionStorage.setItem(
+          `assess_refresh_terminated_${token}`,
+          'The candidate refreshed or closed the page during the live interview.'
+        );
+      } catch {
+        // ignore
+      }
+      e.preventDefault();
+      e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
+      return e.returnValue;
+    };
+
+    const handleFocus = () => {
+      if (stageRef.current === 'interview') {
+        try {
+          sessionStorage.removeItem(`assess_refresh_terminated_${token}`);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    const handlePageHide = () => {
+      try {
+        sessionStorage.setItem(
+          `assess_refresh_terminated_${token}`,
+          'The candidate refreshed or closed the page during the live interview.'
+        );
+      } catch {
+        // ignore
+      }
+      terminateInterview('The candidate refreshed or closed the page during the live interview.');
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [stage, token, terminateInterview]);
 
   // ── Sync video element srcObject whenever camera stream or stage changes ──
   useEffect(() => {
@@ -1150,13 +1271,19 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
 
   useEffect(() => {
     if (stage === 'interview') {
+      try {
+        localStorage.setItem(`assess_used_${token}`, 'true');
+        sessionStorage.setItem(`assess_used_${token}`, 'true');
+      } catch {
+        // ignore
+      }
       startTurn();
       const timer = window.setTimeout(() => {
         startListening();
       }, 120);
       return () => window.clearTimeout(timer);
     }
-  }, [currentIndex, stage, startTurn, startListening]);
+  }, [currentIndex, stage, startTurn, startListening, token]);
 
   const currentQuestion = questions[currentIndex];
 
@@ -1266,20 +1393,6 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
 
   // ── Stage renders ─────────────────────────────────────────────────────────
 
-  if (stage === 'expired') {
-    return (
-      <ExpiredInterviewLink
-        note={expiredNote}
-        isUsed={true}
-        reason={expirationReason}
-        reasonTitle={expirationTitle}
-        reasonDetail={expirationDetail}
-        violationReason={expirationViolationReason || terminationReason || undefined}
-        warningCount={expirationWarningCount}
-      />
-    );
-  }
-
   if (isVerifyingLink) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
@@ -1288,6 +1401,20 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
           <p className="text-sm font-medium text-zinc-500">Checking interview status...</p>
         </div>
       </main>
+    );
+  }
+
+  if (stage === 'expired') {
+    return (
+      <ExpiredInterviewLink
+        note={expiredNote}
+        isUsed={true}
+        reason={expirationReason}
+        reasonTitle={expirationTitle}
+        reasonDetail={expirationDetail}
+        violationReason={expirationViolationReason || (expirationReason === 'violation' ? (terminationReason || undefined) : undefined)}
+        warningCount={expirationWarningCount}
+      />
     );
   }
 

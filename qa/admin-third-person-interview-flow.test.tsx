@@ -69,6 +69,12 @@ describe('Admin Third-Person Joining & Live Proctoring Flow', () => {
   beforeEach(() => {
     mockBroadcastCallbacks.length = 0;
     vi.clearAllMocks();
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
 
     Object.defineProperty(global.navigator, 'mediaDevices', {
       value: {
@@ -86,6 +92,12 @@ describe('Admin Third-Person Joining & Live Proctoring Flow', () => {
   afterEach(() => {
     vi.useRealTimers();
     global.fetch = originalFetch;
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch {
+      // ignore
+    }
   });
 
   it('allows admin to join in-progress interview, see candidate stream and hear remote audio', async () => {
@@ -322,7 +334,7 @@ describe('Admin Third-Person Joining & Live Proctoring Flow', () => {
     fireEvent.click(screen.getByText('Continue'));
 
     // Automatically redirected to ended screen
-    expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
+    expect(await screen.findByText('Link is expired')).toBeInTheDocument();
     expect(screen.getByText('This interview was terminated due to violations')).toBeInTheDocument();
   });
 });

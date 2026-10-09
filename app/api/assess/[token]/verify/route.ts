@@ -64,17 +64,15 @@ export async function GET(
   }
 
   if (invite.status === 'revoked' || session?.status === 'cancelled' || session?.status === 'terminated') {
-    const totalWarns = session ? (session.voice_warning_count || 0) + (session.face_warning_count || 0) + (session.object_warning_count || 0) : 0;
     return NextResponse.json({
-      error: 'This interview was terminated due to a proctoring violation.',
+      error: 'This interview link has already been used and is expired',
       note: 'Note: This interview link has already been used and is expired.',
       expired: true,
       used: true,
-      status: 'terminated',
-      expirationReason: 'violation',
-      reasonTitle: 'Session Terminated by Proctoring Guard',
-      reasonDetail: 'This interview was terminated due to automated proctoring policy violations (e.g. camera focus, background voice, or window changes).',
-      warningCount: totalWarns > 0 ? totalWarns : undefined,
+      status: 'expired',
+      expirationReason: 'already_used',
+      reasonTitle: 'Link is expired',
+      reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
     }, { status: 410 });
   }
 
@@ -144,14 +142,14 @@ export async function POST(
   if (invite.status === 'revoked') {
     releaseJoinLock(token, deviceId);
     return NextResponse.json({
-      error: 'This interview was terminated due to a proctoring violation.',
-      note: 'This interview link was expired and deactivated because the session was terminated due to proctoring policy violations.',
+      error: 'This interview link has already been used and is expired',
+      note: 'Note: This interview link has already been used and is expired.',
       expired: true,
       used: true,
-      status: 'terminated',
-      expirationReason: 'violation',
-      reasonTitle: 'Session Terminated by Proctoring Guard',
-      reasonDetail: 'This interview was terminated due to automated proctoring policy violations.',
+      status: 'expired',
+      expirationReason: 'already_used',
+      reasonTitle: 'Link is expired',
+      reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
     }, { status: 410 });
   }
 
@@ -238,14 +236,14 @@ export async function POST(
   if (session.status === 'cancelled' || session.status === 'terminated') {
     releaseJoinLock(token, deviceId);
     return NextResponse.json({
-      error: 'This interview has already ended',
+      error: 'This interview link has already been used and is expired',
       note: 'Note: This interview link has already been used and is expired.',
       expired: true,
       used: true,
-      status: 'terminated',
-      expirationReason: 'violation',
-      reasonTitle: 'Session Terminated by Proctoring Guard',
-      reasonDetail: 'This interview was terminated due to automated proctoring policy violations.',
+      status: 'expired',
+      expirationReason: 'already_used',
+      reasonTitle: 'Link is expired',
+      reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
     }, { status: 410 });
   }
 

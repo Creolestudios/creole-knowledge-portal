@@ -209,7 +209,7 @@ describe('InterviewEntryPage', () => {
 
     expect(await screen.findByText("You're verified")).toBeInTheDocument();
     expect(getUserMedia).toHaveBeenCalledWith({ video: true, audio: true });
-    expect(getDisplayMedia).toHaveBeenCalledWith({ video: true });
+    expect(getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({ video: expect.anything() }));
   });
 
   it('rejects a partial-screen share and asks for the entire screen', async () => {
@@ -338,6 +338,16 @@ describe('InterviewEntryPage', () => {
     fireEvent.click(screen.getByText('Allow & Start Interview'));
     expect(await screen.findByText("You're verified")).toBeInTheDocument();
 
+    // Hiding the tab while on the ready (Join Interview) screen does NOT terminate
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    fireEvent(document, new Event('visibilitychange'));
+    expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
+
+    // Clicking Join Interview starts the live interview
+    Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Join Interview' }));
+
+    // Hiding the tab during the live interview terminates
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
     fireEvent(document, new Event('visibilitychange'));
 
@@ -455,5 +465,245 @@ describe('InterviewEntryPage', () => {
     expect(screen.getByText(/Note: This interview link has already been used and is expired/i)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Enter your email')).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText('000000')).not.toBeInTheDocument();
+  });
+
+  it('shows Link is expired screen instead of termination screen when submitting passcode for a used/terminated link', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
+      ok: false,
+      status: 410,
+      json: () => Promise.resolve({
+        error: 'This interview has already ended',
+        note: 'Note: This interview link has already been used and is expired.',
+        status: 'expired',
+        expired: true,
+        used: true,
+        expirationReason: 'already_used',
+        reasonTitle: 'Link is expired',
+      }),
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    const accessCodeInput = await screen.findByPlaceholderText('000000');
+    fireEvent.change(accessCodeInput, { target: { value: '123456' } });
+    fireEvent.click(screen.getByText('Continue'));
+
+    expect(await screen.findByText('Link is expired')).toBeInTheDocument();
+    expect(screen.getByText(/🔒 Single-Use Consumed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Note: This interview link has already been used and is expired/i)).toBeInTheDocument();
+    expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Session Terminated by Proctoring Guard/i)).not.toBeInTheDocument();
+  });
+
+  it('does not terminate when candidate is on ready (Join Interview) screen and skips ack modal if previously acknowledged', async () => {
+    let verifyCallCount = 0;
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        verifyCallCount++;
+        if (verifyCallCount === 1) {
+          return { ok: true, json: () => Promise.resolve({ requiresAccessCode: true }) };
+        }
+        return { ok: true, json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }) };
+      }
+      if (typeof url === 'string' && url.includes('questions')) {
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+          }),
+        };
+      }
+      return { ok: true, json: () => Promise.resolve({}) };
+    }) as any;
+
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
+    const getDisplayMedia = vi.fn().mockResolvedValue({
+      getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
+      getTracks: () => [],
+    });
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: { getUserMedia, getDisplayMedia },
+      configurable: true,
+    });
+
+    sessionStorage.setItem('interview_ack_interview-1', 'true');
+    await verifyPasscode();
+
+    fireEvent.click(screen.getByText('Allow & Start Interview'));
+    expect(await screen.findByText("You're verified")).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Join Interview' })).toBeInTheDocument();
+    expect(screen.queryByText('Acknowledgment')).not.toBeInTheDocument();
+
+    // Hiding/refreshing the tab while in the ready lobby does not terminate the interview
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    fireEvent(document, new Event('visibilitychange'));
+    expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
+  });
+
+  it('clicking Join Interview in ready lobby transitions to calibration without setting interview_used in localStorage', async () => {
+    let verifyCallCount = 0;
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        verifyCallCount++;
+        if (verifyCallCount === 1) {
+          return { ok: true, json: () => Promise.resolve({ requiresAccessCode: true }) };
+        }
+        return { ok: true, json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }) };
+      }
+      if (typeof url === 'string' && url.includes('questions')) {
+        return {
+          ok: true,
+          json: () => Promise.resolve({
+            session: { duration_minutes: 30 },
+            questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+          }),
+        };
+      }
+      return { ok: true, json: () => Promise.resolve({}) };
+    }) as any;
+
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
+    const getDisplayMedia = vi.fn().mockResolvedValue({
+      getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
+      getTracks: () => [],
+    });
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: { getUserMedia, getDisplayMedia },
+      configurable: true,
+    });
+
+    sessionStorage.setItem('interview_ack_interview-1', 'true');
+    await verifyPasscode();
+
+    fireEvent.click(screen.getByText('Allow & Start Interview'));
+    expect(await screen.findByText("You're verified")).toBeInTheDocument();
+
+    const joinBtn = screen.getByRole('button', { name: 'Join Interview' });
+    fireEvent.click(joinBtn);
+
+    // Live interview screen is reached without link expiration error
+    expect(screen.queryByText('Link is expired')).not.toBeInTheDocument();
+  });
+
+  it('resumes cleanly without link expired flash when candidate reloads during calibration setup', async () => {
+    sessionStorage.setItem('interview_auth_interview-1', JSON.stringify({ accessCode: '123456', email: 'test@example.com' }));
+    sessionStorage.setItem('interview_ack_interview-1', 'true');
+    sessionStorage.setItem('interview_pre_stage_interview-1', 'calibration');
+
+    render(<InterviewEntryPage />);
+
+    // Link must NOT be shown as expired
+    expect(screen.queryByText('Link is expired')).not.toBeInTheDocument();
+    expect(screen.queryByText(/This interview link has already been used/i)).not.toBeInTheDocument();
+  });
+
+  it('displays termination screen with refresh reason when candidate reloads during live interview and does not switch to expired screen', async () => {
+    sessionStorage.setItem(
+      'interview_refresh_terminated_interview-1',
+      'The candidate refreshed or closed the page during the live interview.'
+    );
+    sessionStorage.setItem('interview_live_active_interview-1', 'true');
+
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        return {
+          status: 410,
+          ok: false,
+          json: () =>
+            Promise.resolve({
+              error: 'This interview link has already been used and is expired',
+              expired: true,
+              used: true,
+              expirationReason: 'already_used',
+              reasonTitle: 'Link is expired',
+              reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use.',
+            }),
+        };
+      }
+      return { ok: true, json: () => Promise.resolve({}) };
+    }) as any;
+
+    const { unmount } = render(<InterviewEntryPage />);
+
+    expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
+    expect(
+      screen.getByText('The candidate refreshed or closed the page during the live interview.')
+    ).toBeInTheDocument();
+
+    expect(screen.queryByText('Link is expired')).not.toBeInTheDocument();
+    expect(screen.queryByText(/For security and assessment integrity/i)).not.toBeInTheDocument();
+
+    expect(sessionStorage.getItem('interview_refresh_terminated_interview-1')).toBeNull();
+    expect(sessionStorage.getItem('interview_live_active_interview-1')).toBeNull();
+
+    unmount();
+  });
+
+  it('displays expired link screen when reopening or reloading after the termination screen was already viewed', async () => {
+    sessionStorage.setItem(
+      'interview_refresh_terminated_interview-1',
+      'The candidate refreshed or closed the page during the live interview.'
+    );
+
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        return {
+          status: 410,
+          ok: false,
+          json: () =>
+            Promise.resolve({
+              error: 'This interview link has already been used and is expired',
+              expired: true,
+              used: true,
+              expirationReason: 'already_used',
+              reasonTitle: 'Link is expired',
+              reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use.',
+            }),
+        };
+      }
+      return { ok: true, json: () => Promise.resolve({}) };
+    }) as any;
+
+    const firstMount = render(<InterviewEntryPage />);
+    expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
+    firstMount.unmount();
+
+    const secondMount = render(<InterviewEntryPage />);
+    expect(await screen.findByText('Link is expired')).toBeInTheDocument();
+    expect(screen.getByText(/Note: This interview link has already been used and is expired/i)).toBeInTheDocument();
+    secondMount.unmount();
+  });
+
+  it('displays expired link screen when reopening a previously used link in a fresh session without live refresh flag', async () => {
+    localStorage.setItem('interview_used_interview-1', 'true');
+
+    global.fetch = vi.fn().mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('verify')) {
+        return {
+          status: 410,
+          ok: false,
+          json: () =>
+            Promise.resolve({
+              error: 'This interview link has already been used and is expired',
+              expired: true,
+              used: true,
+              expirationReason: 'already_used',
+              reasonTitle: 'Link is expired',
+              reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use.',
+            }),
+        };
+      }
+      return { ok: true, json: () => Promise.resolve({}) };
+    }) as any;
+
+    render(<InterviewEntryPage />);
+    expect(await screen.findByText('Link is expired')).toBeInTheDocument();
+    expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
   });
 });

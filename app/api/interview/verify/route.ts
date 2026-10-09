@@ -69,41 +69,15 @@ export async function GET(req: Request) {
           reasonDetail: 'The scheduled invitation window to access and take this interview has elapsed.',
         }, { status: 410 });
       }
-      if (interview.status === 'terminated') {
-        return NextResponse.json({
-          error: 'This interview has already ended',
-          note: 'Note: This interview link has already been used and is expired.',
-          status: 'terminated',
-          expired: true,
-          used: true,
-          expirationReason: 'violation',
-          reasonTitle: 'Session Terminated by Proctoring Guard',
-          reasonDetail: 'This interview was terminated due to automated proctoring policy violations (e.g. eye gaze, background voice, or window switching).',
-        }, { status: 410 });
-      }
-      if (interview.status === 'completed') {
-        return NextResponse.json({
-          error: 'This interview has already been completed.',
-          note: 'Note: This interview link has already been used and is expired.',
-          status: 'completed',
-          ended: true,
-          expired: true,
-          used: true,
-          expirationReason: 'completed',
-          reasonTitle: 'Interview Already Completed',
-          reasonDetail: 'This interview session has already been successfully submitted and completed. All answers are finalized.',
-        }, { status: 410 });
-      }
-      if (
-        (interview.used_at && interview.status !== 'in_progress' && !matchesCookie(interview.id))
-      ) {
+      if (interview.status === 'terminated' || interview.status === 'completed' || interview.used_at) {
         return NextResponse.json({
           error: 'This interview link has already been used and is expired',
           note: 'Note: This interview link has already been used and is expired.',
           expired: true,
           used: true,
+          status: 'expired',
           expirationReason: 'already_used',
-          reasonTitle: 'Single-Use Link Already Accessed',
+          reasonTitle: 'Link is expired',
           reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
         }, { status: 410 });
       }
@@ -131,76 +105,50 @@ export async function GET(req: Request) {
         reasonDetail: 'The scheduled invitation window to access and take this interview has elapsed.',
       }, { status: 410 });
     }
-    if (invite.status === 'revoked') {
-      return NextResponse.json({
-        error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
-        status: 'terminated',
-        expired: true,
-        used: true,
-        expirationReason: 'violation',
-        reasonTitle: 'Session Terminated by Proctoring Guard',
-        reasonDetail: 'This interview was terminated due to automated proctoring policy violations (e.g. eye gaze, background voice, or window switching).',
-      }, { status: 410 });
-    }
-    if (invite.status === 'completed') {
-      return NextResponse.json({
-        error: 'This interview has already been completed.',
-        status: 'completed',
-        ended: true,
-        expired: true,
-        used: true,
-        expirationReason: 'completed',
-        reasonTitle: 'Interview Already Completed',
-        reasonDetail: 'This interview session has already been successfully submitted and completed. All answers are finalized.',
-      }, { status: 410 });
-    }
     if (
-      (invite.consumed_at && invite.status !== 'in_progress' && !matchesCookie(invite.session_id)) ||
-      invite.status === 'expired'
+      invite.status === 'revoked' ||
+      invite.status === 'expired' ||
+      invite.status === 'completed' ||
+      invite.consumed_at
     ) {
-      const { data: linkedSession } = await supabaseAdmin
-        .from('interview_sessions')
-        .select('id, status, voice_warning_count, face_warning_count, object_warning_count')
-        .eq('id', invite.session_id)
-        .maybeSingle();
-
-      if (linkedSession?.status === 'completed') {
-        return NextResponse.json({
-          error: 'This interview has already been completed.',
-          status: 'completed',
-          ended: true,
-          expired: true,
-          used: true,
-          expirationReason: 'completed',
-          reasonTitle: 'Interview Already Completed',
-          reasonDetail: 'This interview session has already been successfully submitted and completed. All answers are finalized.',
-        }, { status: 410 });
-      }
-
-      if (linkedSession?.status === 'cancelled' || linkedSession?.status === 'terminated') {
-        const totalWarns = (linkedSession.voice_warning_count || 0) + (linkedSession.face_warning_count || 0) + (linkedSession.object_warning_count || 0);
-        return NextResponse.json({
-          error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
-          status: 'terminated',
-          expired: true,
-          used: true,
-          expirationReason: 'violation',
-          reasonTitle: 'Session Terminated by Proctoring Guard',
-          reasonDetail: 'This interview was terminated due to automated proctoring policy violations.',
-          warningCount: totalWarns > 0 ? totalWarns : undefined,
-        }, { status: 410 });
-      }
-
       return NextResponse.json({
         error: 'This interview link has already been used and is expired',
         note: 'Note: This interview link has already been used and is expired.',
         expired: true,
         used: true,
+        status: 'expired',
         expirationReason: 'already_used',
-        reasonTitle: 'Single-Use Link Already Accessed',
+        reasonTitle: 'Link is expired',
         reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
       }, { status: 410 });
     }
+
+    if (invite.session_id) {
+      const { data: linkedSession } = await supabaseAdmin
+        .from('interview_sessions')
+        .select('id, status')
+        .eq('id', invite.session_id)
+        .maybeSingle();
+
+      if (
+        linkedSession &&
+        (linkedSession.status === 'cancelled' ||
+          linkedSession.status === 'terminated' ||
+          linkedSession.status === 'completed')
+      ) {
+        return NextResponse.json({
+          error: 'This interview link has already been used and is expired',
+          note: 'Note: This interview link has already been used and is expired.',
+          expired: true,
+          used: true,
+          status: 'expired',
+          expirationReason: 'already_used',
+          reasonTitle: 'Link is expired',
+          reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
+        }, { status: 410 });
+      }
+    }
+
     return NextResponse.json({
       active: true,
       status: invite.status,
@@ -219,29 +167,20 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (session) {
-      if (session.status === 'cancelled' || session.status === 'terminated') {
-        const totalWarns = (session.voice_warning_count || 0) + (session.face_warning_count || 0) + (session.object_warning_count || 0);
+      if (
+        session.status === 'cancelled' ||
+        session.status === 'terminated' ||
+        session.status === 'completed'
+      ) {
         return NextResponse.json({
-          error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
-          status: 'terminated',
+          error: 'This interview link has already been used and is expired',
+          note: 'Note: This interview link has already been used and is expired.',
           expired: true,
           used: true,
-          expirationReason: 'violation',
-          reasonTitle: 'Session Terminated by Proctoring Guard',
-          reasonDetail: 'This interview was terminated due to automated proctoring policy violations.',
-          warningCount: totalWarns > 0 ? totalWarns : undefined,
-        }, { status: 410 });
-      }
-      if (session.status === 'completed') {
-        return NextResponse.json({
-          error: 'This interview has already been completed.',
-          status: 'completed',
-          ended: true,
-          expired: true,
-          used: true,
-          expirationReason: 'completed',
-          reasonTitle: 'Interview Already Completed',
-          reasonDetail: 'This interview session has already been successfully submitted and completed. All answers are finalized.',
+          status: 'expired',
+          expirationReason: 'already_used',
+          reasonTitle: 'Link is expired',
+          reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
         }, { status: 410 });
       }
       return NextResponse.json({
@@ -343,25 +282,17 @@ export async function POST(req: Request) {
         }, { status: 410 });
       }
 
-      if (interview.status === 'terminated') {
+      if (interview.status === 'terminated' || interview.status === 'completed') {
         if (lockAcquired) releaseJoinLock(interviewId, deviceId);
         return NextResponse.json({
           error: 'This interview has already ended',
           note: 'Note: This interview link has already been used and is expired.',
-          status: 'terminated',
+          status: 'expired',
           expired: true,
           used: true,
-          expirationReason: 'violation',
-          reasonTitle: 'Session Terminated by Proctoring Guard',
-          reasonDetail: 'This interview was terminated due to automated proctoring policy violations.',
-        }, { status: 410 });
-      }
-      if (interview.status === 'completed') {
-        if (lockAcquired) releaseJoinLock(interviewId, deviceId);
-        return NextResponse.json({
-          error: 'This interview has already been completed.',
-          status: 'completed',
-          ended: true,
+          expirationReason: 'already_used',
+          reasonTitle: 'Link is expired',
+          reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
         }, { status: 410 });
       }
 
@@ -373,11 +304,14 @@ export async function POST(req: Request) {
           await supabaseAdmin.from('ai_interviews').update({ status: 'terminated' }).eq('id', interview.id);
           await broadcastTermination(interviewId);
           return NextResponse.json({
-            error: 'Interview terminated due to page refresh or unauthorized re-entry.',
-            note: 'Interview terminated due to page refresh or unauthorized re-entry.',
-            status: 'terminated',
-            ended: true,
-            concurrent: true,
+            error: 'This interview link has already been used and is expired',
+            note: 'Note: This interview link has already been used and is expired.',
+            status: 'expired',
+            expired: true,
+            used: true,
+            expirationReason: 'already_used',
+            reasonTitle: 'Link is expired',
+            reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
           }, { status: 410 });
         }
         
@@ -455,22 +389,23 @@ export async function POST(req: Request) {
       }, { status: 410 });
     }
 
-    if (invite.status === 'revoked') {
+    if (invite.status === 'revoked' || invite.status === 'completed' || invite.status === 'expired') {
+      if (lockAcquired) releaseJoinLock(interviewId, deviceId);
       return NextResponse.json({
-        error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
-        status: 'terminated',
-      }, { status: 410 });
-    }
-    if (invite.status === 'completed') {
-      return NextResponse.json({
-        error: 'This interview has already been completed.',
-        status: 'completed',
-        ended: true,
+        error: 'This interview link has already been used and is expired',
+        note: 'Note: This interview link has already been used and is expired.',
+        status: 'expired',
+        expired: true,
+        used: true,
+        expirationReason: 'already_used',
+        reasonTitle: 'Link is expired',
+        reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
       }, { status: 410 });
     }
 
     if (!isRequesterAdmin) {
-      if (invite.status === 'in_progress' || invite.consumed_at) {
+      // Only terminate actively if the interview is 'in_progress'.
+      if (invite.status === 'in_progress') {
         if (lockAcquired) releaseJoinLock(interviewId, deviceId);
         await supabaseAdmin.from('interview_invites').update({ status: 'revoked' }).eq('id', invite.id);
         if (invite.session_id) {
@@ -478,12 +413,20 @@ export async function POST(req: Request) {
         }
         await broadcastTermination(interviewId);
         return NextResponse.json({
-          error: 'Interview terminated due to page refresh or unauthorized re-entry.',
-          note: 'Interview terminated due to page refresh or unauthorized re-entry.',
-          status: 'terminated',
-          ended: true,
-          concurrent: true,
+          error: 'This interview link has already been used and is expired',
+          note: 'Note: This interview link has already been used and is expired.',
+          status: 'expired',
+          expired: true,
+          used: true,
+          expirationReason: 'already_used',
+          reasonTitle: 'Link is expired',
+          reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
         }, { status: 410 });
+      }
+
+      // If consumed_at is set but not in_progress, let them re-enter (setup phase).
+      if (invite.consumed_at && (invite.status as string) !== 'in_progress') {
+         // Proceed.
       }
 
       if (!accessCode) {
@@ -505,6 +448,11 @@ export async function POST(req: Request) {
         if (lockAcquired) releaseJoinLock(interviewId, deviceId);
         return NextResponse.json({ error: 'Incorrect passcode' }, { status: 401 });
       }
+
+      registerActiveSession(interviewId, deviceId);
+      if (invite.session_id) {
+        registerActiveSession(invite.session_id, deviceId);
+      }
     }
 
     const sessionId = invite.session_id;
@@ -515,58 +463,18 @@ export async function POST(req: Request) {
       .eq('id', sessionId)
       .maybeSingle();
 
-    if (session && session.status === 'cancelled') {
+    if (session && (session.status === 'cancelled' || session.status === 'terminated' || session.status === 'completed')) {
       if (lockAcquired) releaseJoinLock(interviewId, deviceId);
       return NextResponse.json({
         error: 'This interview has already ended',
         note: 'Note: This interview link has already been used and is expired.',
-        status: 'terminated',
+        status: 'expired',
         expired: true,
         used: true,
-        expirationReason: 'violation',
-        reasonTitle: 'Session Terminated by Proctoring Guard',
-        reasonDetail: 'This interview was terminated due to automated proctoring policy violations.',
+        expirationReason: 'already_used',
+        reasonTitle: 'Link is expired',
+        reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
       }, { status: 410 });
-    }
-    if (session && session.status === 'completed') {
-      if (lockAcquired) releaseJoinLock(interviewId, deviceId);
-      return NextResponse.json({
-        error: 'This interview has already been completed.',
-        status: 'completed',
-        ended: true,
-      }, { status: 410 });
-    }
-
-    if (!isRequesterAdmin) {
-      // Only terminate actively if the interview is 'in_progress'.
-      if (invite.status === 'in_progress') {
-        if (lockAcquired) releaseJoinLock(interviewId, deviceId);
-        await supabaseAdmin.from('interview_invites').update({ status: 'revoked' }).eq('id', invite.id);
-        if (invite.session_id) {
-          await supabaseAdmin.from('interview_sessions').update({ status: 'terminated' }).eq('id', invite.session_id);
-        }
-        await broadcastTermination(interviewId);
-        return NextResponse.json({
-          error: 'Interview terminated due to page refresh or unauthorized re-entry.',
-          note: 'Interview terminated due to page refresh or unauthorized re-entry.',
-          status: 'terminated',
-          ended: true,
-          concurrent: true,
-        }, { status: 410 });
-      }
-      
-      // If consumed_at is set but not in_progress, let them re-enter (setup phase).
-      if (invite.consumed_at && invite.status !== 'in_progress') {
-         // Proceed.
-      }
-
-      // Do not update the DB to in_progress here.
-      // We wait for the client to call /api/interview/start when they actually begin the interview.
-
-      registerActiveSession(interviewId, deviceId);
-      if (sessionId) {
-        registerActiveSession(sessionId, deviceId);
-      }
     }
 
     const inProgress = session?.status === 'in_progress' || invite.status === 'in_progress';
@@ -608,25 +516,30 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (session) {
-      if (session.status === 'cancelled') {
+      if (session.status === 'cancelled' || session.status === 'terminated' || session.status === 'completed') {
         return NextResponse.json({
-          error: 'This interview was terminated due to a proctoring violation or unauthorized exit.',
-          status: 'terminated',
-        }, { status: 410 });
-      }
-      if (session.status === 'completed') {
-        return NextResponse.json({
-          error: 'This interview has already been completed.',
-          status: 'completed',
-          ended: true,
+          error: 'This interview link has already been used and is expired',
+          note: 'Note: This interview link has already been used and is expired.',
+          status: 'expired',
+          expired: true,
+          used: true,
+          expirationReason: 'already_used',
+          reasonTitle: 'Link is expired',
+          reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
         }, { status: 410 });
       }
       if (!isRequesterAdmin && session.status === 'in_progress') {
         await supabaseAdmin.from('interview_sessions').update({ status: 'cancelled' }).eq('id', session.id);
         await broadcastTermination(interviewId);
         return NextResponse.json({
-          error: 'Interview terminated due to page refresh or unauthorized re-entry.',
-          status: 'terminated',
+          error: 'This interview link has already been used and is expired',
+          note: 'Note: This interview link has already been used and is expired.',
+          status: 'expired',
+          expired: true,
+          used: true,
+          expirationReason: 'already_used',
+          reasonTitle: 'Link is expired',
+          reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
         }, { status: 410 });
       }
 

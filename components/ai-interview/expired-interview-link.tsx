@@ -38,28 +38,27 @@ export function ExpiredInterviewLink({
 
   if (
     lowerReason === 'completed' ||
-    lowerNote.includes('completed') ||
     lowerNote.includes('already completed')
   ) {
     resolvedReason = 'completed';
   } else if (
-    isWarningIssued ||
-    lowerReason === 'violation' ||
-    lowerReason === 'terminated' ||
-    lowerReason === 'cancelled' ||
-    lowerReason === 'revoked' ||
-    lowerNote.includes('terminated') ||
-    lowerNote.includes('violation') ||
-    lowerNote.includes('proctoring')
-  ) {
-    resolvedReason = 'violation';
-  } else if (
     lowerReason === 'time_expired' ||
     lowerNote.includes('window expired') ||
-    lowerNote.includes('schedule') ||
-    (!isUsed && lowerNote.includes('expired'))
+    lowerNote.includes('schedule')
   ) {
     resolvedReason = 'time_expired';
+  } else if (
+    lowerReason === 'already_used' ||
+    isUsed
+  ) {
+    resolvedReason = 'already_used';
+  } else if (
+    lowerReason === 'violation' &&
+    (isWarningIssued || lowerNote.includes('proctoring') || lowerNote.includes('violation'))
+  ) {
+    resolvedReason = 'violation';
+  } else {
+    resolvedReason = 'already_used';
   }
 
   // Configuration per expiration reason
@@ -159,7 +158,7 @@ export function ExpiredInterviewLink({
           </p>
 
           {/* Prominent Warning Callout Banner when terminated by warning or violation */}
-          {(isWarningIssued || violationReason || (warningCount !== undefined && warningCount > 0)) && (
+          {resolvedReason === 'violation' && (isWarningIssued || violationReason || (warningCount !== undefined && warningCount > 0)) && (
             <div className="p-3 rounded-lg bg-red-100/90 dark:bg-red-950/70 border border-red-300 dark:border-red-800 text-left space-y-1.5 shadow-xs">
               <div className="flex items-center gap-1.5 text-red-900 dark:text-red-200 font-bold text-xs uppercase tracking-wide">
                 <AlertTriangle className="w-3.5 h-3.5 text-red-600 dark:text-red-400 flex-shrink-0" />

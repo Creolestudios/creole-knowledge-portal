@@ -45,7 +45,7 @@ vi.mock('@/lib/supabase/admin', () => ({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockReturnValue({ single: mockSingleInterview, maybeSingle: mockSingleInterview }),
         }),
-        update: (...args: any[]) => mockUpdate(...args),
+        update: (arg: any) => mockUpdate(arg),
       };
     }),
   },
@@ -205,8 +205,11 @@ describe('POST /api/interview/verify', () => {
     const res = await POST(makeRequest({ interviewId: 'i1', email: 'test@example.com', accessCode: '123456' }));
     expect(res.status).toBe(410);
     const body = await res.json();
-    expect(body.error).toBe('This interview link has already been used and cannot be re-opened');
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(body.error).toBe('This interview link has already been used and is expired');
+    expect(body.status).toBe('expired');
+    expect(body.expirationReason).toBe('already_used');
+    expect(body.reasonTitle).toBe('Link is expired');
+    expect(mockUpdate).toHaveBeenCalledWith({ status: 'terminated' });
   });
 
   it('returns 410 when joining via invite but underlying session is cancelled', async () => {

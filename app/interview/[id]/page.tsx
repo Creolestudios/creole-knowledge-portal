@@ -64,22 +64,30 @@ export default function InterviewEntryPage() {
   const router = useRouter();
   const interviewId = params?.id as string;
 
-  const [stage, setStage] = useState<Stage>('passcode');
-  
-  useEffect(() => {
+  const [stage, setStage] = useState<Stage>(() => {
     if (typeof window !== 'undefined' && interviewId) {
       try {
+        const refreshReason =
+          sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`) ||
+          (sessionStorage.getItem(`interview_live_active_${interviewId}`) === 'true'
+            ? 'The candidate refreshed or closed the page during the live interview.'
+            : null);
+        if (refreshReason) {
+          return 'terminated';
+        }
         if (
           localStorage.getItem(`interview_used_${interviewId}`) === 'true' ||
           sessionStorage.getItem(`interview_used_${interviewId}`) === 'true'
         ) {
-          setStage('expired');
+          return 'expired';
         }
       } catch {
         // ignore
       }
     }
-  }, [interviewId]);
+    return 'passcode';
+  });
+
   // Always reflects the latest stage so worker callbacks never
   // capture a stale value from their closure.
   const stageRef = useRef<Stage>(stage);
@@ -94,26 +102,25 @@ export default function InterviewEntryPage() {
   const [expirationDetail, setExpirationDetail] = useState<string | undefined>(undefined);
   const [expirationViolationReason, setExpirationViolationReason] = useState<string | undefined>(undefined);
   const [expirationWarningCount, setExpirationWarningCount] = useState<number | undefined>(undefined);
-  const [isVerifyingLink, setIsVerifyingLink] = useState<boolean>(true);
-
-  useEffect(() => {
+  const [isVerifyingLink, setIsVerifyingLink] = useState<boolean>(() => {
     if (process.env.NODE_ENV === 'test') {
-      setIsVerifyingLink(false);
-      return;
+      return false;
     }
     if (typeof window !== 'undefined' && interviewId) {
       try {
-        if (
-          localStorage.getItem(`interview_used_${interviewId}`) === 'true' ||
-          sessionStorage.getItem(`interview_used_${interviewId}`) === 'true'
-        ) {
-          setIsVerifyingLink(false);
+        const hasRefreshReason =
+          Boolean(sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`)) ||
+          sessionStorage.getItem(`interview_live_active_${interviewId}`) === 'true';
+        if (hasRefreshReason) {
+          return false;
         }
       } catch {
         // ignore
       }
     }
-  }, [interviewId]);
+    return true;
+  });
+  const [isReconnecting, setIsReconnecting] = useState<boolean>(false);
 
   const [deviceId, setDeviceId] = useState<string>('');
   useEffect(() => {
@@ -140,7 +147,21 @@ export default function InterviewEntryPage() {
   const [requestingPermissions, setRequestingPermissions] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
-  const [terminationReason, setTerminationReason] = useState<string | null>(null);
+  const [terminationReason, setTerminationReason] = useState<string | null>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        return (
+          sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`) ||
+          (sessionStorage.getItem(`interview_live_active_${interviewId}`) === 'true'
+            ? 'The candidate refreshed or closed the page during the live interview.'
+            : null)
+        );
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  });
   const [questions, setQuestions] = useState<InterviewQuestion[]>([]);
   const questionsRef = useRef<InterviewQuestion[]>([]);
   useEffect(() => {
@@ -234,12 +255,8 @@ export default function InterviewEntryPage() {
           } catch {
             // ignore
           }
-          if (json.expirationReason) {
-            setExpirationReason(json.expirationReason);
-          }
-          if (json.reasonTitle) {
-            setExpirationTitle(json.reasonTitle);
-          }
+          setExpirationReason(json.expirationReason || 'already_used');
+          setExpirationTitle(json.reasonTitle || 'Link is expired');
           if (json.reasonDetail) {
             setExpirationDetail(json.reasonDetail);
           }
@@ -250,21 +267,28 @@ export default function InterviewEntryPage() {
             setExpirationWarningCount(json.warningCount);
           }
 
-          if (json.status === 'terminated' || json.status === 'revoked' || json.status === 'cancelled' || json.expirationReason === 'violation') {
-            setTerminationReason(json.violationReason || json.reasonDetail || json.error || 'This interview has already ended.');
-            setExpiredNote(json.reasonDetail || json.note || json.error);
-            setStageWithRef('expired');
-          } else if (json.status === 'completed' || json.ended || json.expirationReason === 'completed') {
-            setExpiredNote(json.reasonDetail || json.note || 'This interview has already been completed.');
-            setStageWithRef('expired');
-          } else if (json.expired || json.used || json.expirationReason) {
-            setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
-            setStageWithRef('expired');
-          } else {
-            setTerminationReason(json.error || 'This interview has already ended.');
-            setStageWithRef('expired');
+          setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
+
+          // If the candidate refreshed during the live interview, they are viewing the termination screen.
+          // Keep the termination screen displayed! Do not switch to the expired link screen.
+          if (stageRef.current === 'terminated') {
+            try {
+              sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
+              sessionStorage.removeItem(`interview_live_active_${interviewId}`);
+            } catch {
+              // ignore
+            }
+            return;
           }
+
+          setStageWithRef('expired');
         } else if (res.ok) {
+          try {
+            localStorage.removeItem(`interview_used_${interviewId}`);
+            sessionStorage.removeItem(`interview_used_${interviewId}`);
+          } catch {
+            // ignore
+          }
           try {
             const authStr = sessionStorage.getItem(`interview_auth_${interviewId}`);
             if (authStr) {
@@ -300,6 +324,9 @@ export default function InterviewEntryPage() {
                         void requestPermissionsRef.current?.(true);
                       }
                     } else {
+                      if (typeof window !== 'undefined' && sessionStorage.getItem(`interview_ack_${interviewId}`) === 'true') {
+                        setIsReconnecting(true);
+                      }
                       setStageWithRef('instructions');
                     }
                   }
@@ -313,12 +340,8 @@ export default function InterviewEntryPage() {
                   } catch {
                     // ignore
                   }
-                  if (verifyJson.expirationReason) {
-                    setExpirationReason(verifyJson.expirationReason);
-                  }
-                  if (verifyJson.reasonTitle) {
-                    setExpirationTitle(verifyJson.reasonTitle);
-                  }
+                  setExpirationReason(verifyJson.expirationReason || 'already_used');
+                  setExpirationTitle(verifyJson.reasonTitle || 'Link is expired');
                   if (verifyJson.reasonDetail) {
                     setExpirationDetail(verifyJson.reasonDetail);
                   }
@@ -329,20 +352,11 @@ export default function InterviewEntryPage() {
                     setExpirationWarningCount(verifyJson.warningCount);
                   }
 
-                  if (verifyJson.status === 'terminated' || verifyJson.status === 'revoked' || verifyJson.status === 'cancelled' || verifyJson.expirationReason === 'violation') {
-                    setTerminationReason(verifyJson.violationReason || verifyJson.reasonDetail || verifyJson.error || 'This interview has already ended.');
-                    setExpiredNote(verifyJson.reasonDetail || verifyJson.note || verifyJson.error);
-                    setStageWithRef('expired');
-                  } else if (verifyJson.status === 'completed' || verifyJson.ended || verifyJson.expirationReason === 'completed') {
-                    setExpiredNote(verifyJson.reasonDetail || verifyJson.note || 'This interview has already been completed.');
-                    setStageWithRef('expired');
-                  } else if (verifyJson.expired || verifyJson.used || verifyJson.expirationReason) {
-                    setExpiredNote(verifyJson.reasonDetail || verifyJson.note || verifyJson.error || 'Note: This interview link has already been used and is expired.');
-                    setStageWithRef('expired');
-                  } else {
-                    setTerminationReason(verifyJson.error || 'This interview has already ended.');
-                    setStageWithRef('expired');
+                  if (stageRef.current === 'terminated') {
+                    return;
                   }
+                  setExpiredNote(verifyJson.reasonDetail || verifyJson.note || verifyJson.error || 'Note: This interview link has already been used and is expired.');
+                  setStageWithRef('expired');
                 } else {
                   sessionStorage.removeItem(`interview_auth_${interviewId}`);
                 }
@@ -962,6 +976,12 @@ export default function InterviewEntryPage() {
     }
 
     setIsUploadingNext(false);
+    try {
+      localStorage.setItem(`interview_used_${interviewId}`, 'true');
+      sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+    } catch {
+      // ignore
+    }
     // 6. Transition to completed screen immediately
     setStageWithRef('completed');
   };
@@ -1049,6 +1069,16 @@ export default function InterviewEntryPage() {
   const terminateInterview = useCallback(async (reason: string) => {
     if (terminatedRef.current || stageRef.current === 'completed' || completedRef.current) return;
     terminatedRef.current = true;
+    try {
+      localStorage.setItem(`interview_used_${interviewId}`, 'true');
+      sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+      sessionStorage.setItem(
+        `interview_refresh_terminated_${interviewId}`,
+        sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`) || reason
+      );
+    } catch {
+      // ignore
+    }
     setIsInterviewPaused(true);
     setTerminationReason(reason);
 
@@ -1092,17 +1122,69 @@ export default function InterviewEntryPage() {
     terminateInterviewRef.current = terminateInterview;
   }, [terminateInterview]);
 
+  // Track active live interview in sessionStorage so refresh can be distinguished from reopening
+  useEffect(() => {
+    if (stage === 'interview' && !isAdmin && interviewId) {
+      try {
+        sessionStorage.setItem(`interview_live_active_${interviewId}`, 'true');
+        sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
+      } catch {
+        // ignore
+      }
+    }
+  }, [stage, isAdmin, interviewId]);
+
+  // Mark link used and clean up refresh tracking flags once terminated or completed stage is reached
+  useEffect(() => {
+    if ((stage === 'terminated' || stage === 'completed') && interviewId) {
+      try {
+        localStorage.setItem(`interview_used_${interviewId}`, 'true');
+        sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+        sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
+        sessionStorage.removeItem(`interview_live_active_${interviewId}`);
+      } catch {
+        // ignore
+      }
+    }
+  }, [stage, interviewId]);
+
   // Prevent candidate from accidentally closing or refreshing tab during live interview
   useEffect(() => {
     if (stage !== 'interview' || isAdmin) return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      try {
+        sessionStorage.setItem(
+          `interview_refresh_terminated_${interviewId}`,
+          'The candidate refreshed or closed the page during the live interview.'
+        );
+      } catch {
+        // ignore
+      }
       e.preventDefault();
       e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
       return e.returnValue;
     };
+
+    const handleFocus = () => {
+      if (stageRef.current === 'interview') {
+        try {
+          sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
+        } catch {
+          // ignore
+        }
+      }
+    };
     
     const handlePageHide = () => {
       if (bypassProctoring) return;
+      try {
+        sessionStorage.setItem(
+          `interview_refresh_terminated_${interviewId}`,
+          'The candidate refreshed or closed the page during the live interview.'
+        );
+      } catch {
+        // ignore
+      }
       terminateInterviewRef.current('The candidate refreshed or closed the page during the live interview.');
     };
     
@@ -1120,17 +1202,19 @@ export default function InterviewEntryPage() {
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('focus', handleFocus);
     window.addEventListener('pagehide', handlePageHide);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('pagehide', handlePageHide);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
     };
-  }, [stage, isAdmin, bypassProctoring]);
+  }, [stage, isAdmin, bypassProctoring, interviewId]);
 
   const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
     const video = cameraVideoRef.current;
@@ -1326,18 +1410,20 @@ export default function InterviewEntryPage() {
         } catch {
           // ignore
         }
-        if (json.status === 'terminated' || json.status === 'revoked' || json.status === 'cancelled') {
-          setTerminationReason(json.error ?? 'This interview has already ended');
-          setStageWithRef('terminated');
-        } else if (json.expired || json.used) {
-          setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
-          setStageWithRef('expired');
-        } else if (json.status === 'completed' || json.ended) {
-          setStageWithRef('completed');
-        } else {
-          setTerminationReason(json.error ?? 'This interview has already ended');
-          setStageWithRef('terminated');
+        setExpirationReason(json.expirationReason || 'already_used');
+        setExpirationTitle(json.reasonTitle || 'Link is expired');
+        if (json.reasonDetail) {
+          setExpirationDetail(json.reasonDetail);
         }
+        if (json.violationReason) {
+          setExpirationViolationReason(json.violationReason);
+        }
+        if (json.warningCount) {
+          setExpirationWarningCount(json.warningCount);
+        }
+
+        setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
+        setStageWithRef('expired');
         return;
       }
 
@@ -1469,8 +1555,23 @@ export default function InterviewEntryPage() {
       setFaceTrackingError(null);
       if (isAdminUser) {
         setStageWithRef('interview');
-      } else if (process.env.NODE_ENV === 'test') {
-        setStageWithRef('ready');
+      } else if (
+        process.env.NODE_ENV === 'test' ||
+        (typeof window !== 'undefined' && sessionStorage.getItem(`interview_ack_${interviewId}`) === 'true')
+      ) {
+        let preStage: string | null = null;
+        try {
+          preStage = sessionStorage.getItem(`interview_pre_stage_${interviewId}`);
+        } catch {
+          // ignore
+        }
+        setIsReconnecting(false);
+        if (preStage === 'calibration') {
+          setCalibrationProgress(0);
+          setStageWithRef('calibration');
+        } else {
+          setStageWithRef('ready');
+        }
       } else {
         setShowAckPopup(true);
       }
@@ -1499,6 +1600,13 @@ export default function InterviewEntryPage() {
 
   useEffect(() => {
     if (stage === 'interview' && !isAdmin) {
+      try {
+        localStorage.setItem(`interview_used_${interviewId}`, 'true');
+        sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+        sessionStorage.removeItem(`interview_pre_stage_${interviewId}`);
+      } catch {
+        // ignore
+      }
       // Mark the interview as officially started (consumes the link)
       fetch('/api/interview/start', {
         method: 'POST',
@@ -1538,15 +1646,19 @@ export default function InterviewEntryPage() {
         }
       } else if (res.status === 410) {
         const data = await res.json().catch(() => ({}));
-        if (data.expired || data.used) {
-          setExpiredNote(data.note || data.error || 'Note: This interview link has already been used and is expired.');
-          setStageWithRef('expired');
-        } else if (data.status === 'completed' || data.ended) {
-          setStageWithRef('completed');
-        } else {
-          setTerminationReason(data.error || 'This interview has already ended.');
-          setStageWithRef('terminated');
+        try {
+          localStorage.setItem(`interview_used_${interviewId}`, 'true');
+          sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+        } catch {
+          // ignore
         }
+        setExpirationReason(data.expirationReason || 'already_used');
+        setExpirationTitle(data.reasonTitle || 'Link is expired');
+        if (data.reasonDetail) {
+          setExpirationDetail(data.reasonDetail);
+        }
+        setExpiredNote(data.reasonDetail || data.note || data.error || 'Note: This interview link has already been used and is expired.');
+        setStageWithRef('expired');
       }
     } catch {
       setStatusCheckMessage('Could not verify status. Retrying automatically...');
@@ -1564,7 +1676,7 @@ export default function InterviewEntryPage() {
   }, [stage, checkInterviewStatus]);
 
   useProctoringWatchdog({
-    active: (stage === 'interview' || stage === 'ready') && !bypassProctoring,
+    active: stage === 'interview' && !bypassProctoring,
     cameraStreamRef,
     screenStreamRef,
     onViolation: terminateInterview,
@@ -2258,6 +2370,51 @@ export default function InterviewEntryPage() {
 
 
 
+  const handleApplyDeviceSelection = async ({
+    videoDeviceId,
+    audioDeviceId,
+  }: {
+    videoDeviceId: string;
+    audioDeviceId: string;
+  }) => {
+    const newStream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: videoDeviceId } },
+      audio: { deviceId: { exact: audioDeviceId } },
+    });
+    newStream.getAudioTracks().forEach((track) => {
+      track.enabled = micOn;
+    });
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = newStream;
+    setCameraPreview(newStream);
+    setCameraStream(newStream);
+  };
+
+  if (isVerifyingLink) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
+        <div className="flex flex-col items-center justify-center space-y-4">
+          <div className="w-10 h-10 border-3 border-zinc-200 dark:border-[#4a4a4a] border-t-[#34c4f2] rounded-full animate-spin" />
+          <p className="text-sm font-medium text-zinc-500 dark:text-[#9f9f9f]">Checking interview status...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (stage === 'expired') {
+    return (
+      <ExpiredInterviewLink
+        note={expiredNote}
+        isUsed={true}
+        reason={expirationReason}
+        reasonTitle={expirationTitle}
+        reasonDetail={expirationDetail}
+        violationReason={expirationViolationReason || (expirationReason === 'violation' ? (terminationReason || undefined) : undefined)}
+        warningCount={expirationWarningCount}
+      />
+    );
+  }
+
   if (stage === 'calibration') {
     return (
       <main className="min-h-screen bg-[#f8f9fa] flex items-center justify-center relative">
@@ -2282,50 +2439,6 @@ export default function InterviewEntryPage() {
           calibrationProgress={calibrationProgress}
           onComplete={() => setStage('interview')}
         />
-      </main>
-    );
-  }
-  const handleApplyDeviceSelection = async ({
-    videoDeviceId,
-    audioDeviceId,
-  }: {
-    videoDeviceId: string;
-    audioDeviceId: string;
-  }) => {
-    const newStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: videoDeviceId } },
-      audio: { deviceId: { exact: audioDeviceId } },
-    });
-    newStream.getAudioTracks().forEach((track) => {
-      track.enabled = micOn;
-    });
-    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
-    cameraStreamRef.current = newStream;
-    setCameraPreview(newStream);
-    setCameraStream(newStream);
-  };
-
-  if (stage === 'expired') {
-    return (
-      <ExpiredInterviewLink
-        note={expiredNote}
-        isUsed={true}
-        reason={expirationReason}
-        reasonTitle={expirationTitle}
-        reasonDetail={expirationDetail}
-        violationReason={expirationViolationReason || terminationReason || undefined}
-        warningCount={expirationWarningCount}
-      />
-    );
-  }
-
-  if (isVerifyingLink) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] px-4">
-        <div className="flex flex-col items-center justify-center space-y-4">
-          <div className="w-10 h-10 border-3 border-zinc-200 dark:border-[#4a4a4a] border-t-[#34c4f2] rounded-full animate-spin" />
-          <p className="text-sm font-medium text-zinc-500 dark:text-[#9f9f9f]">Checking interview status...</p>
-        </div>
       </main>
     );
   }
@@ -2482,6 +2595,11 @@ export default function InterviewEntryPage() {
               id="interview-join-btn"
               type="button"
               onClick={() => {
+                try {
+                  sessionStorage.setItem(`interview_pre_stage_${interviewId}`, 'calibration');
+                } catch {
+                  // ignore
+                }
                 setCalibrationProgress(0);
                 setStageWithRef(process.env.NODE_ENV === 'test' ? 'interview' : 'calibration');
               }}
@@ -3080,7 +3198,13 @@ export default function InterviewEntryPage() {
           requestingPermissions={requestingPermissions}
           onRequestPermissions={requestPermissions}
           customError={questionError}
-          buttonText="Allow & Start Interview"
+          title={isReconnecting ? 'Reconnect Devices & Permissions' : 'Before you begin'}
+          subtitle={
+            isReconnecting
+              ? 'Your page was refreshed. In accordance with browser security rules, please re-enable your camera, microphone, and screen share to continue.'
+              : 'Please read the instructions below, then grant the required permissions.'
+          }
+          buttonText={isReconnecting ? 'Reconnect Devices & Continue' : 'Allow & Start Interview'}
         />
         {showAckPopup && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
@@ -3108,6 +3232,12 @@ export default function InterviewEntryPage() {
                 type="button"
                 disabled={!ackChecked}
                 onClick={() => {
+                  try {
+                    sessionStorage.setItem(`interview_ack_${interviewId}`, 'true');
+                    sessionStorage.setItem(`interview_pre_stage_${interviewId}`, 'ready');
+                  } catch {
+                    // ignore
+                  }
                   setShowAckPopup(false);
                   setStageWithRef('ready');
                 }}

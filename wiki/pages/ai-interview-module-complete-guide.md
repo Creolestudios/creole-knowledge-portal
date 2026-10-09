@@ -437,24 +437,55 @@ The **Admin AI Copilot** is an interactive, grounded chat assistant embedded dir
 ### 12.1 Real Expiration Reason Classification
 Previously, any expired link presented candidates with a generic "Link is expired / already used" notice regardless of whether the interview ended naturally or was terminated early. The verification pipelines and UI now differentiate and display the exact underlying cause:
 
-1. **✅ Interview Completed (`completed`)**:
+1. **🔒 Single-Use Consumed / Reopened Link (`already_used`)**:
+   - **Trigger**: Any one-time link that was already accessed, started, completed, or previously terminated when reopened (`localStorage.getItem('interview_used_${id}')` or HTTP 410 with `already_used`).
+   - **UI**: Slate/Zinc theme with badge `🔒 Single-Use Consumed` and title `Link is expired`. Explains single-use integrity constraints and prevents confusing candidates with proctoring violation alerts upon re-opening.
+2. **✅ Interview Completed (`completed`)**:
    - **Trigger**: Candidate completed all interview questions and the session was finalized (`session.status = 'completed'` or `invite.status = 'completed'`).
-   - **UI**: Emerald theme with badge `✅ Submissions Finalized` and title `Interview Already Completed`. Confirms responses are safely archived and no re-submission is necessary.
-2. **🚫 Proctoring Policy Enforcement (`violation`)**:
-   - **Trigger**: Session cancelled or revoked due to proctoring triggers (`session.status = 'cancelled' | 'terminated'`, or `invite.status = 'revoked'`).
-   - **UI**: Crimson/Red theme with badge `🚫 Proctoring Policy Enforcement` and title `Session Terminated by Proctoring Guard`. Highlights specific violation reasons (e.g. eye gaze deviation, unauthorized tabs, background voices) and warning threshold counts.
+   - **UI**: Emerald theme with badge `✅ Submissions Finalized` and title `Interview Already Completed`. Confirms responses are safely archived.
 3. **⏳ Access Window Expired (`time_expired`)**:
    - **Trigger**: Current timestamp exceeds scheduled deadline (`new Date() > expires_at`).
    - **UI**: Amber theme with badge `⏳ Access Deadline Passed` and title `Interview Window Expired`.
-4. **🔒 Single-Use Consumed (`already_used`)**:
-   - **Trigger**: Single-use security token was previously opened from another device/browser.
-   - **UI**: Slate/Zinc theme with badge `🔒 Single-Use Consumed` explaining single-access integrity constraints.
+4. **🚫 Active Live Session Violation (`violation` / `stage = 'terminated'`)**:
+   - **Trigger**: Active real-time proctoring watchdog infractions or 3rd strike reached during a live ongoing interview. Renders `<TerminatedInterview>` in real-time. Once the tab is left or reloaded, subsequent attempts to access the link safely route to the `🔒 Single-Use Consumed` expired screen.
 
 ### 12.2 English Communication Dynamic Spectrum Progress Bars
 In `report-detail-view.tsx`, the English Communication sub-score bars (Grammar & Sentence Construction, Pronunciation & Clarity, Vocabulary & Word Choice, Fluency & Coherence) utilize a continuous 3-tier color spectrum:
 - **Red (0–25%)**: Needs Development.
 - **Blue (26–75%)**: Competent / Professional Working Proficiency.
-- **Green (76–100%)**: Advanced / Fluent.
-- **Implementation**: The CSS background gradient is rendered across the full width and dynamically scaled so that each bar fills smoothly and stops exactly at the color corresponding to the candidate's score band.
+- **Green (76–100%)**: Advanced / Native-like Fluency.
+
+### 12.3 Pre-Interview Setup & Calibration Refresh Lifecycle
+Candidate onboarding follows a strict pre-interview setup sequence prior to live interview entry:
+`passcode` ➔ `instructions` / `permissions` ➔ `ready` (lobby) ➔ `calibration` (eye & webcam) ➔ `interview` (live).
+
+1. **Link Consumption Boundaries**:
+   - The interview link is **not** consumed or marked as used (`interview_used`) during passcode, instructions, permissions, ready lobby, or calibration.
+   - Link consumption and `/api/interview/start` are triggered **only** when the candidate completes calibration and officially enters the live interview (`stage === 'interview'`), finishes (`completed`), or is terminated (`terminated`).
+2. **Page Refresh During Calibration or Lobby**:
+   - Modern browser sandboxes terminate all active camera and screen capture `MediaStream` tracks on navigation or page reload. `getDisplayMedia` requires an explicit user gesture and cannot restart silently in the background.
+   - When a page is refreshed during calibration, `isVerifyingLink` holds the UI on "Checking interview status..." while querying `/api/interview/verify`.
+   - The server confirms the interview is `active` (HTTP 200), purging any stale local `interview_used` keys.
+   - Candidate credentials and acknowledgments stored in `sessionStorage` are automatically restored.
+   - The UI presents a tailored "Reconnect Devices & Permissions" prompt explaining the browser refresh.
+   - Upon granting permissions, candidates are resumed directly to their pre-refresh setup stage (`calibration` or `ready`), with zero flash of the "Link is expired" screen.
 
 
+
+### 12.4 Live Interview Refresh Termination & Subsequent Expiration Flow
+During the live interview stage (`stage === 'interview'`), candidate actions and page reloads are protected by strict proctoring and lifecycle management:
+
+1. **Mid-Interview Page Refresh / Tab Close Detection**:
+   - When a candidate enters the live interview, the session sets `sessionStorage.setItem('interview_live_active_${id}', 'true')`.
+   - If the candidate refreshes the page, presses `F5`/`Ctrl+R`, or closes the tab, `beforeunload` and `pagehide` event handlers immediately record the termination in session storage:
+     `sessionStorage.setItem('interview_refresh_terminated_${id}', 'The candidate refreshed or closed the page during the live interview.')`
+   - A reliable beacon payload is sent to `/api/interview/terminate` via `navigator.sendBeacon`.
+2. **Immediate Post-Refresh Termination Presentation**:
+   - When the reloaded page boots up, `useState<Stage>` detects the stored refresh termination reason and initializes `stage` directly to `'terminated'` with `terminationReason: 'The candidate refreshed or closed the page during the live interview.'`.
+   - `isVerifyingLink` initializes to `false`, rendering `<TerminatedInterview>` instantly on first paint with zero flicker, delay, or loading spinners.
+   - When the background `/api/interview/verify` call resolves with HTTP 410, it checks `stageRef.current === 'terminated'`. It preserves the termination screen and does **not** override the view to `'expired'`.
+3. **One-Time Bypass Consumption & Subsequent Reloads**:
+   - Viewing the termination screen consumes the refresh tracking keys (`removeItem('interview_refresh_terminated_${id}')` and `removeItem('interview_live_active_${id}')`), while permanently persisting `interview_used_${id} = 'true'`.
+   - If the candidate refreshes *that* termination screen, or closes and re-opens the link in any browser tab or window, the refresh bypass keys are no longer present.
+   - The page immediately renders `<ExpiredInterviewLink>` with the `🔒 Single-Use Consumed` badge and "Link is expired" message.
+   - All once-used, completed, or previously terminated links continue to consistently display the expired link screen upon any reopening.

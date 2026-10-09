@@ -376,6 +376,89 @@ describe('CandidateAssessmentPage', () => {
     await waitFor(() => expect(screen.getByText('Interview complete')).toBeInTheDocument());
     expect(screen.getByText(/Jane/)).toBeInTheDocument();
   });
+
+  it('directly shows expired link screen when assess link was previously used in storage', () => {
+    localStorage.setItem('assess_used_raw-token', 'true');
+    render(<CandidateAssessmentPage />);
+    expect(screen.getByText('Link is expired')).toBeInTheDocument();
+    expect(screen.getByText(/🔒 Single-Use Consumed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Note: This interview link has already been used and is expired/i)).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('000000')).not.toBeInTheDocument();
+  });
+
+  it('shows expired screen instead of termination screen when submitting passcode for a used/terminated assess link', async () => {
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: false,
+      status: 410,
+      json: async () => ({
+        error: 'This interview link has already been used and is expired',
+        note: 'Note: This interview link has already been used and is expired.',
+        status: 'expired',
+        expired: true,
+        used: true,
+        expirationReason: 'already_used',
+        reasonTitle: 'Link is expired',
+      }),
+    });
+
+    render(<CandidateAssessmentPage />);
+    fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Link is expired')).toBeInTheDocument();
+    expect(screen.getByText(/🔒 Single-Use Consumed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Note: This interview link has already been used and is expired/i)).toBeInTheDocument();
+    expect(screen.queryByText('Interview terminated')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Session Terminated by Proctoring Guard/i)).not.toBeInTheDocument();
+  });
+
+  it('displays termination screen with refresh reason when candidate reloads during live assessment and does not switch to expired screen', async () => {
+    sessionStorage.setItem(
+      'assess_refresh_terminated_raw-token',
+      'The candidate refreshed or closed the page during the live interview.'
+    );
+    sessionStorage.setItem('assess_live_active_raw-token', 'true');
+
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 410,
+      json: async () => ({
+        error: 'This interview link has already been used and is expired',
+        expired: true,
+        used: true,
+        expirationReason: 'already_used',
+        reasonTitle: 'Link is expired',
+      }),
+    });
+
+    const { unmount } = render(<CandidateAssessmentPage />);
+
+    expect(await screen.findByText('Interview terminated')).toBeInTheDocument();
+    expect(
+      screen.getByText('The candidate refreshed or closed the page during the live interview.')
+    ).toBeInTheDocument();
+
+    expect(screen.queryByText('Link is expired')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem('assess_refresh_terminated_raw-token')).toBeNull();
+    expect(sessionStorage.getItem('assess_live_active_raw-token')).toBeNull();
+
+    unmount();
+  });
+
+  it('displays expired link screen when reopening or reloading after the assess termination screen was viewed', () => {
+    sessionStorage.setItem(
+      'assess_refresh_terminated_raw-token',
+      'The candidate refreshed or closed the page during the live interview.'
+    );
+
+    const firstMount = render(<CandidateAssessmentPage />);
+    expect(screen.getByText('Interview terminated')).toBeInTheDocument();
+    firstMount.unmount();
+
+    const secondMount = render(<CandidateAssessmentPage />);
+    expect(screen.getByText('Link is expired')).toBeInTheDocument();
+    secondMount.unmount();
+  });
 });
 
 interface AssessQuestionLike {

@@ -51,7 +51,7 @@ export default function AdminDashboard() {
       if (error) throw error;
 
       if (data && data.length > 0) {
-        setUrls(data.map(item => item.url));
+        setUrls(data.map((item: { url: string }) => item.url));
       }
     } catch (err: any) {
       console.error('Error fetching sources:', err);

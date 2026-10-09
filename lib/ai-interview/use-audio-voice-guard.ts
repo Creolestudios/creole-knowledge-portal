@@ -8,7 +8,7 @@ export interface VoiceGuardOptions {
   isAiSpeaking: boolean;
   isCandidateTurn: boolean;
   isCandidateMouthMoving?: boolean;
-  onUnauthorizedVoiceDetected: (info: { reason: string; confidence: number }) => void;
+  onUnauthorizedVoiceDetected: (info: { reason: string; confidence: number; durationMs?: number }) => void;
   takeSnapshot?: () => Promise<string | null>;
   readingGracePeriodMs?: number;
   continuousVoiceMs?: number;

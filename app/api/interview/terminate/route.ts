@@ -167,7 +167,7 @@ export async function POST(req: Request) {
     if (interviewId !== targetSessionId) await subscribeChannel(channel2);
     
     const payload = {
-      type: 'broadcast',
+      type: 'broadcast' as const,
       event: 'state-sync',
       payload: {
         type: 'terminate',
