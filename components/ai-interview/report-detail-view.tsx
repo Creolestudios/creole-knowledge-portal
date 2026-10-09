@@ -22,7 +22,9 @@ import {
   Sparkles,
   FileText,
   Video,
+  Bot,
 } from 'lucide-react';
+import { ReportChatCopilot } from './report-chat-copilot';
 
 export interface ReportDetailViewProps {
   session: {
@@ -163,12 +165,95 @@ function ScoreGauge({ value, max = 100, color = '#34c4f2', label }: { value: num
   );
 }
 
-function ProgressBar({ value, color = '#34c4f2' }: { value: number; color?: string }) {
+/**
+ * Dynamic score color & gradient configuration:
+ * - 0 to 25: Red shades (gradient from deep crimson to coral)
+ * - 26 to 75: Blue shades (gradient from deep sky/azure to electric cyan)
+ * - 76 to 100: Green shades (gradient from emerald to bright mint)
+ */
+function getScoreColorConfig(score: number) {
+  const clamped = Math.min(100, Math.max(0, Math.round(score)));
+
+  if (clamped <= 25) {
+    // Red tier (0 - 25): dynamic shade from crimson to bright coral
+    const ratio = clamped / 25;
+    const fromR = Math.round(185 + ratio * 35);
+    const toG = Math.round(30 + ratio * 60);
+    const gradient = `linear-gradient(90deg, #b91c1c 0%, rgb(${fromR}, 38, 38) 50%, rgb(244, ${toG}, ${toG}) 100%)`;
+
+    return {
+      tier: 'red' as const,
+      gradient,
+      textColor: 'text-red-600 dark:text-red-400',
+      heroBg: 'bg-gradient-to-br from-red-500/15 via-rose-500/10 to-transparent dark:from-red-950/40 dark:via-rose-950/25 dark:to-[#1a1113]',
+      heroBorder: 'border-red-400/40 dark:border-red-500/40',
+      badgeGradient: 'from-red-600 via-rose-500 to-red-400 dark:from-red-400 dark:via-rose-300 dark:to-red-400',
+      iconBg: 'bg-red-500/15 text-red-600 dark:text-red-400',
+      glow: 'shadow-[0_0_20px_rgba(239,68,68,0.12)]',
+    };
+  }
+
+  if (clamped <= 75) {
+    // Blue tier (26 - 75): dynamic shade from cobalt to electric cyan
+    const ratio = (clamped - 26) / 49;
+    const fromB = Math.round(180 + ratio * 60);
+    const toG = Math.round(120 + ratio * 90);
+    const gradient = `linear-gradient(90deg, #0369a1 0%, rgb(2, 132, ${fromB}) 50%, rgb(56, ${toG}, 248) 100%)`;
+
+    return {
+      tier: 'blue' as const,
+      gradient,
+      textColor: 'text-sky-600 dark:text-sky-400',
+      heroBg: 'bg-gradient-to-br from-sky-500/15 via-[#34c4f2]/10 to-transparent dark:from-sky-950/40 dark:via-[#164e63]/25 dark:to-[#0f172a]',
+      heroBorder: 'border-[#34c4f2]/40 dark:border-sky-500/40',
+      badgeGradient: 'from-sky-500 via-[#34c4f2] to-blue-500 dark:from-sky-400 dark:via-[#34c4f2] dark:to-cyan-300',
+      iconBg: 'bg-[#34c4f2]/15 text-[#0284c7] dark:text-[#38bdf8]',
+      glow: 'shadow-[0_0_20px_rgba(14,165,233,0.12)]',
+    };
+  }
+
+  // Green tier (> 75: 76 - 100): dynamic shade from emerald to bright mint
+  const ratio = (clamped - 76) / 24;
+  const toG = Math.round(180 + ratio * 40);
+  const gradient = `linear-gradient(90deg, #047857 0%, rgb(16, ${toG}, 129) 50%, #4ade80 100%)`;
+
+  return {
+    tier: 'green' as const,
+    gradient,
+    textColor: 'text-emerald-600 dark:text-emerald-400',
+    heroBg: 'bg-gradient-to-br from-emerald-500/15 via-green-500/10 to-transparent dark:from-emerald-950/40 dark:via-teal-950/25 dark:to-[#062016]',
+    heroBorder: 'border-emerald-400/40 dark:border-emerald-500/40',
+    badgeGradient: 'from-emerald-600 via-teal-500 to-green-500 dark:from-emerald-400 dark:via-teal-300 dark:to-green-400',
+    iconBg: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+    glow: 'shadow-[0_0_20px_rgba(16,185,129,0.12)]',
+  };
+}
+
+function ProgressBar({ value }: { value: number }) {
+  const clamped = Math.min(100, Math.max(0, Math.round(value)));
+  // Full Red -> Blue -> Green spectrum spanning 0% to 100%:
+  // - 0% to 22%: Red
+  // - 22% to 28%: Transition from Red to Blue
+  // - 28% to 72%: Blue & Sky Blue
+  // - 72% to 78%: Transition from Blue to Green
+  // - 78% to 100%: Green
+  // By scaling the background to (100 / clamped * 100)%, the gradient is anchored
+  // across the full 100% track, so the bar reveals and stops at the exact color
+  // matching the score on every line.
+  const bgSize = clamped > 0 ? `${(100 / clamped) * 100}% 100%` : '100% 100%';
+
   return (
-    <div className="h-2 rounded-full bg-zinc-100 dark:bg-[#2b2b2b] overflow-hidden">
+    <div className="h-2.5 w-full rounded-full bg-zinc-100 dark:bg-[#1f1f1f] overflow-hidden p-[1px] border border-zinc-200/40 dark:border-zinc-800">
       <div
-        className="h-full rounded-full transition-all duration-700"
-        style={{ width: `${Math.min(100, Math.max(0, value))}%`, backgroundColor: color }}
+        className="h-full rounded-full transition-all duration-700 ease-out"
+        style={{
+          width: `${clamped}%`,
+          background:
+            'linear-gradient(90deg, #ef4444 0%, #ef4444 20%, #0284c7 30%, #0ea5e9 50%, #38bdf8 70%, #10b981 80%, #22c55e 100%)',
+          backgroundSize: bgSize,
+          backgroundPosition: 'left center',
+          backgroundRepeat: 'no-repeat',
+        }}
       />
     </div>
   );
@@ -271,7 +356,7 @@ export function ReportDetailView({
   followUpQuestions,
 }: ReportDetailViewProps) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<'hr' | 'technical' | 'transcript'>('hr');
+  const [activeTab, setActiveTab] = useState<'hr' | 'technical' | 'transcript' | 'copilot'>('hr');
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [copiedVideoLink, setCopiedVideoLink] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -367,6 +452,24 @@ export function ReportDetailView({
 
   // sub is nested inside fluency_breakdown — NOT directly on fluency_breakdown
   const fluencySub = fluencyBreakdown?.sub ?? null;
+
+  // Derive overall fluency score for English Communication card:
+  const overallFluencyScore =
+    report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
+      ? report.fluency_score
+      : cefr === 'C2'
+      ? 95
+      : cefr === 'C1'
+      ? 85
+      : cefr === 'B2'
+      ? 65
+      : cefr === 'B1'
+      ? 50
+      : cefr === 'A2'
+      ? 25
+      : 0;
+
+  const overallFluencyColorCfg = getScoreColorConfig(overallFluencyScore);
 
   const competencyScores = (report?.competency_scores ?? []) as Array<{
     ord: number;
@@ -736,6 +839,19 @@ export function ReportDetailView({
             <MessageSquare className="w-4 h-4" />
             <span>📝 Full Transcript ({candidateTranscript.length})</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('copilot')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+              activeTab === 'copilot'
+                ? 'bg-[#34c4f2] text-zinc-900 dark:text-white shadow-md shadow-[#34c4f2]/20'
+                : 'text-zinc-600 hover:text-zinc-900 dark:text-white hover:bg-zinc-200/60'
+            }`}
+          >
+            <Bot className="w-4 h-4" />
+            <span>🤖 Ask AI Copilot</span>
+          </button>
         </div>
 
         {/* ═════════════════════════════════════════════════════════ */}
@@ -748,7 +864,7 @@ export function ReportDetailView({
               {/* Communication Card */}
               <div className="bg-white dark:bg-[#2b2b2b] rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] shadow-card p-6 space-y-5">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-[#34c4f2]/10 flex items-center justify-center text-[#1689aa]">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${overallFluencyColorCfg.iconBg}`}>
                     <Volume2 className="w-4 h-4" />
                   </div>
                   <div>
@@ -759,25 +875,23 @@ export function ReportDetailView({
 
                 {/* CEFR or Zero-Speech Notice */}
                 {cefrInfo ? (
-                  <div className="text-center py-2 bg-[#34c4f2]/5 rounded-xl p-4 border border-[#34c4f2]/20">
-                    <span className="text-3xl font-black text-[#1689aa]">{cefr}</span>
-                    <p className="text-sm font-bold text-zinc-900 dark:text-white mt-0.5">{cefrInfo.label}</p>
-                    <p className="text-xs text-zinc-600 mt-1 leading-relaxed max-w-md mx-auto">{cefrInfo.desc}</p>
+                  <div className={`text-center py-3.5 rounded-xl p-4 border transition-all ${overallFluencyColorCfg.heroBg} ${overallFluencyColorCfg.heroBorder} ${overallFluencyColorCfg.glow}`}>
+                    <span className={`text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r ${overallFluencyColorCfg.badgeGradient}`}>
+                      {cefr}
+                    </span>
+                    <p className="text-sm font-bold text-zinc-900 dark:text-white mt-1">{cefrInfo.label}</p>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-1 leading-relaxed max-w-md mx-auto">{cefrInfo.desc}</p>
                   </div>
                 ) : (
-                  <div className="text-center py-3 bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl p-4 border border-zinc-200 dark:border-[#4a4a4a]">
-                    <span className="text-2xl font-black text-zinc-800 dark:text-[#d9d9d9]">
-                      {report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
-                        ? `${report.fluency_score} / 100`
-                        : '0 / 100'}
+                  <div className={`text-center py-3.5 rounded-xl p-4 border transition-all ${overallFluencyColorCfg.heroBg} ${overallFluencyColorCfg.heroBorder} ${overallFluencyColorCfg.glow}`}>
+                    <span className={`text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r ${overallFluencyColorCfg.badgeGradient}`}>
+                      {overallFluencyScore > 0 ? `${overallFluencyScore} / 100` : '0 / 100'}
                     </span>
-                    <p className="text-xs font-bold text-zinc-800 dark:text-[#d9d9d9] mt-0.5">
-                      {report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
-                        ? 'Spoken Fluency Score'
-                        : 'No Verbal Responses Recorded'}
+                    <p className="text-xs font-bold text-zinc-800 dark:text-zinc-100 mt-1">
+                      {overallFluencyScore > 0 ? 'Spoken Fluency Score' : 'No Verbal Responses Recorded'}
                     </p>
-                    <p className="text-[11px] text-zinc-500 dark:text-[#9f9f9f] mt-1 leading-relaxed max-w-md mx-auto">
-                      {report?.fluency_score !== null && report?.fluency_score !== undefined && report.fluency_score > 0
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed max-w-md mx-auto">
+                      {overallFluencyScore > 0
                         ? 'Evaluated across candidate spoken answers and speech cadence.'
                         : 'Candidate skipped questions or microphone audio was absent during interview turns.'}
                     </p>
@@ -785,7 +899,7 @@ export function ReportDetailView({
                 )}
 
                 {/* Fluency Sub-Scores: Always Render All 4 Categories */}
-                <div className="space-y-2.5">
+                <div className="space-y-3">
                   {[
                     { key: 'grammar', label: 'Grammar & Accuracy' },
                     { key: 'vocabulary', label: 'Vocabulary Range' },
@@ -800,13 +914,15 @@ export function ReportDetailView({
                         ? report.fluency_score
                         : 0;
 
+                    const subCfg = getScoreColorConfig(bandScore);
+
                     return (
                       <div key={key}>
-                        <div className="flex justify-between text-xs font-semibold mb-1">
-                          <span className="text-zinc-600">{label}</span>
-                          <span className="text-zinc-900 dark:text-white font-bold">{bandScore}/100</span>
+                        <div className="flex justify-between text-xs font-semibold mb-1.5">
+                          <span className="text-zinc-600 dark:text-zinc-300">{label}</span>
+                          <span className={`font-bold ${subCfg.textColor}`}>{bandScore}/100</span>
                         </div>
-                        <ProgressBar value={bandScore} color={bandScore > 0 ? '#1689aa' : '#cbd5e1'} />
+                        <ProgressBar value={bandScore} />
                       </div>
                     );
                   })}
@@ -1368,6 +1484,18 @@ export function ReportDetailView({
             </div>
 
           </div>
+        )}
+
+        {/* ═════════════════════════════════════════════════════════ */}
+        {/* TAB 4: AI Interview Copilot (Q&A Chatbot)                */}
+        {/* ═════════════════════════════════════════════════════════ */}
+        {activeTab === 'copilot' && (
+          <ReportChatCopilot
+            sessionId={session.id}
+            candidateName={session.candidate_name}
+            roleTitle={session.parsed_jd?.jobTitle}
+            recommendation={report?.recommendation}
+          />
         )}
 
         {/* ── Action Bar ───────────────────────────────────── */}

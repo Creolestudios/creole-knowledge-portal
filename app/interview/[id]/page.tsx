@@ -89,6 +89,11 @@ export default function InterviewEntryPage() {
   }, []);
 
   const [expiredNote, setExpiredNote] = useState<string>('Note: This interview link has already been used and is expired.');
+  const [expirationReason, setExpirationReason] = useState<string | undefined>(undefined);
+  const [expirationTitle, setExpirationTitle] = useState<string | undefined>(undefined);
+  const [expirationDetail, setExpirationDetail] = useState<string | undefined>(undefined);
+  const [expirationViolationReason, setExpirationViolationReason] = useState<string | undefined>(undefined);
+  const [expirationWarningCount, setExpirationWarningCount] = useState<number | undefined>(undefined);
   const [isVerifyingLink, setIsVerifyingLink] = useState<boolean>(true);
 
   useEffect(() => {
@@ -229,17 +234,35 @@ export default function InterviewEntryPage() {
           } catch {
             // ignore
           }
-          if (json.status === 'terminated' || json.status === 'revoked' || json.status === 'cancelled') {
-            setTerminationReason(json.error || 'This interview has already ended.');
-            setStageWithRef('terminated');
-          } else if (json.expired || json.used) {
-            setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
+          if (json.expirationReason) {
+            setExpirationReason(json.expirationReason);
+          }
+          if (json.reasonTitle) {
+            setExpirationTitle(json.reasonTitle);
+          }
+          if (json.reasonDetail) {
+            setExpirationDetail(json.reasonDetail);
+          }
+          if (json.violationReason) {
+            setExpirationViolationReason(json.violationReason);
+          }
+          if (json.warningCount) {
+            setExpirationWarningCount(json.warningCount);
+          }
+
+          if (json.status === 'terminated' || json.status === 'revoked' || json.status === 'cancelled' || json.expirationReason === 'violation') {
+            setTerminationReason(json.violationReason || json.reasonDetail || json.error || 'This interview has already ended.');
+            setExpiredNote(json.reasonDetail || json.note || json.error);
             setStageWithRef('expired');
-          } else if (json.status === 'completed' || json.ended) {
-            setStageWithRef('completed');
+          } else if (json.status === 'completed' || json.ended || json.expirationReason === 'completed') {
+            setExpiredNote(json.reasonDetail || json.note || 'This interview has already been completed.');
+            setStageWithRef('expired');
+          } else if (json.expired || json.used || json.expirationReason) {
+            setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
+            setStageWithRef('expired');
           } else {
             setTerminationReason(json.error || 'This interview has already ended.');
-            setStageWithRef('terminated');
+            setStageWithRef('expired');
           }
         } else if (res.ok) {
           try {
@@ -290,17 +313,35 @@ export default function InterviewEntryPage() {
                   } catch {
                     // ignore
                   }
-                  if (verifyJson.status === 'terminated' || verifyJson.status === 'revoked' || verifyJson.status === 'cancelled') {
-                    setTerminationReason(verifyJson.error || 'This interview has already ended.');
-                    setStageWithRef('terminated');
-                  } else if (verifyJson.expired || verifyJson.used) {
-                    setExpiredNote(verifyJson.note || verifyJson.error || 'Note: This interview link has already been used and is expired.');
+                  if (verifyJson.expirationReason) {
+                    setExpirationReason(verifyJson.expirationReason);
+                  }
+                  if (verifyJson.reasonTitle) {
+                    setExpirationTitle(verifyJson.reasonTitle);
+                  }
+                  if (verifyJson.reasonDetail) {
+                    setExpirationDetail(verifyJson.reasonDetail);
+                  }
+                  if (verifyJson.violationReason) {
+                    setExpirationViolationReason(verifyJson.violationReason);
+                  }
+                  if (verifyJson.warningCount) {
+                    setExpirationWarningCount(verifyJson.warningCount);
+                  }
+
+                  if (verifyJson.status === 'terminated' || verifyJson.status === 'revoked' || verifyJson.status === 'cancelled' || verifyJson.expirationReason === 'violation') {
+                    setTerminationReason(verifyJson.violationReason || verifyJson.reasonDetail || verifyJson.error || 'This interview has already ended.');
+                    setExpiredNote(verifyJson.reasonDetail || verifyJson.note || verifyJson.error);
                     setStageWithRef('expired');
-                  } else if (verifyJson.status === 'completed' || verifyJson.ended) {
-                    setStageWithRef('completed');
+                  } else if (verifyJson.status === 'completed' || verifyJson.ended || verifyJson.expirationReason === 'completed') {
+                    setExpiredNote(verifyJson.reasonDetail || verifyJson.note || 'This interview has already been completed.');
+                    setStageWithRef('expired');
+                  } else if (verifyJson.expired || verifyJson.used || verifyJson.expirationReason) {
+                    setExpiredNote(verifyJson.reasonDetail || verifyJson.note || verifyJson.error || 'Note: This interview link has already been used and is expired.');
+                    setStageWithRef('expired');
                   } else {
                     setTerminationReason(verifyJson.error || 'This interview has already ended.');
-                    setStageWithRef('terminated');
+                    setStageWithRef('expired');
                   }
                 } else {
                   sessionStorage.removeItem(`interview_auth_${interviewId}`);
@@ -2265,7 +2306,17 @@ export default function InterviewEntryPage() {
   };
 
   if (stage === 'expired') {
-    return <ExpiredInterviewLink note={expiredNote} isUsed={true} />;
+    return (
+      <ExpiredInterviewLink
+        note={expiredNote}
+        isUsed={true}
+        reason={expirationReason}
+        reasonTitle={expirationTitle}
+        reasonDetail={expirationDetail}
+        violationReason={expirationViolationReason || terminationReason || undefined}
+        warningCount={expirationWarningCount}
+      />
+    );
   }
 
   if (isVerifyingLink) {

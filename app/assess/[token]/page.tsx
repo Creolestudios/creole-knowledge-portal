@@ -77,6 +77,11 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   }, []);
 
   const [expiredNote, setExpiredNote] = useState<string>('Note: This interview link has already been used and is expired.');
+  const [expirationReason, setExpirationReason] = useState<string | undefined>(undefined);
+  const [expirationTitle, setExpirationTitle] = useState<string | undefined>(undefined);
+  const [expirationDetail, setExpirationDetail] = useState<string | undefined>(undefined);
+  const [expirationViolationReason, setExpirationViolationReason] = useState<string | undefined>(undefined);
+  const [expirationWarningCount, setExpirationWarningCount] = useState<number | undefined>(undefined);
   const [isVerifyingLink, setIsVerifyingLink] = useState<boolean>(() => {
     if (process.env.NODE_ENV === 'test') return false;
     if (typeof window !== 'undefined' && token) {
@@ -287,7 +292,7 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
     fetch(`/api/assess/${encodeURIComponent(token)}/verify`)
       .then(async (res) => {
         if (!isMounted) return;
-        if (res.status === 410) {
+          if (res.status === 410) {
           const json = await res.json().catch(() => ({}));
           try {
             localStorage.setItem(`assess_used_${token}`, 'true');
@@ -295,8 +300,23 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
           } catch {
             // ignore
           }
-          if (json.expired || json.used) {
-            setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
+          if (json.expirationReason) {
+            setExpirationReason(json.expirationReason);
+          }
+          if (json.reasonTitle) {
+            setExpirationTitle(json.reasonTitle);
+          }
+          if (json.reasonDetail) {
+            setExpirationDetail(json.reasonDetail);
+          }
+          if (json.violationReason) {
+            setExpirationViolationReason(json.violationReason);
+          }
+          if (json.warningCount) {
+            setExpirationWarningCount(json.warningCount);
+          }
+          if (json.expired || json.used || json.expirationReason) {
+            setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
             setStageWithRef('expired');
           }
         }
@@ -341,7 +361,22 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
         } catch {
           // ignore
         }
-        setExpiredNote(json.note || json.error || 'Note: This interview link has already been used and is expired.');
+        if (json.expirationReason) {
+          setExpirationReason(json.expirationReason);
+        }
+        if (json.reasonTitle) {
+          setExpirationTitle(json.reasonTitle);
+        }
+        if (json.reasonDetail) {
+          setExpirationDetail(json.reasonDetail);
+        }
+        if (json.violationReason) {
+          setExpirationViolationReason(json.violationReason);
+        }
+        if (json.warningCount) {
+          setExpirationWarningCount(json.warningCount);
+        }
+        setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
         setStageWithRef('expired');
         return;
       }
@@ -1232,7 +1267,17 @@ export default function CandidateAssessmentPage({ initialToken }: { initialToken
   // ── Stage renders ─────────────────────────────────────────────────────────
 
   if (stage === 'expired') {
-    return <ExpiredInterviewLink note={expiredNote} isUsed={true} />;
+    return (
+      <ExpiredInterviewLink
+        note={expiredNote}
+        isUsed={true}
+        reason={expirationReason}
+        reasonTitle={expirationTitle}
+        reasonDetail={expirationDetail}
+        violationReason={expirationViolationReason || terminationReason || undefined}
+        warningCount={expirationWarningCount}
+      />
+    );
   }
 
   if (isVerifyingLink) {

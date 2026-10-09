@@ -400,3 +400,61 @@ To guarantee interview recording across any candidate device (laptops, external 
    - Google Drive permissions are automatically created as `role: 'reader'`, `type: 'anyone'`, and `allowFileDiscovery: false` (`supportsAllDrives: true`).
    - Anyone possessing the link can immediately watch the full interview video in Google Drive or the embedded player without login or edit permissions.
 
+---
+
+## 11. Admin AI Copilot & Interactive Candidate Q&A Engine
+
+### 11.1 Purpose & Role
+The **Admin AI Copilot** is an interactive, grounded chat assistant embedded directly on the Candidate Report page (`/admin/reports/[id]`). It provides recruiters, hiring managers, and HR leaders with instant conversational intelligence about any aspect of the candidate's interview session.
+
+### 11.2 Architecture & Grounding Protocol
+- **Endpoint**: `POST /api/admin/reports/[id]/chat`
+- **Security**: Strictly guarded by `requireAdminUser()` to verify admin role from Supabase session cookies before querying.
+- **Multi-Source Context Assembly**:
+  - **Candidate & Job Profile**: Role applied, parsed JD skills, session completion or termination state.
+  - **AI Scoring Report**: Final recommendation (`strong_yes`, `yes`, `maybe`, `no`), technical score (`cognitive_composite`), fluency score & CEFR band, and rubric justifications.
+  - **Competency Breakdown**: 1-to-5 competency scores with verbatim evidence quotes and bluff detection flags.
+  - **Complete Question & Answer Records**: Question text, order, and exact verbatim answers from both `interview_answers` and `interview_transcript`.
+  - **Proctoring Logs**: Voice warning count, face warning count, object warning count, and all logged proctoring violation events.
+- **Model Fallback Chain**: Evaluates queries using `gemini-3.6-flash` with resilient automatic fallbacks to `gemini-2.5-flash` and `gemini-3.5-flash-lite`.
+
+### 11.3 UI Integration & User Experience
+- Embedded directly as a dedicated tab: **`🤖 Ask AI Copilot`** in `components/ai-interview/report-detail-view.tsx`.
+- **Suggested 1-Click Quick Queries**:
+  - *Key Strengths & Weaknesses*
+  - *Technical Depth & Code Understanding*
+  - *Proctoring & Integrity Analysis*
+  - *Round 2 Recommended Technical Questions*
+- **Rich Formatting**:
+  - Automatic formatting for markdown headings, bold terms, bullet points, numbered lists, blockquotes, and inline code.
+  - One-click copy for individual assistant responses.
+  - Session conversation reset capability.
+
+---
+
+## 12. Link Expiration Intelligence & English Communication Gradient Scoring
+
+### 12.1 Real Expiration Reason Classification
+Previously, any expired link presented candidates with a generic "Link is expired / already used" notice regardless of whether the interview ended naturally or was terminated early. The verification pipelines and UI now differentiate and display the exact underlying cause:
+
+1. **✅ Interview Completed (`completed`)**:
+   - **Trigger**: Candidate completed all interview questions and the session was finalized (`session.status = 'completed'` or `invite.status = 'completed'`).
+   - **UI**: Emerald theme with badge `✅ Submissions Finalized` and title `Interview Already Completed`. Confirms responses are safely archived and no re-submission is necessary.
+2. **🚫 Proctoring Policy Enforcement (`violation`)**:
+   - **Trigger**: Session cancelled or revoked due to proctoring triggers (`session.status = 'cancelled' | 'terminated'`, or `invite.status = 'revoked'`).
+   - **UI**: Crimson/Red theme with badge `🚫 Proctoring Policy Enforcement` and title `Session Terminated by Proctoring Guard`. Highlights specific violation reasons (e.g. eye gaze deviation, unauthorized tabs, background voices) and warning threshold counts.
+3. **⏳ Access Window Expired (`time_expired`)**:
+   - **Trigger**: Current timestamp exceeds scheduled deadline (`new Date() > expires_at`).
+   - **UI**: Amber theme with badge `⏳ Access Deadline Passed` and title `Interview Window Expired`.
+4. **🔒 Single-Use Consumed (`already_used`)**:
+   - **Trigger**: Single-use security token was previously opened from another device/browser.
+   - **UI**: Slate/Zinc theme with badge `🔒 Single-Use Consumed` explaining single-access integrity constraints.
+
+### 12.2 English Communication Dynamic Spectrum Progress Bars
+In `report-detail-view.tsx`, the English Communication sub-score bars (Grammar & Sentence Construction, Pronunciation & Clarity, Vocabulary & Word Choice, Fluency & Coherence) utilize a continuous 3-tier color spectrum:
+- **Red (0–25%)**: Needs Development.
+- **Blue (26–75%)**: Competent / Professional Working Proficiency.
+- **Green (76–100%)**: Advanced / Fluent.
+- **Implementation**: The CSS background gradient is rendered across the full width and dynamically scaled so that each bar fills smoothly and stops exactly at the color corresponding to the candidate's score band.
+
+
