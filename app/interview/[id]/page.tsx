@@ -757,8 +757,18 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage === 'interview' && !isAdmin) {
       startFullVideoRecording();
+      void fetch('/api/interview/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewId,
+          category: 'recording_started',
+          severity: 'info',
+          meta: { startedAt: Date.now() },
+        }),
+      }).catch(() => {});
     }
-  }, [stage, isAdmin, startFullVideoRecording]);
+  }, [stage, isAdmin, startFullVideoRecording, interviewId]);
 
 
 
@@ -1044,12 +1054,16 @@ export default function InterviewEntryPage() {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, [isAdmin, leaveWebRTC]);
 
+  const terminationNotifiedRef = useRef(false);
   const notifyTermination = useCallback((reason: string) => {
+    if (terminationNotifiedRef.current) return;
+    terminationNotifiedRef.current = true;
     const counts = proctorTrackerRef.current.getWarningCounts();
     const payload = JSON.stringify({
       interviewId,
       reason,
       warningCounts: { face: counts.face, object: counts.object, voice: counts.voice },
+      ts_ms: Date.now(),
     });
     if (navigator.sendBeacon) {
       const sent = navigator.sendBeacon(
@@ -1329,18 +1343,32 @@ export default function InterviewEntryPage() {
         }
       }
 
+      const warnEventTs = Date.now();
       void (async () => {
-        const snapshotPath = await captureEvidenceSnapshot('unauthorized_voice');
+        let snapshotPath: string | null = null;
+        try {
+          snapshotPath = await Promise.race([
+            captureEvidenceSnapshot('unauthorized_voice'),
+            new Promise<null>((r) => setTimeout(() => r(null), 800)),
+          ]);
+        } catch { }
+
         await fetch('/api/interview/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          keepalive: true,
           body: JSON.stringify({
             interviewId,
             category: 'unauthorized_voice',
             severity: 'warning',
             confidence: info.confidence,
             snapshotPath: snapshotPath || undefined,
-            meta: { warningCount: trackerStatus.warningCount, reason: info.reason },
+            meta: {
+              warningCount: trackerStatus.warningCount,
+              strikeNumber: trackerStatus.warningCount,
+              reason: info.reason,
+            },
+            ts_ms: warnEventTs,
           }),
         }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
       })();
@@ -1351,7 +1379,7 @@ export default function InterviewEntryPage() {
           setIsInterviewPaused(true);
           setTimeout(() => {
             void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
-          }, 1200);
+          }, 1500);
         }
       }
     }
@@ -1931,17 +1959,31 @@ export default function InterviewEntryPage() {
             } catch { }
           }
 
+          const warnEventTs = Date.now();
           void (async () => {
-            const snapshotPath = await captureEvidenceSnapshot(trackerStatus.category);
+            let snapshotPath: string | null = null;
+            try {
+              snapshotPath = await Promise.race([
+                captureEvidenceSnapshot(trackerStatus.category),
+                new Promise<null>((r) => setTimeout(() => r(null), 800)),
+              ]);
+            } catch { }
+
             await fetch('/api/interview/events', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              keepalive: true,
               body: JSON.stringify({
                 interviewId,
                 category: trackerStatus.category,
                 severity: 'warning',
                 snapshotPath: snapshotPath || undefined,
-                meta: { warningCount: trackerStatus.warningCount, reason: trackerStatus.reason },
+                meta: {
+                  warningCount: trackerStatus.warningCount,
+                  strikeNumber: trackerStatus.warningCount,
+                  reason: trackerStatus.reason,
+                },
+                ts_ms: warnEventTs,
               }),
             }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
           })();
@@ -1952,7 +1994,7 @@ export default function InterviewEntryPage() {
               setIsInterviewPaused(true);
               setTimeout(() => {
                 void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
-              }, 1200);
+              }, 1500);
             }
           }
         }
@@ -2154,11 +2196,20 @@ export default function InterviewEntryPage() {
           }
 
           // Evidence snapshot + DB event with snapshot_path
+          const warnEventTs = Date.now();
           void (async () => {
-            const snapshotPath = await snapshotPromise;
+            let snapshotPath: string | null = null;
+            try {
+              snapshotPath = await Promise.race([
+                snapshotPromise,
+                new Promise<null>((r) => setTimeout(() => r(null), 800)),
+              ]);
+            } catch { }
+
             await fetch('/api/interview/events', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              keepalive: true,
               body: JSON.stringify({
                 interviewId,
                 category: 'object',
@@ -2170,7 +2221,10 @@ export default function InterviewEntryPage() {
                   confidence: detection.confidence,
                   boundingBox: detection.boundingBox,
                   warningCount: trackerStatus.warningCount,
+                  strikeNumber: trackerStatus.warningCount,
+                  reason: trackerStatus.reason || `Unauthorized object (${rule.object}) detected in camera view.`,
                 },
+                ts_ms: warnEventTs,
               }),
             }).catch((err) => console.warn('[object-event] fetch failed:', err));
           })();
@@ -2181,7 +2235,7 @@ export default function InterviewEntryPage() {
               setIsInterviewPaused(true);
               setTimeout(() => {
                 void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
-              }, 1200);
+              }, 1500);
             }
           }
 

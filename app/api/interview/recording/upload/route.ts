@@ -31,6 +31,8 @@ export async function POST(req: Request) {
     let buffer: Buffer | null = null;
     let mimeType = 'video/webm';
     let requestedFileName: string | undefined;
+    let durationSeconds: number | undefined;
+    let recordingStartTime: number | undefined;
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
@@ -41,11 +43,19 @@ export async function POST(req: Request) {
       }
       mimeType = file.type || 'video/webm';
       requestedFileName = file.name;
+      const rawDur = formData.get('durationSeconds');
+      if (rawDur) durationSeconds = Number(rawDur);
+      const rawStart = formData.get('recordingStartTime');
+      if (rawStart) recordingStartTime = Number(rawStart);
       const arrayBuffer = await file.arrayBuffer();
       buffer = Buffer.from(arrayBuffer);
     } else {
       const url = new URL(req.url);
       interviewId = url.searchParams.get('interviewId') || '';
+      const rawDur = url.searchParams.get('durationSeconds');
+      if (rawDur) durationSeconds = Number(rawDur);
+      const rawStart = url.searchParams.get('recordingStartTime');
+      if (rawStart) recordingStartTime = Number(rawStart);
       mimeType = req.headers.get('x-mime-type') || 'video/webm';
       const arrayBuffer = await req.arrayBuffer();
       buffer = Buffer.from(arrayBuffer);
@@ -82,6 +92,8 @@ export async function POST(req: Request) {
       fileName: requestedFileName || uploadResult.fileName,
       webViewLink: uploadResult.webViewLink,
       previewUrl: uploadResult.previewUrl,
+      durationSeconds,
+      recordingStartTime,
       uploadedAt: nowIso,
     };
 

@@ -12,7 +12,10 @@ Write down exactly what the speaker says in this audio recording.
 
 Rules:
 - Return ONLY the spoken words as plain text. No labels, no timestamps, no commentary.
-- Do not summarise, correct, or rephrase. Transcribe what was actually said.
+- Transcribe STRICTLY VERBATIM. Do NOT smooth, edit, or polish the speech.
+- Capture and transcribe all filler words, vocal hesitations, and disfluencies exactly as spoken (e.g., "umm", "uh", "uhh", "er", "ah", "like", "you know", "sort of", "kind of").
+- Include false starts, self-corrections, and repeated words exactly as uttered.
+- Do not summarise or rephrase. Transcribe what was actually said.
 - If the audio contains no intelligible speech, return an empty response.
 `.trim();
 

@@ -2,6 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import {
   calculateLocalFluency,
+  countFillerWords,
   mapCefrToScore,
   combineFluencyScores,
   calculateCognitiveComposite,
@@ -179,7 +180,13 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
     totalSpeechMs = Math.max(1000, totalWordCount * 400); // estimate ~150 wpm
   }
 
-  const localFluencyResult = calculateLocalFluency({
+  // Always compute filler stats from candidate text
+  const fillerStats = countFillerWords(combinedCandidateText);
+  if (totalFillerCount === 0 && fillerStats.count > 0) {
+    totalFillerCount = fillerStats.count;
+  }
+
+  const baseLocalFluency = calculateLocalFluency({
     wordCount: totalWordCount,
     speechMs: Math.max(1000, totalSpeechMs),
     pauseMsTotal: 0,
@@ -187,6 +194,12 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
     fillerCount: totalFillerCount,
     responseLatencyMs: avgLatencyMs,
   });
+
+  const localFluencyResult = {
+    ...baseLocalFluency,
+    fillerCount: totalFillerCount,
+    fillerBreakdown: fillerStats.breakdown,
+  };
 
   // 3. Evaluate Questions & Competencies (Gemini Flash)
   const questionScores: CompetencyScoreItem[] = [];
@@ -453,37 +466,82 @@ Return JSON ONLY:
     recommendationRationale = `Adequate baseline performance (${cognitiveComposite}/100), but technical depth or communication requires further evaluation.`;
   }
 
-  // 6b. Generate 2-3 Follow-Up Recommendations for Round 2 based on weak spots
+  // 6b. Generate Personalized Verdict Headline, Multi-Paragraph Summary & Round 2 Questions
+  let verdictHeadline = '';
+  let executiveSummary = '';
   let followUpRecommendations: string[] = [];
+
   try {
     const weakQuestions = questionScores.filter((qs) => qs.score <= 3);
+    const candidateName = session.candidate_name || 'Candidate';
     const weakContext = weakQuestions.length > 0
       ? weakQuestions.map((qs) => `- Competency: ${qs.competency} (Score: ${qs.score}/5): ${qs.justification}`).join('\n')
-      : '- Candidate performed solidly across baseline questions. Probe advanced architecture, scalability tradeoffs, and edge case resilience.';
+      : '- Performed solidly across baseline questions. Ready for deep-dive architectural probing.';
 
-    const followUpPrompt = `
-You are a Senior Technical Hiring Lead.
-Candidate evaluation:
+    const evaluationSynthesisPrompt = `
+You are a Senior Technical Hiring Director evaluating candidate ${candidateName}.
+EVALUATION METRICS:
+- Technical Problem-Solving (Cognitive): ${cognitiveComposite}/100
+- English Communication (Fluency): ${finalFluencyScore}/100 (CEFR: ${fluencyCefr || 'B2'})
+- Question Performance Highlights:
 ${weakContext}
 
-Based on the candidate's answers and weak spots or gaps identified above, generate exactly 2 to 3 practical, deep-dive technical follow-up questions for the human interviewer in Round 2.
+STRICT RULE:
+DO NOT mention proctoring, cameras, microphones, background noise, warnings, strikes, integrity alerts, or session termination in verdict_headline or executive_summary. Proctoring warnings are audited in a separate dedicated security section. Here you must focus 100% on the candidate's actual answers, technical depth demonstrated, and communication skills.
+
+TASK:
+1. "verdict_headline": Return a concise, personalized performance headline in 3 to 6 words tailored specifically to this candidate's demonstrated skill. DO NOT use generic or binary verdict labels like "Recommended", "Not Recommended", "Strong Hire", or "Needs Review".
+   Examples: "Strong React Core with System Architecture Gaps" or "Fluent Articulation with High Frontend Mastery" or "Foundational Python Skills with Scalability Limits".
+2. "executive_summary": Write an objective evaluation in exactly 2 to 3 short paragraphs (each paragraph strictly 2 to 3 lines long) analyzing their answers:
+   - Paragraph 1: Overview of answers provided across the interview questions and their approach to explaining concepts.
+   - Paragraph 2: Core technical strengths, tools discussed, and specific technical knowledge gaps or missing depth.
+   - Paragraph 3: Spoken communication clarity, sentence structure, fluency, and professional articulation.
+3. "follow_up_recommendations": 2 to 3 practical, deep-dive technical questions for Round 2 based on weak spots.
+
 Return JSON ONLY:
 {
-  "follow_up_recommendations": [
-    "Technical question 1...",
-    "Technical question 2...",
-    "Technical question 3..."
-  ]
+  "verdict_headline": "string (3 to 6 words)",
+  "executive_summary": "string (2-3 paragraphs separated by \\n\\n, each 2-3 lines)",
+  "follow_up_recommendations": ["string", "string", "string"]
 }
 `.trim();
 
-    const followUpText = await generateWithFallback(ai, followUpPrompt);
-    const parsedFollowUp = JSON.parse(cleanJson(followUpText));
-    if (Array.isArray(parsedFollowUp.follow_up_recommendations) && parsedFollowUp.follow_up_recommendations.length > 0) {
-      followUpRecommendations = parsedFollowUp.follow_up_recommendations.slice(0, 3);
+    const synthText = await generateWithFallback(ai, evaluationSynthesisPrompt);
+    const parsedSynth = JSON.parse(cleanJson(synthText));
+    if (parsedSynth.verdict_headline && typeof parsedSynth.verdict_headline === 'string') {
+      verdictHeadline = parsedSynth.verdict_headline.trim();
+    }
+    if (parsedSynth.executive_summary && typeof parsedSynth.executive_summary === 'string') {
+      executiveSummary = parsedSynth.executive_summary.trim();
+    }
+    if (Array.isArray(parsedSynth.follow_up_recommendations) && parsedSynth.follow_up_recommendations.length > 0) {
+      followUpRecommendations = parsedSynth.follow_up_recommendations.slice(0, 3);
     }
   } catch (err) {
-    console.warn('[scorer] Follow-up questions generation fallback:', err);
+    console.warn('[scorer] Evaluation synthesis fallback:', err);
+  }
+
+  // Deterministic fallbacks if AI generation was unavailable
+  if (!verdictHeadline) {
+    if (finalFluencyScore >= 70 && cognitiveComposite < 50) {
+      verdictHeadline = 'Fluent Articulation with Core Technical Gaps';
+    } else if (cognitiveComposite >= 75 && finalFluencyScore >= 75) {
+      verdictHeadline = 'Strong Technical Depth with Structured Delivery';
+    } else if (cognitiveComposite >= 70 && finalFluencyScore < 70) {
+      verdictHeadline = 'Solid Engineering Foundations with Concise Articulation';
+    } else if (cognitiveComposite >= 50 && finalFluencyScore >= 50) {
+      verdictHeadline = 'Balanced Domain Knowledge with Growth Potential';
+    } else {
+      verdictHeadline = 'Developing Technical Fundamentals & Language Precision';
+    }
+  }
+
+  if (!executiveSummary) {
+    executiveSummary = [
+      `${session.candidate_name || 'The candidate'} completed the interview questions for this role, providing spoken explanations on core engineering concepts and background experience. Responses reflected an engaged approach to discussing their technical workflow.`,
+      `In technical competencies, the candidate demonstrated familiarity with baseline domain tools but showed gaps in edge-case handling and distributed architecture tradeoffs, reflecting a Technical Depth rating of ${cognitiveComposite}/100.`,
+      `English communication was delivered with ${fluencyCefr || 'B2'} proficiency (${finalFluencyScore}/100), exhibiting steady pacing, structured thought delivery, and clear sentence articulation across the session.`
+    ].join('\n\n');
   }
 
   if (followUpRecommendations.length === 0) {
@@ -512,6 +570,8 @@ Return JSON ONLY:
     competency_scores: questionScores,
     recommendation,
     recommendation_rationale: recommendationRationale,
+    verdict_headline: verdictHeadline,
+    executive_summary: executiveSummary,
     flags,
     rubric_version: 'v1',
   };

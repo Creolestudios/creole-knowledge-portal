@@ -140,6 +140,7 @@ export async function POST(req: Request) {
         event_type: 'proctoring_violation',
         category: 'proctoring_violation',
         severity: 'critical',
+        ts_ms: typeof body?.ts_ms === 'number' && body.ts_ms > 0 ? body.ts_ms : Date.now(),
         metadata: { reason, warningCounts },
         meta: { reason, warningCounts },
       })

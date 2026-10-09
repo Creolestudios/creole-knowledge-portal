@@ -4,9 +4,11 @@
  */
 
 // Common English filler words & discourse markers
-const FILLER_WORDS = new Set([
+export const FILLER_WORDS = new Set([
   'um',
+  'umm',
   'uh',
+  'uhh',
   'er',
   'ah',
   'like',
@@ -41,6 +43,116 @@ export interface LocalFluencyResult {
   longPauseRate: number; // pauses > 800ms per minute
   responseLatencyMs: number;
   localFluencyScore: number; // 0 - 100
+  fillerCount?: number;
+  fillerBreakdown?: Record<string, number>;
+}
+
+export interface TextSpan {
+  text: string;
+  isFiller: boolean;
+  fillerWord?: string;
+}
+
+/**
+ * Splits text into consecutive spans while losslessly preserving all original
+ * punctuation, whitespace, and capitalization. Filler words are tagged with `isFiller: true`.
+ */
+export function identifyFillerSpans(rawText: string): TextSpan[] {
+  if (!rawText || typeof rawText !== 'string') {
+    return [];
+  }
+
+  // Find all word token matches with their exact start & end indices
+  const wordRegex = /[a-zA-Z0-9']+/g;
+  interface MatchedToken {
+    word: string;
+    normalized: string;
+    start: number;
+    end: number;
+  }
+
+  const tokens: MatchedToken[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = wordRegex.exec(rawText)) !== null) {
+    tokens.push({
+      word: match[0],
+      normalized: match[0].toLowerCase(),
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+
+  if (tokens.length === 0) {
+    return [{ text: rawText, isFiller: false }];
+  }
+
+  // Mark ranges of characters that correspond to filler words/phrases
+  interface FillerRange {
+    start: number;
+    end: number;
+    fillerWord: string;
+  }
+  const fillerRanges: FillerRange[] = [];
+
+  for (let i = 0; i < tokens.length; i++) {
+    const curr = tokens[i];
+
+    // Check two-word phrases first (e.g. "you know", "sort of", "kind of", "i mean")
+    if (i < tokens.length - 1) {
+      const next = tokens[i + 1];
+      const twoWordPhrase = `${curr.normalized} ${next.normalized}`;
+      if (FILLER_WORDS.has(twoWordPhrase)) {
+        fillerRanges.push({
+          start: curr.start,
+          end: next.end,
+          fillerWord: twoWordPhrase,
+        });
+        i++; // skip next token
+        continue;
+      }
+    }
+
+    // Check single-word fillers
+    if (FILLER_WORDS.has(curr.normalized)) {
+      fillerRanges.push({
+        start: curr.start,
+        end: curr.end,
+        fillerWord: curr.normalized,
+      });
+    }
+  }
+
+  if (fillerRanges.length === 0) {
+    return [{ text: rawText, isFiller: false }];
+  }
+
+  // Construct continuous non-filler and filler spans covering rawText 1:1
+  const spans: TextSpan[] = [];
+  let cursor = 0;
+
+  for (const range of fillerRanges) {
+    if (range.start > cursor) {
+      spans.push({
+        text: rawText.slice(cursor, range.start),
+        isFiller: false,
+      });
+    }
+    spans.push({
+      text: rawText.slice(range.start, range.end),
+      isFiller: true,
+      fillerWord: range.fillerWord,
+    });
+    cursor = range.end;
+  }
+
+  if (cursor < rawText.length) {
+    spans.push({
+      text: rawText.slice(cursor),
+      isFiller: false,
+    });
+  }
+
+  return spans;
 }
 
 /**
@@ -66,19 +178,21 @@ export function countFillerWords(text: string): FillerCountResult {
   // Check 1-word fillers
   for (let i = 0; i < tokens.length; i++) {
     const word = tokens[i];
-    if (FILLER_WORDS.has(word)) {
-      breakdown[word] = (breakdown[word] || 0) + 1;
-      count++;
-    }
 
-    // Check 2-word fillers (e.g. "you know", "sort of", "kind of", "i mean")
+    // Check 2-word fillers first (e.g. "you know", "sort of", "kind of", "i mean")
     if (i < tokens.length - 1) {
       const phrase = `${word} ${tokens[i + 1]}`;
       if (FILLER_WORDS.has(phrase)) {
         breakdown[phrase] = (breakdown[phrase] || 0) + 1;
         count++;
         i++; // skip next token to avoid double counting
+        continue;
       }
+    }
+
+    if (FILLER_WORDS.has(word)) {
+      breakdown[word] = (breakdown[word] || 0) + 1;
+      count++;
     }
   }
 

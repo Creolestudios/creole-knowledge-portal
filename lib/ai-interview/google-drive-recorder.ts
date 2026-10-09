@@ -311,3 +311,32 @@ export async function finalizeDriveFile(fileId: string): Promise<{
     webContentLink,
   };
 }
+
+/**
+ * Permanently deletes a file from Google Drive.
+ * Handles 404 (already deleted) safely so batch cleanup is resilient.
+ */
+export async function deleteDriveFile(fileId: string): Promise<{
+  success: boolean;
+  alreadyDeleted: boolean;
+  error?: string;
+}> {
+  try {
+    const drive = getDriveClient();
+    await drive.files.delete({
+      fileId,
+      supportsAllDrives: true,
+    });
+    return { success: true, alreadyDeleted: false };
+  } catch (err: unknown) {
+    const errorObj = err as { code?: number; status?: number; message?: string };
+    const statusCode = errorObj.code ?? errorObj.status;
+    if (statusCode === 404) {
+      // File was already deleted or does not exist in Drive
+      return { success: true, alreadyDeleted: true };
+    }
+    const msg = errorObj.message || String(err);
+    console.error(`[google-drive-recorder] Failed to delete file ${fileId}:`, msg);
+    return { success: false, alreadyDeleted: false, error: msg };
+  }
+}

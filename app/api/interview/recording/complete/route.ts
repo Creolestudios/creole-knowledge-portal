@@ -21,6 +21,8 @@ export async function POST(req: Request) {
     const interviewId = body?.interviewId as string | undefined;
     const fileId = body?.fileId as string | undefined;
     const fileName = body?.fileName as string | undefined;
+    const durationSeconds = typeof body?.durationSeconds === 'number' ? body.durationSeconds : undefined;
+    const recordingStartTime = typeof body?.recordingStartTime === 'number' ? body.recordingStartTime : undefined;
 
     if (!interviewId || !fileId) {
       return NextResponse.json({ error: 'interviewId and fileId are required' }, { status: 400 });
@@ -51,6 +53,8 @@ export async function POST(req: Request) {
       webViewLink,
       previewUrl,
       webContentLink,
+      durationSeconds,
+      recordingStartTime,
       uploadedAt: nowIso,
     };
 

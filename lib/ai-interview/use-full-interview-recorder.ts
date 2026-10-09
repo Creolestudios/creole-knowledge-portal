@@ -69,6 +69,7 @@ export function useFullInterviewRecorder({
   const compositeStreamRef = useRef<MediaStream | null>(null);
   const lastFrameTimeRef = useRef<number>(0);
   const isRecordingRef = useRef(false);
+  const recordingStartTimeRef = useRef<number | null>(null);
 
   // Web Audio mixing refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -392,6 +393,7 @@ export function useFullInterviewRecorder({
       recorder.start(5000);
 
       recorderRef.current = recorder;
+      recordingStartTimeRef.current = Date.now();
       isRecordingRef.current = true;
       setIsRecording(true);
       console.info('[useFullInterviewRecorder] Recording started successfully');
@@ -515,6 +517,11 @@ export function useFullInterviewRecorder({
             }
           }
 
+          const durationSeconds = recordingStartTimeRef.current
+            ? Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000))
+            : undefined;
+          const recordingStartTime = recordingStartTimeRef.current ?? undefined;
+
           // Failsafe fallback: when direct upload is blocked by browser CORS or session init was rejected, stream via server
           if (!fileId) {
             setUploadStatusText('Uploading interview video securely via interview server...');
@@ -523,6 +530,8 @@ export function useFullInterviewRecorder({
             const formData = new FormData();
             formData.append('interviewId', interviewId);
             formData.append('file', fullVideoBlob, fileName);
+            if (durationSeconds) formData.append('durationSeconds', String(durationSeconds));
+            if (recordingStartTime) formData.append('recordingStartTime', String(recordingStartTime));
 
             const fallbackRes = await fetch('/api/interview/recording/upload', {
               method: 'POST',
@@ -563,6 +572,8 @@ export function useFullInterviewRecorder({
               interviewId,
               fileId: fileId || 'pending_drive_file',
               fileName,
+              durationSeconds,
+              recordingStartTime,
             }),
           });
 

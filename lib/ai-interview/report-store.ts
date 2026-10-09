@@ -13,6 +13,8 @@ export interface StoredInterviewReport {
   competency_scores?: unknown[] | null;
   recommendation?: 'strong_yes' | 'yes' | 'maybe' | 'no' | null;
   recommendation_rationale?: string | null;
+  verdict_headline?: string | null;
+  executive_summary?: string | null;
   flags?: string[] | null;
   rubric_version?: string;
   created_at?: string;

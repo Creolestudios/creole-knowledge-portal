@@ -12,6 +12,13 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
+// Mock ReportChatCopilot to simplify test assertions
+vi.mock('./report-chat-copilot', () => ({
+  ReportChatCopilot: ({ candidateName }: { candidateName?: string }) => (
+    <div data-testid="mock-chat-copilot">Mock Chat Copilot for {candidateName}</div>
+  ),
+}));
+
 describe('ReportDetailView', () => {
   afterEach(() => cleanup());
 
@@ -30,6 +37,9 @@ describe('ReportDetailView', () => {
     clarity_subscore: 85,
     fluency_score: 92,
     fluency_cefr: 'C1',
+    verdict_headline: 'Top-tier Distributed Systems Architect',
+    executive_summary:
+      'Jane demonstrated deep engineering acumen with scalable architecture concepts.\n\nHer English communication is clear, natural, and well-structured throughout the session.\n\nStrongly recommended to advance to Round 2 interviews without reservations.',
     fluency_breakdown: {
       sub: {
         grammar: { band: 90, notes: 'Accurate' },
@@ -116,7 +126,7 @@ describe('ReportDetailView', () => {
     'How do you manage schema evolution with Protobuf or Avro in distributed pipelines?',
   ];
 
-  it('renders candidate overview and HR questions with respective answers under HR tab', () => {
+  it('renders candidate overview, personalized headline, executive summary, and executive triad (Features 2 & 3)', () => {
     render(
       <ReportDetailView
         session={mockSession}
@@ -132,117 +142,77 @@ describe('ReportDetailView', () => {
       />
     );
 
+    // Header & Info
     expect(screen.getByText('Jane Doe — Interview Result')).toBeInTheDocument();
-    expect(screen.getByText('Strong Hire')).toBeInTheDocument();
-    expect(screen.getByText('English Communication')).toBeInTheDocument();
-    expect(screen.getByText('C1')).toBeInTheDocument();
-    expect(screen.getByText(/Verified Clean Session/i)).toBeInTheDocument();
 
-    // Verify HR question & respective candidate answer are visible in HR view
-    expect(screen.getByText('HR & Behavioral Questions & Answers')).toBeInTheDocument();
+    // Feature 2: Personalized Headline & 2-3 paragraph summary
+    expect(screen.getByText('Top-tier Distributed Systems Architect')).toBeInTheDocument();
+    expect(screen.getByText(/Jane demonstrated deep engineering acumen/i)).toBeInTheDocument();
+    expect(screen.getByText(/Her English communication is clear/i)).toBeInTheDocument();
+    expect(screen.getByText(/Strongly recommended to advance to Round 2/i)).toBeInTheDocument();
+
+    // Feature 3: Executive Triad
+    expect(screen.getByText('Technical Depth')).toBeInTheDocument();
+    expect(screen.getAllByText('Communication').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Smartness')).toBeInTheDocument();
+  });
+
+  it('filters questions by All Questions, HR Questions, and Technical Questions (Feature 4)', () => {
+    render(
+      <ReportDetailView
+        session={mockSession}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        voiceWarningCount={0}
+        faceWarningCount={0}
+        objectWarningCount={0}
+        totalWarnings={0}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    // Initial state: "All Questions" filter active, showing both questions
     expect(screen.getByText(/Please introduce yourself and highlight your experience/i)).toBeInTheDocument();
-    expect(screen.getByText(/I have 6 years of experience building distributed systems in TypeScript and Go/i)).toBeInTheDocument();
-    expect(screen.getByText(/Clear, concise introduction with relevant accomplishments/i)).toBeInTheDocument();
-  });
-
-  it('switches to Technical tab and displays technical questions with respective answers and Round 2 recommendations', () => {
-    render(
-      <ReportDetailView
-        session={mockSession}
-        report={mockReport}
-        questions={mockQuestions}
-        answers={mockAnswers}
-        transcript={mockTranscript}
-        voiceWarningCount={0}
-        faceWarningCount={0}
-        objectWarningCount={0}
-        totalWarnings={0}
-        followUpQuestions={mockFollowUp}
-      />
-    );
-
-    // Switch to Technical tab
-    const techTabBtn = screen.getByRole('button', { name: /Technical Evaluation/i });
-    fireEvent.click(techTabBtn);
-
-    // Verify Round 2 deep dive questions are rendered
-    expect(screen.getByText('Round 2 Technical Deep-Dive Recommendations')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Can you walk through how you would configure consumer groups in Kafka/i)
-    ).toBeInTheDocument();
-
-    // Verify Technical question & respective candidate answer are visible in Technical view
-    expect(screen.getByText('Technical Questions & Answers')).toBeInTheDocument();
     expect(screen.getByText(/Describe how you handle event-driven architectures/i)).toBeInTheDocument();
-    expect(screen.getByText(/In our previous platform we decoupled the payments system using Kafka/i)).toBeInTheDocument();
-    expect(screen.getByText(/Strong explanation of microservices and message queues/i)).toBeInTheDocument();
+
+    // Filter to HR Questions only
+    const hrFilterBtn = screen.getByRole('button', { name: /HR Questions/i });
+    fireEvent.click(hrFilterBtn);
+
+    expect(screen.getByText(/Please introduce yourself and highlight your experience/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Describe how you handle event-driven architectures/i)).not.toBeInTheDocument();
+
+    // Filter to Technical Questions only
+    const techFilterBtn = screen.getByRole('button', { name: /Technical Questions/i });
+    fireEvent.click(techFilterBtn);
+
+    expect(screen.queryByText(/Please introduce yourself and highlight your experience/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Describe how you handle event-driven architectures/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Round 2 Technical Deep-Dive Recommendations/i)).not.toBeInTheDocument();
   });
 
-  it('switches to Transcript tab and displays speech logs', () => {
-    render(
-      <ReportDetailView
-        session={mockSession}
-        report={mockReport}
-        questions={mockQuestions}
-        answers={mockAnswers}
-        transcript={mockTranscript}
-        voiceWarningCount={0}
-        faceWarningCount={0}
-        objectWarningCount={0}
-        totalWarnings={0}
-        followUpQuestions={mockFollowUp}
-      />
-    );
-
-    const transcriptTabBtn = screen.getByRole('button', { name: /Full Transcript/i });
-    fireEvent.click(transcriptTabBtn);
-
-    expect(screen.getByText('Verbatim Interview Log')).toBeInTheDocument();
-    expect(screen.getByText(/2 speech segments/i)).toBeInTheDocument();
-  });
-
-  it('correctly displays unanswered questions without leaking answers from other questions', () => {
-    const questionsWithUnanswered = [
-      ...mockQuestions,
+  it('displays proctoring incident log with Strike 1, 2, 3 and clean high contrast without numeric counters (Feature 6)', () => {
+    const warnings = [
       {
-        id: 'q-tech-3',
-        question_order: 3,
-        category: 'technical',
-        question_type: 'technical',
-        question_text: 'Explain how you optimize Postgres queries with composite indexes.',
-        competency: 'Database Optimization',
-        is_mandatory_hr: false,
+        id: 'w-1',
+        strikeNumber: 1,
+        category: 'face' as const,
+        categoryLabel: 'Face / Gaze',
+        reason: 'Multiple faces detected in frame.',
+        timestamp: '10:14:02 AM',
+      },
+      {
+        id: 'w-2',
+        strikeNumber: 2,
+        category: 'object' as const,
+        categoryLabel: 'Object / Phone',
+        reason: 'Unauthorized device / smartphone detected.',
+        timestamp: '10:18:45 AM',
       },
     ];
 
-    // Note: mockAnswers only has answers for q-hr-1 and q-tech-2, NOT q-tech-3
-    render(
-      <ReportDetailView
-        session={mockSession}
-        report={mockReport}
-        questions={questionsWithUnanswered}
-        answers={mockAnswers}
-        transcript={mockTranscript}
-        voiceWarningCount={0}
-        faceWarningCount={0}
-        objectWarningCount={0}
-        totalWarnings={0}
-        followUpQuestions={mockFollowUp}
-      />
-    );
-
-    // Switch to Technical tab
-    const techTabBtn = screen.getByRole('button', { name: /Technical Evaluation/i });
-    fireEvent.click(techTabBtn);
-
-    // Question 3 should be displayed
-    expect(screen.getByText(/Explain how you optimize Postgres queries/i)).toBeInTheDocument();
-
-    // Question 3 should show "No verbal response recorded for this question"
-    expect(screen.getByText(/No verbal response recorded for this question/i)).toBeInTheDocument();
-  });
-
-  it('displays continuous 3-warning counter and breakdown across warning types', () => {
     render(
       <ReportDetailView
         session={mockSession}
@@ -250,28 +220,34 @@ describe('ReportDetailView', () => {
         questions={mockQuestions}
         answers={mockAnswers}
         transcript={mockTranscript}
-        voiceWarningCount={1}
+        voiceWarningCount={0}
         faceWarningCount={1}
         objectWarningCount={1}
-        totalWarnings={3}
+        totalWarnings={2}
+        proctoringWarnings={warnings}
         followUpQuestions={mockFollowUp}
       />
     );
 
-    expect(screen.getByText('Continuous Warning Counter')).toBeInTheDocument();
-    expect(screen.getByText('3 / 3 Warnings Used')).toBeInTheDocument();
-    expect(screen.getByText(/Strike 1 ⚠️/)).toBeInTheDocument();
-    expect(screen.getByText(/Strike 2 ⚠️/)).toBeInTheDocument();
-    expect(screen.getByText(/Strike 3 ⚠️/)).toBeInTheDocument();
-    expect(screen.getByText('Face / Gaze')).toBeInTheDocument();
-    expect(screen.getByText('Object / Phone')).toBeInTheDocument();
-    expect(screen.getByText('Voice / Audio')).toBeInTheDocument();
+    expect(screen.getByText('Session Integrity & Proctoring')).toBeInTheDocument();
+    expect(screen.getByText('Proctoring Incident Log')).toBeInTheDocument();
+    expect(screen.getByText('Strike 1')).toBeInTheDocument();
+    expect(screen.getByText('Multiple faces detected in frame.')).toBeInTheDocument();
+    expect(screen.getByText('Strike 2')).toBeInTheDocument();
+    expect(screen.getByText('Unauthorized device / smartphone detected.')).toBeInTheDocument();
+
+    // Verify numeric count badges are removed
+    expect(screen.queryByText(/3 \/ 3 Warnings Used/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Continuous Warning Counter/i)).not.toBeInTheDocument();
   });
 
-  it('renders Google Drive full interview video card with preview player and drive link when recording is present', () => {
+  it('renders Google Drive full interview video link card and Zoho Recruit link option', () => {
     render(
       <ReportDetailView
-        session={mockSession}
+        session={{
+          ...mockSession,
+          zoho_recruiter_link: 'https://recruit.zoho.com/recruit/Candidate.do?id=12345',
+        }}
         report={mockReport}
         questions={mockQuestions}
         answers={mockAnswers}
@@ -289,10 +265,163 @@ describe('ReportDetailView', () => {
       />
     );
 
+    // Video recording card has link and copy button (no embedded video player)
     expect(screen.getByText('Full Interview Video Recording')).toBeInTheDocument();
     const driveLink = screen.getByRole('link', { name: /Open in Google Drive/i });
     expect(driveLink).toHaveAttribute('href', 'https://drive.google.com/file/d/drive-file-999/view');
-    const iframe = screen.getByTitle('Interview Video Recording');
-    expect(iframe).toHaveAttribute('src', 'https://drive.google.com/file/d/drive-file-999/preview');
+    expect(screen.getByText('Copy Video Link')).toBeInTheDocument();
+
+    // Zoho Recruit single button in candidate info header
+    const zohoLink = screen.getByRole('link', { name: /Open in Zoho Recruit/i });
+    expect(zohoLink).toHaveAttribute('href', 'https://recruit.zoho.com/recruit/Candidate.do?id=12345');
+    expect(zohoLink).toHaveAttribute('target', '_blank');
+  });
+
+  it('renders direct video jump links and elapsed timing in proctoring incident log', () => {
+    const warningsWithOffsets = [
+      {
+        id: 'w-1',
+        strikeNumber: 1,
+        category: 'face' as const,
+        categoryLabel: 'Face / Gaze Violation',
+        reason: 'Multiple faces detected in frame.',
+        timestamp: '10:14:02 AM',
+        offsetSeconds: 155,
+        elapsedLabel: '02:35',
+      },
+    ];
+
+    render(
+      <ReportDetailView
+        session={mockSession}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        recording={{
+          fileId: 'drive-file-999',
+          webViewLink: 'https://drive.google.com/file/d/drive-file-999/view',
+          previewUrl: 'https://drive.google.com/file/d/drive-file-999/preview',
+        }}
+        voiceWarningCount={0}
+        faceWarningCount={1}
+        objectWarningCount={0}
+        totalWarnings={1}
+        proctoringWarnings={warningsWithOffsets}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    // Elapsed timing badge & jump buttons
+    const timingElements = screen.getAllByText(/02:35/i);
+    expect(timingElements.length).toBeGreaterThanOrEqual(2);
+    
+    // In-portal video jump buttons targeting the exact second in the recording
+    const jumpButtons = screen.getAllByRole('button', { name: /02:35/i });
+    expect(jumpButtons.length).toBeGreaterThanOrEqual(1);
+
+    // External Google Drive direct link targeting the exact second
+    const driveLinks = screen.getAllByRole('link', { name: /^Google Drive/i });
+    expect(driveLinks.length).toBeGreaterThanOrEqual(1);
+    expect(driveLinks[0]).toHaveAttribute(
+      'href',
+      'https://drive.google.com/file/d/drive-file-999/view?t=2m35s'
+    );
+
+    // Wall clock timestamp is pure text without a jump link (no ↗)
+    expect(screen.getByText(/10:14:02 AM/i)).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /10:14:02 AM/i })).not.toBeInTheDocument();
+  });
+
+  it('formats rawTsMs into user local time and preserves exact video jump buttons and links', () => {
+    const rawTime = new Date('2026-10-09T07:49:02.000Z').getTime();
+    const expectedLocalTime = new Date(rawTime).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const warningsWithRawTs = [
+      {
+        id: 'term-strike-1',
+        strikeNumber: 1,
+        category: 'general' as const,
+        categoryLabel: 'Integrity Violation (Terminated)',
+        reason: 'The candidate clicked outside the interview window or switched tabs.',
+        rawTsMs: rawTime,
+        offsetSeconds: 20,
+        elapsedLabel: '00:20',
+      },
+    ];
+
+    render(
+      <ReportDetailView
+        session={mockSession}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        recording={{
+          fileId: 'rec-test-123',
+          webViewLink: 'https://drive.google.com/file/d/rec-test-123/view',
+          previewUrl: 'https://drive.google.com/file/d/rec-test-123/preview',
+        }}
+        voiceWarningCount={0}
+        faceWarningCount={0}
+        objectWarningCount={0}
+        totalWarnings={1}
+        proctoringWarnings={warningsWithRawTs}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    // Dynamic local time formatted from rawTsMs
+    expect(screen.getByText(new RegExp(expectedLocalTime, 'i'))).toBeInTheDocument();
+
+    // In-portal video jump buttons
+    const jumpButtons = screen.getAllByRole('button', { name: /00:20/i });
+    expect(jumpButtons.length).toBeGreaterThanOrEqual(1);
+
+    // Exact Google Drive link
+    const driveLinks = screen.getAllByRole('link', { name: /^Google Drive/i });
+    expect(driveLinks.length).toBeGreaterThanOrEqual(1);
+    expect(driveLinks[0]).toHaveAttribute(
+      'href',
+      'https://drive.google.com/file/d/rec-test-123/view?t=20s'
+    );
+  });
+
+  it('opens and closes the slide-over AI Copilot drawer via sticky bottom bar trigger (Feature 7)', () => {
+    render(
+      <ReportDetailView
+        session={mockSession}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        voiceWarningCount={0}
+        faceWarningCount={0}
+        objectWarningCount={0}
+        totalWarnings={0}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    // Initial state: drawer not open
+    expect(screen.queryByTestId('mock-chat-copilot')).not.toBeInTheDocument();
+
+    // Click sticky bar trigger
+    const copilotTriggerBtn = screen.getByRole('button', { name: /Ask AI Copilot/i });
+    fireEvent.click(copilotTriggerBtn);
+
+    // Drawer opens
+    expect(screen.getByText('Report AI Copilot')).toBeInTheDocument();
+    expect(screen.getByTestId('mock-chat-copilot')).toBeInTheDocument();
+
+    // Close button works
+    const closeBtn = screen.getByTitle('Close Copilot');
+    fireEvent.click(closeBtn);
+
+    expect(screen.queryByTestId('mock-chat-copilot')).not.toBeInTheDocument();
   });
 });
