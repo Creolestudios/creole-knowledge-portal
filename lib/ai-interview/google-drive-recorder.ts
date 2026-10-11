@@ -340,3 +340,114 @@ export async function deleteDriveFile(fileId: string): Promise<{
     return { success: false, alreadyDeleted: false, error: msg };
   }
 }
+
+/**
+ * Uploads a chunk into an active Google Drive Resumable Upload session.
+ * Google Drive protocol:
+ * - Intermediate chunk length must be a multiple of 256 KiB (262144 bytes).
+ * - Intermediate Content-Range: bytes START-END/* -> HTTP 308 (Resume Incomplete)
+ * - Final Content-Range: bytes START-END/TOTAL -> HTTP 200/201 (Created) with file metadata JSON
+ */
+export async function uploadDriveResumableChunk(params: {
+  uploadUrl: string;
+  buffer: Buffer;
+  startByte: number;
+  isFinal?: boolean;
+  mimeType?: string;
+}): Promise<{
+  status: number;
+  isComplete: boolean;
+  fileId?: string;
+  range?: string;
+  error?: string;
+}> {
+  const mimeType = params.mimeType || 'video/webm';
+  const start = params.startByte;
+  const chunkLen = params.buffer.length;
+  const isFinal = Boolean(params.isFinal);
+
+  let contentRange: string;
+  if (!isFinal) {
+    const end = start + chunkLen - 1;
+    contentRange = `bytes ${start}-${end}/*`;
+  } else {
+    const total = start + chunkLen;
+    if (chunkLen === 0) {
+      contentRange = `bytes */${total}`;
+    } else {
+      const end = start + chunkLen - 1;
+      contentRange = `bytes ${start}-${end}/${total}`;
+    }
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Range': contentRange,
+    'Content-Type': mimeType,
+  };
+
+  const res = await fetch(params.uploadUrl, {
+    method: 'PUT',
+    headers,
+    body: chunkLen > 0 ? (params.buffer as unknown as BodyInit) : undefined,
+  });
+
+  if (res.status === 308) {
+    const rangeHeader = res.headers.get('Range') || '';
+    return {
+      status: 308,
+      isComplete: false,
+      range: rangeHeader,
+    };
+  }
+
+  if (res.status === 200 || res.status === 201) {
+    const data = await res.json().catch(() => ({}));
+    return {
+      status: res.status,
+      isComplete: true,
+      fileId: data.id,
+    };
+  }
+
+  const errorText = await res.text().catch(() => '');
+  return {
+    status: res.status,
+    isComplete: false,
+    error: `Drive API returned HTTP ${res.status}: ${errorText}`,
+  };
+}
+
+/**
+ * Queries Google Drive for the current confirmed byte offset of a resumable session.
+ */
+export async function getDriveResumableStatus(uploadUrl: string): Promise<{
+  status: number;
+  nextByte: number;
+  isComplete: boolean;
+  fileId?: string;
+}> {
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Range': 'bytes */*',
+    },
+  });
+
+  if (res.status === 308) {
+    const rangeHeader = res.headers.get('Range');
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=0-(\d+)/);
+      if (match) {
+        return { status: 308, nextByte: parseInt(match[1], 10) + 1, isComplete: false };
+      }
+    }
+    return { status: 308, nextByte: 0, isComplete: false };
+  }
+
+  if (res.status === 200 || res.status === 201) {
+    const data = await res.json().catch(() => ({}));
+    return { status: res.status, nextByte: 0, isComplete: true, fileId: data.id };
+  }
+
+  return { status: res.status, nextByte: 0, isComplete: false };
+}

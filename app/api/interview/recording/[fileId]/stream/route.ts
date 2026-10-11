@@ -7,40 +7,54 @@ export const runtime = 'nodejs';
 function nodeStreamToWebStream(nodeStream: Readable, signal?: AbortSignal): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      if (signal) {
-        if (signal.aborted) {
-          nodeStream.destroy();
+      let isClosed = false;
+
+      const safeClose = () => {
+        if (!isClosed) {
+          isClosed = true;
           try {
             controller.close();
           } catch {}
+        }
+      };
+
+      const safeError = (err: unknown) => {
+        if (!isClosed) {
+          isClosed = true;
+          try {
+            controller.error(err);
+          } catch {}
+        }
+      };
+
+      if (signal) {
+        if (signal.aborted) {
+          nodeStream.destroy();
+          safeClose();
           return;
         }
         signal.addEventListener('abort', () => {
           nodeStream.destroy();
-          try {
-            controller.close();
-          } catch {}
+          safeClose();
         });
       }
 
       nodeStream.on('data', (chunk: Buffer | Uint8Array) => {
+        if (isClosed || signal?.aborted) return;
         try {
           controller.enqueue(new Uint8Array(chunk));
         } catch {
+          isClosed = true;
           nodeStream.destroy();
         }
       });
 
       nodeStream.on('end', () => {
-        try {
-          controller.close();
-        } catch {}
+        safeClose();
       });
 
       nodeStream.on('error', (err: unknown) => {
-        try {
-          controller.error(err);
-        } catch {}
+        safeError(err);
       });
     },
     cancel() {

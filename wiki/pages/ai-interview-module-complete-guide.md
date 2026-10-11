@@ -499,11 +499,22 @@ During the live interview stage (`stage === 'interview'`), candidate actions and
    - When the reloaded page boots up, `useState<Stage>` detects the stored refresh termination reason and initializes `stage` directly to `'terminated'` with `terminationReason: 'The candidate refreshed or closed the page during the live interview.'`.
    - `isVerifyingLink` initializes to `false`, rendering `<TerminatedInterview>` instantly on first paint with zero flicker, delay, or loading spinners.
    - When the background `/api/interview/verify` call resolves with HTTP 410, it checks `stageRef.current === 'terminated'`. It preserves the termination screen and does **not** override the view to `'expired'`.
-3. **One-Time Bypass Consumption & Subsequent Reloads**:
+3. **Candidate Link Expiration Presentation (`<ExpiredInterviewLink>`)**:
+   - For **Completed Interviews**:
+     - Status Header & Badge: `✅ Interview Completed`
+     - Prominent Message: `"This link is expired it is one time use , your interview is completed we will get back to you soon"`
+     - Informs the candidate that all answers were securely submitted and the recruitment team will reach out with next steps.
+   - For **Terminated Interviews**:
+     - Status Header & Badge: Reflects individual policy category (e.g. `🚫 Tab Switch & Focus Policy Violation`, `🚫 Session Refresh / Exit Violation`, `⚠️ Proctoring Limit Exceeded (3 Strikes)`, `🚫 Screen Share Policy Violation`, `🚫 Multiple Device Access Violation`).
+     - Prominent Message: `"This link is expired it is one time use"`
+     - Individual Termination Reason Banner: Displays the exact individual reason why the candidate's session was terminated (e.g. switched tabs/clicked outside, refreshed/closed page, 3 warnings breakdown, screen share stopped) alongside logged warning counts.
+   - For **General Expired / Unused Links**:
+     - Renders single-use consumed lock badge with `"This link is expired it is one time use"`.
+4. **One-Time Bypass Consumption & Subsequent Reloads**:
    - Viewing the termination screen consumes the refresh tracking keys (`removeItem('interview_refresh_terminated_${id}')` and `removeItem('interview_live_active_${id}')`), while permanently persisting `interview_used_${id} = 'true'`.
    - If the candidate refreshes *that* termination screen, or closes and re-opens the link in any browser tab or window, the refresh bypass keys are no longer present.
-   - The page immediately renders `<ExpiredInterviewLink>` with the `🔒 Single-Use Consumed` badge and "Link is expired" message.
-   - All once-used, completed, or previously terminated links continue to consistently display the expired link screen upon any reopening.
+   - The page immediately renders `<ExpiredInterviewLink>` with the specific completed or individual termination reason.
+   - All once-used, completed, or previously terminated links continue to consistently display the link expiration screen upon any reopening.
 
 ---
 

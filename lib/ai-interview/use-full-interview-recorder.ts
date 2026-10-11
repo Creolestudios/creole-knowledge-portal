@@ -1,6 +1,11 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect } from 'react';
+import {
+  saveRecordingChunk,
+  getAllRecordingChunks,
+  clearRecordingChunks,
+} from './recording-storage';
 
 export interface UseFullInterviewRecorderOptions {
   interviewId: string;
@@ -25,7 +30,7 @@ const PREFERRED_MIME_TYPES = [
   'video/mp4',
 ];
 
-function pickSupportedMimeType(): string {
+export function pickSupportedMimeType(): string {
   if (typeof window === 'undefined' || typeof MediaRecorder === 'undefined') {
     return 'video/webm';
   }
@@ -35,6 +40,134 @@ function pickSupportedMimeType(): string {
     }
   }
   return '';
+}
+
+/**
+ * Recovers and uploads any cached video chunks left in IndexedDB
+ * (e.g., following an abrupt browser reload, crash, or refresh termination).
+ */
+export async function flushAndUploadCachedRecording(
+  interviewId: string,
+  onProgress?: (progress: number, statusText: string) => void
+): Promise<UploadResult> {
+  if (typeof window === 'undefined') return { success: false, error: 'SSR environment' };
+  try {
+    const cachedChunks = await getAllRecordingChunks(interviewId);
+    if (!cachedChunks || cachedChunks.length === 0) {
+      return { success: false, error: 'No cached recording chunks' };
+    }
+
+    onProgress?.(10, 'Securing interview video recording to Google Drive...');
+
+    const mimeType = pickSupportedMimeType() || 'video/webm';
+    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const fullVideoBlob = new Blob(cachedChunks, { type: mimeType });
+
+    if (fullVideoBlob.size === 0) {
+      return { success: false, error: 'Empty cached recording' };
+    }
+
+    onProgress?.(25, 'Requesting secure Google Drive upload session...');
+
+    const clientOrigin = typeof window !== 'undefined' ? window.location.origin : undefined;
+    let fileId: string | undefined;
+    let webViewLink: string | undefined;
+    let previewUrl: string | undefined;
+
+    // 1. Try direct Google Drive Resumable Upload session first
+    try {
+      const sessionRes = await fetch('/api/interview/recording/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewId,
+          fileSize: fullVideoBlob.size,
+          mimeType,
+          origin: clientOrigin,
+        }),
+      });
+
+      const sessionJson = await sessionRes.json().catch(() => null);
+      if (sessionJson?.uploadUrl) {
+        onProgress?.(40, 'Uploading video recording to Google Drive...');
+        const directResult = await new Promise<{ fileId?: string }>((resolveUpload, rejectUpload) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', sessionJson.uploadUrl, true);
+          xhr.setRequestHeader('Content-Type', mimeType);
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable && event.total > 0) {
+              const percent = Math.min(95, Math.round(40 + (event.loaded / event.total) * 50));
+              onProgress?.(percent, `Uploading video recording to Google Drive... ${percent}%`);
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 201) {
+              try {
+                const driveFile = JSON.parse(xhr.responseText);
+                resolveUpload({ fileId: driveFile.id });
+              } catch {
+                resolveUpload({});
+              }
+            } else {
+              rejectUpload(new Error(`Drive PUT returned ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => rejectUpload(new Error('Network error during direct Drive upload'));
+          xhr.send(fullVideoBlob);
+        });
+
+        fileId = directResult.fileId;
+        if (fileId) {
+          webViewLink = `https://drive.google.com/file/d/${fileId}/view`;
+          previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+        }
+      }
+    } catch (directErr) {
+      console.warn('[flushAndUploadCachedRecording] Direct Drive upload notice, falling back to server route:', directErr);
+    }
+
+    // 2. Failsafe Fallback: server-side upload endpoint
+    if (!fileId) {
+      onProgress?.(50, 'Uploading video securely via interview server...');
+      const fileName = `interview_${interviewId}_recovered.${ext}`;
+      const formData = new FormData();
+      formData.append('interviewId', interviewId);
+      formData.append('file', fullVideoBlob, fileName);
+
+      const res = await fetch('/api/interview/recording/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const json = await res.json().catch(() => null);
+      if (res.ok && json?.ok) {
+        fileId = json.fileId;
+        webViewLink = json.webViewLink;
+        previewUrl = json.previewUrl;
+      } else {
+        return { success: false, error: json?.error || 'Failed to upload recovered video' };
+      }
+    }
+
+    if (fileId) {
+      await clearRecordingChunks(interviewId);
+      onProgress?.(100, 'Interview video recording safely saved to Google Drive');
+      console.info('[useFullInterviewRecorder] Recovered video successfully uploaded to Google Drive:', fileId);
+      return {
+        success: true,
+        fileId,
+        webViewLink,
+        previewUrl,
+      };
+    }
+
+    return { success: false, error: 'Upload failed' };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
 }
 
 /**
@@ -70,6 +203,12 @@ export function useFullInterviewRecorder({
   const lastFrameTimeRef = useRef<number>(0);
   const isRecordingRef = useRef(false);
   const recordingStartTimeRef = useRef<number | null>(null);
+
+  // Progressive live streaming refs
+  const uploadUrlRef = useRef<string | null>(null);
+  const uploadedByteOffsetRef = useRef<number>(0);
+  const streamingBufferRef = useRef<Blob[]>([]);
+  const isStreamingChunkRef = useRef<boolean>(false);
 
   // Web Audio mixing refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -383,14 +522,37 @@ export function useFullInterviewRecorder({
       }
       const recorder = new MediaRecorder(recordableStream, recorderOptions);
 
+      // Pre-initialize Google Drive Resumable Upload session in background
+      uploadUrlRef.current = null;
+      uploadedByteOffsetRef.current = 0;
+      streamingBufferRef.current = [];
+      isStreamingChunkRef.current = false;
+
+      fetch('/api/interview/recording/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interviewId, mimeType }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.uploadUrl) {
+            uploadUrlRef.current = data.uploadUrl;
+            console.info('[useFullInterviewRecorder] Live Drive upload session ready');
+          }
+        })
+        .catch(() => {});
+
       recorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           chunksRef.current.push(e.data);
+          streamingBufferRef.current.push(e.data);
+          void saveRecordingChunk(interviewId, e.data);
+          void drainStreamingBuffer(false);
         }
       };
 
-      // Output chunk every 5 seconds so data is flushed safely
-      recorder.start(5000);
+      // Output chunk every 2.5 seconds so data is flushed safely into browser IndexedDB & live streamed
+      recorder.start(2500);
 
       recorderRef.current = recorder;
       recordingStartTimeRef.current = Date.now();
@@ -400,7 +562,87 @@ export function useFullInterviewRecorder({
     } catch (err) {
       console.error('[useFullInterviewRecorder] Failed to start recording:', err);
     }
-  }, [enabled, cameraStream, screenStream, remoteStream, startCompositorLoop]);
+  }, [enabled, cameraStream, screenStream, remoteStream, startCompositorLoop, interviewId]);
+
+  /**
+   * Progressively drains accumulated video buffer slices to Google Drive in multiples of 256 KiB.
+   */
+  const drainStreamingBuffer = useCallback(
+    async (forceFinal = false): Promise<UploadResult | null> => {
+      if (isStreamingChunkRef.current) return null;
+      const currentChunks = [...streamingBufferRef.current];
+      if (currentChunks.length === 0 && !forceFinal) return null;
+
+      const totalPendingBytes = currentChunks.reduce((acc, c) => acc + c.size, 0);
+      const CHUNK_UNIT = 262144; // 256 KiB required by Google Drive
+      if (!forceFinal && totalPendingBytes < CHUNK_UNIT) {
+        return null;
+      }
+
+      let sliceBytes = totalPendingBytes;
+      if (!forceFinal) {
+        sliceBytes = Math.floor(totalPendingBytes / CHUNK_UNIT) * CHUNK_UNIT;
+      }
+
+      if (sliceBytes === 0 && !forceFinal) return null;
+
+      isStreamingChunkRef.current = true;
+      try {
+        const mimeType = recorderRef.current?.mimeType || pickSupportedMimeType() || 'video/webm';
+        const combinedBlob = new Blob(currentChunks, { type: mimeType });
+        const chunkBlob = combinedBlob.slice(0, sliceBytes);
+        const remainingBlob = combinedBlob.slice(sliceBytes);
+
+        const startByte = uploadedByteOffsetRef.current;
+        const durationSeconds = recordingStartTimeRef.current
+          ? Math.max(1, Math.round((Date.now() - recordingStartTimeRef.current) / 1000))
+          : undefined;
+
+        const payloadBytes = await chunkBlob.arrayBuffer();
+        const useKeepalive = forceFinal && payloadBytes.byteLength <= 65536;
+
+        const res = await fetch('/api/interview/recording/stream-chunk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'x-interview-id': interviewId,
+            'x-upload-url': uploadUrlRef.current || '',
+            'x-start-byte': String(startByte),
+            'x-is-final': forceFinal ? 'true' : 'false',
+            'x-mime-type': mimeType,
+            ...(durationSeconds ? { 'x-duration-seconds': String(durationSeconds) } : {}),
+            ...(recordingStartTimeRef.current ? { 'x-recording-start-time': String(recordingStartTimeRef.current) } : {}),
+          },
+          body: payloadBytes,
+          ...(useKeepalive ? { keepalive: true } : {}),
+        });
+
+        const json = await res.json().catch(() => null);
+        if (json?.uploadUrl && !uploadUrlRef.current) {
+          uploadUrlRef.current = json.uploadUrl;
+        }
+
+        if (res.ok && (json?.ok || json?.status === 308)) {
+          uploadedByteOffsetRef.current += sliceBytes;
+          streamingBufferRef.current = remainingBlob.size > 0 ? [remainingBlob] : [];
+          if (forceFinal && json?.isComplete && json?.fileId) {
+            return {
+              success: true,
+              fileId: json.fileId,
+              webViewLink: json.webViewLink,
+              previewUrl: json.previewUrl,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[useFullInterviewRecorder] Live stream chunk notice:', err);
+      } finally {
+        isStreamingChunkRef.current = false;
+      }
+      return null;
+    },
+    [interviewId]
+  );
 
   /**
    * Stops recording and uploads the WHOLE single video directly to Google Drive
@@ -430,6 +672,31 @@ export function useFullInterviewRecorder({
         uploadHandled = true;
 
         try {
+          // Fast-path: If chunks were streamed to Drive in real time, finalize immediately (< 1s)
+          if (uploadedByteOffsetRef.current > 0) {
+            setUploadStatusText('Finalizing video recording in Google Drive...');
+            setUploadProgress(95);
+
+            const streamResult = await drainStreamingBuffer(true);
+            if (streamResult?.success && streamResult?.fileId) {
+              chunksRef.current = [];
+              streamingBufferRef.current = [];
+              void clearRecordingChunks(interviewId);
+              setUploadProgress(100);
+              setUploadStatusText('Interview recording secured successfully!');
+              setIsUploading(false);
+              resolve(streamResult);
+              return;
+            }
+          }
+
+          if (chunksRef.current.length === 0) {
+            const cached = await getAllRecordingChunks(interviewId);
+            if (cached && cached.length > 0) {
+              chunksRef.current = cached;
+            }
+          }
+
           const mimeType = recorder?.mimeType || pickSupportedMimeType() || 'video/webm';
           const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
           const fullVideoBlob = new Blob(chunksRef.current, { type: mimeType });
@@ -545,6 +812,7 @@ export function useFullInterviewRecorder({
             }
 
             chunksRef.current = [];
+            void clearRecordingChunks(interviewId);
             setUploadProgress(100);
             setUploadStatusText('Interview recording secured successfully!');
             setIsUploading(false);
@@ -579,6 +847,7 @@ export function useFullInterviewRecorder({
 
           const completeJson = await completeRes.json().catch(() => null);
 
+          void clearRecordingChunks(interviewId);
           setUploadProgress(100);
           setUploadStatusText('Interview recording secured successfully!');
           setIsUploading(false);
@@ -591,7 +860,7 @@ export function useFullInterviewRecorder({
           });
         } catch (err: unknown) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          console.error('[useFullInterviewRecorder] Upload error:', errMsg);
+          console.warn('[useFullInterviewRecorder] Upload notice:', errMsg);
           setIsUploading(false);
           resolve({ success: false, error: errMsg });
         }

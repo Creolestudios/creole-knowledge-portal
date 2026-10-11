@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST as sessionHandler } from './session/route';
 import { POST as completeHandler } from './complete/route';
 import { POST as uploadHandler } from './upload/route';
+import { POST as streamChunkHandler } from './stream-chunk/route';
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
@@ -33,6 +34,7 @@ vi.mock('@/lib/ai-interview/google-drive-recorder', () => ({
   createDriveResumableUploadSession: vi.fn(),
   finalizeDriveFile: vi.fn(),
   uploadDriveFileDirectly: vi.fn(),
+  uploadDriveResumableChunk: vi.fn(),
 }));
 
 import {
@@ -40,6 +42,7 @@ import {
   createDriveResumableUploadSession,
   finalizeDriveFile,
   uploadDriveFileDirectly,
+  uploadDriveResumableChunk,
 } from '@/lib/ai-interview/google-drive-recorder';
 
 describe('Recording API Routes', () => {
@@ -188,6 +191,89 @@ describe('Recording API Routes', () => {
       expect(json.ok).toBe(true);
       expect(json.fileId).toBe('drive-direct-file-789');
       expect(json.webViewLink).toContain('drive-direct-file-789');
+    });
+  });
+
+  describe('POST /api/interview/recording/stream-chunk', () => {
+    it('returns notConfigured if drive credentials missing', async () => {
+      vi.mocked(getDriveCredentials).mockReturnValue(null);
+
+      const req = new Request('http://localhost/api/interview/recording/stream-chunk', {
+        method: 'POST',
+        headers: { 'x-interview-id': 'session-123' },
+        body: new Uint8Array([1, 2, 3]),
+      });
+
+      const res = await streamChunkHandler(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.notConfigured).toBe(true);
+    });
+
+    it('streams an intermediate chunk and returns 308 status with nextByte', async () => {
+      vi.mocked(getDriveCredentials).mockReturnValue({
+        client_email: 'service@example.com',
+        private_key: 'fake-key',
+      });
+      vi.mocked(uploadDriveResumableChunk).mockResolvedValue({
+        status: 308,
+        isComplete: false,
+        range: 'bytes=0-262143',
+      });
+
+      const req = new Request('http://localhost/api/interview/recording/stream-chunk', {
+        method: 'POST',
+        headers: {
+          'x-interview-id': 'session-123',
+          'x-upload-url': 'https://drive.mock/upload?session=1',
+          'x-start-byte': '0',
+          'x-is-final': 'false',
+        },
+        body: new Uint8Array(262144),
+      });
+
+      const res = await streamChunkHandler(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.isComplete).toBe(false);
+      expect(json.nextByte).toBe(262144);
+    });
+
+    it('finalizes upload on the last chunk and returns fileId', async () => {
+      vi.mocked(getDriveCredentials).mockReturnValue({
+        client_email: 'service@example.com',
+        private_key: 'fake-key',
+      });
+      vi.mocked(uploadDriveResumableChunk).mockResolvedValue({
+        status: 200,
+        isComplete: true,
+        fileId: 'stream-file-completed-999',
+      });
+      vi.mocked(finalizeDriveFile).mockResolvedValue({
+        fileId: 'stream-file-completed-999',
+        webViewLink: 'https://drive.google.com/file/d/stream-file-completed-999/view',
+        previewUrl: 'https://drive.google.com/file/d/stream-file-completed-999/preview',
+      });
+
+      const req = new Request('http://localhost/api/interview/recording/stream-chunk', {
+        method: 'POST',
+        headers: {
+          'x-interview-id': 'session-123',
+          'x-upload-url': 'https://drive.mock/upload?session=1',
+          'x-start-byte': '262144',
+          'x-is-final': 'true',
+        },
+        body: new Uint8Array(50000),
+      });
+
+      const res = await streamChunkHandler(req);
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.ok).toBe(true);
+      expect(json.isComplete).toBe(true);
+      expect(json.fileId).toBe('stream-file-completed-999');
+      expect(json.webViewLink).toContain('stream-file-completed-999');
     });
   });
 });

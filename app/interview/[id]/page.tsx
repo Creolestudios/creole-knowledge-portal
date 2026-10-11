@@ -51,12 +51,13 @@ export type CandidateWarning = {
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
+import { HighlightedVerbatimAnswer } from '@/components/ai-interview/highlighted-verbatim-answer';
 import { createClient } from '@/lib/supabase/client';
 import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
 import { useAnswerRecorder } from '@/lib/ai-interview/use-answer-recorder';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
-import { useFullInterviewRecorder } from '@/lib/ai-interview/use-full-interview-recorder';
+import { useFullInterviewRecorder, flushAndUploadCachedRecording } from '@/lib/ai-interview/use-full-interview-recorder';
 
 
 export default function InterviewEntryPage() {
@@ -237,6 +238,30 @@ export default function InterviewEntryPage() {
   const missingFramesRef = useRef<Map<string, number>>(new Map());
   const consecutiveDetectedFramesRef = useRef<Map<string, number>>(new Map());
 
+  const [isRecoveryUploading, setIsRecoveryUploading] = useState(false);
+  const [recoveryProgress, setRecoveryProgress] = useState(0);
+  const [recoveryStatusText, setRecoveryStatusText] = useState('');
+
+  // Auto-recovery: Flush and upload any un-uploaded recording chunks cached in IndexedDB
+  // (e.g. from an abrupt browser refresh, network drop, or crash)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !interviewId || process.env.NODE_ENV === 'test') return;
+    setIsRecoveryUploading(true);
+    void flushAndUploadCachedRecording(interviewId, (progress, statusText) => {
+      setRecoveryProgress(progress);
+      setRecoveryStatusText(statusText);
+    })
+      .then((result) => {
+        if (result.success) {
+          setRecoveryProgress(100);
+          console.info('[interview-entry] Successfully recovered and uploaded interview video to Google Drive');
+        }
+      })
+      .finally(() => {
+        setIsRecoveryUploading(false);
+      });
+  }, [interviewId]);
+
   // Link status check on mount to prevent re-accessing completed/terminated links
   useEffect(() => {
     if (!interviewId) return;
@@ -262,6 +287,7 @@ export default function InterviewEntryPage() {
           }
           if (json.violationReason) {
             setExpirationViolationReason(json.violationReason);
+            setTerminationReason((prev) => prev || json.violationReason);
           }
           if (json.warningCount) {
             setExpirationWarningCount(json.warningCount);
@@ -1126,13 +1152,16 @@ export default function InterviewEntryPage() {
 
     // Securely stop and upload full video recording to Google Drive in the background BEFORE stopping media tracks
     if (!isAdmin) {
-      stopAndUploadFullVideo().catch((err) => {
-        console.warn('[terminateInterview] stopAndUploadFullVideo error:', err);
-      });
+      void stopAndUploadFullVideo()
+        .catch((err) => {
+          console.warn('[terminateInterview] stopAndUploadFullVideo error:', err);
+        })
+        .finally(() => {
+          stopAllMedia();
+        });
+    } else {
+      stopAllMedia();
     }
-
-    // Now safely stop media tracks
-    stopAllMedia();
   }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentQuestion, currentSpokenText, interimText, stopAndUpload, stopAndUploadFullVideo, interviewId, completeTurn, isAdmin]);
 
   const terminateInterviewRef = useRef(terminateInterview);
@@ -1166,6 +1195,15 @@ export default function InterviewEntryPage() {
     }
   }, [stage, interviewId]);
 
+  useProctoringWatchdog({
+    active: !isAdmin && stage === 'interview' && !bypassProctoring,
+    cameraStreamRef,
+    screenStreamRef,
+    onViolation: (reason) => {
+      terminateInterviewRef.current(reason);
+    },
+  });
+
   // Prevent candidate from accidentally closing or refreshing tab during live interview
   useEffect(() => {
     if (stage !== 'interview' || isAdmin) return;
@@ -1194,7 +1232,6 @@ export default function InterviewEntryPage() {
     };
     
     const handlePageHide = () => {
-      if (bypassProctoring) return;
       try {
         sessionStorage.setItem(
           `interview_refresh_terminated_${interviewId}`,
@@ -1203,11 +1240,18 @@ export default function InterviewEntryPage() {
       } catch {
         // ignore
       }
+      try {
+        faceWorkerRef.current?.terminate();
+        objectWorkerRef.current?.terminate();
+        cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+        screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {
+        // ignore
+      }
       terminateInterviewRef.current('The candidate refreshed or closed the page during the live interview.');
     };
     
     const handleVisibilityChange = () => {
-      if (bypassProctoring) return;
       if (document.visibilityState === 'hidden') {
         // Fallback for mobile browsers where pagehide might not fire reliably
         terminateInterviewRef.current('The candidate placed the browser in the background or minimized the window.');
@@ -1215,7 +1259,6 @@ export default function InterviewEntryPage() {
     };
 
     const handleBlur = () => {
-      if (bypassProctoring) return;
       terminateInterviewRef.current('The candidate clicked outside the interview window or switched tabs.');
     };
 
@@ -2006,8 +2049,15 @@ export default function InterviewEntryPage() {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
               setIsInterviewPaused(true);
+              const counts = proctorTrackerRef.current.getWarningCounts();
+              const breakdown = [
+                counts.face > 0 ? `${counts.face} face/gaze violation(s)` : '',
+                counts.object > 0 ? `${counts.object} unauthorized object(s)` : '',
+                counts.voice > 0 ? `${counts.voice} extra voice(s)` : '',
+              ].filter(Boolean).join(', ');
+              const detailedReason = `Three proctoring warnings issued (${breakdown || '3 strikes reached'}). Session auto-terminated.`;
               setTimeout(() => {
-                void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+                void terminateInterview(detailedReason);
               }, 1500);
             }
           }
@@ -2252,8 +2302,15 @@ export default function InterviewEntryPage() {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
               setIsInterviewPaused(true);
+              const counts = proctorTrackerRef.current.getWarningCounts();
+              const breakdown = [
+                counts.face > 0 ? `${counts.face} face/gaze violation(s)` : '',
+                counts.object > 0 ? `${counts.object} unauthorized object(s)` : '',
+                counts.voice > 0 ? `${counts.voice} extra voice(s)` : '',
+              ].filter(Boolean).join(', ');
+              const detailedReason = `Three proctoring warnings issued (${breakdown || '3 strikes reached'}). Session auto-terminated.`;
               setTimeout(() => {
-                void terminateInterview('Three proctoring warnings issued. Session auto-terminated.');
+                void terminateInterview(detailedReason);
               }, 1500);
             }
           }
@@ -2512,14 +2569,18 @@ export default function InterviewEntryPage() {
         terminationReason={terminationReason}
         isAdmin={isAdmin}
         onLeave={handleAdminLeave}
-        isUploading={isUploadingFullVideo}
-        uploadProgress={fullVideoUploadProgress}
-        uploadStatusText={fullVideoUploadStatusText}
+        isUploading={isUploadingFullVideo || isRecoveryUploading}
+        uploadProgress={isRecoveryUploading ? recoveryProgress : fullVideoUploadProgress}
+        uploadStatusText={recoveryStatusText || fullVideoUploadStatusText}
       />
     );
   }
 
   if (stage === 'completed') {
+    const isAnyUploading = isUploadingFullVideo || isRecoveryUploading;
+    const activeUploadProgress = isRecoveryUploading ? recoveryProgress : fullVideoUploadProgress;
+    const activeUploadStatusText = recoveryStatusText || fullVideoUploadStatusText;
+
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4">
         <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 text-center space-y-4">
@@ -2530,21 +2591,21 @@ export default function InterviewEntryPage() {
           <p className="text-sm text-zinc-500 dark:text-[#9f9f9f] leading-relaxed">
             {isAdmin
               ? 'The candidate has completed the interview and submitted all assessment responses.'
-              : isUploadingFullVideo
+              : isAnyUploading
                 ? 'Thank you. Your responses are saved. Please keep this tab open while your interview video finalizes upload.'
                 : 'Thank you. Your responses and assessment video have been submitted. You may close this window now.'}
           </p>
 
-          {!isAdmin && isUploadingFullVideo && (
+          {!isAdmin && isAnyUploading && (
             <div className="mt-4 p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 text-left space-y-2">
               <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#34c4f2]" />
-                <span>{fullVideoUploadStatusText || 'Saving interview video to Google Drive...'}</span>
+                <span>{activeUploadStatusText || 'Saving interview video to Google Drive...'}</span>
               </div>
               <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
                 <div
                   className="bg-[#34c4f2] h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.max(fullVideoUploadProgress, 5)}%` }}
+                  style={{ width: `${Math.max(activeUploadProgress, 5)}%` }}
                 />
               </div>
               <p className="text-[11px] text-zinc-400 leading-tight">
@@ -2937,10 +2998,32 @@ export default function InterviewEntryPage() {
               </div>
             )}
 
-            {interimText && (
-              <div className="mt-4 p-3 rounded-xl bg-[#34c4f2]/10 border border-[#34c4f2]/25 text-xs text-sky-900 dark:text-[#34c4f2] flex items-center gap-2 animate-pulse">
-                <span className="h-2 w-2 rounded-full bg-[#34c4f2] shrink-0" />
-                <span className="italic">Live Caption: &ldquo;{interimText}&rdquo;</span>
+            {Boolean(currentSpokenText || interimText) && (
+              <div className="mt-5 p-4 rounded-xl bg-zinc-900/60 dark:bg-[#1a1f26]/80 border border-[#34c4f2]/30 space-y-2 transition-all">
+                <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 pb-2">
+                  <span className="flex items-center gap-2 text-xs font-semibold text-[#34c4f2]">
+                    <span className={`h-2 w-2 rounded-full ${interimText ? 'bg-[#34c4f2] animate-ping' : 'bg-emerald-400'}`} />
+                    {interimText ? 'Listening & Transcribing...' : 'Your Answer (Recorded in real time)'}
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-medium">
+                    {interimText ? 'Speaking active' : 'Answer retained across pauses'}
+                  </span>
+                </div>
+
+                <div className="text-sm text-zinc-100 leading-relaxed font-medium">
+                  {currentSpokenText ? (
+                    <HighlightedVerbatimAnswer
+                      text={currentSpokenText}
+                      showLegend={true}
+                      className="text-sm"
+                    />
+                  ) : null}
+                  {interimText && (
+                    <span className="italic text-sky-400/90 ml-1 inline-block animate-pulse">
+                      {currentSpokenText ? ` ${interimText}` : interimText}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
 

@@ -169,13 +169,13 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
       const res = await fetch(`/api/interview/${interviewId}/answers`, { method: 'POST', body: formData });
       if (!res.ok) throw new Error('API failed');
     } catch (err) {
-      console.error('[answer-recorder] answer upload failed:', err);
+      console.warn('[answer-recorder] answer upload failed, caching locally:', err);
       await cacheFailedAnswer({
         interviewId,
         questionId,
         transcript: clientTranscript?.trim() || '',
         audioBlob: blob,
-      }).catch(console.error);
+      }).catch((e) => console.warn('[answer-recorder] cache failed:', e));
     } finally {
       setStatus('idle');
     }

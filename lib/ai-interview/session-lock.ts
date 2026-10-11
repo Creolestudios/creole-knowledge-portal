@@ -45,7 +45,7 @@ export function acquireJoinLock(
   const existingSession = activeSessions.get(normalizedKey);
   if (existingSession) {
     if (now - existingSession.lastHeartbeat < SESSION_TTL_MS) {
-      if (existingSession.deviceId && existingSession.deviceId !== holderId) {
+      if (existingSession.deviceId && holderId && existingSession.deviceId !== holderId) {
         return {
           acquired: false,
           reason: CONCURRENT_SESSION_ERROR,

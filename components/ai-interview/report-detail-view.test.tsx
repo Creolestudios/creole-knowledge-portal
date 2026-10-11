@@ -449,14 +449,14 @@ describe('ReportDetailView', () => {
 
     // 2. Question text has enlarged font classes (not text-sm)
     const questionText = screen.getByText('Please introduce yourself and highlight your experience.');
-    expect(questionText).toHaveClass('text-base');
+    expect(questionText).toHaveClass('text-lg');
 
-    // 3. Verbatim answer text has enlarged font classes (text-sm sm:text-base)
+    // 3. Verbatim answer text has enlarged font classes (text-base sm:text-lg)
     const verbatimAnswer = screen.getByText(/I have 6 years of experience building distributed systems in TypeScript and Go\./i);
-    expect(verbatimAnswer.closest('p')).toHaveClass('text-sm');
+    expect(verbatimAnswer.closest('p')).toHaveClass('text-base');
 
-    // 4. Executive summary paragraph has enlarged font classes
+    // 4. Executive summary paragraph has enlarged font classes (text-base sm:text-lg)
     const execSummary = screen.getByText(/Jane demonstrated deep engineering acumen with scalable architecture concepts\./i);
-    expect(execSummary.closest('div')).toHaveClass('text-sm');
+    expect(execSummary.closest('div')).toHaveClass('text-base');
   });
 });

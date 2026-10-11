@@ -1,4 +1,4 @@
-import { ShieldAlert, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Loader2, CheckCircle2, AlertOctagon } from 'lucide-react';
 
 interface TerminatedInterviewProps {
   terminationReason: string | null;
@@ -17,15 +17,47 @@ export function TerminatedInterview({
   uploadProgress = 0,
   uploadStatusText = '',
 }: TerminatedInterviewProps) {
+  const reasonText = terminationReason?.trim() || 'A monitoring rule or session policy was violated.';
+
+  // Determine policy category for visual clarity
+  let categoryBadge = 'Proctoring Rule Policy';
+  if (/refresh|closed the page/i.test(reasonText)) {
+    categoryBadge = 'Session Refresh / Exit';
+  } else if (/switched tabs|clicked outside|minimized|background/i.test(reasonText)) {
+    categoryBadge = 'Tab Switch & Focus Policy';
+  } else if (/three proctoring warnings|warning/i.test(reasonText)) {
+    categoryBadge = 'Proctoring Limit Exceeded (3 Strikes)';
+  } else if (/screen shar/i.test(reasonText)) {
+    categoryBadge = 'Screen Share Requirement';
+  } else if (/another device|simultaneous/i.test(reasonText)) {
+    categoryBadge = 'Multiple Device Access';
+  }
+
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 transition-colors">
+    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 py-8 transition-colors">
       <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-red-100 dark:border-red-900/40 p-8 text-center space-y-4">
-        <ShieldAlert className="w-10 h-10 text-red-500 mx-auto" />
-        <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Interview terminated</h1>
-        <p className="text-sm text-zinc-600 dark:text-zinc-300 font-medium">
-          {terminationReason ?? 'A monitoring rule was violated.'}
-        </p>
-        <p className="text-xs text-zinc-400 dark:text-[#9f9f9f]">
+        <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto text-red-500">
+          <ShieldAlert className="w-8 h-8 text-red-500" />
+        </div>
+
+        <div className="space-y-1">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 uppercase tracking-wide">
+            <AlertOctagon className="w-3 h-3" />
+            {categoryBadge}
+          </span>
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-white pt-1">Interview terminated</h1>
+        </div>
+
+        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-500/20 text-left space-y-1.5">
+          <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider block">
+            Reason for termination
+          </span>
+          <p className="text-sm text-zinc-800 dark:text-zinc-200 font-medium leading-relaxed">
+            {reasonText}
+          </p>
+        </div>
+
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
           {isAdmin
             ? "The candidate's interview session has been terminated in accordance with proctoring policy."
             : 'This session has ended and cannot be resumed. Please contact your interviewer if you believe this was a mistake.'}
@@ -44,7 +76,7 @@ export function TerminatedInterview({
                 style={{ width: `${Math.max(uploadProgress, 5)}%` }}
               />
             </div>
-            <p className="text-[11px] text-zinc-400 leading-tight">
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
               Please do not close this window until your video upload is saved.
             </p>
           </div>
@@ -52,7 +84,7 @@ export function TerminatedInterview({
 
         {!isAdmin && !isUploading && uploadProgress === 100 && (
           <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
             <span>Interview video recording safely saved to Google Drive</span>
           </div>
         )}

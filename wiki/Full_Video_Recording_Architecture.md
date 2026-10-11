@@ -121,4 +121,27 @@ Recording 30-60 minutes of video natively in a browser introduces severe hardwar
   - Scorer persists `fillerCount`, `fillerRatio`, and `fillerBreakdown` into `report.local_metrics`.
   - The **English Communication** card features a dedicated **Filler Word Frequency** parameter row alongside Speaking Pace, objectively rating candidate delivery flow.
 
+---
+
+## 6. Live Google Drive Resumable Chunk Streaming & Universal Exit Guarantee
+
+### 1. Progressive Chunk Streaming (`/api/interview/recording/stream-chunk`)
+- Instead of uploading a large single video file at the end of the interview, the browser buffers recording chunks in 256 KiB slices (the Google Drive Resumable Upload specification minimum).
+- Every few seconds, slices are uploaded in the background to Google Drive via the service account relay endpoint.
+- Google Drive returns HTTP 308 (Resume Incomplete) after each intermediate slice.
+- **Instant Finalization (< 1s)**: When the interview ends or terminates, 95%–99% of the video is already on Google Drive. The client sends a final slice with `isFinal: true` (or a `Content-Range: bytes */TOTAL` finalize signal). Google Drive seals the file into a complete playable `.webm` video in under 1 second.
+- **Zero Waiting Time**: The candidate never has to sit on a progress screen waiting for 30–50 MB to upload.
+
+### 2. Universal Exit Guarantee Across All Scenarios
+- **Normal Completion**: Flushes final slice on submit or countdown timer expiry.
+- **Tab Switch & Focus Loss**: Immediately terminates the session with explicit reason badge, flushing the final slice to Google Drive.
+- **Page Refresh / Exit**: Uses `keepalive: true` on the final chunk request during `pagehide` / `beforeunload` to seal the file even if the window closes.
+- **IndexedDB Safety Net (`recording-storage.ts`)**: All slices are mirrored in IndexedDB. If a network disconnect halts the live stream, `flushAndUploadCachedRecording` recovers the recording on next session access.
+
+### 3. Bypass Proctoring Policy
+- **Proctoring Warnings**: When Bypass is ON, AI-driven proctoring warnings (face/gaze tracking, multiple voices, and unauthorized objects/phones) are silenced and do not generate strikes.
+- **Tab Switch & Refresh Termination**: Tab switching, minimizing the browser, and page refreshing **remain strictly active and terminate the interview** regardless of bypass mode, ensuring session integrity.
+- **Video Storage**: In all cases (bypass or non-bypass), the full interview video is 100% saved into Google Drive.
+
+
 
