@@ -301,11 +301,11 @@ export async function GET(request: Request) {
         objectWarnings,
         // hasReport: true if report data exists OR session is terminated (shows 0/no score and violation report)
         hasReport: report !== null || isTerminated,
-        // Google Drive Full Video recording link
-        recordingLink: recordingMap.get(s.id)?.webViewLink || null,
-        recordingPreviewUrl: recordingMap.get(s.id)?.previewUrl || null,
-        recordingFileId: recordingMap.get(s.id)?.fileId || null,
-        hasRecording: recordingMap.has(s.id),
+        // Google Drive Full Video recording link (only exposed for concluded sessions)
+        recordingLink: (isCompleted || isTerminated) ? (recordingMap.get(s.id)?.webViewLink || null) : null,
+        recordingPreviewUrl: (isCompleted || isTerminated) ? (recordingMap.get(s.id)?.previewUrl || null) : null,
+        recordingFileId: (isCompleted || isTerminated) ? (recordingMap.get(s.id)?.fileId || null) : null,
+        hasRecording: (isCompleted || isTerminated) && recordingMap.has(s.id),
       };
     });
 

@@ -234,6 +234,7 @@ export default function InterviewReportsPage() {
           <div className="space-y-3">
             {reports.map((r) => {
               const isTerminated = r.status === 'terminated';
+              const isCompleted = r.status === 'completed';
               const isOpening = openingId === r.id;
 
               return (
@@ -265,7 +266,7 @@ export default function InterviewReportsPage() {
                           <span className="flex items-center gap-1 bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/60 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex-shrink-0">
                             <ShieldAlert className="w-3 h-3" /> Terminated
                           </span>
-                        ) : r.status === 'completed' ? (
+                        ) : isCompleted ? (
                           <span className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex-shrink-0">
                             <CheckCircle2 className="w-3 h-3" /> Completed
                           </span>
@@ -280,8 +281,8 @@ export default function InterviewReportsPage() {
                         {new Date(r.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
 
-                      {/* Full Interview Video Recording Link */}
-                      {r.recordingLink && (
+                      {/* Full Interview Video Recording Link (only shown once interview has concluded) */}
+                      {r.recordingLink && (isCompleted || isTerminated) && (
                         <div className="mt-2">
                           <button
                             type="button"
