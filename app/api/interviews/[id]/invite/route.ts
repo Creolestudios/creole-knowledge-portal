@@ -54,13 +54,15 @@ export async function POST(
       return NextResponse.json({ error: inviteErr?.message }, { status: 500 });
     }
 
-    await supabaseAdmin
-      .from('interview_sessions')
-      .update({
-        status: 'invite_issued',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id);
+    if (session.status !== 'in_progress') {
+      await supabaseAdmin
+        .from('interview_sessions')
+        .update({
+          status: 'invite_issued',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id);
+    }
 
     const reqHost = req.headers.get('x-forwarded-host') || req.headers.get('host');
     const reqProto = req.headers.get('x-forwarded-proto') || (reqHost?.includes('localhost') ? 'http' : 'https');

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   KeyRound,
+  Mail,
   Loader2,
   AlertCircle,
   ShieldCheck,
@@ -212,9 +213,30 @@ export default function InterviewEntryPage() {
     }
   }, []);
 
-  const [email, setEmail] = useState('');
-  const [accessCode, setAccessCode] = useState('');
-  const [showAccessCode, setShowAccessCode] = useState(false);
+  const [email, setEmail] = useState<string>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        const stored = sessionStorage.getItem(`interview_candidate_email_${interviewId}`);
+        if (stored) return stored;
+      } catch {
+        // ignore
+      }
+    }
+    return '';
+  });
+  const [accessCode, setAccessCode] = useState<string>('');
+  const [showAccessCode, setShowAccessCode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        if (sessionStorage.getItem(`interview_on_passcode_${interviewId}`) === 'true') {
+          return true;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return false;
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -434,6 +456,20 @@ export default function InterviewEntryPage() {
           } catch {
             // ignore
           }
+
+          if (json.isAdmin) {
+            setIsAdmin(true);
+            if (json.bypassProctoring) {
+              setBypassProctoring(true);
+            }
+            if (json.inProgress === false || (json.status && json.status !== 'in_progress')) {
+              setStageWithRef('not_started');
+            } else {
+              void requestPermissionsRef.current?.(true);
+            }
+            return;
+          }
+
           try {
             const authStr = sessionStorage.getItem(`interview_auth_${interviewId}`);
             if (authStr) {
@@ -561,6 +597,10 @@ export default function InterviewEntryPage() {
           if (payload.type === 'sync-state') {
             if (typeof payload.questionIndex === 'number') {
               setCurrentQuestion(payload.questionIndex);
+            }
+            if (typeof payload.remainingSec === 'number') {
+              setQuestionRemainingSec(payload.remainingSec);
+              questionRemainingSecRef.current = payload.remainingSec;
             }
             if (Array.isArray(payload.warnings) && payload.warnings.length > 0) {
               setCandidateWarnings((prev) => {
@@ -1633,8 +1673,151 @@ export default function InterviewEntryPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setSubmitting(true);
 
+    // ── STEP 1: Email Validation & Role Verification ──
+    if (!showAccessCode) {
+      const cleanEmail = email.trim();
+      if (!cleanEmail) {
+        setError('Email is required.');
+        return;
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(cleanEmail)) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+
+      setSubmitting(true);
+      try {
+        const res = await fetch('/api/interview/verify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-device-id': deviceId,
+          },
+          body: JSON.stringify({
+            interviewId,
+            email: cleanEmail,
+          }),
+        }).catch(() => null);
+
+        if (!res) {
+          setError('Verification failed. Please try again.');
+          setSubmitting(false);
+          return;
+        }
+
+        const json = await res.json().catch(() => ({}));
+
+        if (res.status === 409 || json.concurrent) {
+          setError(json.error || 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
+          setSubmitting(false);
+          return;
+        }
+
+        if (res.status === 410) {
+          try {
+            localStorage.setItem(`interview_used_${interviewId}`, 'true');
+            sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+            if (json.expirationReason === 'completed') {
+              localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+              sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+              localStorage.setItem(`interview_status_${interviewId}`, 'completed');
+              sessionStorage.setItem(`interview_status_${interviewId}`, 'completed');
+            } else if (json.expirationReason === 'violation' || json.violationReason) {
+              localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+              sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+              localStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+              sessionStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+            }
+            if (json.reasonTitle) {
+              localStorage.setItem(`interview_reason_title_${interviewId}`, json.reasonTitle);
+              sessionStorage.setItem(`interview_reason_title_${interviewId}`, json.reasonTitle);
+            }
+            if (json.violationReason) {
+              localStorage.setItem(`interview_termination_reason_${interviewId}`, json.violationReason);
+              sessionStorage.setItem(`interview_termination_reason_${interviewId}`, json.violationReason);
+            }
+            if (json.reasonDetail) {
+              localStorage.setItem(`interview_reason_detail_${interviewId}`, json.reasonDetail);
+              sessionStorage.setItem(`interview_reason_detail_${interviewId}`, json.reasonDetail);
+            }
+          } catch {
+            // ignore
+          }
+          if (json.expirationReason) setExpirationReason(json.expirationReason);
+          if (json.reasonTitle) setExpirationTitle(json.reasonTitle);
+          if (json.reasonDetail) setExpirationDetail(json.reasonDetail);
+          if (json.violationReason) {
+            setExpirationViolationReason(json.violationReason);
+            setTerminationReason((prev) => prev || json.violationReason);
+          }
+          if (json.warningCount) setExpirationWarningCount(json.warningCount);
+          const formattedNote = json.note || (json.error ? (json.error.toLowerCase().startsWith('note:') ? json.error : `Note: ${json.error}`) : 'Note: This interview link has already been used and is expired.');
+          setExpiredNote(formattedNote);
+          setStageWithRef('expired');
+          setSubmitting(false);
+          return;
+        }
+
+        if (!res.ok) {
+          setError(json.error ?? 'Verification failed');
+          setSubmitting(false);
+          return;
+        }
+
+        if (json.bypassProctoring) {
+          setBypassProctoring(true);
+        }
+
+        // Admin Process: Bypass passcode screen completely
+        if (json.isAdmin) {
+          setIsAdmin(true);
+          try {
+            localStorage.removeItem(`interview_used_${interviewId}`);
+            sessionStorage.removeItem(`interview_used_${interviewId}`);
+            sessionStorage.setItem(`interview_auth_${interviewId}`, JSON.stringify({
+              email: cleanEmail,
+            }));
+          } catch {
+            // ignore
+          }
+          if (json.inProgress === false || (json.status && json.status !== 'in_progress')) {
+            setStageWithRef('not_started');
+            setSubmitting(false);
+            return;
+          }
+          await requestPermissions(true);
+          setSubmitting(false);
+          return;
+        }
+
+        // Candidate Process: Proceed to passcode screen
+        try {
+          sessionStorage.setItem(`interview_candidate_email_${interviewId}`, cleanEmail);
+          sessionStorage.setItem(`interview_on_passcode_${interviewId}`, 'true');
+        } catch {
+          // ignore
+        }
+        setShowAccessCode(true);
+        setSubmitting(false);
+        return;
+      } catch (err) {
+        console.error('[interview-entry] email verify failed:', err);
+        setError('Something went wrong. Please try again.');
+        setSubmitting(false);
+        return;
+      }
+    }
+
+    // ── STEP 2: Candidate Passcode Verification ──
+    const cleanCode = accessCode.trim();
+    if (cleanCode.length !== 6) {
+      setError('Please enter your 6-digit passcode.');
+      return;
+    }
+
+    setSubmitting(true);
     try {
       const res = await fetch('/api/interview/verify', {
         method: 'POST',
@@ -1644,8 +1827,8 @@ export default function InterviewEntryPage() {
         },
         body: JSON.stringify({
           interviewId,
-          accessCode: accessCode.trim() ? accessCode.trim() : undefined,
-          email: email.trim() ? email.trim() : undefined,
+          accessCode: cleanCode,
+          email: email.trim(),
         }),
       }).catch(() => null);
 
@@ -1658,6 +1841,7 @@ export default function InterviewEntryPage() {
 
       if (res.status === 409 || json.concurrent) {
         setError(json.error || 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
+        setSubmitting(false);
         return;
       }
 
@@ -1711,11 +1895,13 @@ export default function InterviewEntryPage() {
         const formattedNote = json.note || (json.error ? (json.error.toLowerCase().startsWith('note:') ? json.error : `Note: ${json.error}`) : 'Note: This interview link has already been used and is expired.');
         setExpiredNote(formattedNote);
         setStageWithRef('expired');
+        setSubmitting(false);
         return;
       }
 
       if (!res.ok) {
-        setError(json.error ?? 'Verification failed');
+        setError(json.error ?? 'Incorrect passcode');
+        setSubmitting(false);
         return;
       }
 
@@ -1725,6 +1911,7 @@ export default function InterviewEntryPage() {
 
       if (json.requiresAccessCode) {
         setShowAccessCode(true);
+        setSubmitting(false);
         return;
       }
 
@@ -1734,7 +1921,7 @@ export default function InterviewEntryPage() {
           localStorage.removeItem(`interview_used_${interviewId}`);
           sessionStorage.removeItem(`interview_used_${interviewId}`);
           sessionStorage.setItem(`interview_auth_${interviewId}`, JSON.stringify({
-            accessCode: accessCode.trim(),
+            accessCode: cleanCode,
             email: email.trim(),
           }));
         } catch {
@@ -1742,13 +1929,14 @@ export default function InterviewEntryPage() {
         }
         if (json.inProgress === false || (json.status && json.status !== 'in_progress')) {
           setStageWithRef('not_started');
+          setSubmitting(false);
           return;
         }
         await requestPermissions(true);
       } else {
         try {
           sessionStorage.setItem(`interview_auth_${interviewId}`, JSON.stringify({
-            accessCode: accessCode.trim(),
+            accessCode: cleanCode,
             email: email.trim(),
           }));
         } catch {
@@ -1923,6 +2111,10 @@ export default function InterviewEntryPage() {
         }
       } else if (res.status === 410) {
         const data = await res.json().catch(() => ({}));
+        if (isAdmin && (data.expirationReason === 'already_used' || data.used)) {
+          // Do not treat active session as expired for an administrator
+          return;
+        }
         try {
           localStorage.setItem(`interview_used_${interviewId}`, 'true');
           sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
@@ -3592,7 +3784,7 @@ export default function InterviewEntryPage() {
 
   if (stage === 'instructions' || stage === 'permissions') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 py-10 relative transition-colors">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative transition-colors">
         <ProctoringInstructions
           cameraGranted={cameraGranted}
           screenGranted={screenGranted}
@@ -3659,63 +3851,127 @@ export default function InterviewEntryPage() {
         onSubmit={handleSubmit}
         className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-zinc-100 dark:border-[#4a4a4a] p-8 space-y-6"
       >
-        <div className="text-center space-y-2">
-          <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
-            <KeyRound className="w-6 h-6 text-[#34c4f2]" />
-          </div>
-          <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Join Interview</h1>
-          <p className="text-sm text-zinc-500 dark:text-[#9f9f9f]">
-            Please enter your 6-digit passcode to continue.
-          </p>
-        </div>
+        {!showAccessCode ? (
+          <>
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
+                <Mail className="w-6 h-6 text-[#34c4f2]" />
+              </div>
+              <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Join Interview</h1>
+              <p className="text-sm text-zinc-500 dark:text-[#9f9f9f]">
+                Please enter your email to continue.
+              </p>
+            </div>
 
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="interview-access-code" className="block text-xs font-semibold text-zinc-500 dark:text-[#9f9f9f] mb-1 text-center">
-              Candidate Passcode
-            </label>
-            <input
-              id="interview-access-code"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={accessCode}
-              onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 dark:text-white"
-            />
-          </div>
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="interview-email" className="block text-xs font-semibold text-zinc-500 dark:text-[#9f9f9f] mb-1.5 text-center">
+                  Email Address <span className="text-red-500 font-bold">*</span>
+                </label>
+                <input
+                  id="interview-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  placeholder="Enter your email"
+                  autoFocus
+                  className="w-full text-center text-sm py-3 px-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all font-medium"
+                />
+              </div>
+            </div>
 
-          <div className="pt-2 border-t border-zinc-100 dark:border-[#4a4a4a]">
-            <label htmlFor="interview-email" className="block text-xs font-semibold text-zinc-500 dark:text-[#9f9f9f] mb-1 text-center">
-              Interviewer / Admin Email (optional)
-            </label>
-            <input
-              id="interview-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter your email"
-              className="w-full text-center text-sm py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 dark:text-white"
-            />
-          </div>
-        </div>
+            {error && (
+              <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 dark:bg-red-950/30 dark:border-red-900/40 rounded-xl border border-red-100">
+                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                <p className="font-medium">{error}</p>
+              </div>
+            )}
 
-        {error && (
-          <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 rounded-xl border border-red-100">
-            <AlertCircle className="w-5 h-5 flex-shrink-0" />
-            <p className="font-medium">{error}</p>
-          </div>
+            <button
+              id="interview-verify-submit"
+              type="submit"
+              disabled={submitting || !email.trim()}
+              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm cursor-pointer"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Continue</span>}
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="text-center space-y-2">
+              <div className="w-12 h-12 bg-[#34c4f2]/10 rounded-xl flex items-center justify-center mx-auto">
+                <KeyRound className="w-6 h-6 text-[#34c4f2]" />
+              </div>
+              <h1 className="text-xl font-bold text-zinc-900 dark:text-white">Enter Passcode</h1>
+              <p className="text-sm text-zinc-500 dark:text-[#9f9f9f]">
+                Please enter your 6-digit passcode to continue.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl border border-zinc-200/80 dark:border-[#4a4a4a] text-xs">
+                <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 truncate">
+                  <Mail className="w-3.5 h-3.5 text-[#34c4f2] shrink-0" />
+                  <span className="truncate font-medium">{email}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAccessCode(false);
+                    setAccessCode('');
+                    setError(null);
+                    try {
+                      sessionStorage.removeItem(`interview_on_passcode_${interviewId}`);
+                    } catch {}
+                  }}
+                  className="text-[#34c4f2] hover:underline font-semibold ml-2 shrink-0 cursor-pointer"
+                >
+                  Change
+                </button>
+              </div>
+
+              <div>
+                <label htmlFor="interview-access-code" className="block text-xs font-semibold text-zinc-500 dark:text-[#9f9f9f] mb-1.5 text-center">
+                  Candidate Passcode
+                </label>
+                <input
+                  id="interview-access-code"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={accessCode}
+                  onChange={(e) => {
+                    setAccessCode(e.target.value.replace(/\D/g, ''));
+                    if (error) setError(null);
+                  }}
+                  placeholder="000000"
+                  autoFocus
+                  className="w-full text-center text-2xl font-black tracking-[0.4em] py-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-100 dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-zinc-900 dark:text-white"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div className="flex items-center space-x-2 p-4 text-sm text-red-600 bg-red-50 dark:bg-red-950/30 dark:border-red-900/40 rounded-xl border border-red-100">
+                <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                <p className="font-medium">{error}</p>
+              </div>
+            )}
+
+            <button
+              id="interview-verify-submit"
+              type="submit"
+              disabled={submitting || accessCode.length !== 6}
+              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm cursor-pointer"
+            >
+              {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Continue</span>}
+            </button>
+          </>
         )}
-
-        <button
-          id="interview-verify-submit"
-          type="submit"
-          disabled={submitting || (accessCode.length === 0 ? !email.trim() : accessCode.length !== 6)}
-          className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 dark:text-white font-black py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-[0.2em] text-sm"
-        >
-          {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <span>Continue</span>}
-        </button>
       </form>
     </main>
   );

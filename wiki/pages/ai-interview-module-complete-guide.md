@@ -289,20 +289,22 @@ Located at `/admin/reports/[id]`:
 The admin AI Interview screen (`/admin/dashboard` &rarr; `ai-interviews`) automatically updates status without page reloads using:
 1. **Supabase Realtime**: Listens to `postgres_changes` on `interview_sessions`, `interview_invites`, and `ai_interviews`.
 2. **Heartbeat Poller**: 3.5-second polling interval active when the browser window is visible (`!document.hidden`).
+3. **Recent Interviews Window**: Strictly limited to the **10 most recent interviews** (sorted descending by creation time) at both the query endpoint (`GET /api/admin/ai-interviews` with `.limit(10)`) and the component view (`interviews.slice(0, 10)`).
 
 ---
 
 ## 8. Third-Party Admin Live Joining & Proctoring Synchronization Flow
 
-An admin or interviewer can join an ongoing candidate interview directly using the interview link `/interview/[id]`:
+An admin or interviewer can join an ongoing candidate interview directly using the interview link `/interview/[id]` or the **"Join Live"** button in the AI Interview Manager dashboard:
 
 1. **Authentication & Flexible Entry (From Start or In Between)**:
    - **Candidate Entry**: Candidates enter via their unique interview link, 6-digit passcode, and email address. They go through device calibration and enter the proctored test room.
-   - **Admin Entry (Start or In Between)**: Admins can join at the start or in the middle of an in-progress interview.
-     - `GET /api/interview/verify` keeps `in_progress` sessions active for admin verification instead of prematurely declaring them expired.
-     - Device presence conflict broadcasts (`candidate-presence`) are restricted strictly to active candidates in the `interview` stage, preventing spurious device conflict terminations when an admin loads the page.
-     - `/api/interview/verify` validates the admin's email role against `user_profiles`. When `isAdmin === true`, concurrency locks and duplicate checks are bypassed.
-     - On joining an in-progress interview, the admin screen receives a `sync-state` signal containing the current question index and remaining time to sync up with the candidate's exact live progress.
+   - **Admin Entry (Start or In Between)**: Admins can join at the start or at any point during an in-progress interview.
+     - **Dashboard 1-Click Join**: The AI Interview Manager dashboard features an active **"Join Live"** button alongside ongoing interviews (`status: 'in_progress'`), routing administrators directly into the live session (`/interview/[id]`).
+     - **Server-Side Admin Recognition**: `GET /api/interview/verify` automatically detects authenticated admins via `requireAdminUser()` (session cookie) or email lookup. It returns `isAdmin: true` and keeps `in_progress` sessions active for administrators without requiring redundant passcode input or triggering single-use link expiration.
+     - **Session Stability**: The invite generation endpoint (`/api/interviews/[id]/invite`) preserves active sessions, ensuring `in_progress` statuses are never overwritten to `invite_issued`.
+     - **Bypass of Lockouts & Conflict Terminations**: Concurrency locks, duplicate device restrictions, and device presence conflict broadcasts (`candidate-presence`) are restricted strictly to active candidates, preventing false termination or lockouts when an administrator enters or exits.
+     - **Real-Time Live State Synchronization**: On joining an in-progress interview, the admin client receives a `sync-state` signal containing the current question index, question remaining time (`remainingSec`), and candidate warnings to sync up with the candidate's exact live progress immediately.
    - **Admin Early Join ("Interview Not Started Yet")**:
      - If an admin joins before the candidate has accessed the link or before the interview has started (`inProgress === false` or `status !== 'in_progress'`), the admin is presented with the dedicated **"Interview Not Started Yet"** screen.
      - Displays a "Waiting for Candidate" badge with a live radar pulse indicator.
@@ -337,6 +339,7 @@ An admin or interviewer can join an ongoing candidate interview directly using t
 5. **Admin Leave Control**:
    - Admins can cleanly exit the interview session at any point using the "Leave Interview" button in the question header or the "Exit" button in `MeetingControlBar`.
    - Admin leaving closes their media tracks and redirects to `/admin/dashboard` without terminating the candidate's interview session.
+   - Admins can subsequently re-join the active interview at any time without restriction.
 
 ---
 
@@ -410,6 +413,20 @@ To guarantee interview recording across any candidate device (laptops, external 
 5. **Viewer-Only Access for Anyone with Link**:
    - Google Drive permissions are automatically created as `role: 'reader'`, `type: 'anyone'`, and `allowFileDiscovery: false` (`supportsAllDrives: true`).
    - Anyone possessing the link can immediately watch the full interview video in Google Drive or the embedded player without login or edit permissions.
+
+### 10.5 Accurate Proctoring Warning Timestamps & Incident Synchronization
+In candidate evaluation reports (`/admin/reports/[id]`), all proctoring warning incidents (Strike 1, Strike 2, Strike 3) are displayed with exact time synchronization:
+1. **Dual Timestamp Display**:
+   - **In-Video Timestamp (`⏱️ MM:SS`)**: The exact elapsed offset into the recorded video when the warning toast was visibly rendered on the candidate's screen. Deep-linked to Google Drive video playback (`?t=XmYs`).
+   - **Clock Timestamp (`🕒 HH:MM:SS AM/PM`)**: The exact real-world wall clock time when the warning was triggered and shown.
+2. **Robust Offset Recovery & Ingestion**:
+   - Ingests `meta.screenToastOffsetSec`, `meta.toastShownTs`, `meta.warnEventTs`, `meta.client_ts`, and `created_at`.
+   - When the media recorder has not yet emitted its first data slice (`directOffsetSec === 0`) but computed session time elapsed is greater than zero, the server/view recovers the true elapsed offset rather than locking the warning to `00:00`.
+   - Dynamic video start derivation: Identifies `recording_started` across events. If missing, derives session baseline dynamically without arbitrarily locking Strike 1 to `00:00`.
+3. **Distinct Strike Debouncing**:
+   - The debounce filter checks both violation categories and strike numbers (`lastStrike !== eStrike`), ensuring distinct sequential strikes (Strike 1 vs. Strike 2) are never dropped even if triggered in close succession.
+4. **Hydration & Quality Gate Compliance**:
+   - Timestamp display components (`IncidentTimestamp`) initialize formatted local time via lazy state initializers (`useState(() => ...)`), strictly eliminating synchronous `setState` inside `useEffect` (`typescript:S6440`) and ensuring hydration safety.
 
 ---
 
@@ -558,4 +575,33 @@ During the live interview stage (`stage === 'interview'`), candidate actions and
   - Harmonized card states, question steppers, score meters, and review panels for both dark and light modes.
 - **Admin & Dashboard Portals**:
   - Unified theme styling across `app/admin/reports/`, `app/admin/dashboard/`, `app/dashboard/`, `app/dashboard/quizzes/`, `app/dashboard/gatekeeper/`, `components/user-management.tsx`, and `components/submissions-moderation.tsx`.
+
+### 14.3 Responsive Widescreen Layout & Side Spacing Optimization (Reports & Instructions)
+- **Evaluation Reports (`/admin/reports/[id]` & `/admin/reports`)**:
+  - Expanded primary layout container from restrictive 1152px (`max-w-6xl`) to widescreen `w-full max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10`.
+  - On standard 1080p (1920x1080) and 1440p displays, reduces empty side margins from 384px down to 192px (~85% viewport utilization), giving evaluation reports, questions verbatim answers, and proctoring incident logs substantial breathing room.
+  - Eliminated inner artificial paragraph width caps (`max-w-2xl`) in the Candidate Performance Profile card, termination banner, and video archiving alert, allowing text and metric cards to flow seamlessly across wider displays without awkward gaps.
+- **Candidate Instruction Screen (`components/ai-interview/proctoring-instructions.tsx`)**:
+  - Transformed the candidate instruction screen from a cramped 512px card (`max-w-lg`) into a spacious, responsive two-column executive onboarding layout (`w-full max-w-5xl xl:max-w-6xl`).
+  - **Left Section (7 columns on desktop)**: Renders the 8 candidate conduct guidelines and rules as cleanly numbered, hover-responsive guideline cards with crisp contrast.
+  - **Right Section (5 columns on desktop)**: Groups the 4 Active Proctoring & AI Detection rules (Face & Gaze, Object Detection, Voice Guard, 3-Warning Termination Policy), real-time hardware permission indicators (Webcam/Mic & Screen Share), and the primary CTA button.
+  - Responsive outer wrapper padding updated to `px-4 sm:px-6 lg:px-8 py-8 lg:py-12` in `app/interview/[id]/page.tsx` and `app/assess/[token]/page.tsx`.
+
+### 14.4 Mandatory Email-First Access & Role-Based Entry Protocol
+- **Two-Step Access Gate Architecture**:
+  - **Step 1: Compulsory Email Entry**: When opening any interview link (`/interview/[id]`), the initial screen displays *only* an email input form with strict validation. The email address is mandatory and validated against standard email pattern syntax (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`). No passcode inputs or distraction elements are rendered on this screen.
+  - **Server-Side Role Disambiguation**: Submitting the email triggers `POST /api/interview/verify` with `{ interviewId, email }`. The backend queries `user_profiles` for administrative role (`role === 'admin'`) or verifies active Supabase session tokens via `requireAdminUser()`.
+  - **Admin Workflow (Passcode Bypass)**:
+    - If the email belongs to an administrator, the API responds with `{ verified: true, isAdmin: true, inProgress: boolean }`.
+    - Administrators bypass the passcode screen entirely.
+    - If the interview has not started yet (`inProgress === false`), admins are placed directly in the "Interview Not Started" listening lobby.
+    - If the candidate is currently live (`inProgress === true`), admins are granted instant live-join access and observation permissions.
+  - **Candidate Workflow (Passcode Screen Transition)**:
+    - If the email belongs to a candidate, the API responds with `{ requiresAccessCode: true, isAdmin: false }`.
+    - The frontend seamlessly transitions the UI to the **Passcode Screen** (`showAccessCode === true`).
+    - The confirmed email address is displayed in a pill badge with an interactive "Change" action to allow correction if mistyped.
+    - The candidate enters their 6-digit access code into the auto-focused numeric field.
+    - Submitting verifies `{ interviewId, email, accessCode }`.
+    - On success, the session auth is securely cached in `sessionStorage` (`interview_auth_${interviewId}`), and the user is advanced to the **Instructions Screen** (`stage === 'instructions'`), followed by the acknowledgment popup, permissions calibration, and the live interview.
+
 

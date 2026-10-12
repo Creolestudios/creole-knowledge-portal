@@ -183,48 +183,124 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
   const sessionCreatedMs = new Date(session.created_at).getTime();
 
   // Scope active events strictly to the current recorded interview run/attempt
-  const attemptMinTs = previousRecTs > 0
-    ? previousRecTs + 1000
-    : (recUploadTs > 0 ? Math.max(sessionCreatedMs, recUploadTs - 45 * 60 * 1000) : 0);
-  const attemptMaxTs = recUploadTs > 0 ? recUploadTs + 15_000 : Infinity;
+  const attemptMinTs = previousRecTs > 0 ? previousRecTs + 1000 : 0;
+  const attemptMaxTs = recUploadTs > 0 ? recUploadTs + 60_000 : Infinity;
+
+  const getEventTimeMs = (e: {
+    ts_ms?: number | string | null;
+    created_at?: string | null;
+    metadata?: Record<string, unknown> | null;
+    meta?: Record<string, unknown> | null;
+  }): number => {
+    const meta = (e.meta || e.metadata || {}) as Record<string, unknown>;
+    const clientTs = typeof meta.client_ts === 'number' && !Number.isNaN(meta.client_ts) && meta.client_ts > 0
+      ? meta.client_ts
+      : (typeof meta.client_ts === 'string' && !Number.isNaN(Number(meta.client_ts)) && Number(meta.client_ts) > 0 ? Number(meta.client_ts) : undefined);
+    if (clientTs) return clientTs;
+
+    const toastShownTs = typeof meta.toastShownTs === 'number' && !Number.isNaN(meta.toastShownTs) && meta.toastShownTs > 0
+      ? meta.toastShownTs
+      : (typeof meta.toastShownTs === 'string' && !Number.isNaN(Number(meta.toastShownTs)) && Number(meta.toastShownTs) > 0 ? Number(meta.toastShownTs) : undefined);
+    if (toastShownTs) return toastShownTs;
+
+    const warnEventTs = typeof meta.warnEventTs === 'number' && !Number.isNaN(meta.warnEventTs) && meta.warnEventTs > 0
+      ? meta.warnEventTs
+      : (typeof meta.warnEventTs === 'string' && !Number.isNaN(Number(meta.warnEventTs)) && Number(meta.warnEventTs) > 0 ? Number(meta.warnEventTs) : undefined);
+    if (warnEventTs) return warnEventTs;
+
+    const metaTs = typeof meta.ts === 'number' && !Number.isNaN(meta.ts) && meta.ts > 0
+      ? meta.ts
+      : (typeof meta.ts === 'string' && !Number.isNaN(Number(meta.ts)) && Number(meta.ts) > 0 ? Number(meta.ts) : undefined);
+    if (metaTs) return metaTs;
+
+    const rawTsMs = typeof e.ts_ms === 'number' && !Number.isNaN(e.ts_ms) && e.ts_ms > 0
+      ? e.ts_ms
+      : (typeof e.ts_ms === 'string' && !Number.isNaN(Number(e.ts_ms)) && Number(e.ts_ms) > 0 ? Number(e.ts_ms) : undefined);
+    if (rawTsMs) return rawTsMs;
+
+    if (e.created_at) {
+      const parsed = new Date(e.created_at).getTime();
+      if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+    }
+    return 0;
+  };
 
   const attemptEvents = allEvents.filter((e) => {
     if (e.category === 'full_recording' || e.event_type === 'full_recording') return false;
-    const t = e.ts_ms ? Number(e.ts_ms) : (e.created_at ? new Date(e.created_at).getTime() : 0);
+    const t = getEventTimeMs(e);
     return t >= attemptMinTs && t <= attemptMaxTs;
   });
 
-  // Extract strikes occurring within this active attempt
+  // Extract strikes occurring within this active attempt:
+  // Genuine warnings (strike 1, 2, 3) are priority
   const candidateStrikes = attemptEvents.filter((e) => {
     const cat = e.category || e.event_type || '';
-    const reason = String(e.metadata?.reason || e.meta?.reason || '');
+    const meta = (e.meta || e.metadata || {}) as Record<string, unknown>;
+    const reason = String(meta.reason || '');
     if (cat === 'proctoring_violation' && reason.toLowerCase().includes('three proctoring warnings issued')) {
       return false;
     }
+    const hasStrikeMeta =
+      (typeof meta.strikeNumber === 'number' && meta.strikeNumber > 0) ||
+      (typeof meta.warningCount === 'number' && meta.warningCount > 0);
     return (
+      hasStrikeMeta ||
       STRIKE_CATEGORIES.includes(cat) ||
       cat === 'proctoring_warning' ||
       cat === 'warning' ||
       cat === 'tab_switch' ||
-      cat === 'window_blur' ||
-      cat === 'proctoring_violation'
+      cat === 'window_blur'
     );
   });
 
-  // Strictly sort strikes chronologically ascending by violation timestamp (earliest first)
+  // Strictly sort strikes chronologically:
+  // 1. By explicit strikeNumber / warningCount if present
+  // 2. By toast offset seconds in video if present
+  // 3. By exact occurrence timestamp
   candidateStrikes.sort((a, b) => {
-    const aTs = a.ts_ms ? Number(a.ts_ms) : (a.created_at ? new Date(a.created_at).getTime() : 0);
-    const bTs = b.ts_ms ? Number(b.ts_ms) : (b.created_at ? new Date(b.created_at).getTime() : 0);
-    return aTs - bTs;
+    const aMeta = (a.meta || a.metadata || {}) as Record<string, unknown>;
+    const bMeta = (b.meta || b.metadata || {}) as Record<string, unknown>;
+
+    const aStrike = Number(aMeta.strikeNumber || aMeta.warningCount);
+    const bStrike = Number(bMeta.strikeNumber || bMeta.warningCount);
+    if (Number.isInteger(aStrike) && Number.isInteger(bStrike) && aStrike > 0 && bStrike > 0 && aStrike !== bStrike) {
+      return aStrike - bStrike;
+    }
+
+    const aOffset = typeof aMeta.screenToastOffsetSec === 'number' && aMeta.screenToastOffsetSec >= 0
+      ? aMeta.screenToastOffsetSec
+      : (typeof aMeta.offsetSeconds === 'number' && aMeta.offsetSeconds >= 0 ? aMeta.offsetSeconds : undefined);
+    const bOffset = typeof bMeta.screenToastOffsetSec === 'number' && bMeta.screenToastOffsetSec >= 0
+      ? bMeta.screenToastOffsetSec
+      : (typeof bMeta.offsetSeconds === 'number' && bMeta.offsetSeconds >= 0 ? bMeta.offsetSeconds : undefined);
+
+    if (aOffset !== undefined && bOffset !== undefined && aOffset !== bOffset) {
+      return aOffset - bOffset;
+    }
+
+    const aTime = getEventTimeMs(a);
+    const bTime = getEventTimeMs(b);
+    return aTime - bTime;
   });
 
   // Debounce consecutive duplicates from same detector firing within 3 seconds
+  // NEVER debounce distinct strikes (e.g. Strike 1 vs Strike 2)
   const debouncedStrikes: typeof candidateStrikes = [];
   for (const event of candidateStrikes) {
-    const eTs = event.ts_ms ? Number(event.ts_ms) : new Date(event.created_at).getTime();
+    const eTs = getEventTimeMs(event);
     const last = debouncedStrikes[debouncedStrikes.length - 1];
     if (last) {
-      const lastTs = last.ts_ms ? Number(last.ts_ms) : new Date(last.created_at).getTime();
+      const lastTs = getEventTimeMs(last);
+      const lastMeta = (last.meta || last.metadata || {}) as Record<string, unknown>;
+      const eMeta = (event.meta || event.metadata || {}) as Record<string, unknown>;
+      const lastStrike = Number(lastMeta.strikeNumber || lastMeta.warningCount);
+      const eStrike = Number(eMeta.strikeNumber || eMeta.warningCount);
+
+      if (Number.isInteger(lastStrike) && Number.isInteger(eStrike) && lastStrike > 0 && eStrike > 0 && lastStrike !== eStrike) {
+        debouncedStrikes.push(event);
+        continue;
+      }
+
       const sameCat = (last.category || last.event_type) === (event.category || event.event_type);
       const sameReason = (last.metadata?.reason || last.meta?.reason) === (event.metadata?.reason || event.meta?.reason);
       if (Math.abs(eTs - lastTs) < 3000 && (sameCat || sameReason)) {
@@ -241,13 +317,13 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
         .find(
           (e) =>
             (e.event_type === 'proctoring_violation' || e.category === 'proctoring_violation') &&
-            (e.ts_ms ? Number(e.ts_ms) : new Date(e.created_at).getTime()) <= recUploadTs + 5000
+            getEventTimeMs(e) <= recUploadTs + 5000
         ) || allEvents.find((e) => e.event_type === 'proctoring_violation'))
     : [...allEvents].reverse().find((e) => e.event_type === 'proctoring_violation');
 
   const violationMeta = (violationEvent?.metadata || violationEvent?.meta) as { reason?: string } | undefined;
 
-  // If session was terminated and we have fewer than 3 strikes (e.g. exactly 2 strikes, or terminated by violation),
+  // If session was terminated and we have fewer than 3 strikes (e.g. exactly 0, 1, or 2 warnings, or terminated by violation),
   // include the terminal proctoring event as the final strike so all warnings are accounted for
   if (isTerminated && violationEvent && debouncedStrikes.length < 3) {
     const alreadyIncluded = debouncedStrikes.some((s) => s.id === violationEvent.id);
@@ -260,10 +336,16 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
   const finalStrikes = debouncedStrikes.slice(0, 3);
 
   // 1. Check for most recent explicit recording_started or session_started event for this run
-  const relevantRecStart = [...attemptEvents].reverse().find(
-    (e) => e.category === 'recording_started' || e.event_type === 'recording_started'
-  );
+  // Search in attemptEvents first, then in allEvents as a reliable fallback
+  const relevantRecStart =
+    [...attemptEvents].reverse().find(
+      (e) => e.category === 'recording_started' || e.event_type === 'recording_started'
+    ) ||
+    [...allEvents].reverse().find(
+      (e) => e.category === 'recording_started' || e.event_type === 'recording_started'
+    );
 
+  const recStartMeta = (relevantRecStart?.meta || relevantRecStart?.metadata || {}) as Record<string, unknown>;
   const recStartServerMs = relevantRecStart?.ts_ms
     ? Number(relevantRecStart.ts_ms)
     : (relevantRecStart?.created_at ? new Date(relevantRecStart.created_at).getTime() : 0);
@@ -279,9 +361,14 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     : 0;
 
   // 4. Explicit recording start timestamp from recording metadata or recording_started meta (moment MediaRecorder started capturing screen)
-  const explicitRecStart = recMeta.recordingStartTime || recMeta.startedAt || (relevantRecStart?.meta as Record<string, unknown> | undefined)?.startedAt
-    ? Number(recMeta.recordingStartTime || recMeta.startedAt || (relevantRecStart?.meta as Record<string, unknown> | undefined)?.startedAt)
-    : undefined;
+  const explicitRecStart = Number(
+    recMeta.recordingStartTime ||
+    recMeta.startedAt ||
+    recStartMeta.startedAt ||
+    recStartMeta.client_ts ||
+    recStartMeta.recordingStartTime ||
+    0
+  ) || undefined;
 
   let videoStartMs: number;
   if (explicitRecStart && explicitRecStart > 0) {
@@ -291,10 +378,18 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
   } else if (recStartServerMs > 0) {
     videoStartMs = recStartServerMs;
   } else if (finalStrikes.length > 0) {
-    const firstStrikeTs = finalStrikes[0].ts_ms
-      ? Number(finalStrikes[0].ts_ms)
-      : new Date(finalStrikes[0].created_at).getTime();
-    videoStartMs = firstStrikeTs;
+    // If the first strike recorded a direct offset (e.g. 29s into recording),
+    // derive videoStartMs = firstStrikeTs - offset * 1000
+    const firstStrikeMeta = (finalStrikes[0].meta || finalStrikes[0].metadata || {}) as Record<string, unknown>;
+    const firstStrikeOffset = typeof firstStrikeMeta.screenToastOffsetSec === 'number' && firstStrikeMeta.screenToastOffsetSec > 0
+      ? firstStrikeMeta.screenToastOffsetSec
+      : (typeof firstStrikeMeta.offsetSeconds === 'number' && firstStrikeMeta.offsetSeconds > 0 ? firstStrikeMeta.offsetSeconds : 0);
+    const firstStrikeTs = getEventTimeMs(finalStrikes[0]);
+    if (firstStrikeTs > 0 && firstStrikeOffset > 0) {
+      videoStartMs = firstStrikeTs - firstStrikeOffset * 1000;
+    } else {
+      videoStartMs = sessionCreatedMs > 0 ? sessionCreatedMs : (firstStrikeTs || sessionCreatedMs);
+    }
   } else {
     videoStartMs = sessionCreatedMs;
   }
@@ -378,27 +473,28 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
         ? meta.offsetSeconds
         : (typeof meta.videoOffsetSec === 'number' && meta.videoOffsetSec >= 0 ? meta.videoOffsetSec : undefined));
 
-    const rawTsMs = (typeof meta.client_ts === 'number' && meta.client_ts > 0)
-      ? meta.client_ts
-      : (w.ts_ms
-        ? Number(w.ts_ms)
-        : (w.created_at ? new Date(w.created_at).getTime() : undefined));
+    const rawTsMs = getEventTimeMs(w) || undefined;
+
+    const computedOffset = (rawTsMs && videoStartMs > 0 && rawTsMs >= videoStartMs)
+      ? Math.floor((rawTsMs - videoStartMs) / 1000)
+      : undefined;
 
     let offsetSeconds: number;
-    if (directOffsetSec !== undefined) {
+    if (directOffsetSec !== undefined && directOffsetSec > 0) {
+      offsetSeconds = Math.min(directOffsetSec, maxVideoDurationSec);
+    } else if (computedOffset !== undefined && computedOffset > 0) {
+      offsetSeconds = Math.min(computedOffset, maxVideoDurationSec);
+    } else if (directOffsetSec !== undefined) {
       offsetSeconds = Math.min(directOffsetSec, maxVideoDurationSec);
     } else {
-      const computedOffset = (rawTsMs && videoStartMs > 0 && rawTsMs >= videoStartMs)
-        ? Math.floor((rawTsMs - videoStartMs) / 1000)
-        : 0;
-      offsetSeconds = Math.max(0, Math.min(computedOffset, maxVideoDurationSec));
+      offsetSeconds = 0;
     }
 
     const mins = Math.floor(offsetSeconds / 60);
     const secs = offsetSeconds % 60;
     const elapsedLabel = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
-    const warnDate = rawTsMs ? new Date(rawTsMs) : (w.created_at ? new Date(w.created_at) : undefined);
+    const warnDate = rawTsMs && rawTsMs > 0 ? new Date(rawTsMs) : (w.created_at ? new Date(w.created_at) : undefined);
 
     return {
       id: w.id || `strike-${strikeNum}`,
@@ -421,6 +517,17 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     };
   });
 
+  // Ensure strike numbers are strictly sequential (1, 2, 3) across warnings
+  const assignedStrikes = new Set<number>();
+  proctoringWarnings.forEach((warn, idx) => {
+    if (warn.strikeNumber && !assignedStrikes.has(warn.strikeNumber) && warn.strikeNumber >= 1 && warn.strikeNumber <= 3) {
+      assignedStrikes.add(warn.strikeNumber);
+    } else {
+      warn.strikeNumber = idx + 1;
+      assignedStrikes.add(idx + 1);
+    }
+  });
+
   // If there were NO strikes found, but the session was terminated by proctoring guard,
   // show exactly ONE terminal violation incident rather than leaving it empty
   if (proctoringWarnings.length === 0 && isTerminated) {
@@ -430,11 +537,7 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       : (typeof vMeta.offsetSeconds === 'number' && vMeta.offsetSeconds >= 0
         ? vMeta.offsetSeconds
         : (typeof vMeta.videoOffsetSec === 'number' && vMeta.videoOffsetSec >= 0 ? vMeta.videoOffsetSec : undefined));
-    const rawTermTsMs = (typeof vMeta.client_ts === 'number' && vMeta.client_ts > 0)
-      ? vMeta.client_ts
-      : (violationEvent?.ts_ms
-        ? Number(violationEvent.ts_ms)
-        : (violationEvent?.created_at ? new Date(violationEvent.created_at).getTime() : undefined));
+    const rawTermTsMs = violationEvent ? (getEventTimeMs(violationEvent) || undefined) : undefined;
 
     let termOffset: number;
     if (directTermOffset !== undefined) {
@@ -449,7 +552,7 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     const tSecs = termOffset % 60;
     const tElapsedLabel = `${String(tMins).padStart(2, '0')}:${String(tSecs).padStart(2, '0')}`;
 
-    const termDate = rawTermTsMs ? new Date(rawTermTsMs) : (violationEvent?.created_at ? new Date(violationEvent.created_at) : undefined);
+    const termDate = rawTermTsMs && rawTermTsMs > 0 ? new Date(rawTermTsMs) : (violationEvent?.created_at ? new Date(violationEvent.created_at) : undefined);
 
     proctoringWarnings = [
       {

@@ -13,7 +13,7 @@ import {
   Link2,
   ClipboardPaste,
   X,
-  Video,
+  Radio,
 } from 'lucide-react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
@@ -290,6 +290,12 @@ export default function AIInterviewManager() {
    * one that no longer exists in plaintext.
    */
   const openInterview = async (interview: IInterviewSummary) => {
+    if (interview.status === 'in_progress') {
+      if (typeof window !== 'undefined') {
+        window.location.href = `/interview/${interview.id}`;
+      }
+      return;
+    }
     setSelectedInterview(interview);
     setSelectedInvite(null);
     setInviteError(null);
@@ -572,7 +578,7 @@ export default function AIInterviewManager() {
           <p className="text-sm text-[#4a4a4a] dark:text-[#9f9f9f]">No interviews created yet.</p>
         ) : (
           <div className="space-y-2">
-            {interviews.map((iv) => (
+            {interviews.slice(0, 10).map((iv) => (
               <div
                 key={iv.id}
                 className="flex items-center justify-between bg-white dark:bg-[#2b2b2b] p-4 rounded-xl border border-[#d9d9d9] dark:border-[#4a4a4a] text-sm"
@@ -601,30 +607,16 @@ export default function AIInterviewManager() {
                   >
                     {iv.status.replace('_', ' ')}
                   </span>
-                  {(iv.status === 'completed' || iv.status === 'terminated' || iv.status === 'revoked' || iv.status === 'cancelled' || iv.status === 'in_progress') && (
-                    <div className="flex items-center gap-2">
-                      <Link
-                        id={`view-report-${iv.id}`}
-                        href={`/admin/reports/${iv.id}`}
-                        className="px-3 py-1.5 bg-zinc-900 hover:bg-[#1689aa] text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        View Report
-                      </Link>
-                      {iv.recording_url && (
-                        <a
-                          id={`view-recording-${iv.id}`}
-                          href={iv.recording_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
-                          title="Open full Google Drive interview video"
-                        >
-                          <Video className="w-3.5 h-3.5" />
-                          Video
-                        </a>
-                      )}
-                    </div>
+                  {iv.status === 'in_progress' && (
+                    <Link
+                      id={`join-live-interview-${iv.id}`}
+                      href={`/interview/${iv.id}`}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                      title="Join ongoing interview as administrator"
+                    >
+                      <Radio className="w-3.5 h-3.5 animate-pulse text-white" />
+                      Join Live
+                    </Link>
                   )}
                 </div>
               </div>

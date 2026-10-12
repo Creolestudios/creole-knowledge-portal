@@ -312,6 +312,43 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
+function IncidentTimestamp({ rawTsMs, fallback }: { rawTsMs?: number; fallback?: string }) {
+  const [formattedTime] = useState<string | null>(() => {
+    if (rawTsMs && !Number.isNaN(rawTsMs) && rawTsMs > 0) {
+      try {
+        return new Date(rawTsMs).toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        });
+      } catch {
+        return fallback ?? null;
+      }
+    }
+    return fallback ?? null;
+  });
+
+  const displayTime = formattedTime ?? (rawTsMs && !Number.isNaN(rawTsMs) && rawTsMs > 0
+    ? new Date(rawTsMs).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : fallback);
+
+  if (!displayTime) return null;
+
+  return (
+    <span
+      suppressHydrationWarning
+      className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1 flex-shrink-0"
+      title={rawTsMs && !Number.isNaN(rawTsMs) && rawTsMs > 0 ? `Warning Shown Time: ${new Date(rawTsMs).toLocaleString()}` : 'Warning Shown Time'}
+    >
+      <span>🕒 {displayTime}</span>
+    </span>
+  );
+}
+
 export function isHRQuestion(q: {
   category?: string;
   question_type?: string;
@@ -658,7 +695,7 @@ export function ReportDetailView({
 
       {/* Sticky Top Header */}
       <header className="bg-white dark:bg-[#2b2b2b] border-b border-zinc-200 dark:border-[#4a4a4a] sticky top-0 z-20 shadow-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="w-full max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link
               href="/admin/reports"
@@ -696,7 +733,7 @@ export function ReportDetailView({
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-7">
+      <main className="w-full max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-8 space-y-7">
         {/* ── 1. Termination Banner (if applicable) ───────── */}
         {isTerminated && (
           <div className="bg-red-50 dark:bg-[#2a171a] border border-red-200 dark:border-red-900/60 rounded-2xl p-6 text-red-950 dark:text-red-100 shadow-sm">
@@ -708,7 +745,7 @@ export function ReportDetailView({
                 <h2 className="text-base sm:text-lg font-bold text-red-900 dark:text-red-200 mb-1">
                   Interview Terminated by Proctoring Guard
                 </h2>
-                <p className="text-red-800 dark:text-red-300 text-xs sm:text-sm leading-relaxed max-w-2xl">
+                <p className="text-red-800 dark:text-red-300 text-xs sm:text-sm leading-relaxed max-w-4xl">
                   The automated proctoring guard terminated this interview session due to integrity violations. This candidate is flagged for HR review.
                 </p>
                 {(session.termination_reason || report?.recommendation_rationale) && (
@@ -725,7 +762,7 @@ export function ReportDetailView({
         <div className="bg-white dark:bg-[#2b2b2b] rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] shadow-card p-6 sm:p-7">
           <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
             {/* Left side: Personalized Performance Headline & 2-3 Paragraph Summary */}
-            <div className="space-y-4 max-w-2xl flex-1">
+            <div className="space-y-4 flex-1">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-[#34c4f2]/15 text-[#0284c7] dark:text-[#38bdf8] flex items-center justify-center flex-shrink-0 font-bold shadow-xs">
                   <Sparkles className="w-5 h-5 text-[#0284c7] dark:text-[#38bdf8]" />
@@ -843,7 +880,7 @@ export function ReportDetailView({
                   <h3 className="font-black text-amber-900 dark:text-amber-200 text-base sm:text-lg">
                     Video Recording Archived (90-Day Retention Policy)
                   </h3>
-                  <p className="text-sm text-amber-800 dark:text-amber-300 leading-relaxed max-w-2xl">
+                  <p className="text-sm text-amber-800 dark:text-amber-300 leading-relaxed max-w-4xl">
                     In compliance with the 90-day corporate candidate data retention policy, this full interview video was automatically purged from Google Drive.
                     {recording.purged_at && (
                       <span className="block mt-0.5 font-semibold text-xs text-amber-900/80 dark:text-amber-200/80">
@@ -1246,24 +1283,7 @@ export function ReportDetailView({
                                   <span className="text-[10px]">▶</span>
                                 </button>
                               )}
-                              {(warn.rawTsMs || warn.timestamp) && (
-                                <span
-                                  suppressHydrationWarning
-                                  className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 flex items-center gap-1 flex-shrink-0"
-                                  title="Exact Meeting Timestamp"
-                                >
-                                  <span>
-                                    🕒{' '}
-                                    {warn.rawTsMs
-                                      ? new Date(warn.rawTsMs).toLocaleTimeString('en-US', {
-                                          hour: '2-digit',
-                                          minute: '2-digit',
-                                          second: '2-digit',
-                                        })
-                                      : warn.timestamp}
-                                  </span>
-                                </span>
-                              )}
+                              <IncidentTimestamp rawTsMs={warn.rawTsMs} fallback={warn.timestamp} />
                             </div>
                           </div>
                           <p className="text-sm sm:text-base font-semibold text-red-950 dark:text-red-200 leading-relaxed">
@@ -1337,8 +1357,8 @@ export function ReportDetailView({
       </main>
 
       {/* ── Feature 7: Sticky AI Copilot Dock Bar ─────────────────────── */}
-      <aside aria-label="AI Copilot Quick Access" className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-[#1f1f1f]/95 backdrop-blur-md border-t border-zinc-200 dark:border-[#4a4a4a] px-6 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+      <aside aria-label="AI Copilot Quick Access" className="fixed bottom-0 left-0 right-0 z-30 bg-white/95 dark:bg-[#1f1f1f]/95 backdrop-blur-md border-t border-zinc-200 dark:border-[#4a4a4a] px-4 sm:px-6 lg:px-8 xl:px-10 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
+        <div className="w-full max-w-[1536px] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs sm:text-sm font-bold text-zinc-700 dark:text-zinc-200">

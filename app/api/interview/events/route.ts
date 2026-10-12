@@ -21,23 +21,30 @@ export async function POST(req: Request) {
   const confidence = typeof body?.confidence === 'number' ? body.confidence : 1.0;
   const snapshotPath = body?.snapshotPath as string | undefined;
   const rawMeta = (body?.meta || {}) as Record<string, unknown>;
-  const clientTs = typeof body?.ts_ms === 'number' && body.ts_ms > 0 ? body.ts_ms : undefined;
+  const clientTs = typeof body?.ts_ms === 'number' && body.ts_ms > 0
+    ? body.ts_ms
+    : (typeof rawMeta?.client_ts === 'number' && (rawMeta.client_ts as number) > 0 ? (rawMeta.client_ts as number) : undefined);
   const directOffsetSec = typeof body?.offsetSeconds === 'number' && body.offsetSeconds >= 0
     ? body.offsetSeconds
     : (typeof rawMeta.offsetSeconds === 'number' && rawMeta.offsetSeconds >= 0 ? rawMeta.offsetSeconds : undefined);
-
-  const meta = {
-    ...rawMeta,
-    ...(directOffsetSec !== undefined ? { offsetSeconds: directOffsetSec } : {}),
-    ...(clientTs ? { client_ts: clientTs } : {}),
-  };
 
   if (!interviewId || !category) {
     return NextResponse.json({ error: 'interviewId and category are required' }, { status: 400 });
   }
 
   const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
-  const tsMs = Date.now();
+  const tsMs = clientTs || Date.now();
+
+  const directToastOffsetSec = typeof body?.screenToastOffsetSec === 'number' && body.screenToastOffsetSec >= 0
+    ? body.screenToastOffsetSec
+    : (typeof rawMeta.screenToastOffsetSec === 'number' && (rawMeta.screenToastOffsetSec as number) >= 0 ? (rawMeta.screenToastOffsetSec as number) : undefined);
+
+  const meta = {
+    ...rawMeta,
+    ...(directOffsetSec !== undefined ? { offsetSeconds: directOffsetSec } : {}),
+    ...(directToastOffsetSec !== undefined ? { screenToastOffsetSec: directToastOffsetSec } : {}),
+    client_ts: tsMs,
+  };
 
   const { data: eventData, error } = await supabaseAdmin
     .from('interview_events')

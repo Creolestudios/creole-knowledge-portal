@@ -159,7 +159,7 @@ export default function InterviewReportsPage() {
 
       {/* Header */}
       <header className="bg-white dark:bg-[#1e1e1e] border-b border-zinc-200 dark:border-zinc-800 sticky top-0 z-20 shadow-sm transition-colors">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="w-full max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/admin/dashboard" className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
               <ArrowLeft className="w-5 h-5" />
@@ -181,7 +181,7 @@ export default function InterviewReportsPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-7">
+      <main className="w-full max-w-[1536px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-8 space-y-7">
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

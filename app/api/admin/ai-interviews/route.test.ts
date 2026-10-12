@@ -13,7 +13,14 @@ const mockLimit = vi.fn();
 const listQuery: any = {
   eq: vi.fn(() => listQuery),
   order: vi.fn(() => listQuery),
-  limit: (...args: any[]) => mockLimit(...args),
+  in: vi.fn(() => listQuery),
+  or: vi.fn(() => Promise.resolve({ data: [] })),
+  limit: vi.fn((...args: any[]) => {
+    if (args[1]?.foreignTable) {
+      return mockLimit(...args);
+    }
+    return listQuery;
+  }),
 };
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -26,7 +33,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       }),
     },
     from: vi.fn().mockReturnValue({
-      insert: (...args: any[]) => mockInsert(...args),
+      insert: (...args: any[]) => (mockInsert as any)(...args),
       select: () => listQuery,
     }),
   },
@@ -226,6 +233,27 @@ describe('GET /api/admin/ai-interviews', () => {
         recording_url: null,
       },
     ]);
+  });
+
+  it('limits returned interviews to at most 10 recent entries', async () => {
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
+    const dummyInterviews = Array.from({ length: 15 }, (_, i) => ({
+      id: `id-${i}`,
+      candidate_name: `Candidate ${i}`,
+      candidate_email: `candidate${i}@example.com`,
+      parsed_jd: { jobTitle: `Role ${i}` },
+      status: 'completed',
+      created_at: new Date(2026, 9, 20 - i).toISOString(),
+      interview_invites: [],
+    }));
+    mockLimit.mockResolvedValue({ data: dummyInterviews, error: null });
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.interviews).toHaveLength(10);
+    expect(body.interviews[0].id).toBe('id-0');
+    expect(body.interviews[9].id).toBe('id-9');
   });
 
   it('returns 500 when the query fails', async () => {

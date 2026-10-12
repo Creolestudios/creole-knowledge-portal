@@ -79,6 +79,54 @@ describe('AIInterviewManager', () => {
     expect(await screen.findByText(/Jane Doe/)).toBeInTheDocument();
   });
 
+  it('displays only the 10 most recent interviews when more than 10 are returned', async () => {
+    const mockList = Array.from({ length: 15 }, (_, i) => ({
+      id: `session-${i}`,
+      candidate_name: `Candidate ${i + 1}`,
+      candidate_email: `candidate${i + 1}@example.com`,
+      job_title: 'Software Engineer',
+      status: 'pending',
+      expires_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    }));
+
+    global.fetch = mockFetchByUrl({
+      '/api/admin/ai-interviews': { interviews: mockList },
+    }) as any;
+
+    render(<AIInterviewManager />);
+
+    expect(await screen.findByText('Candidate 1')).toBeInTheDocument();
+    expect(screen.getByText('Candidate 10')).toBeInTheDocument();
+    expect(screen.queryByText('Candidate 11')).not.toBeInTheDocument();
+  });
+
+  it('renders interview status without View Report or Video buttons in recent interviews', async () => {
+    global.fetch = mockFetchByUrl({
+      '/api/admin/ai-interviews': {
+        interviews: [
+          {
+            id: 'term-1',
+            candidate_name: 'Priya',
+            candidate_email: 'priya@example.com',
+            job_title: 'Senior AI Developer',
+            status: 'terminated',
+            expires_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            recording_url: 'https://drive.google.com/file/d/test1234/view',
+          },
+        ],
+      },
+    }) as any;
+
+    render(<AIInterviewManager />);
+
+    expect(await screen.findByText('Priya')).toBeInTheDocument();
+    expect(screen.getByText('terminated')).toBeInTheDocument();
+    expect(screen.queryByText(/View Report/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Video/i)).not.toBeInTheDocument();
+  });
+
   it('shows an error when submitting without candidate name', async () => {
     global.fetch = mockFetchOnce({ interviews: [] }) as any;
     render(<AIInterviewManager />);

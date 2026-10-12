@@ -44,12 +44,14 @@ The **Full Interview Video Recording** module continuously captures candidate sc
 ## HR & Recruiter Experience
 
 1. **Recent Interviews Table** (`components/ai-interview-manager.tsx`):
-   - Shows a **"Video"** link badge next to "View Report" for any session with a recorded video.
+   - Displays clean, uncluttered rows showing candidate details and interview status badges; detailed evaluation reports and full video recordings are viewed via the candidate evaluation report view (`/admin/reports/[id]`).
 2. **Evaluation Report View** (`components/ai-interview/report-detail-view.tsx`):
    - Displays a dedicated **Full Interview Video Recording** card.
    - Provides direct, clean link access with "Copy Video Link" and "Open in Google Drive" actions.
    - Deep-links proctoring violation incidents directly to timestamped Google Drive playback (`?t=XmYs`).
    - Synchronizes video offsets with the exact moment the **warning banner was displayed on screen** in the recorded video (`screenToastOffsetSec` / `explicitRecStart`), allowing viewers to jump directly to the visible toast overlay.
+   - Displays dual timestamps on each warning card: In-Video Offset (`⏱️ MM:SS`) and Real-World Clock Time (`🕒 HH:MM:SS AM/PM`), with automated fallback recovery from uninitialized 0s recorder offsets.
+   - Preserves rapid sequential strikes (Strike 1, 2, 3) across debouncing logic.
 
 ---
 

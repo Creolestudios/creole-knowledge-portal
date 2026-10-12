@@ -297,4 +297,131 @@ describe('AdminInterviewReportPage - Exact Warning Timestamps', () => {
     const driveLinks = screen.getAllByRole('link', { name: /^Google Drive/i });
     expect(driveLinks[0]).toHaveAttribute('href', 'https://drive.google.com/file/d/drive-file-direct/view?t=42s');
   });
+
+  it('attaches accurate timestamps to all three strikes and avoids debouncing distinct strikes in quick succession', async () => {
+    const sessionStart = 1791540000000; // 10:00:00
+    const recStart = 1791540005000;    // 10:00:05
+    const strike1Time = 1791540085000;  // 10:01:25 (+80s -> 01:20)
+    const strike2Time = 1791540087000;  // 10:01:27 (+82s -> 01:22, exactly 2s after strike 1!)
+    const strike3Time = 1791540135000;  // 10:02:15 (+130s -> 02:10)
+
+    const mockSession = {
+      id: 'session-three-strikes-timestamps',
+      candidate_name: 'Alex Rivera',
+      candidate_email: 'alex@example.com',
+      status: 'terminated',
+      created_at: new Date(sessionStart).toISOString(),
+      voice_warning_count: 2,
+      face_warning_count: 1,
+      object_warning_count: 0,
+    };
+
+    const mockEvents = [
+      {
+        id: 'evt-rec-start',
+        session_id: 'session-three-strikes-timestamps',
+        event_type: 'recording_started',
+        category: 'recording_started',
+        severity: 'info',
+        ts_ms: recStart,
+        created_at: new Date(recStart).toISOString(),
+        meta: { startedAt: recStart },
+      },
+      {
+        id: 'strike-1',
+        session_id: 'session-three-strikes-timestamps',
+        event_type: 'unauthorized_voice',
+        category: 'unauthorized_voice',
+        severity: 'warning',
+        ts_ms: strike1Time,
+        created_at: new Date(strike1Time).toISOString(),
+        // direct offset was 0 due to recorder startup delay; must fallback to computed elapsed time (01:20)
+        meta: { reason: 'Secondary speaker detected', strikeNumber: 1, screenToastOffsetSec: 0, client_ts: strike1Time },
+      },
+      {
+        id: 'strike-2',
+        session_id: 'session-three-strikes-timestamps',
+        event_type: 'unauthorized_voice',
+        category: 'unauthorized_voice',
+        severity: 'warning',
+        ts_ms: strike2Time,
+        created_at: new Date(strike2Time).toISOString(),
+        // 2 seconds later with strikeNumber 2: must NEVER be debounced!
+        meta: { reason: 'Secondary speaker detected', strikeNumber: 2, screenToastOffsetSec: 82, client_ts: strike2Time },
+      },
+      {
+        id: 'strike-3',
+        session_id: 'session-three-strikes-timestamps',
+        event_type: 'gaze_away',
+        category: 'gaze_away',
+        severity: 'warning',
+        ts_ms: strike3Time,
+        created_at: new Date(strike3Time).toISOString(),
+        meta: { reason: 'Looking away from screen', strikeNumber: 3, screenToastOffsetSec: 130, client_ts: strike3Time },
+      },
+      {
+        id: 'evt-full-rec',
+        session_id: 'session-three-strikes-timestamps',
+        event_type: 'full_recording',
+        category: 'full_recording',
+        severity: 'info',
+        ts_ms: strike3Time + 5000,
+        created_at: new Date(strike3Time + 5000).toISOString(),
+        meta: {
+          fileId: 'three-strike-drive-file',
+          durationSeconds: 150,
+          recordingStartTime: recStart,
+          webViewLink: 'https://drive.google.com/file/d/three-strike-drive-file/view',
+        },
+      },
+    ];
+
+    (supabaseAdmin.from as any).mockImplementation((table: string) => {
+      if (table === 'interview_sessions') {
+        return { select: () => ({ eq: () => ({ single: async () => ({ data: mockSession }) }) }) };
+      }
+      if (table === 'interview_events') {
+        return { select: () => ({ eq: () => ({ order: async () => ({ data: mockEvents }) }) }) };
+      }
+      if (table === 'interview_invites') {
+        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: 'inv-3', status: 'revoked' } }) }) }) };
+      }
+      return {
+        select: () => ({ eq: () => ({ single: async () => ({ data: null }), maybeSingle: async () => ({ data: null }), order: async () => ({ data: [] }), then: (fn: any) => fn({ data: [] }) }) }),
+      };
+    });
+
+    (getInterviewReport as any).mockResolvedValue({
+      executive_summary: 'Report summary',
+      recommendation: 'no',
+      flags: [],
+    });
+
+    const PageComponent = await AdminInterviewReportPage({
+      params: Promise.resolve({ id: 'session-three-strikes-timestamps' }),
+    });
+
+    render(PageComponent);
+
+    // All three distinct strikes are present with accurate timestamps:
+    expect(screen.getByText('Strike 1')).toBeInTheDocument();
+    expect(screen.getByText('Strike 2')).toBeInTheDocument();
+    expect(screen.getByText('Strike 3')).toBeInTheDocument();
+
+    // Strike 1 recovered from 0s directOffsetSec to computed elapsed time 01:20
+    expect(screen.getByText(/Jump directly to 01:20 in Video/i)).toBeInTheDocument();
+
+    // Strike 2 was NOT dropped by debounce, shows exact 01:22
+    expect(screen.getByText(/Jump directly to 01:22 in Video/i)).toBeInTheDocument();
+
+    // Strike 3 shows exact 02:10
+    expect(screen.getByText(/Jump directly to 02:10 in Video/i)).toBeInTheDocument();
+
+    // Google Drive direct links target exact video seconds
+    const driveLinks = screen.getAllByRole('link', { name: /^Google Drive/i });
+    expect(driveLinks).toHaveLength(3);
+    expect(driveLinks[0]).toHaveAttribute('href', 'https://drive.google.com/file/d/three-strike-drive-file/view?t=1m20s');
+    expect(driveLinks[1]).toHaveAttribute('href', 'https://drive.google.com/file/d/three-strike-drive-file/view?t=1m22s');
+    expect(driveLinks[2]).toHaveAttribute('href', 'https://drive.google.com/file/d/three-strike-drive-file/view?t=2m10s');
+  });
 });

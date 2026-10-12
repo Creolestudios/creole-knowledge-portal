@@ -82,14 +82,22 @@ describe('Simultaneous Candidate Collision Handling (QA Test Suite)', () => {
     // Simulate that another user clicked 1-2 ms earlier, so server returned 409 CONCURRENT_SESSION_DETECTED
     global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('/api/interview/verify') && init?.method === 'POST') {
+        const body = JSON.parse(init.body as string);
+        if (body.accessCode) {
+          return Promise.resolve({
+            status: 409,
+            ok: false,
+            json: () => Promise.resolve({
+              error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
+              concurrent: true,
+              code: 'CONCURRENT_SESSION_DETECTED',
+            }),
+          });
+        }
         return Promise.resolve({
-          status: 409,
-          ok: false,
-          json: () => Promise.resolve({
-            error: 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.',
-            concurrent: true,
-            code: 'CONCURRENT_SESSION_DETECTED',
-          }),
+          status: 200,
+          ok: true,
+          json: () => Promise.resolve({ requiresAccessCode: true }),
         });
       }
       return Promise.resolve({
@@ -100,8 +108,13 @@ describe('Simultaneous Candidate Collision Handling (QA Test Suite)', () => {
 
     render(<InterviewEntryPage />);
 
-    // Enter 6 digit passcode
-    const codeInput = screen.getByPlaceholderText('000000');
+    // Step 1: Email entry
+    const emailInput = screen.getByPlaceholderText(/enter your email/i);
+    fireEvent.change(emailInput, { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    // Step 2: Passcode entry
+    const codeInput = await screen.findByPlaceholderText('000000');
     fireEvent.change(codeInput, { target: { value: '123456' } });
 
     const submitBtn = screen.getByRole('button', { name: /continue/i });
@@ -165,8 +178,13 @@ describe('Simultaneous Candidate Collision Handling (QA Test Suite)', () => {
 
     render(<InterviewEntryPage />);
 
-    // Passcode entry
-    const codeInput = screen.getByPlaceholderText('000000');
+    // Step 1: Email entry
+    const emailInput = screen.getByPlaceholderText(/enter your email/i);
+    fireEvent.change(emailInput, { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    // Step 2: Passcode entry
+    const codeInput = await screen.findByPlaceholderText('000000');
     fireEvent.change(codeInput, { target: { value: '123456' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -261,7 +279,13 @@ describe('Simultaneous Candidate Collision Handling (QA Test Suite)', () => {
 
     render(<InterviewEntryPage />);
 
-    const codeInput = screen.getByPlaceholderText('000000');
+    // Step 1: Email entry
+    const emailInput = screen.getByPlaceholderText(/enter your email/i);
+    fireEvent.change(emailInput, { target: { value: 'candidate@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }));
+
+    // Step 2: Passcode entry
+    const codeInput = await screen.findByPlaceholderText('000000');
     fireEvent.change(codeInput, { target: { value: '123456' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 

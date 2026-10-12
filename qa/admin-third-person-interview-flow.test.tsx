@@ -162,6 +162,7 @@ describe('Admin Third-Person Joining & Live Proctoring Flow', () => {
     fireEvent.click(screen.getByText('Continue'));
 
     await screen.findByText('Candidate');
+    await waitFor(() => expect(mockBroadcastCallbacks.length).toBeGreaterThan(0));
 
     // Simulate candidate speaking broadcast
     act(() => {
@@ -328,13 +329,13 @@ describe('Admin Third-Person Joining & Live Proctoring Flow', () => {
 
     render(<InterviewEntryPage />);
 
-    // Candidate attempts to enter passcode on terminated interview
-    const codeInput = screen.getByPlaceholderText('000000');
-    fireEvent.change(codeInput, { target: { value: '123456' } });
+    // Candidate attempts to access terminated interview via email
+    const emailInput = screen.getByPlaceholderText('Enter your email');
+    fireEvent.change(emailInput, { target: { value: 'candidate@creole.com' } });
     fireEvent.click(screen.getByText('Continue'));
 
     // Automatically redirected to ended screen
     expect(await screen.findByText('Link is expired')).toBeInTheDocument();
-    expect(screen.getByText('This interview was terminated due to violations')).toBeInTheDocument();
+    expect(screen.getByText(/This interview was terminated due to violations/)).toBeInTheDocument();
   });
 });

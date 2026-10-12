@@ -144,13 +144,17 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data, error } = await supabaseAdmin
+    const query = supabaseAdmin
       .from('interview_sessions')
       .select('id, candidate_name, candidate_email, parsed_jd, status, created_at, interview_invites(status, expires_at, created_at)')
       .eq('created_by', admin.userId)
       .order('created_at', { ascending: false })
-      .order('created_at', { foreignTable: 'interview_invites', ascending: false })
-      .limit(1, { foreignTable: 'interview_invites' });
+      .order('created_at', { foreignTable: 'interview_invites', ascending: false });
+
+    const primaryLimit = query.limit(10);
+    const { data, error } = typeof (primaryLimit as any)?.limit === 'function'
+      ? await (primaryLimit as any).limit(1, { foreignTable: 'interview_invites' })
+      : await primaryLimit;
 
     if (error) {
       console.error('[ai-interviews] list failed:', error.message);
@@ -181,7 +185,7 @@ export async function GET() {
       }
     }
 
-    const interviews = (data || []).map((row: any) => {
+    const interviews = (data || []).slice(0, 10).map((row: any) => {
       const invite = row.interview_invites?.[0] ?? null;
       let status = invite?.status ?? row.status;
       if (row.status === 'cancelled' || row.status === 'terminated' || invite?.status === 'revoked') {

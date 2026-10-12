@@ -261,7 +261,11 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
     } as any;
 
     render(<InterviewEntryPage />);
-    const codeInput = screen.getByPlaceholderText('000000');
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), {
+      target: { value: 'candidate@creolestudios.com' },
+    });
+    fireEvent.click(screen.getByText('Continue'));
+    const codeInput = await screen.findByPlaceholderText('000000');
     fireEvent.change(codeInput, { target: { value: '123456' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 
@@ -311,7 +315,11 @@ describe('Third-Party Admin Joining & Proctoring Synchronization Flow', () => {
     } as any;
 
     render(<InterviewEntryPage />);
-    const codeInput = screen.getByPlaceholderText('000000');
+    fireEvent.change(screen.getByPlaceholderText('Enter your email'), {
+      target: { value: 'candidate@creolestudios.com' },
+    });
+    fireEvent.click(screen.getByText('Continue'));
+    const codeInput = await screen.findByPlaceholderText('000000');
     fireEvent.change(codeInput, { target: { value: '123456' } });
     fireEvent.click(screen.getByRole('button', { name: /continue/i }));
 

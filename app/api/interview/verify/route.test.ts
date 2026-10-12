@@ -255,6 +255,7 @@ describe('POST /api/interview/verify', () => {
     // User 1 on Laptop A joins
     const res1 = await POST(makeRequest({
       interviewId: 'i-concur',
+      email: 'test@example.com',
       accessCode: '123456',
       deviceId: 'laptop-A',
     }));
@@ -265,6 +266,7 @@ describe('POST /api/interview/verify', () => {
     // User 2 on Laptop B joins milliseconds later with the same interview link
     const res2 = await POST(makeRequest({
       interviewId: 'i-concur',
+      email: 'test@example.com',
       accessCode: '123456',
       deviceId: 'laptop-B',
     }));

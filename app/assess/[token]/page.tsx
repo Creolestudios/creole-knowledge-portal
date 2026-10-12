@@ -1752,7 +1752,7 @@ export default function CandidateAssessmentPage() {
 
   if (stage === 'instructions' || stage === 'permissions') {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 py-10 relative">
+      <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative">
         <ProctoringInstructions
           cameraGranted={cameraGranted}
           screenGranted={screenGranted}

@@ -373,22 +373,31 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Interview ID is required' }, { status: 400 });
   }
 
-  if (!accessCode && !email) {
-    return NextResponse.json({ error: 'Passcode is required' }, { status: 400 });
+  const cleanEmail = typeof email === 'string' ? email.trim() : '';
+  if (!cleanEmail) {
+    return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(cleanEmail)) {
+    return NextResponse.json({ error: 'Please enter a valid email address' }, { status: 400 });
   }
 
   let isRequesterAdmin = false;
-  if (email && typeof email === 'string' && email.trim().length > 0) {
+  try {
     const { data: profile } = await supabaseAdmin
       .from('user_profiles')
       .select('role')
-      .eq('email', email.trim())
+      .eq('email', cleanEmail)
       .single();
 
     if (profile?.role === 'admin') {
       isRequesterAdmin = true;
     }
+  } catch {
+    // fallback or continue
   }
+
 
   // Acquire concurrency lock if non-admin is submitting passcode to start interview
   let lockAcquired = false;
@@ -466,7 +475,7 @@ export async function POST(req: Request) {
         }
 
         if (!accessCode) {
-          return NextResponse.json({ requiresAccessCode: true }, { status: 200 });
+          return NextResponse.json({ requiresAccessCode: true, isAdmin: false }, { status: 200 });
         }
 
         if (interview.access_code !== accessCode.trim()) {
@@ -622,7 +631,7 @@ export async function POST(req: Request) {
       }
 
       if (!accessCode) {
-        return NextResponse.json({ requiresAccessCode: true }, { status: 200 });
+        return NextResponse.json({ requiresAccessCode: true, isAdmin: false }, { status: 200 });
       }
 
       let passcodeValid = false;
@@ -742,7 +751,7 @@ export async function POST(req: Request) {
       }
 
       if (!isRequesterAdmin && !accessCode) {
-        return NextResponse.json({ requiresAccessCode: true }, { status: 200 });
+        return NextResponse.json({ requiresAccessCode: true, isAdmin: false }, { status: 200 });
       }
 
       if (!isRequesterAdmin && session.status !== 'in_progress') {

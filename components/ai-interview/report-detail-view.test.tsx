@@ -459,4 +459,181 @@ describe('ReportDetailView', () => {
     const execSummary = screen.getByText(/Jane demonstrated deep engineering acumen with scalable architecture concepts\./i);
     expect(execSummary.closest('div')).toHaveClass('text-base');
   });
+
+  it('accurately renders multiple proctoring warning timestamps with client-reported time and graceful fallback', () => {
+    const rawTime1 = new Date('2026-10-12T10:46:48.000Z').getTime();
+    const rawTime2 = new Date('2026-10-12T10:47:07.000Z').getTime();
+    const expectedTime1 = new Date(rawTime1).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const expectedTime2 = new Date(rawTime2).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const multipleWarnings = [
+      {
+        id: 'warn-1',
+        strikeNumber: 1,
+        category: 'voice' as const,
+        categoryLabel: 'Unauthorized Voice Detected',
+        reason: 'Multiple background voices identified.',
+        rawTsMs: rawTime1,
+        offsetSeconds: 5,
+        elapsedLabel: '00:05',
+      },
+      {
+        id: 'warn-2',
+        strikeNumber: 2,
+        category: 'face' as const,
+        categoryLabel: 'Candidate Looked Away / No Face',
+        reason: 'Face not detected for >5 seconds.',
+        rawTsMs: rawTime2,
+        offsetSeconds: 24,
+        elapsedLabel: '00:24',
+      },
+      {
+        id: 'warn-3',
+        strikeNumber: 3,
+        category: 'general' as const,
+        categoryLabel: 'Terminal Integrity Violation',
+        reason: 'Candidate clicked outside window.',
+        timestamp: '11:00:15 AM',
+        offsetSeconds: 31,
+        elapsedLabel: '00:31',
+      },
+    ];
+
+    render(
+      <ReportDetailView
+        session={mockSession}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        voiceWarningCount={1}
+        faceWarningCount={1}
+        objectWarningCount={1}
+        totalWarnings={3}
+        proctoringWarnings={multipleWarnings}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    // Both exact timestamps derived from rawTsMs (client_ts) are rendered accurately
+    expect(screen.getByText(new RegExp(expectedTime1, 'i'))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(expectedTime2, 'i'))).toBeInTheDocument();
+
+    // Fallback string timestamp is rendered when rawTsMs is omitted
+    expect(screen.getByText(/11:00:15 AM/i)).toBeInTheDocument();
+  });
+
+  it('renders all three strikes with attached warning shown in-video and clock timestamps and interactive jump actions', () => {
+    const rawTime1 = new Date('2026-10-12T14:30:15.000Z').getTime();
+    const rawTime2 = new Date('2026-10-12T14:31:02.000Z').getTime();
+    const rawTime3 = new Date('2026-10-12T14:31:45.000Z').getTime();
+
+    const expectedTime1 = new Date(rawTime1).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const expectedTime2 = new Date(rawTime2).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const expectedTime3 = new Date(rawTime3).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    const mockRecording = {
+      fileId: 'recording-file-xyz',
+      webViewLink: 'https://drive.google.com/file/d/recording-file-xyz/view',
+      previewUrl: 'https://drive.google.com/file/d/recording-file-xyz/preview',
+      durationSeconds: 180,
+    };
+
+    const threeWarnings = [
+      {
+        id: 'strike-1',
+        strikeNumber: 1,
+        category: 'voice' as const,
+        categoryLabel: 'Background Audio / Voice Violation',
+        reason: 'Secondary speech detected in background.',
+        rawTsMs: rawTime1,
+        offsetSeconds: 25,
+        elapsedLabel: '00:25',
+      },
+      {
+        id: 'strike-2',
+        strikeNumber: 2,
+        category: 'face' as const,
+        categoryLabel: 'Looking Away / Abnormal Gaze Violation',
+        reason: 'Please keep attention focused on the screen.',
+        rawTsMs: rawTime2,
+        offsetSeconds: 72,
+        elapsedLabel: '01:12',
+      },
+      {
+        id: 'strike-3',
+        strikeNumber: 3,
+        category: 'object' as const,
+        categoryLabel: 'Mobile Phone / Unauthorized Device',
+        reason: 'Mobile phone detected in camera view.',
+        rawTsMs: rawTime3,
+        offsetSeconds: 115,
+        elapsedLabel: '01:55',
+      },
+    ];
+
+    render(
+      <ReportDetailView
+        session={mockSession}
+        recording={mockRecording}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        voiceWarningCount={1}
+        faceWarningCount={1}
+        objectWarningCount={1}
+        totalWarnings={3}
+        proctoringWarnings={threeWarnings}
+        followUpQuestions={mockFollowUp}
+      />
+    );
+
+    // Verify all 3 strike cards are rendered
+    expect(screen.getByText('Strike 1')).toBeInTheDocument();
+    expect(screen.getByText('Strike 2')).toBeInTheDocument();
+    expect(screen.getByText('Strike 3')).toBeInTheDocument();
+
+    // Verify attached in-video timestamps
+    expect(screen.getByText(/⏱️ 00:25/i)).toBeInTheDocument();
+    expect(screen.getByText(/⏱️ 01:12/i)).toBeInTheDocument();
+    expect(screen.getByText(/⏱️ 01:55/i)).toBeInTheDocument();
+
+    // Verify attached exact incident times
+    expect(screen.getByText(new RegExp(expectedTime1, 'i'))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(expectedTime2, 'i'))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(expectedTime3, 'i'))).toBeInTheDocument();
+
+    // Verify Jump buttons
+    expect(screen.getByText(/Jump directly to 00:25 in Video/i)).toBeInTheDocument();
+    expect(screen.getByText(/Jump directly to 01:12 in Video/i)).toBeInTheDocument();
+    expect(screen.getByText(/Jump directly to 01:55 in Video/i)).toBeInTheDocument();
+
+    // Verify Google Drive links
+    const driveLinks = screen.getAllByRole('link', { name: /^Google Drive/i });
+    expect(driveLinks).toHaveLength(3);
+    expect(driveLinks[0]).toHaveAttribute('href', 'https://drive.google.com/file/d/recording-file-xyz/view?t=25s');
+    expect(driveLinks[1]).toHaveAttribute('href', 'https://drive.google.com/file/d/recording-file-xyz/view?t=1m12s');
+    expect(driveLinks[2]).toHaveAttribute('href', 'https://drive.google.com/file/d/recording-file-xyz/view?t=1m55s');
+  });
 });
