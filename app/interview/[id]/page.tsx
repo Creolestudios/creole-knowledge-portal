@@ -1621,7 +1621,7 @@ export default function InterviewEntryPage() {
       return null;
     },
     readingGracePeriodMs: 0,
-    continuousVoiceMs: 2500,
+    continuousVoiceMs: 10000,
   });
 
   useEffect(() => {

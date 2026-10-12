@@ -1233,7 +1233,7 @@ export default function CandidateAssessmentPage() {
       return null;
     },
     readingGracePeriodMs: 0,
-    continuousVoiceMs: 2500,
+    continuousVoiceMs: 10000,
   });
 
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {

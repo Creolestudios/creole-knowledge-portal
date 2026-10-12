@@ -371,7 +371,7 @@ export function useAudioVoiceGuard({
               voiceDetectedStartAt = nowMs;
             }
             const continuousDurationMs = nowMs - voiceDetectedStartAt;
-            const targetMs = continuousVoiceMsRef.current ?? 2500;
+            const targetMs = continuousVoiceMsRef.current ?? 8000;
             const targetFrames = Math.max(30, Math.round(targetMs / 16.66));
 
             if (continuousDurationMs >= targetMs || consecutiveSuspiciousFrames >= targetFrames) {
