@@ -11,10 +11,11 @@ This section contains important overview pages for the Creole Knowledge Portal p
 *   [[pages/architecture.md|Architecture Overview]]
 *   [[pages/fetch-blogs-walkthrough.md|Fetch Blogs Microservice Walkthrough]]
 *   [[pages/blog-fetch-by-user-type.md|Blog Fetch by User Type]]
+*   [[pages/blog-write-module.md|Blog Write & Synthesis Module Technical Architecture]]
 *   [[pages/setup-guide.md|Setup Guide]]
 *   [[pages/roadmap.md|Roadmap & Known Issues]]
 *   [[pages/gatekeeper-plan.md|Gatekeeper Module Design]]
 *   [[pages/resume-jd-assessment-plan.md|Student Mock Interview / Assessment Module]]
 *   [[pages/ai-interview-extractor.md|AI Interview Module]]
 *   [[pages/full-interview-video-recording.md|Full Interview Video Recording & Google Drive Storage]]
-
+*   [[pages/blog-fetch-and-ai-interview-complete-flow.md|Blog Fetch and AI Interview Complete Flow]]
