@@ -1196,18 +1196,25 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
       </div>
 
       {/* Question Content */}
-      <div className="p-8">
+      <div 
+        className="p-8 select-none"
+        onCopy={(e) => e.preventDefault()}
+        onCut={(e) => e.preventDefault()}
+      >
         <span className="inline-block px-3 py-1 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-[10px] font-bold uppercase tracking-widest rounded-md mb-4 border border-zinc-200 dark:border-transparent">
           {q.question_type} • {q.difficulty}
         </span>
-        <h2 className="text-xl md:text-2xl font-semibold text-zinc-900 dark:text-white leading-relaxed mb-6">
+        <h2 className="text-xl md:text-2xl font-semibold text-zinc-900 dark:text-white leading-relaxed mb-6 select-none">
           {q.question}
         </h2>
 
         {q.code_snippet && (
-          <div className="mb-6 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 font-mono text-sm shadow-sm dark:shadow-lg">
+          <div className="mb-6 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 font-mono text-sm shadow-sm dark:shadow-lg select-none">
             <div className="px-4 py-2 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-500 text-xs font-semibold">Code Snippet</div>
-            <pre className="p-4 bg-zinc-50 dark:bg-[#0a0a0c] text-zinc-800 dark:text-zinc-300 overflow-x-auto">
+            <pre 
+              onCopy={(e) => e.preventDefault()} 
+              className="p-4 bg-zinc-50 dark:bg-[#0a0a0c] text-zinc-800 dark:text-zinc-300 overflow-x-auto select-none"
+            >
               <code>{q.code_snippet}</code>
             </pre>
           </div>
@@ -1218,10 +1225,14 @@ export function QuizRunner({ blogId }: QuizRunnerProps) {
           <textarea 
             value={answers[q.id] || ''}
             onChange={(e) => handleTextChange(q.id, e.target.value)}
+            onPaste={(e) => e.preventDefault()}
+            onCopy={(e) => e.preventDefault()}
+            onCut={(e) => e.preventDefault()}
+            onDrop={(e) => e.preventDefault()}
             placeholder="Type your detailed answer here... (AI evaluated)"
             aria-label="Your detailed answer"
             disabled={isHalted}
-            className="w-full h-40 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl p-4 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none disabled:opacity-50 transition-colors"
+            className="w-full h-40 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-300 dark:border-zinc-700 rounded-xl p-4 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none disabled:opacity-50 transition-colors select-none"
           />
         ) : (
           <div className="space-y-3" role={isMultiple ? "group" : "radiogroup"}>
