@@ -47,6 +47,8 @@ lib/data/db.json
 **/coverage/
 **/coverage.xml
 **/htmlcov/
+**/tsconfig.tsbuildinfo
+*.tsbuildinfo
 # Build outputs
 **/dist/
 **/build/

@@ -53,6 +53,7 @@ export async function middleware(request: NextRequest) {
   // Protected route logic
   const isDashboard = request.nextUrl.pathname.startsWith('/dashboard');
   const isAdminDashboard = request.nextUrl.pathname.startsWith('/admin');
+  const isAiInterviewExtractor = request.nextUrl.pathname.startsWith('/dashboard/ai-interview');
   const isLoginPage = request.nextUrl.pathname === '/';
   const isApi = request.nextUrl.pathname.startsWith('/api');
 
@@ -106,7 +107,7 @@ export async function middleware(request: NextRequest) {
 
   // 3. If logged in as non-admin and trying to access root or admin dashboard -> redirect to standard dashboard
   if (user && !isAdmin) {
-    if (isLoginPage || isAdminDashboard) {
+    if (isLoginPage || isAdminDashboard || isAiInterviewExtractor) {
       return redirect('/dashboard');
     }
   }

@@ -73,15 +73,15 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
           initial={{ opacity: 0, scale: 0.95, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95 }}
-          className="w-full max-w-xl bg-white rounded-[28px] border border-zinc-200 shadow-2xl overflow-hidden"
+          className="w-full max-w-xl bg-white dark:bg-[#1e1e1e] rounded-[28px] border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden transition-colors"
         >
-          <div className="flex items-center justify-between px-5 sm:px-8 py-5 border-b border-zinc-100">
-            <h2 className="text-lg font-black text-zinc-900 tracking-tight">Knowledge Check</h2>
+          <div className="flex items-center justify-between px-5 sm:px-8 py-5 border-b border-zinc-100 dark:border-zinc-800">
+            <h2 className="text-lg font-black text-zinc-900 dark:text-white tracking-tight">Knowledge Check</h2>
             <button
               type="button"
               id="quiz-close-btn"
               onClick={handleClose}
-              className="text-zinc-400 hover:text-zinc-900 transition-colors cursor-pointer"
+              className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer"
               aria-label="Close quiz"
             >
               <X size={20} />
@@ -96,10 +96,10 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                   <Trophy size={32} />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-2xl font-black text-zinc-900 tracking-tight">
+                  <h3 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">
                     Ready to start the quiz?
                   </h3>
-                  <p className="text-zinc-500 text-sm">
+                  <p className="text-zinc-500 dark:text-zinc-400 text-sm">
                     {quiz.questions.length} quick questions on today&apos;s reading. You can retake
                     it if you don&apos;t pass.
                   </p>
@@ -109,7 +109,7 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                     type="button"
                     id="quiz-cancel-btn"
                     onClick={handleClose}
-                    className="px-6 py-3 rounded-xl border border-zinc-200 text-zinc-600 font-bold text-sm hover:bg-zinc-50 transition-all cursor-pointer"
+                    className="px-6 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 font-bold text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all cursor-pointer"
                   >
                     Not now
                   </button>
@@ -136,14 +136,14 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                     {Object.keys(answers).length}/{quiz.questions.length} answered
                   </span>
                 </div>
-                <div className="w-full bg-zinc-100 h-1.5 rounded-full overflow-hidden">
+                <div className="w-full bg-zinc-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-brand rounded-full transition-all"
                     style={{ width: `${((current + 1) / quiz.questions.length) * 100}%` }}
                   />
                 </div>
 
-                <h3 className="text-xl font-black text-zinc-900 tracking-tight leading-snug">
+                <h3 className="text-xl font-black text-zinc-900 dark:text-white tracking-tight leading-snug">
                   {question.prompt}
                 </h3>
 
@@ -158,8 +158,8 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                         onClick={() => select(i)}
                         className={`w-full text-left px-5 py-4 rounded-2xl border text-sm font-semibold transition-all cursor-pointer ${
                           chosen
-                            ? 'border-brand bg-brand/5 text-zinc-900 shadow-sm'
-                            : 'border-zinc-200 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50'
+                            ? 'border-brand bg-brand/5 dark:bg-brand/10 text-zinc-900 dark:text-white shadow-sm'
+                            : 'border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/60'
                         }`}
                       >
                         {opt}
@@ -174,7 +174,7 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                     id="quiz-prev-btn"
                     onClick={() => setCurrent((c) => Math.max(0, c - 1))}
                     disabled={current === 0}
-                    className="px-5 py-2.5 text-sm font-bold text-zinc-500 disabled:opacity-30 hover:text-zinc-900 transition-colors cursor-pointer disabled:cursor-default"
+                    className="px-5 py-2.5 text-sm font-bold text-zinc-500 disabled:opacity-30 hover:text-zinc-900 dark:hover:text-white transition-colors cursor-pointer disabled:cursor-default"
                   >
                     Back
                   </button>
@@ -184,7 +184,7 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                       id="quiz-next-btn"
                       onClick={() => setCurrent((c) => c + 1)}
                       disabled={answers[question.id] === undefined}
-                      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-800 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-zinc-900 dark:bg-white text-white dark:text-black font-bold text-sm hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
                     >
                       Next <ArrowRight size={16} />
                     </button>
@@ -209,16 +209,16 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                 <div className="text-center space-y-3 py-2">
                   <div
                     className={`w-16 h-16 rounded-2xl mx-auto flex items-center justify-center ${
-                      passed ? 'bg-green-50 text-green-600' : 'bg-amber-50 text-amber-600'
+                      passed ? 'bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
                     }`}
                   >
                     {passed ? <Trophy size={32} /> : <RotateCcw size={32} />}
                   </div>
-                  <h3 className="text-3xl font-black text-zinc-900 tracking-tight">
+                  <h3 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tight">
                     {result.score}/{result.total} correct
                   </h3>
                   <p
-                    className={`text-sm font-bold ${passed ? 'text-green-600' : 'text-amber-600'}`}
+                    className={`text-sm font-bold ${passed ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`}
                   >
                     {passed ? 'Passed — day complete! 🎉' : 'Almost there — give it another go.'}
                   </p>
@@ -231,20 +231,20 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                       return (
                         <div
                           key={q.id}
-                          className="p-4 rounded-2xl border border-zinc-100 bg-zinc-50 space-y-1"
+                          className="p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/60 space-y-1"
                         >
                           <div className="flex items-start gap-2">
                             {correct ? (
-                              <CheckCircle size={16} className="text-green-600 shrink-0 mt-0.5" />
+                              <CheckCircle size={16} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
                             ) : (
-                              <XCircle size={16} className="text-red-500 shrink-0 mt-0.5" />
+                              <XCircle size={16} className="text-red-500 dark:text-red-400 shrink-0 mt-0.5" />
                             )}
-                            <p className="text-sm font-bold text-zinc-900">{q.prompt}</p>
+                            <p className="text-sm font-bold text-zinc-900 dark:text-white">{q.prompt}</p>
                           </div>
                           {!correct && (
-                            <p className="text-xs text-zinc-500 ml-6">
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 ml-6">
                               Correct answer:{' '}
-                              <span className="font-bold text-zinc-700">
+                              <span className="font-bold text-zinc-700 dark:text-zinc-300">
                                 {q.options[q.answerIndex]}
                               </span>
                             </p>
@@ -260,7 +260,7 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                     type="button"
                     id="quiz-review-btn"
                     onClick={() => setReviewing((r) => !r)}
-                    className="px-6 py-3 rounded-xl border border-zinc-200 text-zinc-600 font-bold text-sm hover:bg-zinc-50 transition-all cursor-pointer"
+                    className="px-6 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 font-bold text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all cursor-pointer"
                   >
                     {reviewing ? 'Hide answers' : 'Review answers'}
                   </button>
@@ -278,7 +278,7 @@ export default function QuizModal({ quiz, date, open, onClose }: QuizModalProps)
                       type="button"
                       id="quiz-retake-btn"
                       onClick={() => reset('quiz')}
-                      className="inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-zinc-900 text-white font-black text-sm uppercase tracking-widest hover:bg-zinc-800 transition-all cursor-pointer"
+                      className="inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 dark:bg-white dark:hover:bg-zinc-200 text-white dark:text-black font-black text-sm uppercase tracking-widest transition-all cursor-pointer"
                     >
                       <RotateCcw size={16} /> Retake
                     </button>

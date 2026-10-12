@@ -1,0 +1,791 @@
+
+ RUN  v4.1.5 /var/www/html/creole-knowledge-portal
+      Coverage enabled with v8
+
+ ✓ app/interview/[id]/page.test.tsx (9 tests) 5802ms
+     ✓ does NOT terminate when the page only loses keyboard focus while staying visible  5076ms
+ ✓ qa/proctoring-instructions-permissions.test.tsx (19 tests) 6228ms
+     ✓ TC-PROC-17 [regression: BUG-05] stays live when the page loses keyboard focus but remains visible  5037ms
+ ✓ app/assess/[token]/page.test.tsx (14 tests) 6523ms
+     ✓ does NOT terminate when the page only loses keyboard focus while staying visible  5098ms
+ ✓ components/user-management.test.tsx (15 tests) 1215ms
+ ✓ app/blog-roulette/[id]/edit/page.test.tsx (20 tests) 1307ms
+ ✓ app/admin/dashboard/page.test.tsx (10 tests) 1659ms
+     ✓ switches to the Users and Submissions tabs  557ms
+ ✓ components/submissions-moderation.test.tsx (11 tests) 1401ms
+     ✓ switches to the Audit Logs tab and renders the timeline  353ms
+     ✓ shows the empty audit-log state when there are none  348ms
+ ✓ app/dashboard/gatekeeper/page.test.tsx (12 tests) 11472ms
+     ✓ switches to the submit-new-blog tab and shows the form  470ms
+     ✓ submits a new blog through the AI screening sequence and opens the generated quiz  3787ms
+     ✓ takes the quiz, passes, and returns to submission history  921ms
+     ✓ requires all quiz questions to be answered before submitting  485ms
+     ✓ exits the active quiz via "Back to Dashboard"  909ms
+     ✓ switches to submit tab when "Create First Submission" is clicked  438ms
+     ✓ displays an error if blog submission fails  3501ms
+     ✓ displays an error if quiz grading fails  554ms
+ ✓ components/ai-interview-manager.test.tsx (10 tests) 1556ms
+ ✓ components/quiz/quiz-runner.test.tsx (20 tests) 1909ms
+     ✓ starts the quiz only after entire-screen share succeeds  343ms
+ ✓ qa/ai-interview-module-ui.test.tsx (15 tests) 1268ms
+ ✓ components/dashboard/PastBlogsTab.test.tsx (14 tests) 1464ms
+     ✓ shows the blog title above the fetched date in the reader  366ms
+ ✓ app/blog-roulette/[id]/quiz/page.test.tsx (10 tests) 861ms
+ ✓ components/dashboard/DailyBlogTab.test.tsx (13 tests) 776ms
+     ✓ renders the fetched brief with its title, content, tags, and source links  303ms
+ ✓ app/dashboard/quizzes/page.test.tsx (6 tests) 731ms
+ ✓ app/page.test.tsx (7 tests) 699ms
+     ✓ renders the sign-in form once mounted  306ms
+ ✓ components/dashboard/DashboardShell.test.tsx (12 tests) 1026ms
+     ✓ shows Blog Roulette as the fourth sidebar option with the correct URL  344ms
+ ✓ components/dashboard/PremiumMarkdownRenderer.test.tsx (57 tests) 1119ms
+ ✓ app/blog-roulette/page.test.tsx (7 tests) 419ms
+ ✓ components/ai-interview/resume-jd-uploader.test.tsx (5 tests) 479ms
+ ✓ components/dashboard/dashboard-widgets.test.tsx (21 tests) 564ms
+ ✓ app/blog-roulette/new/page.test.tsx (7 tests) 442ms
+ ❯ components/ai-interview/keyword-results.test.tsx (3 tests | 3 failed) 25ms
+     × renders extraction overview and link sections 14ms
+     × handles copy keywords 5ms
+     × handles link and passcode copy 3ms
+ ✓ components/ai-interview/question-bank-selector.test.tsx (5 tests) 462ms
+ ✓ components/dashboard/BlogReader.test.tsx (9 tests) 369ms
+ ✓ components/dashboard/QuizModal.test.tsx (8 tests) 438ms
+ ✓ app/api/assess/[token]/verify/route.test.ts (7 tests) 292ms
+ ✓ qa/ai-interview-module.test.ts (27 tests) 240ms
+ ✓ app/dashboard/ai-interview/sessions/page.test.tsx (6 tests) 357ms
+ ✓ lib/ai-interview/invite-token.test.ts (9 tests) 157ms
+ ✓ components/dashboard/ActivityTab.test.tsx (5 tests) 275ms
+ ✓ components/ai-interview/device-settings-panel.test.tsx (5 tests) 303ms
+ ✓ app/api/admin/ai-interviews/route.test.ts (14 tests) 148ms
+ ✓ lib/data/db.test.ts (4 tests) 60ms
+ ✓ lib/blog-roulette/converter.test.ts (13 tests) 55ms
+ ✓ lib/blog-roulette/gemini-client.generate.test.ts (8 tests) 77ms
+ ✓ lib/blog-roulette/ai-detection.test.ts (9 tests) 53ms
+ ✓ lib/data/streak.test.ts (17 tests) 44ms
+stdout | lib/blog-roulette/publisher.test.ts > runPublishPipeline > uploads to Drive, shares, awards points to new leaderboard entry, and marks blog PUBLISHED
+[publisher] Uploading blog blog-1 to Google Drive...
+
+stdout | lib/blog-roulette/publisher.test.ts > runPublishPipeline > uploads to Drive, shares, awards points to new leaderboard entry, and marks blog PUBLISHED
+[publisher] Awarding Knowledge Badge and points to user user-1...
+
+stdout | lib/blog-roulette/publisher.test.ts > runPublishPipeline > uploads to Drive, shares, awards points to new leaderboard entry, and marks blog PUBLISHED
+[publisher] Blog blog-1 published directly & badges awarded.
+
+stdout | lib/blog-roulette/publisher.test.ts > runPublishPipeline > updates existing leaderboard entry with new points and badges
+[publisher] Uploading blog blog-1 to Google Drive...
+
+stdout | lib/blog-roulette/publisher.test.ts > runPublishPipeline > updates existing leaderboard entry with new points and badges
+[publisher] Awarding Knowledge Badge and points to user user-1...
+
+stdout | lib/blog-roulette/publisher.test.ts > runPublishPipeline > updates existing leaderboard entry with new points and badges
+[publisher] Blog blog-1 published directly & badges awarded.
+
+stdout | lib/blog-roulette/publisher.test.ts > runPublishPipeline > rolls back to PUBLISH_FAILED and logs the error when Drive upload fails
+[publisher] Uploading blog blog-2 to Google Drive...
+
+ ✓ lib/blog-roulette/publisher.test.ts (4 tests) 28ms
+ ✓ lib/blog-roulette/validators.test.ts (11 tests) 26ms
+ ✓ lib/quizzes/proctor.test.ts (7 tests) 19ms
+ ✓ lib/blog-roulette/seo.test.ts (7 tests) 15ms
+ ✓ lib/data/activity.test.ts (9 tests) 16ms
+ ✓ lib/api/fetch-with-auth.test.ts (4 tests) 56ms
+ ✓ app/dashboard/page.test.tsx (2 tests) 150ms
+ ✓ components/dashboard/LeaderboardTab.test.tsx (3 tests) 212ms
+ ✓ components/ai-interview/meeting-control-bar.test.tsx (6 tests) 144ms
+ ✓ components/ai-interview/meeting-video-tile.test.tsx (5 tests) 205ms
+ ✓ app/api/digests/latest/route.test.ts (14 tests) 91ms
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > fetches blog from microservice when supabase blog record is missing
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > retries attempt insertion without attempt_number when column fails with 42703
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > handles unique constraint error (23505) by updating single row attempt
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > returns 500 when persisting the new attempt fails
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > surfaces a rate-limit warning when the generator falls back to a deterministic quiz
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > falls back to previous questions when on-demand generation throws
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > returns 500 when generation throws and there are no questions to fall back to
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+stdout | app/api/quizzes/start/route.test.ts > POST /api/quizzes/start > warns when fewer than five unique questions could be generated
+[Quiz On-Demand] Generating 5 fresh unattempted questions for blog b1...
+
+ ✓ app/api/quizzes/start/route.test.ts (17 tests) 85ms
+ ✓ app/api/interviews/interviews-api.test.ts (6 tests) 110ms
+ ✓ app/api/interviews/route.test.ts (2 tests) 42ms
+ ✓ app/api/activity/route.test.ts (39 tests) 167ms
+ ✓ app/api/digests/generate/route.test.ts (12 tests) 85ms
+ ✓ app/api/blog-roulette/upload/route.test.ts (8 tests) 105ms
+ ✓ app/api/blog-roulette/[id]/quiz/submit/route.test.ts (14 tests) 103ms
+ ✓ app/api/submissions/route.test.ts (10 tests) 44ms
+ ✓ app/api/blog-roulette/[id]/quiz/generate/route.test.ts (12 tests) 72ms
+ ✓ components/quiz/quiz-camera-preview.test.tsx (2 tests) 131ms
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should successfully parse valid JSON and insert to supabase
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should successfully parse valid JSON and insert to supabase
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should strip markdown formatting before parsing JSON
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should strip markdown formatting before parsing JSON
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should include exclusion context when existingQuestionTexts are provided
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should include exclusion context when existingQuestionTexts are provided
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should retry on transient 429/503 errors and succeed on subsequent attempt
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should retry on transient 429/503 errors and succeed on subsequent attempt
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 2/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should retry on transient 429/503 errors and succeed on subsequent attempt
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions when AI throws immediately
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions when AI throws immediately
+[Quiz Factory] Invoking model gemini-2.5-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions when AI throws immediately
+[Quiz Factory] Invoking model gemini-3.1-pro-preview (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should upsert parent blog record with H2 header title if blog does not exist
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should upsert parent blog record with H2 header title if blog does not exist
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should upsert parent blog record with H2 header title if blog does not exist
+[Quiz Generator] Creating parent blog record for ebd00000-0000-0000-0000-000000000000...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should upsert parent blog record with plain line title if no H1/H2 header present
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should upsert parent blog record with plain line title if no H1/H2 header present
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should upsert parent blog record with plain line title if no H1/H2 header present
+[Quiz Generator] Creating parent blog record for ebd00000-0000-0000-0000-000000000000...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should throw error if parent blog upsert fails
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should throw error if parent blog upsert fails
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should throw error if parent blog upsert fails
+[Quiz Generator] Creating parent blog record for ebd00000-0000-0000-0000-000000000000...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 2/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 3/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-2.5-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-2.5-flash (Attempt 2/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-2.5-flash (Attempt 3/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-3.1-pro-preview (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-3.1-pro-preview (Attempt 2/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should fallback to deterministic questions if AI returns invalid non-JSON string
+[Quiz Factory] Invoking model gemini-3.1-pro-preview (Attempt 3/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should throw error if database insert fails
+[Quiz Factory] Invoking model gemini-3.6-flash (Attempt 1/3) for 5 questions...
+
+stdout | lib/ai/quiz-generator.test.ts > Quiz Generator AI Service > should throw error if database insert fails
+[Quiz Factory] Successfully generated and parsed 5 quiz questions with model: gemini-3.6-flash
+
+ ✓ lib/ai/quiz-generator.test.ts (10 tests) 68ms
+ ✓ lib/ai-interview/use-proctoring-watchdog.test.tsx (6 tests) 75ms
+ ✓ app/api/digests/past/route.test.ts (9 tests) 76ms
+ ✓ app/api/quizzes/evaluate/route.test.ts (13 tests) 69ms
+ ✓ app/api/quizzes/submit/route.test.ts (7 tests) 48ms
+ ✓ app/api/ai-interview/extract/route.test.ts (8 tests) 72ms
+stdout | middleware.test.ts > middleware > redirects an unauthenticated user away from /dashboard to the login page
+[Middleware] Path: /dashboard, User: none, Admin: false
+
+stdout | middleware.test.ts > middleware > redirects an unauthenticated user away from /admin to the login page
+[Middleware] Path: /admin/dashboard, User: none, Admin: false
+
+stdout | middleware.test.ts > middleware > lets an authenticated non-admin user through to /dashboard
+[Middleware] Path: /dashboard, User: dev@x.com, Admin: false
+
+stdout | middleware.test.ts > middleware > redirects an authenticated non-admin away from the AI interview extractor
+[Middleware] Path: /dashboard/ai-interview/extractor, User: dev@x.com, Admin: false
+
+stdout | middleware.test.ts > middleware > redirects an authenticated non-admin away from /admin to /dashboard
+[Middleware] Path: /admin/dashboard, User: dev@x.com, Admin: false
+
+stdout | middleware.test.ts > middleware > redirects an authenticated non-admin away from the login page to /dashboard
+[Middleware] Path: /, User: dev@x.com, Admin: false
+
+stdout | middleware.test.ts > middleware > redirects an authenticated admin away from the login page to /admin/dashboard
+[Middleware] Path: /, User: priya.dhanani@creolestudios.com, Admin: true
+
+stdout | middleware.test.ts > middleware > lets an authenticated admin through to /admin/dashboard
+[Middleware] Path: /admin/dashboard, User: priya.dhanani@creolestudios.com, Admin: true
+
+stdout | middleware.test.ts > middleware > does not treat a mockUser query param as a logged-in session
+[Middleware] Path: /dashboard, User: none, Admin: false
+
+stdout | middleware.test.ts > middleware > does not treat a mock-user cookie as a logged-in session
+[Middleware] Path: /dashboard, User: none, Admin: false
+
+stdout | middleware.test.ts > middleware > tolerates a getUser failure and treats the request as unauthenticated
+[Middleware] Path: /dashboard, User: none, Admin: false
+
+stdout | middleware.test.ts > middleware > tolerates a profile lookup failure and treats the user as non-admin
+[Middleware] Path: /admin/dashboard, User: dev@x.com, Admin: false
+
+ ✓ hooks/useBlogContentEnhancer.test.ts (14 tests) 66ms
+stdout | lib/ai-interview/question-generator.test.ts > question-generator > generates questions using Gemini API when key is present
+TRACE: response: {
+  text: '[{"question_text":"Gemini generated question?","question_type":"behavioral","category":"teamwork","difficulty":"medium","required_skills":["Teamwork"],"intent":"Test intent"}]'
+}
+TRACE: cleanedText: [{"question_text":"Gemini generated question?","question_type":"behavioral","category":"teamwork","difficulty":"medium","required_skills":["Teamwork"],"intent":"Test intent"}]
+RETURNING ASSEMBLED: [{"question_text":"Gemini generated question?","question_type":"behavioral","category":"teamwork","difficulty":"medium","required_skills":["Teamwork"],"intent":"Test intent","question_order":1,"time_limit_sec":150,"is_mandatory_hr":false,"weight":10}]
+
+stdout | lib/ai-interview/question-generator.test.ts > question-generator > generates questions using Gemini API when key is present
+Result: {
+  question_text: 'Gemini generated question?',
+  question_type: 'behavioral',
+  category: 'teamwork',
+  difficulty: 'medium',
+  required_skills: [ 'Teamwork' ],
+  intent: 'Test intent',
+  question_order: 1,
+  time_limit_sec: 150,
+  is_mandatory_hr: false,
+  weight: 10
+}
+
+stdout | lib/ai-interview/question-generator.test.ts > question-generator > falls back to local when Gemini API returns malformed JSON
+TRACE: response: { text: 'Not a JSON' }
+TRACE: cleanedText: Not a JSON
+CRITICAL ERROR IN GEMINI PATH: SyntaxError: Unexpected token 'N', "Not a JSON" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at Module.generateInterviewQuestions (/var/www/html/creole-knowledge-portal/lib/ai-interview/question-generator.ts:380:28)
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at /var/www/html/creole-knowledge-portal/lib/ai-interview/question-generator.test.ts:182:20
+    at file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+stdout | lib/ai-interview/question-generator.test.ts > question-generator > falls back to local when Gemini API throws an error
+CRITICAL ERROR IN GEMINI PATH: Error: API Error
+    at Object.<anonymous> (/var/www/html/creole-knowledge-portal/lib/ai-interview/question-generator.test.ts:14:35)
+    at Object.Mock [as generateContent] (file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/spy/dist/index.js:332:34)
+    at Module.generateInterviewQuestions (/var/www/html/creole-knowledge-portal/lib/ai-interview/question-generator.ts:366:38)
+    at /var/www/html/creole-knowledge-portal/lib/ai-interview/question-generator.test.ts:198:26
+    at processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at file:///var/www/html/creole-knowledge-portal/node_modules/@vitest/runner/dist/chunk-artifact.js:1903:20
+
+ ✓ middleware.test.ts (13 tests) 45ms
+ ✓ lib/ai-interview/question-generator.test.ts (9 tests) 39ms
+ ✓ app/api/digests/by-id/route.test.ts (7 tests) 50ms
+ ✓ lib/ai-interview/validators.test.ts (7 tests) 50ms
+ ✓ app/api/quizzes/leaderboard/route.test.ts (7 tests) 31ms
+ ✓ app/api/quizzes/finish/route.test.ts (7 tests) 39ms
+ ✓ app/api/ai-interview/generate-questions/route.test.ts (7 tests) 51ms
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects to the login page with the error message when the provider returns an error param
+[Auth Callback] URL: http://localhost/auth/callback?error=access_denied&error_description=User+cancelled
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: false
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects with a generic error when neither code nor error is present
+[Auth Callback] URL: http://localhost/auth/callback
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: false
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects with a friendlier message on an expired flow-state exchange error
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects with a friendlier message on an expired flow-state exchange error
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects to /dashboard for a regular authenticated user
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects to /dashboard for a regular authenticated user
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects to /dashboard for a regular authenticated user
+[Auth Callback] Success! User: a@x.com, Admin: false, Redirecting to: /dashboard
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects admin users to /admin/dashboard
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects admin users to /admin/dashboard
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects admin users to /admin/dashboard
+[Auth Callback] Success! User: admin@x.com, Admin: true, Redirecting to: /admin/dashboard
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects with an error when the exchange succeeds but no user is returned
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects with an error when the exchange succeeds but no user is returned
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects with an internal-error message when the exchange throws
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > redirects with an internal-error message when the exchange throws
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > still redirects to the intended destination when the profile lookup throws
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123&next=/dashboard/quizzes
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > still redirects to the intended destination when the profile lookup throws
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > still redirects to the intended destination when the profile lookup throws
+[Auth Callback] Success! User: undefined, Admin: false, Redirecting to: /dashboard/quizzes
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > creates a default user profile if none exists and redirects to /dashboard
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > creates a default user profile if none exists and redirects to /dashboard
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > creates a default user profile if none exists and redirects to /dashboard
+[Auth Callback] Default profile created for: user@x.com
+[Auth Callback] Success! User: user@x.com, Admin: false, Redirecting to: /dashboard
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > creates a default admin profile for Priya if none exists and redirects to /admin/dashboard
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > creates a default admin profile for Priya if none exists and redirects to /admin/dashboard
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > creates a default admin profile for Priya if none exists and redirects to /admin/dashboard
+[Auth Callback] Default profile created for: priya.dhanani@creolestudios.com
+[Auth Callback] Success! User: priya.dhanani@creolestudios.com, Admin: true, Redirecting to: /admin/dashboard
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > handles database insertion error when creating a default profile
+[Auth Callback] URL: http://localhost/auth/callback?code=abc123
+[Auth Callback] Auth Cookies: NONE
+[Auth Callback] Origin: http://localhost, Code present: true
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > handles database insertion error when creating a default profile
+[Auth Callback] Exchanging code for session...
+
+stdout | app/auth/callback/route.test.ts > GET /auth/callback > handles database insertion error when creating a default profile
+[Auth Callback] Success! User: user@x.com, Admin: false, Redirecting to: /dashboard
+
+ ✓ app/auth/callback/route.test.ts (11 tests) 47ms
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > returns Jina Reader content when it succeeds with substantial text
+[BlogCompiler] Attempting to scrape via Jina Reader: https://r.jina.ai/https%3A%2F%2Fexample.com%2Fpost
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > returns Jina Reader content when it succeeds with substantial text
+[BlogCompiler] Successfully scraped via Jina Reader (150 chars)
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > falls back to a direct fetch when Jina Reader returns too little text
+[BlogCompiler] Attempting to scrape via Jina Reader: https://r.jina.ai/https%3A%2F%2Fexample.com%2Fpost
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > falls back to a direct fetch when Jina Reader returns too little text
+[BlogCompiler] Attempting direct fetch: https://example.com/post
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > falls back to a direct fetch when Jina Reader throws
+[BlogCompiler] Attempting to scrape via Jina Reader: https://r.jina.ai/https%3A%2F%2Fexample.com%2Fpost
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > falls back to a direct fetch when Jina Reader throws
+[BlogCompiler] Attempting direct fetch: https://example.com/post
+
+ ✓ app/api/blog-roulette/route.test.ts (10 tests) 52ms
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > throws when the direct fetch fallback also fails
+[BlogCompiler] Attempting to scrape via Jina Reader: https://r.jina.ai/https%3A%2F%2Fexample.com%2Fpost
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > scrapeUrlContent > throws when the direct fetch fallback also fails
+[BlogCompiler] Attempting direct fetch: https://example.com/post
+
+ ✓ app/api/blog-roulette/[id]/publish/route.test.ts (6 tests) 53ms
+stdout | lib/synthesis/blog-compiler.ai.test.ts > extractCleanArticle > parses the Gemini JSON response into article metadata
+[BlogCompiler] Extracting clean article from content (16 chars)
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > extractCleanArticle > applies sane defaults when fields are missing from the response
+[BlogCompiler] Extracting clean article from content (16 chars)
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > rerankArticles > selects the candidate at the index Gemini returns
+[BlogCompiler] Reranking 2 candidates for user profile...
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > rerankArticles > selects the candidate at the index Gemini returns
+[BlogCompiler] Selected candidate #1: "B"
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > rerankArticles > falls back to the first candidate when the selected index is invalid
+[BlogCompiler] Reranking 2 candidates for user profile...
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > rerankArticles > falls back to the first candidate when the selected index is invalid
+[BlogCompiler] Selected candidate #99: "undefined"
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > generateDescriptiveBlog > returns the raw Gemini text response
+[BlogCompiler] Synthesizing descriptive masterclass blog for "Source"
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > chunkBlogSemantically > parses the Gemini JSON array response into blog chunks
+[BlogCompiler] Chunking blog post of length 28 into parts of ~20 mins
+
+stdout | lib/synthesis/blog-compiler.ai.test.ts > chunkBlogSemantically > parses the Gemini JSON array response into blog chunks
+[BlogCompiler] Split blog into 2 parts
+
+ ✓ lib/synthesis/blog-compiler.ai.test.ts (12 tests) 50ms
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > uploadBlogAsGoogleDoc > uploads HTML content as a native Google Doc and returns file metadata
+[google-drive] Uploading "author-my-blog" as Google Doc to folder "folder-123"...
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > uploadBlogAsGoogleDoc > uploads HTML content as a native Google Doc and returns file metadata
+[google-drive] Google Doc created. File ID: file-1
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > uploadBlogAsGoogleDoc > throws when Drive returns no file metadata
+[google-drive] Uploading "a-x" as Google Doc to folder "folder-123"...
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > uploadBlogToDrive > uploads a docx buffer and returns file metadata
+[google-drive] Uploading "author-my-blog.docx" to folder "folder-123"...
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > uploadBlogToDrive > uploads a docx buffer and returns file metadata
+[google-drive] Upload successful. File ID: file-2
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > shareBlogWithMarketing > shares the file with every configured marketing email
+[google-drive] Sharing file file-1 with: [ 'marketing@creole.com', 'seo@creole.com' ]
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > shareBlogWithMarketing > shares the file with every configured marketing email
+[google-drive] Successfully shared with marketing@creole.com
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > shareBlogWithMarketing > shares the file with every configured marketing email
+[google-drive] Successfully shared with seo@creole.com
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > shareBlogWithMarketing > continues sharing with remaining emails when a non-auth failure occurs
+[google-drive] Sharing file file-1 with: [ 'marketing@creole.com', 'seo@creole.com' ]
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > shareBlogWithMarketing > continues sharing with remaining emails when a non-auth failure occurs
+[google-drive] Successfully shared with seo@creole.com
+
+stdout | lib/blog-roulette/google-drive.test.ts > google-drive > shareBlogWithMarketing > throws on an authorization failure for a share
+[google-drive] Sharing file file-1 with: [ 'marketing@creole.com', 'seo@creole.com' ]
+
+ ✓ lib/blog-roulette/google-drive.test.ts (10 tests) 36ms
+ ✓ app/api/interview/verify/route.test.ts (8 tests) 38ms
+ ✓ app/api/digests/complete/route.test.ts (7 tests) 59ms
+ ✓ app/api/blog-roulette/[id]/route.test.ts (9 tests) 47ms
+stdout | app/api/digests/trending/route.test.ts > GET /api/digests/trending > researches and generates fresh trending topics using Gemini AI when stale
+[TrendingResearch] Researching trending topics for profile dev@test.com...
+
+ ✓ app/api/digests/trending/route.test.ts (5 tests) 29ms
+ ✓ app/api/quizzes/status/route.test.ts (7 tests) 50ms
+ ✓ app/api/admin/users/route.test.ts (8 tests) 50ms
+ ✓ app/api/leaderboard/route.test.ts (10 tests) 45ms
+ ✓ app/api/interviews/[id]/generate/route.test.ts (7 tests) 27ms
+ ✓ lib/supabase/server.test.ts (3 tests) 38ms
+ ✓ app/api/submissions/[id]/moderate/route.test.ts (6 tests) 29ms
+ ✓ app/api/streaks/status/route.test.ts (6 tests) 26ms
+ ✓ lib/ai/validator.test.ts (5 tests) 23ms
+ ✓ app/api/blog-roulette/[id]/unlock/route.test.ts (7 tests) 31ms
+ ✓ app/api/assess/[token]/terminate/route.test.ts (4 tests) 27ms
+ ✓ app/api/interview/terminate/route.test.ts (5 tests) 27ms
+ ✓ lib/supabase/admin.test.ts (4 tests) 24ms
+ ✓ app/api/assess/[token]/answer/route.test.ts (6 tests) 25ms
+ ✓ app/api/blog-roulette/[id]/ai-score/route.test.ts (3 tests) 26ms
+ ✓ app/api/submissions/[id]/quiz/route.test.ts (8 tests) 31ms
+ ✓ lib/ai/quiz-evaluator.test.ts (14 tests) 33ms
+ ✓ app/api/interviews/route.error.test.ts (3 tests) 21ms
+ ✓ lib/ai-interview/create-session-and-invite.test.ts (5 tests) 21ms
+ ✓ app/api/blog-roulette/[id]/submit/route.test.ts (3 tests) 23ms
+ ✓ app/preview/page.test.tsx (1 test) 27ms
+ ✓ app/api/assess/[token]/complete/route.test.ts (4 tests) 24ms
+ ✓ app/api/quizzes/history/route.test.ts (3 tests) 30ms
+ ❯ lib/ai-interview/extractor.test.ts (8 tests | 4 failed) 33ms
+       ✓ generates fallback result correctly 7ms
+       ✓ throws if resume missing 4ms
+       ✓ throws if jd missing 1ms
+       ✓ uses fallback if API key missing 3ms
+       × uses fallback if AI fails 11ms
+       × parses AI response successfully 1ms
+       × handles abnormal matchPercentage 1ms
+       × calculates matchPercentage if omitted from AI response 1ms
+ ✓ lib/blog-roulette/route-helpers.test.ts (4 tests) 20ms
+ ✓ app/api/interviews/[id]/route.test.ts (3 tests) 24ms
+ ✓ lib/ai-interview/face-tracking.test.ts (8 tests) 13ms
+ ✓ lib/blog-roulette/gemini-client.test.ts (5 tests) 15ms
+ ✓ lib/quizzes/scoring.test.ts (7 tests) 16ms
+ ✓ lib/quizzes/timing.test.ts (10 tests) 11ms
+ ✓ lib/data/activity.server.test.ts (5 tests) 16ms
+ ✓ lib/supabase/cookie-options.test.ts (3 tests) 13ms
+ ✓ lib/data/quiz.test.ts (6 tests) 10ms
+ ✓ tests/gamification.test.ts (5 tests) 21ms
+ ✓ lib/reading-timer.test.ts (5 tests) 13ms
+ ✓ lib/quizzes/review.test.ts (4 tests) 13ms
+ ✓ lib/quizzes/learning-path-sync.test.ts (5 tests) 17ms
+ ✓ lib/synthesis/blog-compiler.test.ts (5 tests) 14ms
+ ✓ lib/digests/invented-fallback.test.ts (7 tests) 9ms
+ ✓ lib/supabase/client.test.ts (2 tests) 15ms
+ ❯ components/logout-button.test.tsx (2 tests | 2 failed) 17ms
+     × renders default button and handles logout 11ms
+     × renders sidebar button 2ms
+ ✓ lib/sanity.test.ts (1 test) 6ms
+ ❯ components/ai-interview/CalibrationModal.test.tsx (2 tests | 2 failed) 14ms
+     × renders progress correctly 8ms
+     × calls onComplete when progress reaches 100% after timeout 3ms
+ ✓ lib/data/activity.browser.test.ts (5 tests) 9ms
+
+ Test Files  4 failed | 121 passed (125)
+      Tests  11 failed | 1072 passed (1083)
+   Start at  16:38:27
+   Duration  49.68s (transform 5.03s, setup 36.97s, import 20.46s, tests 56.34s, environment 40.22s)
+
+ % Coverage report from v8
+-------------------|---------|----------|---------|---------|-------------------
+File               | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s 
+-------------------|---------|----------|---------|---------|-------------------
+All files          |   85.64 |    76.32 |   85.06 |   88.08 |                   
+ ...owledge-portal |    82.6 |    93.54 |   28.57 |    82.6 |                   
+  middleware.ts    |    82.6 |    93.54 |   28.57 |    82.6 | 25-35,64,90       
+ ...dge-portal/app |   92.45 |    79.41 |     100 |   95.83 |                   
+  page.tsx         |   92.45 |    79.41 |     100 |   95.83 | 43-44             
+ ...dmin/dashboard |   84.94 |    80.32 |   70.37 |   88.37 |                   
+  page.tsx         |   84.94 |    80.32 |   70.37 |   88.37 | 56-59,203,250-308 
+ ...p/api/activity |   99.05 |    91.75 |     100 |     100 |                   
+  route.ts         |   99.05 |    91.75 |     100 |     100 | ...54,131,194,250 
+ .../ai-interviews |     100 |    93.75 |     100 |     100 |                   
+  route.ts         |     100 |    93.75 |     100 |     100 | 57,73,113         
+ ...min/audit-logs |     100 |       75 |     100 |     100 |                   
+  route.ts         |     100 |       75 |     100 |     100 | 23                
+ ...pi/admin/users |   71.87 |     87.5 |      80 |   78.57 |                   
+  route.ts         |   71.87 |     87.5 |      80 |   78.57 | 43-44,89-90,95-96 
+ ...erview/extract |   95.83 |    84.61 |     100 |     100 |                   
+  route.ts         |   95.83 |    84.61 |     100 |     100 | ...1-27,42-44,101 
+ ...rate-questions |     100 |    95.83 |     100 |     100 |                   
+  route.ts         |     100 |    95.83 |     100 |     100 | 83                
+ ...[token]/answer |      95 |    95.45 |      50 |     100 |                   
+  route.ts         |      95 |    95.45 |      50 |     100 | 59                
+ ...oken]/complete |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...ken]/terminate |   93.33 |      100 |      50 |     100 |                   
+  route.ts         |   93.33 |      100 |      50 |     100 |                   
+ ...[token]/verify |   86.11 |    82.05 |      50 |   88.23 |                   
+  route.ts         |   86.11 |    82.05 |      50 |   88.23 | 41,53,68,72       
+ .../blog-roulette |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...-roulette/[id] |     100 |     87.5 |     100 |     100 |                   
+  route.ts         |     100 |     87.5 |     100 |     100 | 40-41,77          
+ .../[id]/ai-score |   92.85 |    83.33 |      50 |     100 |                   
+  route.ts         |   92.85 |    83.33 |      50 |     100 | 28                
+ ...e/[id]/publish |     100 |    86.66 |     100 |     100 |                   
+  route.ts         |     100 |    86.66 |     100 |     100 | 42-47             
+ .../quiz/generate |   98.61 |    92.59 |     100 |     100 |                   
+  route.ts         |   98.61 |    92.59 |     100 |     100 | 25,68,82,111      
+ ...d]/quiz/submit |    96.1 |    91.66 |   83.33 |   98.59 |                   
+  route.ts         |    96.1 |    91.66 |   83.33 |   98.59 | 203               
+ ...te/[id]/submit |      85 |     87.5 |      50 |   88.88 |                   
+  route.ts         |      85 |     87.5 |      50 |   88.88 | 58-63             
+ ...te/[id]/unlock |   97.05 |       95 |     100 |   97.05 |                   
+  route.ts         |   97.05 |       95 |     100 |   97.05 | 103               
+ ...oulette/upload |   97.05 |    88.88 |     100 |   96.96 |                   
+  route.ts         |   97.05 |    88.88 |     100 |   96.96 | 77                
+ .../digests/by-id |     100 |    85.71 |     100 |     100 |                   
+  route.ts         |     100 |    85.71 |     100 |     100 | 40,65             
+ ...gests/complete |   92.59 |    81.25 |     100 |    92.3 |                   
+  route.ts         |   92.59 |    81.25 |     100 |    92.3 | 71-72             
+ ...gests/generate |   87.09 |    73.13 |   66.66 |    93.1 |                   
+  route.ts         |   87.09 |    73.13 |   66.66 |    93.1 | 102,148-150       
+ ...digests/latest |   86.15 |    63.07 |     100 |   88.33 |                   
+  route.ts         |   86.15 |    63.07 |     100 |   88.33 | ...3-56,59,62,102 
+ ...i/digests/past |    93.1 |       84 |   85.71 |   96.15 |                   
+  route.ts         |    93.1 |       84 |   85.71 |   96.15 | 23,92             
+ ...gests/trending |   89.47 |    81.25 |     100 |   89.47 |                   
+  route.ts         |   89.47 |    81.25 |     100 |   89.47 | 132-133,144-145   
+ ...view/terminate |   92.85 |      100 |      50 |     100 |                   
+  route.ts         |   92.85 |      100 |      50 |     100 |                   
+ ...terview/verify |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...api/interviews |     100 |    78.57 |     100 |     100 |                   
+  route.ts         |     100 |    78.57 |     100 |     100 | ...1-53,78-85,103 
+ ...nterviews/[id] |     100 |       70 |     100 |     100 |                   
+  route.ts         |     100 |       70 |     100 |     100 | 39-44             
+ .../[id]/generate |    91.3 |     75.4 |   85.71 |   92.68 |                   
+  route.ts         |    91.3 |     75.4 |   85.71 |   92.68 | 36,189-190        
+ ...ws/[id]/invite |   79.16 |    73.68 |      50 |   86.36 |                   
+  route.ts         |   79.16 |    73.68 |      50 |   86.36 | 54,81-82          
+ ...ews/[id]/parse |   72.22 |    47.61 |      50 |   81.25 |                   
+  route.ts         |   72.22 |    47.61 |      50 |   81.25 | 49,57-58          
+ ...pi/leaderboard |     100 |      100 |     100 |     100 |                   
+  route.ts         |     100 |      100 |     100 |     100 |                   
+ ...izzes/evaluate |   98.14 |     90.9 |     100 |   97.91 |                   
+  route.ts         |   98.14 |     90.9 |     100 |   97.91 | 100               
+ ...quizzes/finish |   96.72 |    65.85 |    87.5 |   96.49 |                   
+  route.ts         |   96.72 |    65.85 |    87.5 |   96.49 | 76,105            
+ ...uizzes/history |     100 |       75 |     100 |     100 |                   
+  route.ts         |     100 |       75 |     100 |     100 | 34,48-50          
+ ...es/leaderboard |   96.66 |    78.57 |     100 |   96.55 |                   
+  route.ts         |   96.66 |    78.57 |     100 |   96.55 | 11                
+ .../quizzes/start |   97.91 |    81.96 |     100 |   97.69 |                   
+  route.ts         |   97.91 |    81.96 |     100 |   97.69 | 50-51,189         
+ ...quizzes/status |    88.6 |    65.71 |     100 |    87.5 |                   
+  route.ts         |    88.6 |    65.71 |     100 |    87.5 | ...68-169,216-218 
+ ...quizzes/submit |   82.82 |     62.5 |     100 |   82.38 |                   
+  route.ts         |   82.82 |     62.5 |     100 |   82.38 | ...46-362,438-439 
+ ...streaks/status |      92 |    75.67 |     100 |   91.83 |                   
+  route.ts         |      92 |    75.67 |     100 |   91.83 | 82,110,138-139    
+ ...pi/submissions |    84.9 |    76.92 |     100 |   84.31 |                   
+  route.ts         |    84.9 |    76.92 |     100 |   84.31 | ...62,64-65,67-68 
+ .../[id]/moderate |      92 |    83.33 |     100 |   91.66 |                   
+  route.ts         |      92 |    83.33 |     100 |   91.66 | 56-57             
+ ...ions/[id]/quiz |   91.17 |    85.71 |     100 |    90.9 |                   
+  route.ts         |   91.17 |    85.71 |     100 |    90.9 | 32,75-76          
+ ...assess/[token] |   91.41 |    71.95 |   82.75 |   94.11 |                   
+  page.tsx         |   91.41 |    71.95 |   82.75 |   94.11 | ...76-277,282-285 
+ .../auth/callback |     100 |    84.21 |     100 |     100 |                   
+  route.ts         |     100 |    84.21 |     100 |     100 | 16-18,32,45,63    
+ .../blog-roulette |   95.74 |     84.9 |   85.71 |   95.45 |                   
+  page.tsx         |   95.74 |     84.9 |   85.71 |   95.45 | 206,258           
+ ...ette/[id]/edit |    74.5 |    68.02 |   65.11 |   75.13 |                   
+  page.tsx         |    74.5 |    68.02 |   65.11 |   75.13 | ...04-635,671-682 
+ ...ette/[id]/quiz |   74.04 |    79.67 |   67.74 |      75 |                   
+  page.tsx         |   74.04 |    79.67 |   67.74 |      75 | ...95-198,473-492 
+ ...g-roulette/new |   89.09 |     82.5 |   88.23 |   93.75 |                   
+  page.tsx         |   89.09 |     82.5 |   88.23 |   93.75 | 71-72,198         
+ .../app/dashboard |     100 |    72.72 |     100 |     100 |                   
+  page.tsx         |     100 |    72.72 |     100 |     100 | 59-60             
+ ...rview/sessions |     100 |    81.81 |     100 |     100 |                   
+  page.tsx         |     100 |    81.81 |     100 |     100 | 29-32,110         
+ ...ard/gatekeeper |   93.49 |    73.95 |   92.85 |   94.87 |                   
+  page.tsx         |   93.49 |    73.95 |   92.85 |   94.87 | 91-96,154,351-353 
+ ...hboard/quizzes |     100 |     92.3 |     100 |     100 |                   
+  page.tsx         |     100 |     92.3 |     100 |     100 | 219               
+ ...interview/[id] |   48.08 |    31.67 |   36.73 |   48.49 |                   
+  page.tsx         |   48.08 |    31.67 |   36.73 |   48.49 | ...94-509,518-579 
+ ...al/app/preview |     100 |      100 |     100 |     100 |                   
+  page.tsx         |     100 |      100 |     100 |     100 |                   
+ ...tal/components |    87.5 |    81.78 |   81.39 |   89.09 |                   
+  ...w-manager.tsx |   82.45 |     87.5 |   72.41 |   84.11 | ...04-230,268,419 
+  ...ut-button.tsx |      60 |    66.66 |      50 |      60 | 16-18,33          
+  ...oderation.tsx |   87.83 |       75 |   78.26 |   88.88 | 96,185,432-491    
+  ...anagement.tsx |   96.66 |    84.21 |   93.75 |   98.83 | 312               
+ ...s/ai-interview |   83.51 |    71.11 |   76.25 |   86.34 |                   
+  ...tionModal.tsx |      10 |        0 |       0 |    12.5 | 12-22             
+  ...ngs-panel.tsx |    90.9 |       80 |   93.33 |      94 | 53-54,152         
+  ...d-results.tsx |   48.64 |    53.84 |   27.77 |   48.48 | ...18,355-374,429 
+  ...ntrol-bar.tsx |     100 |      100 |     100 |     100 |                   
+  ...ideo-tile.tsx |   94.73 |     90.9 |     100 |     100 | 26,42             
+  ...tructions.tsx |     100 |    84.61 |     100 |     100 | 74,89             
+  ...-selector.tsx |   87.91 |       60 |    91.3 |   91.35 | 59,89-92,133,194  
+  ...-uploader.tsx |     100 |       85 |     100 |     100 | ...,82-89,282-285 
+  ...interview.tsx |     100 |       50 |     100 |     100 | 10                
+ .../blog-roulette |     100 |    97.36 |     100 |     100 |                   
+  preview-pane.tsx |     100 |      100 |     100 |     100 |                   
+  ...blog-view.tsx |     100 |    94.44 |     100 |     100 | 99                
+ ...ents/dashboard |   82.15 |    75.73 |   89.18 |   86.97 |                   
+  ActivityTab.tsx  |   86.84 |    78.57 |   77.77 |   94.11 | 22,166            
+  BlogReader.tsx   |     100 |     92.5 |     100 |     100 | 166-191           
+  ...arSidebar.tsx |     100 |      100 |     100 |     100 |                   
+  DailyBlogTab.tsx |   82.45 |    72.78 |      90 |   86.45 | ...36-238,261,441 
+  ...HeaderBar.tsx |     100 |      100 |     100 |     100 |                   
+  ...oardShell.tsx |   92.98 |    78.33 |   91.66 |   98.03 | 108               
+  ...rboardTab.tsx |      92 |    66.66 |     100 |   95.65 | 19                
+  PastBlogsTab.tsx |   91.33 |    83.96 |     100 |   96.26 | 20-22,127,141     
+  ...nRenderer.tsx |   78.96 |    74.41 |    85.3 |   84.09 | ...2921,2965,2982 
+  QuizModal.tsx    |     100 |      100 |     100 |     100 |                   
+  ...ngHeatmap.tsx |     100 |     87.5 |     100 |     100 | 59,65             
+  ReadingTimer.tsx |     100 |      100 |     100 |     100 |                   
+  TopicMix.tsx     |     100 |      100 |     100 |     100 |                   
+ ...omponents/quiz |    74.9 |     73.2 |   80.95 |   77.84 |                   
+  ...a-preview.tsx |   94.44 |    83.33 |     100 |   93.33 | 33                
+  quiz-runner.tsx  |   74.21 |    72.87 |      80 |   77.35 | ...1021,1082-1147 
+ ...e-portal/hooks |   94.64 |    77.77 |   77.77 |   98.07 |                   
+  ...ntEnhancer.ts |   94.64 |    77.77 |   77.77 |   98.07 | 87                
+ ...dge-portal/lib |   85.13 |    72.09 |     100 |   95.08 |                   
+  blog-service.ts  |     100 |      100 |     100 |     100 |                   
+  reading-timer.ts |    80.7 |       70 |     100 |   93.61 | 28,72,109         
+  tech-keywords.ts |     100 |     62.5 |     100 |     100 | 9-18,27           
+ ...-portal/lib/ai |   97.45 |    86.91 |     100 |   97.93 |                   
+  ...-evaluator.ts |     100 |    97.61 |     100 |     100 | 96                
+  ...-generator.ts |   95.71 |     85.1 |     100 |   95.52 | 96,205-206        
+  validator.ts     |   97.61 |    66.66 |     100 |     100 | 18-42,105,162-167 
+ ...b/ai-interview |    85.1 |    57.93 |   92.42 |   85.71 |                   
+  assess-utils.ts  |    87.5 |    88.88 |     100 |    87.5 | 6                 
+  ...and-invite.ts |   94.44 |    78.57 |      75 |     100 | 61-62,84          
+  extractor.ts     |   52.83 |    19.04 |      80 |   50.98 | 62-75,173-293     
+  face-tracking.ts |      85 |    74.66 |      80 |   89.09 | ...26-327,342-348 
+  invite-token.ts  |     100 |      100 |     100 |     100 |                   
+  ...-generator.ts |   92.47 |    68.13 |     100 |   91.66 | ...82-383,410-411 
+  session-utils.ts |     100 |      100 |     100 |     100 |                   
+  ...g-watchdog.ts |     100 |       80 |     100 |     100 | 61-62             
+  validators.ts    |     100 |      100 |     100 |     100 |                   
+ ...portal/lib/api |     100 |      100 |     100 |     100 |                   
+  ...-with-auth.ts |     100 |      100 |     100 |     100 |                   
+  require-user.ts  |     100 |      100 |     100 |     100 |                   
+ .../blog-roulette |   93.62 |    86.66 |     100 |   94.63 |                   
+  ai-detection.ts  |   90.36 |    83.87 |     100 |   96.49 | 99,128            
+  converter.ts     |     100 |      100 |     100 |     100 |                   
+  gemini-client.ts |   97.72 |    94.23 |     100 |   97.33 | 46-47             
+  google-drive.ts  |   89.85 |       80 |     100 |   89.85 | 29-36             
+  publisher.ts     |   87.09 |       65 |     100 |   87.09 | 32-33,47-48       
+  route-helpers.ts |     100 |      100 |     100 |     100 |                   
+  seo.ts           |   95.23 |    77.77 |     100 |   94.59 | 22,49             
+  types.ts         |     100 |      100 |     100 |     100 |                   
+  validators.ts    |     100 |      100 |     100 |     100 |                   
+ ...ortal/lib/data |   95.91 |     93.5 |     100 |   95.12 |                   
+  activity.ts      |     100 |    93.75 |     100 |     100 | 98,100-101        
+  db.ts            |   86.66 |       80 |     100 |   85.71 | 61-65,75-76,85    
+  quiz.ts          |     100 |      100 |     100 |     100 |                   
+  streak.ts        |     100 |      100 |     100 |     100 |                   
+ ...al/lib/digests |     100 |      100 |     100 |     100 |                   
+  ...d-fallback.ts |     100 |      100 |     100 |     100 |                   
+ ...ortal/lib/mock |       0 |        0 |       0 |       0 |                   
+  activity.json    |       0 |        0 |       0 |       0 |                   
+ ...al/lib/quizzes |   94.65 |    82.38 |    92.3 |   95.73 |                   
+  ...-path-sync.ts |   91.46 |    72.94 |   82.35 |    91.3 | ...59,166,169-172 
+  proctor.ts       |   96.29 |    93.75 |     100 |     100 | 82                
+  review.ts        |   91.66 |    87.09 |     100 |   95.23 | 87                
+  scoring.ts       |     100 |    84.61 |     100 |     100 | 53,87,101         
+  timing.ts        |     100 |      100 |     100 |     100 |                   
+ ...l/lib/supabase |   94.44 |    94.28 |     100 |   93.75 |                   
+  admin.ts         |    90.9 |     87.5 |     100 |   88.88 | 5                 
+  client.ts        |     100 |      100 |     100 |     100 |                   
+  ...ie-options.ts |   88.88 |     90.9 |     100 |   85.71 | 11                
+  server.ts        |     100 |      100 |     100 |     100 |                   
+ .../lib/synthesis |     100 |    90.38 |     100 |     100 |                   
+  blog-compiler.ts |     100 |    90.38 |     100 |     100 | 148,160-161,182   
+ ...-portal/shared |     100 |      100 |     100 |     100 |                   
+  ...keywords.json |     100 |      100 |     100 |     100 |                   
+-------------------|---------|----------|---------|---------|-------------------

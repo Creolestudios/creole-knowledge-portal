@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 import { isInventedFallback } from '@/lib/digests/invented-fallback';
+import { requireUser } from '@/lib/api/require-user';
 
 /**
  * "Today" in IST (Asia/Kolkata) — must match the blog-service's own definition
@@ -75,15 +76,8 @@ function attachFallbackMeta(blog: Record<string, unknown> | null) {
  */
 export async function GET() {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
     const userId = user.id;
     const today = localDateKey();
 

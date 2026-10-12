@@ -1,0 +1,509 @@
+'use client';
+
+import React, { useState } from 'react';
+import {
+  CheckCircle2,
+  XCircle,
+  Award,
+  BookOpen,
+  Briefcase,
+  Copy,
+  Check,
+  Tag,
+  AlertTriangle,
+  ArrowRight,
+  Link2,
+  KeyRound,
+} from 'lucide-react';
+
+import { ExtractionResult, SessionGenerationResult } from '@/lib/ai-interview/types';
+
+interface KeywordResultsProps {
+  result: SessionGenerationResult;
+  onReset: () => void;
+}
+
+/**
+ * Full results view for the "Generate Interview Link" flow: the keyword
+ * analysis overview plus the interview link/passcode and the questions that
+ * were actually generated and stored for the session.
+ */
+export function KeywordResults({ result, onReset }: KeywordResultsProps) {
+  return (
+    <div className="w-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+      <KeywordAnalysisOverview extraction={result.extraction} onReset={onReset} />
+      <InterviewLinkAndQuestions result={result} />
+    </div>
+  );
+}
+
+interface KeywordAnalysisOverviewProps {
+  extraction: ExtractionResult;
+  onReset: () => void;
+}
+
+/**
+ * Just the keyword/skill-match analysis display, with no session/invite
+ * data — reused by the older ai-interview-manager.tsx flow, which only
+ * previews extraction results and doesn't create a session or invite.
+ */
+export function KeywordAnalysisOverview({ extraction, onReset }: KeywordAnalysisOverviewProps) {
+  const [copied, setCopied] = useState(false);
+  const { candidateProfile, jdRequirements, analysis } = extraction;
+
+  const matchPercentage = analysis.matchPercentage || 0;
+
+  const getMatchColor = (pct: number) => {
+    if (pct >= 75) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' };
+    if (pct >= 50) return { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' };
+    return { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/30' };
+  };
+
+  const matchStyle = getMatchColor(matchPercentage);
+  const isApiFailingOrZero = Boolean(
+    extraction.apiFailed ||
+    extraction.isFallback ||
+    analysis.apiFailed ||
+    (matchPercentage === 0 && analysis.matchedKeywords.length === 0)
+  );
+
+  const handleCopyKeywords = () => {
+    const summaryText = `
+=== KEYWORD EXTRACTION & FIT REPORT ===
+Candidate: ${candidateProfile.name || 'Anonymous'}
+Job Title: ${jdRequirements.jobTitle || 'N/A'}
+Match Score: ${matchPercentage}%
+
+MATCHED KEYWORDS (${analysis.matchedKeywords.length}):
+${analysis.matchedKeywords.join(', ')}
+
+MISSING KEYWORDS (${analysis.missingKeywords.length}):
+${analysis.missingKeywords.join(', ')}
+
+RESUME ONLY KEYWORDS (${analysis.resumeOnlyKeywords.length}):
+${analysis.resumeOnlyKeywords.join(', ')}
+
+SKILL GAP SUMMARY:
+${analysis.skillGapSummary}
+`.trim();
+
+    navigator.clipboard.writeText(summaryText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="w-full space-y-8">
+      {/* HEADER BAR */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl shadow-sm">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#1f1f1f] dark:text-[#34c4f2] bg-[#34c4f2]/15 px-2.5 py-1 rounded-full border border-[#34c4f2]/30">
+              Extraction Complete
+            </span>
+            <span className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f]">
+              Extracted at {new Date(extraction.extractedAt).toLocaleTimeString()}
+            </span>
+          </div>
+          <h2 className="text-2xl font-bold text-[#1f1f1f] dark:text-white mt-2">Candidate & JD Skill Analysis</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleCopyKeywords}
+            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-[#2b2b2b] dark:bg-[#1f1f1f] hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] dark:bg-[#2b2b2b] dark:hover:bg-[#2b2b2b] text-[#1f1f1f] dark:text-white text-sm font-semibold rounded-xl border border-[#d9d9d9] dark:border-[#4a4a4a] transition-all cursor-pointer"
+          >
+            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-[#4a4a4a] dark:text-[#9f9f9f]" />}
+            <span>{copied ? 'Copied Report' : 'Copy Keywords'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onReset}
+            className="px-4 py-2 bg-[#34c4f2] hover:bg-[#2db0db] text-[#1f1f1f] text-sm font-bold rounded-xl shadow-md transition-all cursor-pointer"
+          >
+            Analyze Another Pair
+          </button>
+        </div>
+      </div>
+
+      {/* DOCUMENT VALIDATION WARNING */}
+      {analysis.documentValidationWarning && (
+        <div className="flex items-start gap-3.5 p-4 bg-red-500/15 border border-red-500/40 rounded-2xl text-red-200 text-sm shadow-md">
+          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-red-300 text-sm">
+              Document Validation Warning
+            </p>
+            <p className="text-xs text-red-200/90 leading-relaxed">
+              {analysis.documentValidationWarning}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* API FAILURE / ZERO KEYWORDS ADMIN NOTE */}
+      {isApiFailingOrZero && (
+        <div
+          id="keyword-extraction-api-warning"
+          className="flex items-start gap-3.5 p-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl text-amber-200 text-sm shadow-md"
+        >
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="font-bold text-amber-200 text-sm">
+              Note: AI Keyword Extraction API is not working or returned 0 keywords.
+            </p>
+            <p className="text-xs text-amber-300/90 leading-relaxed">
+              {extraction.apiNote || analysis.apiNote || 'The AI extraction API failed or could not extract keywords. Please click "Analyze Another Pair" to retry.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* OVERVIEW CARDS GRID */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* MATCH SCORE CARD */}
+        <div className={`p-6 ${matchStyle.bg} border ${matchStyle.border} rounded-2xl flex flex-col justify-between shadow-sm`}>
+          <div>
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#4a4a4a] dark:text-[#9f9f9f]">Match Percentage</span>
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className={`text-5xl font-black ${matchStyle.text}`}>{matchPercentage}%</span>
+              <span className="text-sm font-bold text-[#4a4a4a] dark:text-[#9f9f9f]">JD Fit</span>
+            </div>
+          </div>
+          {isApiFailingOrZero && (
+            <div className="mt-3 p-2.5 rounded-xl bg-amber-500/20 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-200 font-semibold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>Note: API is not working (0 keywords). Please retry.</span>
+            </div>
+          )}
+          <p className="text-xs text-[#1f1f1f] dark:text-zinc-300 mt-4 leading-relaxed font-medium">
+            {analysis.skillGapSummary || 'Analysis completed successfully.'}
+          </p>
+        </div>
+
+        {/* CANDIDATE QUICK SUMMARY */}
+        <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl flex flex-col justify-between shadow-sm">
+          <div>
+            <div className="flex items-center gap-2 text-[#4a4a4a] dark:text-[#9f9f9f] text-xs font-bold uppercase tracking-wider mb-2">
+              <Briefcase className="w-4 h-4 text-[#34c4f2]" />
+              <span>Candidate Profile</span>
+            </div>
+            <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white">{candidateProfile.name || 'Candidate'}</h3>
+            <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] mt-1">
+              Experience: {candidateProfile.yearsOfExperience ? `${candidateProfile.yearsOfExperience} years` : 'Not specified'}
+            </p>
+          </div>
+          <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] line-clamp-3 mt-3 italic">
+            &quot;{candidateProfile.summary || 'No summary extracted.'}&quot;
+          </p>
+        </div>
+
+        {/* JD QUICK SUMMARY */}
+        <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl flex flex-col justify-between shadow-sm">
+          <div>
+            <div className="flex items-center gap-2 text-[#4a4a4a] dark:text-[#9f9f9f] text-xs font-bold uppercase tracking-wider mb-2">
+              <BookOpen className="w-4 h-4 text-emerald-500" />
+              <span>Target Role</span>
+            </div>
+            <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white">{jdRequirements.jobTitle || 'Target Position'}</h3>
+            <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] mt-1">
+              Seniority: {jdRequirements.seniorityLevel || 'Mid-Senior'} | Required Exp: {jdRequirements.requiredExperienceYears || 0}+ YOE
+            </p>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {jdRequirements.mustHaveSkills.slice(0, 4).map((skill, idx) => (
+              <span key={idx} className="text-[11px] bg-zinc-100 dark:bg-[#2b2b2b] dark:bg-[#1f1f1f] text-[#1f1f1f] dark:text-[#d9d9d9] px-2 py-0.5 rounded-md border border-[#d9d9d9] dark:border-[#4a4a4a]">
+                {skill}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* KEYWORD TAXONOMY BREAKDOWN */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* MATCHED KEYWORDS */}
+        <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white">Matched Keywords ({analysis.matchedKeywords.length})</h3>
+            </div>
+            <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/30">
+              Present in Resume & JD
+            </span>
+          </div>
+
+          {analysis.matchedKeywords.length === 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] italic">No direct keyword overlaps detected.</p>
+              {isApiFailingOrZero && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
+                  Note: API is not working or returned 0 keywords. Please retry.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2 pt-2">
+              {analysis.matchedKeywords.map((kw, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold"
+                >
+                  <Tag className="w-3 h-3 text-emerald-500" />
+                  {kw}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* MISSING / GAP KEYWORDS */}
+        <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-rose-500/10 text-rose-500">
+                <XCircle className="w-5 h-5" />
+              </div>
+              <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white">Missing / Skill Gaps ({analysis.missingKeywords.length})</h3>
+            </div>
+            <span className="text-xs text-rose-600 dark:text-rose-400 font-bold bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/30">
+              Required in JD
+            </span>
+          </div>
+
+          {analysis.missingKeywords.length === 0 ? (
+            <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] italic">No missing keywords found! Exceptional coverage.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2 pt-2">
+              {analysis.missingKeywords.map((kw, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs font-semibold"
+                >
+                  <AlertTriangle className="w-3 h-3 text-rose-500" />
+                  {kw}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* RESUME-ONLY & STRENGTHS DETAILED LIST */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* RESUME-ONLY STRENGTHS */}
+        <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="p-2 rounded-lg bg-[#34c4f2]/10 text-[#34c4f2]">
+              <Award className="w-5 h-5" />
+            </div>
+            <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white">
+              Additional Candidate Strengths ({analysis.resumeOnlyKeywords.length})
+            </h3>
+          </div>
+          <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f]">Skills present in resume that provide extra value beyond the JD.</p>
+
+          <div className="flex flex-wrap gap-2 pt-2">
+            {analysis.resumeOnlyKeywords.map((kw, idx) => (
+              <span
+                key={idx}
+                className="px-3 py-1.5 rounded-xl bg-[#34c4f2]/10 border border-[#34c4f2]/30 text-[#1f1f1f] dark:text-[#34c4f2] text-xs font-semibold"
+              >
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* KEY STRENGTHS & IMPROVEMENTS */}
+        <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-4 shadow-sm">
+          <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white">AI Evaluation & Recommendations</h3>
+          
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-xs font-bold uppercase text-emerald-600 dark:text-emerald-400 tracking-wider mb-1">Key Strengths</h4>
+              <ul className="space-y-1">
+                {analysis.keyStrengths.map((str, idx) => (
+                  <li key={idx} className="flex items-center gap-2 text-xs text-[#1f1f1f] dark:text-zinc-200">
+                    <ArrowRight className="w-3 h-3 text-emerald-500 shrink-0" />
+                    <span>{str}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {analysis.improvementAreas.length > 0 && (
+              <div className="pt-2 border-t border-[#d9d9d9] dark:border-[#4a4a4a]">
+                <h4 className="text-xs font-bold uppercase text-amber-600 dark:text-amber-400 tracking-wider mb-1">Recommended Interview Focus Areas</h4>
+                <ul className="space-y-1">
+                  {analysis.improvementAreas.map((area, idx) => (
+                    <li key={idx} className="flex items-center gap-2 text-xs text-[#1f1f1f] dark:text-zinc-200">
+                      <ArrowRight className="w-3 h-3 text-amber-500 shrink-0" />
+                      <span>{area}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Interview link/passcode panel + the questions actually generated and
+ * stored for the session — produced by the single "Generate Interview Link"
+ * action, shown only from the full `KeywordResults` view.
+ */
+function InterviewLinkAndQuestions({ result }: { result: SessionGenerationResult }) {
+  const { invite, questions } = result;
+  const [copiedField, setCopiedField] = useState<'link' | 'passcode' | null>(null);
+
+  const handleCopy = (value: string, field: 'link' | 'passcode') => {
+    navigator.clipboard.writeText(value);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* SUCCESS BANNER — confirms whether question generation succeeded */}
+      <div
+        id="interview-generation-status"
+        className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-700 dark:text-emerald-300 text-sm font-semibold"
+      >
+        <CheckCircle2 className="w-5 h-5 shrink-0" />
+        <span>
+          {questions.length} interview question{questions.length === 1 ? '' : 's'} generated and
+          saved successfully. The interview link and passcode are ready below.
+        </span>
+      </div>
+
+      {/* THE QUESTIONS THAT WERE ACTUALLY GENERATED & STORED */}
+      <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl space-y-6 shadow-sm">
+        <h3 className="text-xl font-bold text-[#1f1f1f] dark:text-white">
+          Generated Interview Questions ({questions.length})
+        </h3>
+
+        {questions.some((q) => q.is_fallback) && (
+          <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-700 dark:text-amber-300 text-sm">
+            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+            <span>
+              <strong>Warning:</strong> The AI model quota has finished or the service is temporarily unavailable. The questions below are default fallback questions dynamically adapted to the candidate&apos;s profile.
+            </span>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          {questions.map((q, idx) => (
+            <div
+              key={q.id || idx}
+              className="p-4 bg-zinc-50 dark:bg-[#1f1f1f] hover:border-[#34c4f2]/50 border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl transition-all space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-lg bg-[#34c4f2]/15 text-[#1f1f1f] dark:text-[#34c4f2] text-xs font-bold flex items-center justify-center border border-[#34c4f2]/30">
+                    #{idx + 1}
+                  </span>
+                  <span
+                    className={`text-[11px] font-semibold uppercase tracking-wider px-2.5 py-0.5 rounded-md ${
+                      q.is_custom
+                        ? 'bg-[#34c4f2]/15 text-[#1f1f1f] dark:text-[#34c4f2] border border-[#34c4f2]/30'
+                        : q.is_mandatory_hr
+                        ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30'
+                        : 'bg-[#34c4f2]/10 text-[#1f1f1f] dark:text-[#34c4f2] border border-[#34c4f2]/30'
+                    }`}
+                  >
+                    {q.is_custom ? 'custom' : q.category ? q.category.replaceAll('_', ' ') : q.question_type}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-[#4a4a4a] dark:text-[#9f9f9f] font-medium">
+                  <span>⏱️ {Math.round(q.time_limit_sec / 60)} min limit</span>
+                  <span className="uppercase font-semibold">{q.difficulty}</span>
+                </div>
+              </div>
+
+              <p className="text-sm font-medium text-[#1f1f1f] dark:text-white pl-1">{q.question_text}</p>
+
+              {q.intent && (
+                <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] pl-1 italic">
+                  <span className="font-semibold not-italic text-[#1f1f1f] dark:text-zinc-300">Intent: </span>
+                  {q.intent}
+                </p>
+              )}
+
+              {Array.isArray(q.required_skills) && q.required_skills.length > 0 && (
+                <div className="flex items-center gap-1.5 pt-1 pl-1 flex-wrap">
+                  {q.required_skills.map((skill: string, sIdx: number) => (
+                    <span
+                      key={sIdx}
+                      className="text-[10px] bg-zinc-200 dark:bg-[#2b2b2b] text-[#1f1f1f] dark:text-[#9f9f9f] px-2 py-0.5 rounded border border-[#d9d9d9] dark:border-[#4a4a4a]"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* INTERVIEW LINK & PASSCODE — shown last so it's right where the admin
+          finishes reading, with no need to scroll back up to find it. */}
+      <div className="p-6 bg-white dark:bg-[#2b2b2b] border border-[#34c4f2]/40 rounded-2xl space-y-4 shadow-sm">
+        <h3 className="text-lg font-bold text-[#1f1f1f] dark:text-white">Interview Link &amp; Passcode</h3>
+        <p className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f]">
+          Share the link and passcode below with the candidate. The link expires at{' '}
+          {invite.expires_at ? new Date(invite.expires_at).toLocaleString() : 'N/A'}.
+        </p>
+
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 p-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl">
+            <Link2 className="w-4 h-4 text-[#34c4f2] shrink-0" />
+            <input
+              id="keyword-results-invite-link"
+              readOnly
+              value={invite.invite_url || ''}
+              className="flex-1 bg-transparent text-sm text-[#1f1f1f] dark:text-white outline-none"
+            />
+            <button
+              id="keyword-results-copy-link"
+              type="button"
+              onClick={() => handleCopy(invite.invite_url || '', 'link')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-[#2b2b2b] hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] dark:bg-[#2b2b2b] dark:hover:bg-[#333333] text-xs font-semibold text-[#1f1f1f] dark:text-white rounded-lg border border-[#d9d9d9] dark:border-[#4a4a4a] cursor-pointer"
+            >
+              {copiedField === 'link' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedField === 'link' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 p-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl">
+            <KeyRound className="w-4 h-4 text-amber-500 shrink-0" />
+            <input
+              id="keyword-results-invite-passcode"
+              readOnly
+              value={invite.passcode || ''}
+              className="flex-1 bg-transparent text-sm font-mono tracking-widest text-[#1f1f1f] dark:text-white outline-none"
+            />
+            <button
+              id="keyword-results-copy-passcode"
+              type="button"
+              onClick={() => handleCopy(invite.passcode || '', 'passcode')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-[#2b2b2b] hover:bg-zinc-100 dark:hover:bg-[#1f1f1f] dark:bg-[#2b2b2b] dark:hover:bg-[#333333] text-xs font-semibold text-[#1f1f1f] dark:text-white rounded-lg border border-[#d9d9d9] dark:border-[#4a4a4a] cursor-pointer"
+            >
+              {copiedField === 'passcode' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedField === 'passcode' ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+

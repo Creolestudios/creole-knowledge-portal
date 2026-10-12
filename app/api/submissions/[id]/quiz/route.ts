@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 import { requireAdminUser } from '@/lib/supabase/admin';
 import { getSubmissionById, saveSubmission, addAuditLog } from '@/lib/data/db';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
 
     const submission = await getSubmissionById(id);
     if (!submission) {

@@ -1,19 +1,13 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 import { requireAdminUser } from '@/lib/supabase/admin';
 import { getSubmissions, saveSubmission, addAuditLog, Submission } from '@/lib/data/db';
 import { validateContent, generateQuiz } from '@/lib/ai/validator';
 
 export async function GET(req: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
 
     const submissions = await getSubmissions();
     const admin = await requireAdminUser();
@@ -33,14 +27,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
 
     const { title, content } = await req.json();
 

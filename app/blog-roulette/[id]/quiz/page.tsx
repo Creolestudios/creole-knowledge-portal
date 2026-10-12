@@ -215,10 +215,10 @@ export default function QuizPage() {
               <Sparkles size={10} />
               AI Vetting Quiz
             </div>
-            <h1 className="text-3xl font-black text-zinc-900 tracking-tight">
+            <h1 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tight">
               Prove you understand your own blog
             </h1>
-            <p className="text-zinc-500 mt-2">
+            <p className="text-zinc-500 dark:text-zinc-400 mt-2">
               Three questions generated from your submission. All 3 must be
               correct to publish.
             </p>
@@ -249,10 +249,10 @@ export default function QuizPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="bg-white rounded-[32px] p-20 border border-zinc-100 shadow-card flex flex-col items-center text-center space-y-4"
+              className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-20 border border-zinc-100 dark:border-zinc-800 shadow-card flex flex-col items-center text-center space-y-4 transition-colors"
             >
               <Loader2 className="w-10 h-10 text-brand animate-spin" />
-              <p className="text-zinc-500 font-semibold">Preparing quiz...</p>
+              <p className="text-zinc-500 dark:text-zinc-400 font-semibold">Preparing quiz...</p>
             </motion.div>
           )}
 
@@ -286,7 +286,7 @@ export default function QuizPage() {
                 )}
                 <button
                   onClick={startQuiz}
-                  className="px-8 py-4 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover transition-all text-sm uppercase tracking-widest"
+                  className="px-8 py-4 bg-brand text-black font-black rounded-2xl shadow-brand hover:bg-brand-hover transition-all text-sm uppercase tracking-widest cursor-pointer"
                 >
                   Start Quiz
                 </button>
@@ -302,13 +302,13 @@ export default function QuizPage() {
               exit={{ opacity: 0 }}
               className="space-y-6"
             >
-              <div className="bg-white rounded-[28px] p-8 border border-zinc-100 shadow-card">
+              <div className="bg-white dark:bg-[#1f1f1f] rounded-[28px] p-8 border border-zinc-100 dark:border-zinc-800 shadow-card transition-colors">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <span className="w-8 h-8 rounded-lg bg-brand text-black font-black flex items-center justify-center text-sm">
                       {currentQuestionIdx + 1}
                     </span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
                       Question {currentQuestionIdx + 1} of 3 {incorrectIndices.length > 0 && '(Retry)'}
                     </span>
                   </div>
@@ -322,7 +322,7 @@ export default function QuizPage() {
                               ? 'bg-brand scale-110 shadow-sm'
                               : i < currentQuestionIdx
                               ? 'bg-emerald-500'
-                              : 'bg-zinc-200'
+                              : 'bg-zinc-200 dark:bg-zinc-700'
                           }`}
                         />
                       ))}
@@ -330,7 +330,7 @@ export default function QuizPage() {
                   )}
                 </div>
                 
-                <p className="text-lg font-bold text-zinc-900 leading-snug mb-4">
+                <p className="text-lg font-bold text-zinc-900 dark:text-white leading-snug mb-4">
                   {questions[currentQuestionIdx]?.q}
                 </p>
                 
@@ -343,12 +343,12 @@ export default function QuizPage() {
                   }}
                   rows={6}
                   placeholder="Answer in your own words..."
-                  className="w-full px-4 py-3 bg-zinc-50 border border-zinc-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
+                  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand"
                 />
               </div>
 
               {error && (
-                <p className="text-red-500 text-sm font-semibold">{error}</p>
+                <p className="text-red-500 dark:text-red-400 text-sm font-semibold">{error}</p>
               )}
 
               <div className="flex justify-between items-center">
@@ -358,7 +358,7 @@ export default function QuizPage() {
                       setError(null);
                       setCurrentQuestionIdx((prev) => prev - 1);
                     }}
-                    className="px-6 py-3.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-bold rounded-2xl transition-all text-xs uppercase tracking-wider"
+                    className="px-6 py-3.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold rounded-2xl transition-all text-xs uppercase tracking-wider cursor-pointer"
                   >
                     Previous
                   </button>
@@ -376,14 +376,14 @@ export default function QuizPage() {
                       setError(null);
                       setCurrentQuestionIdx((prev) => prev + 1);
                     }}
-                    className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand transition-all flex items-center gap-2 text-sm uppercase tracking-widest"
+                    className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand transition-all flex items-center gap-2 text-sm uppercase tracking-widest cursor-pointer"
                   >
                     Next Question <ArrowRight size={16} />
                   </button>
                 ) : (
                   <button
                     onClick={() => submitAnswers(false)}
-                    className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand transition-all flex items-center gap-2 text-sm uppercase tracking-widest"
+                    className="px-8 py-4 bg-brand hover:bg-brand-hover text-black font-black rounded-2xl shadow-brand transition-all flex items-center gap-2 text-sm uppercase tracking-widest cursor-pointer"
                   >
                     Submit for Grading <ArrowRight size={16} />
                   </button>
@@ -398,10 +398,10 @@ export default function QuizPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="bg-white rounded-[32px] p-20 border border-zinc-100 shadow-card flex flex-col items-center text-center space-y-4"
+              className="bg-white dark:bg-[#1f1f1f] rounded-[32px] p-20 border border-zinc-100 dark:border-zinc-800 shadow-card flex flex-col items-center text-center space-y-4 transition-colors"
             >
               <Loader2 className="w-10 h-10 text-brand animate-spin" />
-              <p className="text-zinc-500 font-semibold">
+              <p className="text-zinc-500 dark:text-zinc-400 font-semibold">
                 Grading your answers...
               </p>
             </motion.div>
@@ -413,11 +413,11 @@ export default function QuizPage() {
               initial={{ opacity: 0, scale: 0.97 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0 }}
-              className={`rounded-[32px] p-10 border shadow-card ${result.passed
-                  ? 'bg-emerald-50 border-emerald-200'
+              className={`rounded-[32px] p-10 border shadow-card transition-colors ${result.passed
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-950 dark:text-emerald-100'
                   : result.result === 'REJECT'
-                    ? 'bg-red-50 border-red-200'
-                    : 'bg-amber-50 border-amber-200'
+                    ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-950 dark:text-red-100'
+                    : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-950 dark:text-amber-100'
                 }`}
             >
               <div className="flex items-center gap-3 mb-6">
@@ -443,20 +443,20 @@ export default function QuizPage() {
               </div>
 
               {result.error && (
-                <div className="mb-6 p-4 bg-red-100/50 border border-red-200 rounded-2xl text-red-700 text-sm font-semibold flex items-center gap-2">
+                <div className="mb-6 p-4 bg-red-100/50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/60 rounded-2xl text-red-700 dark:text-red-300 text-sm font-semibold flex items-center gap-2">
                   <XCircle size={18} className="shrink-0 text-red-500" />
                   {result.error}
                 </div>
               )}
 
-              <p className="text-sm text-zinc-700 mb-4 font-semibold">
+              <p className="text-sm text-zinc-700 dark:text-zinc-300 mb-4 font-semibold">
                 Score: {result.correct}/3
               </p>
               <ul className="space-y-2 mb-6">
                 {result.per_question.map((ok, i) => (
                   <li
                     key={i}
-                    className="flex items-center gap-2 text-sm font-semibold"
+                    className="flex items-center gap-2 text-sm font-semibold text-zinc-800 dark:text-zinc-200"
                   >
                     {ok ? (
                       <CheckCircle2 size={16} className="text-emerald-500" />

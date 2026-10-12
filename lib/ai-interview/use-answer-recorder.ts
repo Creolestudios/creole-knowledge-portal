@@ -1,0 +1,199 @@
+import { useCallback, useRef, useState, useEffect } from 'react';
+import { cacheFailedAnswer, getCachedAnswers, removeCachedAnswer } from './indexed-db';
+
+const PREFERRED_MIME_TYPES = ['audio/webm', 'audio/mp4', 'audio/ogg'];
+
+export type AnswerRecorderStatus = 'idle' | 'recording' | 'saving' | 'unsupported';
+
+function pickSupportedMimeType(): string | null {
+  if (typeof MediaRecorder === 'undefined') return null;
+  return PREFERRED_MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type)) ?? null;
+}
+
+/**
+ * Records the candidate's spoken answer for one question at a time and uploads it when the
+ * interview moves on. It taps the audio tracks of the stream the interview already holds —
+ * it never calls getUserMedia, so the candidate is not prompted for permission again and the
+ * live video call is unaffected.
+ *
+ * A browser without MediaRecorder support reports `unsupported` and records nothing; that is
+ * surfaced to the candidate as a notice but never blocks the interview.
+ */
+export function useAnswerRecorder(interviewId: string, stream: MediaStream | null) {
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const questionIdRef = useRef<string | null>(null);
+  const startedAtRef = useRef(0);
+  const [status, setStatus] = useState<AnswerRecorderStatus>('idle');
+
+  // Background Sync for Cached Answers
+  useEffect(() => {
+    const syncOfflineAnswers = async () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+      try {
+        const cached = await getCachedAnswers();
+        for (const answer of cached) {
+          if (answer.interviewId !== interviewId) continue;
+          
+          let success = false;
+          try {
+            if (!answer.audioBlob || answer.audioBlob.size === 0) {
+              const res = await fetch(`/api/interview/${interviewId}/answers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  questionId: answer.questionId,
+                  transcript: answer.transcript,
+                }),
+              });
+              success = res.ok;
+            } else {
+              const formData = new FormData();
+              formData.append('questionId', answer.questionId);
+              formData.append('file', answer.audioBlob, 'answer');
+              if (answer.transcript) {
+                formData.append('transcript', answer.transcript);
+              }
+              const res = await fetch(`/api/interview/${interviewId}/answers`, { method: 'POST', body: formData });
+              success = res.ok;
+            }
+            
+            if (success) {
+              await removeCachedAnswer(answer.id);
+            }
+          } catch (err) {
+            console.warn('[sync] Failed to sync offline answer:', err);
+          }
+        }
+      } catch (err) {
+        console.warn('[sync] Failed to read from indexed-db:', err);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', syncOfflineAnswers);
+      syncOfflineAnswers();
+      return () => window.removeEventListener('online', syncOfflineAnswers);
+    }
+  }, [interviewId]);
+
+  const startRecording = useCallback(
+    (questionId: string) => {
+      if (recorderRef.current) return;
+
+      const audioTracks = stream?.getAudioTracks() ?? [];
+      if (!audioTracks.length) return;
+
+      const mimeType = pickSupportedMimeType();
+      if (!mimeType) {
+        setStatus('unsupported');
+        return;
+      }
+
+      const recorder = new MediaRecorder(new MediaStream(audioTracks), { mimeType });
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.start();
+
+      recorderRef.current = recorder;
+      questionIdRef.current = questionId;
+      startedAtRef.current = Date.now();
+      setStatus('recording');
+    },
+    [stream]
+  );
+
+  const stopAndUpload = useCallback(async (clientTranscript?: string) => {
+    const recorder = recorderRef.current;
+    const questionId = questionIdRef.current;
+    recorderRef.current = null;
+    questionIdRef.current = null;
+
+    if (!recorder || !questionId) return;
+
+    const startedAtMs = startedAtRef.current;
+    const endedAtMs = Date.now();
+
+    if (recorder.state !== 'inactive') {
+      await new Promise<void>((resolve) => {
+        recorder.onstop = () => resolve();
+        recorder.stop();
+      });
+    }
+
+    const chunks = chunksRef.current;
+    chunksRef.current = [];
+
+    const blob = new Blob(chunks, { type: recorder.mimeType });
+    if (blob.size === 0) {
+      if (clientTranscript && clientTranscript.trim()) {
+        try {
+            const res = await fetch(`/api/interview/${interviewId}/answers`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                questionId,
+                transcript: clientTranscript.trim(),
+                startedAtMs,
+                endedAtMs,
+              }),
+            });
+            if (!res.ok) throw new Error('API failed');
+          } catch (err) {
+            console.warn('[answer-recorder] Fallback transcript save failed:', err);
+            await cacheFailedAnswer({
+              interviewId,
+              questionId,
+              transcript: clientTranscript.trim(),
+              audioBlob: null,
+            }).catch(console.error);
+          }
+      }
+      setStatus('idle');
+      return;
+    }
+
+    setStatus('saving');
+    try {
+      const formData = new FormData();
+      formData.append('questionId', questionId);
+      formData.append('startedAtMs', String(startedAtMs));
+      formData.append('endedAtMs', String(endedAtMs));
+      formData.append('file', blob, 'answer');
+      if (clientTranscript && clientTranscript.trim()) {
+        formData.append('transcript', clientTranscript.trim());
+      }
+
+      const res = await fetch(`/api/interview/${interviewId}/answers`, { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('API failed');
+    } catch (err) {
+      console.warn('[answer-recorder] answer upload failed, caching locally:', err);
+      await cacheFailedAnswer({
+        interviewId,
+        questionId,
+        transcript: clientTranscript?.trim() || '',
+        audioBlob: blob,
+      }).catch((e) => console.warn('[answer-recorder] cache failed:', e));
+    } finally {
+      setStatus('idle');
+    }
+  }, [interviewId]);
+
+  const cancelRecording = useCallback(() => {
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    questionIdRef.current = null;
+    chunksRef.current = [];
+
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.ondataavailable = null;
+      recorder.stop();
+    }
+
+    setStatus((current) => (current === 'unsupported' ? current : 'idle'));
+  }, []);
+
+  return { status, startRecording, stopAndUpload, cancelRecording };
+}

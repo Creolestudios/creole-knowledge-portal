@@ -1,0 +1,105 @@
+import { ShieldAlert, ArrowLeft, Loader2, CheckCircle2, AlertOctagon } from 'lucide-react';
+
+interface TerminatedInterviewProps {
+  terminationReason: string | null;
+  isAdmin?: boolean;
+  onLeave?: () => void;
+  isUploading?: boolean;
+  uploadProgress?: number;
+  uploadStatusText?: string;
+}
+
+export function TerminatedInterview({
+  terminationReason,
+  isAdmin = false,
+  onLeave,
+  isUploading = false,
+  uploadProgress = 0,
+  uploadStatusText = '',
+}: TerminatedInterviewProps) {
+  const reasonText = terminationReason?.trim() || 'A monitoring rule or session policy was violated.';
+
+  // Determine policy category for visual clarity
+  let categoryBadge = 'Proctoring Rule Policy';
+  if (/refresh|closed the page/i.test(reasonText)) {
+    categoryBadge = 'Session Refresh / Exit';
+  } else if (/switched tabs|clicked outside|minimized|background/i.test(reasonText)) {
+    categoryBadge = 'Tab Switch & Focus Policy';
+  } else if (/three proctoring warnings|warning/i.test(reasonText)) {
+    categoryBadge = 'Proctoring Limit Exceeded (3 Strikes)';
+  } else if (/screen shar/i.test(reasonText)) {
+    categoryBadge = 'Screen Share Requirement';
+  } else if (/another device|simultaneous/i.test(reasonText)) {
+    categoryBadge = 'Multiple Device Access';
+  }
+
+  return (
+    <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#121212] px-4 py-8 transition-colors">
+      <div className="max-w-md w-full bg-white dark:bg-[#2b2b2b] rounded-2xl shadow-card border border-red-100 dark:border-red-900/40 p-8 text-center space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto text-red-500">
+          <ShieldAlert className="w-8 h-8 text-red-500" />
+        </div>
+
+        <div className="space-y-1">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 uppercase tracking-wide">
+            <AlertOctagon className="w-3 h-3" />
+            {categoryBadge}
+          </span>
+          <h1 className="text-xl font-bold text-zinc-900 dark:text-white pt-1">Interview terminated</h1>
+        </div>
+
+        <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-500/20 text-left space-y-1.5">
+          <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider block">
+            Reason for termination
+          </span>
+          <p className="text-sm text-zinc-800 dark:text-zinc-200 font-medium leading-relaxed">
+            {reasonText}
+          </p>
+        </div>
+
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+          {isAdmin
+            ? "The candidate's interview session has been terminated in accordance with proctoring policy."
+            : 'This session has ended and cannot be resumed. Please contact your interviewer if you believe this was a mistake.'}
+        </p>
+
+        {/* Video recording upload progress indicator */}
+        {!isAdmin && isUploading && (
+          <div className="mt-4 p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 text-left space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#34c4f2]" />
+              <span>{uploadStatusText || 'Securing video recording to Google Drive...'}</span>
+            </div>
+            <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-[#34c4f2] h-2 rounded-full transition-all duration-300"
+                style={{ width: `${Math.max(uploadProgress, 5)}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
+              Please do not close this window until your video upload is saved.
+            </p>
+          </div>
+        )}
+
+        {!isAdmin && !isUploading && uploadProgress === 100 && (
+          <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+            <span>Interview video recording safely saved to Google Drive</span>
+          </div>
+        )}
+
+        {isAdmin && onLeave && (
+          <button
+            type="button"
+            onClick={onLeave}
+            className="w-full mt-4 py-3 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer text-sm"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Return to Admin Dashboard</span>
+          </button>
+        )}
+      </div>
+    </main>
+  );
+}

@@ -29,6 +29,11 @@ logger = logging.getLogger("fastapi_service.digests")
 
 router = APIRouter(prefix="/digests", tags=["digests"])
 
+# Accepted URL schemes for third-party article links. These literals are a
+# scheme *allow-list* used to validate links before rendering them; the service
+# never opens a clear-text connection of its own here.
+_WEB_URL_SCHEMES = ("http://", "https://")  # NOSONAR S5332 - validation only
+
 
 class GenerateRequest(BaseModel):
     userId: str
@@ -297,7 +302,7 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
             return False
         if is_source_title_junk(title):
             return False
-        return url.startswith("http://") or url.startswith("https://")
+        return url.startswith(_WEB_URL_SCHEMES)
 
     sources: list = []
     seen_urls: set[str] = set()
@@ -388,9 +393,9 @@ def flat_map_digest_for_dashboard(doc: dict) -> dict:
                 ).strip(),
             }
             for src in sources
-            if str((src.get("url") if isinstance(src, dict) else "") or "").strip().startswith(
-                ("http://", "https://")
-            )
+            if str((src.get("url") if isinstance(src, dict) else "") or "")
+            .strip()
+            .startswith(_WEB_URL_SCHEMES)
         ],
         "word_count": word_count,
         "estimated_read_minutes": max(1, round(float(reading))),

@@ -20,7 +20,7 @@ export default defineConfig({
     // `// @vitest-environment jsdom` docblock at the top of the test file.
     environment: 'node',
     include: ['**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['node_modules/**', '.next/**', 'tests/e2e/**', 'infra/**', 'fetch-blogs/**'],
+    exclude: ['node_modules/**', '.next/**', 'tests/e2e/**', 'infra/**', 'fetch-blogs/**', '.claude/worktrees/**', 'scratch/**'],
     setupFiles: ['./vitest.setup.ts'],
     // RTL's asyncUtilTimeout (see vitest.setup.ts) can exceed vitest's
     // default 5000ms per-test timeout under a large parallel suite.

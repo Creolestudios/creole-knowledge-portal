@@ -7,7 +7,6 @@ vi.mock('@/lib/supabase/server', () => ({
 }));
 
 const mockEq = vi.fn();
-const mockIlike = vi.fn();
 const mockOrder = vi.fn();
 const mockLimit = vi.fn();
 const mockMaybeSingle = vi.fn();
@@ -16,11 +15,11 @@ vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
     from: vi.fn(() => {
       const chain: any = {
-        select: vi.fn().mockReturnThis(),
-        eq: mockEq.mockReturnThis(),
-        ilike: mockIlike.mockReturnThis(),
-        order: mockOrder.mockReturnThis(),
-        limit: mockLimit.mockReturnThis(),
+        select: vi.fn().mockImplementation(() => chain),
+        eq: vi.fn().mockImplementation(() => chain),
+        ilike: vi.fn().mockImplementation(() => ({ order: mockOrder })),
+        order: vi.fn().mockImplementation(() => ({ limit: mockLimit })),
+        limit: vi.fn().mockImplementation(() => Promise.resolve({ data: [], error: null })),
         maybeSingle: mockMaybeSingle,
       };
       return chain;
@@ -170,6 +169,152 @@ describe('GET /api/digests/latest', () => {
     const res = await GET();
     const body = await res.json();
     expect(body.success).toBe(true);
+    expect(body.blog).toBeNull();
+  });
+
+  it('returns 500 when the legacy Supabase lookup fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockRejectedValue(new Error('offline'));
+    mockMaybeSingle.mockResolvedValue({
+      data: null,
+      error: { message: 'Legacy lookup exploded' },
+    });
+
+    const res = await GET();
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('Legacy lookup exploded');
+  });
+
+  it('returns the most recent same-day briefing from the legacy fallback list', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockRejectedValue(new Error('offline'));
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    mockOrder.mockImplementation(() => ({
+      limit: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'recent-brief',
+          title: 'Recent Brief',
+          url: `briefing:user-1:${today}`,
+          published_at: `${today}T08:00:00.000Z`,
+        }],
+        error: null,
+      }),
+    }));
+
+    const res = await GET();
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.blog.id).toBe('recent-brief');
+    expect(body.blog.title).toBe('Recent Brief');
+  });
+
+  it('returns 500 when the recent legacy fallback query fails', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockRejectedValue(new Error('offline'));
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mockOrder.mockImplementation(() => ({
+      limit: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Recent lookup exploded' },
+      }),
+    }));
+
+    const res = await GET();
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('Recent lookup exploded');
+  });
+
+  it('returns null for an invented legacy fallback briefing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockRejectedValue(new Error('offline'));
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    mockMaybeSingle.mockResolvedValue({
+      data: {
+        id: 'legacy-fallback',
+        title: 'Invented fallback',
+        url: `briefing:user-1:${today}`,
+        source: 'AI Resilient Synthesis Engine',
+        published_at: `${today}T08:00:00.000Z`,
+      },
+      error: null,
+    });
+
+    const res = await GET();
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.blog).toBeNull();
+  });
+
+  it('returns null for an invented recent fallback briefing', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockRejectedValue(new Error('offline'));
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    mockOrder.mockImplementation(() => ({
+      limit: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'recent-fallback',
+          title: 'Invented Recent',
+          url: `briefing:user-1:${today}`,
+          source: 'AI Resilient Synthesis Engine',
+          published_at: `${today}T08:00:00.000Z`,
+        }],
+        error: null,
+      }),
+    }));
+
+    const res = await GET();
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.blog).toBeNull();
+  });
+
+  it('returns 500 when an unexpected auth/query error bubbles out', async () => {
+    mockGetUser.mockRejectedValue(new Error('unexpected auth boom'));
+
+    const res = await GET();
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe('unexpected auth boom');
+  });
+
+  it('returns null when the recent legacy candidate is stale', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'user-1' } } });
+    (global.fetch as any).mockRejectedValue(new Error('offline'));
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mockOrder.mockImplementation(() => ({
+      limit: vi.fn().mockResolvedValue({
+        data: [{
+          id: 'stale-brief',
+          title: 'Stale Brief',
+          url: 'briefing:user-1:2020-01-01',
+          published_at: '2020-01-01T08:00:00.000Z',
+        }],
+        error: null,
+      }),
+    }));
+
+    const res = await GET();
+    const body = await res.json();
+    expect(res.status).toBe(200);
     expect(body.blog).toBeNull();
   });
 });

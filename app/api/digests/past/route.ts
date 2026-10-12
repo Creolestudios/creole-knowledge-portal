@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
+import { requireUser } from '@/lib/api/require-user';
 
 function dateKey(blog: { digest_date?: string; published_at?: string; url?: string } | null): string {
   if (!blog) return '';
@@ -68,12 +69,8 @@ function mergePastLists(mongoBlogs: any[], supabaseBlogs: any[]) {
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
 
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');

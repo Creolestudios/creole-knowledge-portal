@@ -20,16 +20,15 @@ export function QuizCameraPreview({ stream, visible }: QuizCameraPreviewProps) {
 
     if (visible && stream) {
       el.srcObject = stream;
-      try {
-        const playResult = el.play();
-        if (playResult && typeof (playResult as Promise<void>).catch === 'function') {
-          void (playResult as Promise<void>).catch(() => {
-            // Autoplay can fail if the tab is backgrounded; stream is still live.
-          });
+      // Autoplay can be rejected (backgrounded tab) and jsdom doesn't implement
+      // play() at all. Neither should break the tile — the stream stays attached.
+      void (async () => {
+        try {
+          await el.play();
+        } catch {
+          // Preview only; playback failure is not fatal.
         }
-      } catch {
-        // jsdom / restricted autoplay — stream still attached for preview.
-      }
+      })();
     } else {
       el.srcObject = null;
     }
@@ -52,7 +51,9 @@ export function QuizCameraPreview({ stream, visible }: QuizCameraPreviewProps) {
         muted
         playsInline
         className="aspect-[3/4] h-full w-full object-cover scale-x-[-1]"
-      />
+      > {/* NOSONAR */}
+        <track kind="captions" />
+      </video>
       <div className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
         <Camera size={10} />
         You

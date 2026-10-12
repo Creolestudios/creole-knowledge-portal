@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 import { buildQuizReviewData } from '@/lib/quizzes/review';
 import { blogServiceHeaders, blogServiceUrl } from '@/lib/blog-service';
 import { buildLearningPathQuizPayload } from '@/lib/quizzes/learning-path-sync';
 import { resolveTimeTakenSeconds } from '@/lib/quizzes/timing';
-import { QUIZ_QUESTIONS_PER_ATTEMPT, hasPassedQuiz } from '@/lib/quizzes/scoring';
+import { QUIZ_QUESTIONS_PER_ATTEMPT, hasPassedQuiz, calculateFinishedAttempts, calculateMaxPossibleScore } from '@/lib/quizzes/scoring';
 
 async function syncQuizLearningPathToMongo(
   userId: string,
@@ -79,12 +79,8 @@ async function syncQuizLearningPathToMongo(
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse) return errorResponse;
 
     const { attemptId, clientElapsedSeconds } = await request.json();
 
@@ -161,15 +157,7 @@ export async function POST(request: Request) {
       questions = qData || [];
     }
 
-    let maxPossibleScore = 0;
-    questions.forEach((q: any) => {
-      if (['multiple', 'code', 'descriptive'].includes(q.question_type)) {
-        maxPossibleScore += 2;
-      } else {
-        maxPossibleScore += 1;
-      }
-    });
-    if (maxPossibleScore === 0) maxPossibleScore = 5;
+    const maxPossibleScore = calculateMaxPossibleScore(questions);
 
     const wrongAnswersCount = Math.max(0, questions.length - correctAnswersCount);
     const percentage = Math.round((totalScore / maxPossibleScore) * 100);
@@ -188,22 +176,7 @@ export async function POST(request: Request) {
       .eq('user_id', user.id)
       .eq('blog_id', attempt.blog_id);
 
-    let finishedAttemptsCount = 0;
-    if (allUserAttempts && allUserAttempts.length > 0) {
-      if (allUserAttempts.length > 1) {
-        finishedAttemptsCount = allUserAttempts.filter((a: any) => a.status === 'completed').length;
-      } else {
-        const single = allUserAttempts[0];
-        const tq = single.total_questions || 5;
-        const attemptNum = tq >= 25 ? 3 : (tq >= 15 ? 2 : 1);
-        if (single.status === 'completed') {
-          finishedAttemptsCount = attemptNum;
-        } else {
-          finishedAttemptsCount = Math.max(0, attemptNum - 1);
-        }
-      }
-    }
-    const attemptsRemaining = Math.max(0, 3 - finishedAttemptsCount);
+    const { finishedAttemptsCount, attemptsRemaining } = calculateFinishedAttempts(allUserAttempts);
 
     // Bridge: all attempts' answers → Mongo learning_path for next-day scrape
     await syncQuizLearningPathToMongo(

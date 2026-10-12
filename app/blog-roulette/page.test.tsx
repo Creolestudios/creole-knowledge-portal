@@ -123,4 +123,24 @@ describe('BlogRouletteListPage', () => {
       expect(screen.getByText('Drive quota exceeded')).toBeInTheDocument();
     });
   });
+
+  it('navigates to the editor when a blog card is activated with Enter or Space', async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: 'u1', email: 'dev@x.com' } } });
+    mockOrder.mockResolvedValue({ data: [blog()] });
+
+    render(<BlogRouletteListPage />);
+    await waitFor(() => screen.getByText('My Technical Blog'));
+
+    const card = document.getElementById('blog-card-blog-1')!;
+    fireEvent.keyDown(card, { key: 'Enter' });
+    expect(mockPush).toHaveBeenCalledWith('/blog-roulette/blog-1/edit');
+
+    mockPush.mockClear();
+    fireEvent.keyDown(card, { key: ' ' });
+    expect(mockPush).toHaveBeenCalledWith('/blog-roulette/blog-1/edit');
+
+    mockPush.mockClear();
+    fireEvent.keyDown(card, { key: 'a' });
+    expect(mockPush).not.toHaveBeenCalled();
+  });
 });

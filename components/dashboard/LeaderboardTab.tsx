@@ -58,33 +58,33 @@ export default function LeaderboardTab() {
         </div>
       </div>
 
-      <div className="bg-white rounded-[32px] p-8 border border-zinc-100 shadow-card">
-        <div className="overflow-x-auto rounded-2xl border border-zinc-100">
+      <div className="bg-white dark:bg-[#1e1e1e] rounded-[32px] p-8 border border-zinc-100 dark:border-zinc-800 shadow-card dark:shadow-none">
+        <div className="overflow-x-auto rounded-2xl border border-zinc-100 dark:border-zinc-800">
           <table className="w-full min-w-[600px] text-sm">
             <thead>
-              <tr className="bg-zinc-50 text-[10px] uppercase tracking-widest text-zinc-400 font-extrabold">
+              <tr className="bg-zinc-50 dark:bg-zinc-900/50 text-[10px] uppercase tracking-widest text-zinc-400 dark:text-zinc-500 font-extrabold">
                 <th className="text-center px-5 py-3 w-16">Rank</th>
                 <th className="text-left px-5 py-3">User</th>
                 <th className="text-left px-5 py-3">Reading Time</th>
                 <th className="text-right px-5 py-3">Quiz Score</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {leaderboard.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-8 text-center text-zinc-500 font-medium">No users found.</td>
+                  <td colSpan={4} className="px-5 py-8 text-center text-zinc-500 dark:text-zinc-400 font-medium">No users found.</td>
                 </tr>
               ) : leaderboard.map((user, idx) => {
                 const rank = idx + 1;
                 return (
-                  <tr key={user.userId} className="hover:bg-zinc-50/60 transition-colors">
+                  <tr key={user.userId} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40 transition-colors">
                     <td className="px-5 py-4 text-center font-black">
                       {rank === 1 ? <Medal size={20} className="text-yellow-500 mx-auto" /> : 
                        rank === 2 ? <Medal size={20} className="text-zinc-400 mx-auto" /> :
                        rank === 3 ? <Medal size={20} className="text-amber-700 mx-auto" /> : 
                        <span className="text-zinc-400">#{rank}</span>}
                     </td>
-                    <td className="px-5 py-4 font-bold text-zinc-900">
+                    <td className="px-5 py-4 font-bold text-zinc-900 dark:text-zinc-100">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-brand/10 text-brand flex items-center justify-center font-black text-xs uppercase">
                           {user.email.substring(0, 2)}
@@ -95,14 +95,14 @@ export default function LeaderboardTab() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-zinc-600 font-semibold tabular-nums">
+                    <td className="px-5 py-4 text-zinc-600 dark:text-zinc-400 font-semibold tabular-nums">
                       <div className="flex items-center gap-1.5">
                         <Clock size={14} className="text-zinc-400" />
                         {formatDuration(user.readTimeSec)}
                       </div>
                     </td>
                     <td className="px-5 py-4 text-right">
-                      <span className="inline-flex items-center gap-1.5 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm font-black tabular-nums">
+                      <span className="inline-flex items-center gap-1.5 bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-400 dark:border dark:border-green-800/50 px-3 py-1.5 rounded-lg text-sm font-black tabular-nums">
                         <Target size={14} />
                         {user.totalScore}
                       </span>

@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 import { updateBlogSchema } from '@/lib/blog-roulette/validators';
 
 export const runtime = 'nodejs';
 
 async function authBlog(id: string) {
+  const { user, errorResponse } = await requireUser();
+  if (errorResponse || !user) return { error: 'Unauthorized' as const, status: 401, supabase: null, user: null };
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: 'Unauthorized' as const, status: 401, supabase: null, user: null };
 
   const { data: blog } = await supabase
     .from('roulette_blogs')

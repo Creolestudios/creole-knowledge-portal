@@ -27,8 +27,8 @@ export default function PortalShell({
   const isBlogRoulette = pathname?.startsWith('/blog-roulette');
 
   return (
-    <div className="min-h-screen bg-[#f8f9fa] flex">
-      <aside className="w-72 bg-[#0a0a0a] text-white flex-col p-8 hidden md:flex border-r border-zinc-800 relative overflow-hidden shrink-0 sticky top-0 h-screen">
+    <div className="min-h-screen bg-[#f8f9fa] dark:bg-zinc-950 flex">
+      <aside className="w-72 bg-white dark:bg-[#0a0a0a] text-zinc-900 dark:text-white flex-col p-8 hidden md:flex border-r border-zinc-200 dark:border-zinc-800 relative overflow-hidden shrink-0 sticky top-0 h-screen">
         <div className="absolute top-0 left-0 w-full h-32 bg-brand/5 blur-[60px] pointer-events-none" />
 
         <div className="flex items-center gap-3 mb-12 relative z-10">
@@ -48,8 +48,8 @@ export default function PortalShell({
             href="/dashboard"
             className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group text-left ${
               !isBlogRoulette
-                ? 'bg-zinc-900/50 text-brand border border-brand/20 shadow-sm'
-                : 'text-zinc-500 hover:text-white hover:bg-zinc-900'
+                ? 'bg-zinc-100 dark:bg-zinc-900/50 text-brand border border-brand/20 shadow-sm'
+                : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900'
             }`}
           >
             <Home size={20} />
@@ -60,8 +60,8 @@ export default function PortalShell({
             href="/blog-roulette"
             className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl transition-all group text-left ${
               isBlogRoulette
-                ? 'bg-zinc-900/50 text-brand border border-brand/20 shadow-sm'
-                : 'text-zinc-500 hover:text-white hover:bg-zinc-900'
+                ? 'bg-zinc-100 dark:bg-zinc-900/50 text-brand border border-brand/20 shadow-sm'
+                : 'text-zinc-500 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900'
             }`}
           >
             <PenSquare size={20} />
@@ -70,23 +70,23 @@ export default function PortalShell({
 
           <div className="h-4" />
 
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left">
+          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-all group text-left">
             <Bell size={20} className="group-hover:rotate-12 transition-transform" />
             <span className="font-medium text-sm">Notifications</span>
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 hover:text-white hover:bg-zinc-900 rounded-xl transition-all group text-left">
+          <button className="w-full flex items-center gap-3 px-4 py-3.5 text-zinc-500 dark:text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-all group text-left">
             <Settings size={20} className="group-hover:rotate-90 transition-transform" />
             <span className="font-medium text-sm">Settings</span>
           </button>
         </nav>
 
-        <div className="pt-8 border-t border-zinc-800 relative z-10">
+        <div className="pt-8 border-t border-zinc-200 dark:border-zinc-800 relative z-10">
           <LogoutButton variant="sidebar" />
         </div>
       </aside>
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-20 bg-white border-b border-zinc-200 px-10 flex items-center justify-between sticky top-0 z-20">
+        <header className="h-20 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800 px-10 flex items-center justify-between sticky top-0 z-20">
           <div className="flex items-center gap-4 flex-1">
             <div className="relative w-full max-w-md">
               <Search

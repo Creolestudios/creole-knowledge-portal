@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { createClient } from '@/lib/supabase/server';
+import { requireUser } from '@/lib/api/require-user';
 import { buildQuizReviewData } from '@/lib/quizzes/review';
 import { toValidUUID } from '@/lib/quizzes/review';
 import {
@@ -8,15 +8,12 @@ import {
   elapsedSecondsSince,
   resolveTimeTakenSeconds,
 } from '@/lib/quizzes/timing';
+import { calculateFinishedAttempts, calculateMaxPossibleScore } from '@/lib/quizzes/scoring';
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const { user, errorResponse } = await requireUser();
+    if (errorResponse || !user) return errorResponse;
 
     const { searchParams } = new URL(request.url);
     const blogId = searchParams.get('blogId');
@@ -39,25 +36,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Failed to retrieve quiz status.' }, { status: 500 });
     }
 
-    let finishedAttemptsCount = 0;
-    if (existingAttempts && existingAttempts.length > 0) {
-      if (existingAttempts.length > 1) {
-        // Multi-row schema
-        finishedAttemptsCount = existingAttempts.filter((a: any) => a.status === 'completed').length;
-      } else {
-        // Single-row schema with total_questions encoding (5=1st attempt, 15=2nd attempt, 25=3rd attempt)
-        const single = existingAttempts[0];
-        const tq = single.total_questions || 5;
-        const attemptNum = tq >= 25 ? 3 : (tq >= 15 ? 2 : 1);
-        
-        if (single.status === 'completed') {
-          finishedAttemptsCount = attemptNum;
-        } else {
-          finishedAttemptsCount = Math.max(0, attemptNum - 1);
-        }
-      }
-    }
-    const attemptsRemaining = Math.max(0, 3 - finishedAttemptsCount);
+    const { finishedAttemptsCount, attemptsRemaining } = calculateFinishedAttempts(existingAttempts);
 
     // Helper to fetch review details for a given attempt
     const getReviewDetails = async (attempt: any) => {
@@ -83,15 +62,7 @@ export async function GET(request: Request) {
         questions = qData || [];
       }
 
-      let maxPossibleScore = 0;
-      questions.forEach((q: any) => {
-        if (['multiple', 'code', 'descriptive'].includes(q.question_type)) {
-          maxPossibleScore += 2;
-        } else {
-          maxPossibleScore += 1;
-        }
-      });
-      if (maxPossibleScore === 0) maxPossibleScore = 5;
+      const maxPossibleScore = calculateMaxPossibleScore(questions);
 
       const correctAnswersCount = answers.filter((a: any) => a.is_correct).length;
       const reviewData = buildQuizReviewData(questions, answers);

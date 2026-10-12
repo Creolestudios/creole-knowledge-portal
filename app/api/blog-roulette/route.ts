@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireUser } from '@/lib/api/require-user';
 import { createClient } from '@/lib/supabase/server';
 import { createBlogSchema } from '@/lib/blog-roulette/validators';
 import type { KeywordSuggestion } from '@/lib/blog-roulette/types';
@@ -17,12 +18,10 @@ function slugify(s: string) {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { user, errorResponse } = await requireUser();
+  if (errorResponse) return errorResponse;
 
+  const supabase = await createClient();
   const body = await req.json();
   const parsed = createBlogSchema.safeParse(body);
   if (!parsed.success) {
@@ -64,12 +63,10 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { user, errorResponse } = await requireUser();
+  if (errorResponse) return errorResponse;
 
+  const supabase = await createClient();
   const { data } = await supabase
     .from('roulette_blogs')
     .select('*')

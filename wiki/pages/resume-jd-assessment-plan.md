@@ -96,23 +96,28 @@ Reuse from this repo where possible: `lib/quizzes/proctor.ts` (screen/cam), Gemi
 ## 0.3 Question generation & scoring — how it works (steps)
 
 ```
-1. Backend loads skill_gap + YOE + JD must-haves
-2. Gemini generates:
-     - Quiz bank (MCQ / conceptual / code / descriptive), and/or
-     - Interview bank (spoken turns with intent tags)
-3. Questions saved in DB (student never sees generation UI)
-4. During quiz:
+1. Backend loads skill_gap + YOE + JD must-haves + interview_duration_minutes
+2. System calculates total questions:
+     - Hard Floor Minimum: 10 questions minimum for all interviews (regardless of duration)
+     - Duration Scaling: ~2.5 minutes per question for longer durations (e.g. 30m = 12, 45m = 18, 60m = 24)
+3. Gemini / Fallback Engine generates:
+     - Mandatory HR questions (3 core intro & logistics questions)
+     - HR & Behavioral questions: Background overview, role alignment, teamwork, adaptability, conflict resolution, work style & culture fit (minimum 7+ AI HR questions; no deep technical architecture/coding questions right now)
+
+4. Questions saved in DB (student never sees generation UI)
+5. During quiz:
      - MCQ → scored by exact/set match on server
      - Open/code → Gemini semantic grader
-5. During interview:
+6. During interview:
      - Student speaks → browser STT (Web Speech API) → transcript
      - Optional P1: audio chunk → Gemini transcription if STT weak
-6. On finish (server only):
+7. On finish (server only):
      - Performance scores from answers
      - English proficiency (Gemini on transcripts)
      - Fluency (WPM, pauses, fillers from VAD timing + transcript)
-7. Student API returns ONLY submit message — scores stay Admin-only
+8. Student API returns ONLY submit message — scores stay Admin-only
 ```
+
 
 ---
 

@@ -379,7 +379,7 @@ export default function BlogEditPage() {
               <Sparkles size={10} />
               {isLocked ? 'Read Only' : 'Writing Mode'}
             </div>
-            <h1 className="text-3xl font-black text-zinc-900 tracking-tight leading-tight max-w-3xl">
+            <h1 className="text-3xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight max-w-3xl">
               {blog.title}
             </h1>
           </div>
@@ -387,7 +387,7 @@ export default function BlogEditPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowPreview(!showPreview)}
-              className="px-4 py-2.5 bg-white hover:bg-zinc-50 text-zinc-600 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm"
+              className="px-4 py-2.5 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-200 font-bold rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm transition-all flex items-center gap-2 text-sm"
               title={showPreview ? 'Show editor' : 'Preview blog'}
             >
               {showPreview ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -396,7 +396,7 @@ export default function BlogEditPage() {
             <button
               onClick={() => save(false)}
               disabled={saving || isLocked}
-              className="px-5 py-2.5 bg-white hover:bg-zinc-50 text-zinc-700 font-bold rounded-xl border border-zinc-200 shadow-sm transition-all flex items-center gap-2 text-sm disabled:opacity-50"
+              className="px-5 py-2.5 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 font-bold rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-sm transition-all flex items-center gap-2 text-sm disabled:opacity-50"
             >
               {saving ? (
                 <Loader2 size={14} className="animate-spin" />
