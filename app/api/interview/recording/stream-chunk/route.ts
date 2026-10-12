@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { Buffer } from 'node:buffer';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 import {
@@ -75,13 +76,22 @@ export async function POST(req: Request) {
 
     // If an uploadUrl was not provided or active, initiate a Google Drive Resumable Upload session
     if (!uploadUrl) {
-      const { data: session } = await supabaseAdmin
-        .from('interview_sessions')
-        .select('id, candidate_name')
-        .eq('id', targetSessionId)
-        .maybeSingle();
+      let candidateName = 'candidate';
+      try {
+        if (supabaseAdmin?.from) {
+          const { data: session } = await supabaseAdmin
+            .from('interview_sessions')
+            .select('id, candidate_name')
+            .eq('id', targetSessionId)
+            .maybeSingle();
+          if (session?.candidate_name) {
+            candidateName = session.candidate_name;
+          }
+        }
+      } catch (sessionErr) {
+        console.warn('[stream-chunk] DB session lookup notice:', sessionErr);
+      }
 
-      const candidateName = session?.candidate_name || 'candidate';
       const created = await createDriveResumableUploadSession({
         interviewId: targetSessionId,
         candidateName,
@@ -127,15 +137,21 @@ export async function POST(req: Request) {
       };
 
       // Store recording in interview_events
-      await supabaseAdmin.from('interview_events').insert({
-        session_id: targetSessionId,
-        event_type: 'full_recording',
-        category: 'full_recording',
-        severity: 'info',
-        ts_ms: Date.now(),
-        meta: metaPayload,
-        metadata: metaPayload,
-      });
+      try {
+        if (supabaseAdmin?.from) {
+          await supabaseAdmin.from('interview_events').insert({
+            session_id: targetSessionId,
+            event_type: 'full_recording',
+            category: 'full_recording',
+            severity: 'info',
+            ts_ms: Date.now(),
+            meta: metaPayload,
+            metadata: metaPayload,
+          });
+        }
+      } catch (eventErr) {
+        console.warn('[stream-chunk] DB event insert notice:', eventErr);
+      }
 
       // Broadcast to HR real-time channel
       try {

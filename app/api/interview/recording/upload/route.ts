@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
+import { Buffer } from 'node:buffer';
+import { PassThrough } from 'node:stream';
+import { google } from 'googleapis';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { resolveInterviewSessionId } from '@/lib/ai-interview/invite-token';
 import {
   uploadDriveFileDirectly,
   getDriveCredentials,
+  getRecordingFolderId,
+  finalizeDriveFile,
 } from '@/lib/ai-interview/google-drive-recorder';
 
 export const runtime = 'nodejs';

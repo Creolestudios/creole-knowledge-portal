@@ -1,14 +1,10 @@
 import { google } from 'googleapis';
-import { Readable } from 'node:stream';
+import { PassThrough } from 'stream';
 
-function bufferToStream(buffer: Buffer): Readable {
-  if (typeof Readable?.from === 'function') {
-    return Readable.from(buffer);
-  }
-  const stream = new Readable();
-  stream.push(buffer);
-  stream.push(null);
-  return stream;
+function bufferToStream(buffer: Buffer) {
+  const pt = new PassThrough();
+  pt.end(buffer);
+  return pt;
 }
 
 export interface DriveCredentials {
