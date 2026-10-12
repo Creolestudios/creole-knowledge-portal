@@ -333,6 +333,9 @@ export default function InterviewEntryPage() {
           console.info('[interview-entry] Successfully recovered and uploaded interview video to Google Drive');
         }
       })
+      .catch((recoveryErr) => {
+        console.warn('[interview-entry] Video recovery error caught:', recoveryErr);
+      })
       .finally(() => {
         setIsRecoveryUploading(false);
       });

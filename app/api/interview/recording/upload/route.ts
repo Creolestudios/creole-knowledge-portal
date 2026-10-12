@@ -71,13 +71,21 @@ export async function POST(req: Request) {
 
     const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
 
-    const { data: session } = await supabaseAdmin
-      .from('interview_sessions')
-      .select('id, candidate_name')
-      .eq('id', targetSessionId)
-      .maybeSingle();
-
-    const candidateName = session?.candidate_name || 'candidate';
+    let candidateName = 'candidate';
+    try {
+      if (supabaseAdmin?.from) {
+        const { data: session } = await supabaseAdmin
+          .from('interview_sessions')
+          .select('id, candidate_name')
+          .eq('id', targetSessionId)
+          .maybeSingle();
+        if (session?.candidate_name) {
+          candidateName = session.candidate_name;
+        }
+      }
+    } catch (sessionErr) {
+      console.warn('[recording-fallback-upload] DB session lookup notice:', sessionErr);
+    }
 
     const uploadResult = await uploadDriveFileDirectly({
       interviewId: targetSessionId,
@@ -98,31 +106,39 @@ export async function POST(req: Request) {
     };
 
     // Store in interview_events
-    await supabaseAdmin.from('interview_events').insert({
-      session_id: targetSessionId,
-      event_type: 'full_recording',
-      category: 'full_recording',
-      severity: 'info',
-      ts_ms: Date.now(),
-      meta: metaPayload,
-      metadata: metaPayload,
-    });
+    try {
+      if (supabaseAdmin?.from) {
+        await supabaseAdmin.from('interview_events').insert({
+          session_id: targetSessionId,
+          event_type: 'full_recording',
+          category: 'full_recording',
+          severity: 'info',
+          ts_ms: Date.now(),
+          meta: metaPayload,
+          metadata: metaPayload,
+        });
+      }
+    } catch (eventErr) {
+      console.warn('[recording-fallback-upload] DB event insert notice:', eventErr);
+    }
 
     // Broadcast to HR real-time channel
     try {
-      const channel = supabaseAdmin.channel(`interview-monitor:${targetSessionId}`);
-      await channel.subscribe();
-      await channel.send({
-        type: 'broadcast',
-        event: 'proctoring_event',
-        payload: {
-          category: 'full_recording',
-          severity: 'info',
-          meta: metaPayload,
-          ts_ms: Date.now(),
-        },
-      });
-      await channel.unsubscribe();
+      if (supabaseAdmin?.channel) {
+        const channel = supabaseAdmin.channel(`interview-monitor:${targetSessionId}`);
+        await channel.subscribe();
+        await channel.send({
+          type: 'broadcast',
+          event: 'proctoring_event',
+          payload: {
+            category: 'full_recording',
+            severity: 'info',
+            meta: metaPayload,
+            ts_ms: Date.now(),
+          },
+        });
+        await channel.unsubscribe();
+      }
     } catch {
       // Realtime broadcast is non-critical
     }
@@ -135,7 +151,8 @@ export async function POST(req: Request) {
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error('[recording-fallback-upload] Error:', message);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error('[recording-fallback-upload] Error:', message, stack || '');
     return NextResponse.json(
       { error: 'Failed to upload video to Google Drive', details: message },
       { status: 500 }

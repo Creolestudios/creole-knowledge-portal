@@ -42,14 +42,21 @@ export async function POST(req: Request) {
 
     const targetSessionId = (await resolveInterviewSessionId(interviewId)) || interviewId;
 
-    // Fetch candidate name for clean file naming
-    const { data: session } = await supabaseAdmin
-      .from('interview_sessions')
-      .select('id, candidate_name')
-      .eq('id', targetSessionId)
-      .maybeSingle();
-
-    const candidateName = session?.candidate_name || 'candidate';
+    let candidateName = 'candidate';
+    try {
+      if (supabaseAdmin?.from) {
+        const { data: session } = await supabaseAdmin
+          .from('interview_sessions')
+          .select('id, candidate_name')
+          .eq('id', targetSessionId)
+          .maybeSingle();
+        if (session?.candidate_name) {
+          candidateName = session.candidate_name;
+        }
+      }
+    } catch (sessionErr) {
+      console.warn('[recording-session] DB candidate name lookup notice:', sessionErr);
+    }
 
     const origin = req.headers.get('origin') || (body?.origin as string | undefined) || undefined;
 

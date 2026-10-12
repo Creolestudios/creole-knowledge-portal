@@ -159,18 +159,23 @@ export async function flushAndUploadCachedRecording(
       formData.append('interviewId', interviewId);
       formData.append('file', fullVideoBlob, fileName);
 
-      const res = await fetch('/api/interview/recording/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      try {
+        const res = await fetch('/api/interview/recording/upload', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const json = await res.json().catch(() => null);
-      if (res.ok && json?.ok) {
-        fileId = json.fileId;
-        webViewLink = json.webViewLink;
-        previewUrl = json.previewUrl;
-      } else {
-        return { success: false, error: json?.error || 'Failed to upload recovered video' };
+        const json = await res.json().catch(() => null);
+        if (res.ok && json?.ok) {
+          fileId = json.fileId;
+          webViewLink = json.webViewLink;
+          previewUrl = json.previewUrl;
+        } else {
+          return { success: false, error: json?.error || 'Failed to upload recovered video' };
+        }
+      } catch (uploadFetchErr) {
+        console.warn('[flushAndUploadCachedRecording] Server route fetch error:', uploadFetchErr);
+        return { success: false, error: uploadFetchErr instanceof Error ? uploadFetchErr.message : 'Upload network error' };
       }
     }
 

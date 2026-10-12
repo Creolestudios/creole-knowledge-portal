@@ -59,35 +59,43 @@ export async function POST(req: Request) {
     };
 
     // Store in interview_events without modifying Supabase schema
-    const { error: insertError } = await supabaseAdmin.from('interview_events').insert({
-      session_id: targetSessionId,
-      event_type: 'full_recording',
-      category: 'full_recording',
-      severity: 'info',
-      ts_ms: Date.now(),
-      meta: metaPayload,
-      metadata: metaPayload,
-    });
+    try {
+      if (supabaseAdmin?.from) {
+        const { error: insertError } = await supabaseAdmin.from('interview_events').insert({
+          session_id: targetSessionId,
+          event_type: 'full_recording',
+          category: 'full_recording',
+          severity: 'info',
+          ts_ms: Date.now(),
+          meta: metaPayload,
+          metadata: metaPayload,
+        });
 
-    if (insertError) {
-      console.error('[interview-recording-complete] Failed to record event in DB:', insertError);
+        if (insertError) {
+          console.error('[interview-recording-complete] Failed to record event in DB:', insertError);
+        }
+      }
+    } catch (insertErr) {
+      console.warn('[interview-recording-complete] Event insert notice:', insertErr);
     }
 
     // Broadcast to HR real-time channel
     try {
-      const channel = supabaseAdmin.channel(`interview-monitor:${targetSessionId}`);
-      await channel.subscribe();
-      await channel.send({
-        type: 'broadcast',
-        event: 'proctoring_event',
-        payload: {
-          category: 'full_recording',
-          severity: 'info',
-          meta: metaPayload,
-          ts_ms: Date.now(),
-        },
-      });
-      await channel.unsubscribe();
+      if (supabaseAdmin?.channel) {
+        const channel = supabaseAdmin.channel(`interview-monitor:${targetSessionId}`);
+        await channel.subscribe();
+        await channel.send({
+          type: 'broadcast',
+          event: 'proctoring_event',
+          payload: {
+            category: 'full_recording',
+            severity: 'info',
+            meta: metaPayload,
+            ts_ms: Date.now(),
+          },
+        });
+        await channel.unsubscribe();
+      }
     } catch (realtimeErr) {
       console.warn('[interview-recording-complete] Realtime broadcast error:', realtimeErr);
     }

@@ -1,4 +1,15 @@
 import { google } from 'googleapis';
+import { Readable } from 'node:stream';
+
+function bufferToStream(buffer: Buffer): Readable {
+  if (typeof Readable?.from === 'function') {
+    return Readable.from(buffer);
+  }
+  const stream = new Readable();
+  stream.push(buffer);
+  stream.push(null);
+  return stream;
+}
 
 export interface DriveCredentials {
   client_email: string;
@@ -227,8 +238,7 @@ export async function uploadDriveFileDirectly(params: {
     requestBody.parents = [folderId];
   }
 
-  const { Readable } = await import('stream');
-  const stream = Readable.from(params.buffer);
+  const stream = bufferToStream(params.buffer);
 
   const res = await drive.files.create({
     requestBody,
