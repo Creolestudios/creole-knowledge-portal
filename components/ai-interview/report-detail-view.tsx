@@ -1366,18 +1366,23 @@ export function ReportDetailView({
           />
 
           {/* Drawer Content */}
-          <div className="relative w-full max-w-xl bg-white dark:bg-[#1e1e1e] h-full shadow-2xl flex flex-col z-10 border-l border-zinc-200 dark:border-[#4a4a4a] animate-in slide-in-from-right duration-200">
+          <div className="relative w-full max-w-2xl bg-white dark:bg-[#1e1e1e] h-full shadow-2xl flex flex-col z-10 border-l border-zinc-200 dark:border-[#383838] animate-in slide-in-from-right duration-200">
             {/* Header */}
-            <div className="p-4 border-b border-zinc-200 dark:border-[#4a4a4a] flex items-center justify-between bg-zinc-50 dark:bg-[#252525]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[#34c4f2] text-zinc-900 flex items-center justify-center font-bold">
-                  <Bot className="w-4 h-4" />
+            <div className="px-5 py-4 border-b border-zinc-200 dark:border-[#383838] flex items-center justify-between bg-zinc-50/90 dark:bg-[#232323]">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#34c4f2] to-[#1689aa] text-white flex items-center justify-center font-bold shadow-xs">
+                  <Bot className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-black text-base sm:text-lg text-zinc-900 dark:text-white leading-tight">
-                    Report AI Copilot
-                  </h3>
-                  <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f]">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base text-zinc-900 dark:text-white leading-tight">
+                      Report AI Copilot
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#34c4f2]/15 text-[#1689aa] dark:text-[#34c4f2] border border-[#34c4f2]/30 uppercase tracking-wider">
+                      Grounded AI
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-[#9f9f9f] truncate max-w-sm mt-0.5">
                     Ask any question about {session.candidate_name ?? 'the candidate'}&apos;s performance
                   </p>
                 </div>
@@ -1385,7 +1390,7 @@ export function ReportDetailView({
               <button
                 type="button"
                 onClick={() => setIsCopilotOpen(false)}
-                className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-[#333] transition-colors cursor-pointer"
+                className="p-2 rounded-xl text-zinc-400 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/70 dark:hover:bg-[#333] transition-colors cursor-pointer"
                 title="Close Copilot"
               >
                 <X className="w-5 h-5" />
@@ -1393,7 +1398,7 @@ export function ReportDetailView({
             </div>
 
             {/* Chat Body */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
               <ReportChatCopilot
                 sessionId={session.id}
                 candidateName={session.candidate_name}

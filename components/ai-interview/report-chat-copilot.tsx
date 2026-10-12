@@ -160,15 +160,7 @@ export function ReportChatCopilot({
     {
       id: 'welcome',
       role: 'assistant',
-      content: `Hello! I'm your AI Interview Copilot for **${candidateName || 'this candidate'}**. 
-
-I have full access to their:
-- 🎯 **Verbatim Answers & Transcript** across all questions
-- 📊 **Scoring & Competency Breakdown**
-- 🛡️ **Proctoring Logs, Warnings & Integrity Status**
-- 💼 **Job Role Requirements** (${roleTitle || 'Target Role'})
-
-Feel free to ask any specific question below or click one of the suggested prompts!`,
+      content: `Hello! I'm your AI Interview Copilot for **${candidateName || 'this candidate'}**${roleTitle ? ` (${roleTitle})` : ''}.\n\nAsk me anything about their actual answers, coding/technical skills, competencies, or proctoring flags, or click a suggested prompt below!`,
       timestamp: new Date(),
     },
   ]);
@@ -277,43 +269,29 @@ Feel free to ask any specific question below or click one of the suggested promp
   };
 
   return (
-    <div className="bg-white dark:bg-[#2b2b2b] rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] shadow-card overflow-hidden flex flex-col min-h-[620px] max-h-[780px]">
-      {/* ── Top Header Bar ────────────────────────────────────────── */}
-      <div className="px-6 py-4 border-b border-zinc-200 dark:border-[#4a4a4a] bg-zinc-50/50 dark:bg-[#222] flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#34c4f2] to-[#1689aa] text-white flex items-center justify-center shadow-sm">
-            <Bot className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-black text-zinc-900 dark:text-white">
-                Interview Copilot & Admin Q&A
-              </h2>
-              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-[#34c4f2]/15 text-[#1689aa] dark:text-[#34c4f2] border border-[#34c4f2]/30 uppercase tracking-wider">
-                Grounded AI
-              </span>
-            </div>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">
-              Real-time intelligence on {candidateName || 'candidate’s'} answers, competencies, and flags
-            </p>
-          </div>
+    <div className="flex-1 flex flex-col h-full bg-white dark:bg-[#1e1e1e] overflow-hidden min-h-0">
+      {/* ── Sub-bar: Status & Reset ────────────────────────────────── */}
+      <div className="px-5 py-2.5 bg-zinc-50/70 dark:bg-[#232323] border-b border-zinc-200 dark:border-[#383838] flex items-center justify-between">
+        <div className="flex items-center gap-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+          <MessageSquare className="w-3.5 h-3.5 text-[#34c4f2]" />
+          <span>Real-time Candidate Intelligence</span>
         </div>
 
         <button
           type="button"
           onClick={handleResetChat}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-200/60 dark:hover:bg-[#333] transition-colors cursor-pointer"
           title="Reset conversation"
         >
-          <RotateCcw className="w-4 h-4" />
-          <span>Reset</span>
+          <RotateCcw className="w-3.5 h-3.5" />
+          <span>Reset Chat</span>
         </button>
       </div>
 
       {/* ── Suggested Quick Question Pills ────────────────────────── */}
-      <div className="px-6 py-3 bg-zinc-50/80 dark:bg-[#252525] border-b border-zinc-200 dark:border-[#4a4a4a] overflow-x-auto scrollbar-none flex items-center gap-2">
-        <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex-shrink-0 flex items-center gap-1">
-          <Sparkles className="w-3.5 h-3.5 text-[#34c4f2]" />
+      <div className="px-5 py-2.5 bg-zinc-50/40 dark:bg-[#232323]/50 border-b border-zinc-200 dark:border-[#383838] overflow-x-auto flex items-center gap-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider flex-shrink-0 flex items-center gap-1">
+          <Sparkles className="w-3 h-3 text-[#34c4f2]" />
           Suggested:
         </span>
         {SUGGESTED_QUESTIONS.map((s, idx) => {
@@ -324,17 +302,17 @@ Feel free to ask any specific question below or click one of the suggested promp
               type="button"
               disabled={isLoading}
               onClick={() => handleSendMessage(s.query)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-[#1e1e1e] border border-zinc-200 dark:border-[#444] text-xs sm:text-[13px] font-bold text-zinc-700 dark:text-zinc-300 hover:border-[#34c4f2] hover:text-[#1689aa] dark:hover:text-[#34c4f2] transition-all flex-shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-[#2a2a2a] border border-zinc-200 dark:border-[#444] text-xs font-semibold text-zinc-700 dark:text-zinc-300 hover:border-[#34c4f2] hover:text-[#1689aa] dark:hover:text-[#34c4f2] transition-all flex-shrink-0 shadow-2xs cursor-pointer disabled:opacity-50"
             >
               <Icon className="w-3.5 h-3.5 text-[#34c4f2]" />
-              <span>{s.label}</span>
+              <span className="whitespace-nowrap">{s.label}</span>
             </button>
           );
         })}
       </div>
 
       {/* ── Chat Messages Stream ──────────────────────────────────── */}
-      <div className="flex-1 p-6 overflow-y-auto space-y-4">
+      <div className="flex-1 px-5 py-4 overflow-y-auto space-y-4 min-h-0">
         {messages.map((m) => {
           const isUser = m.role === 'user';
           return (
@@ -358,7 +336,7 @@ Feel free to ask any specific question below or click one of the suggested promp
                 className={`max-w-[85%] rounded-2xl px-4 py-3 shadow-2xs ${
                   isUser
                     ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 rounded-tr-sm'
-                    : 'bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-200 dark:border-[#4a4a4a] text-zinc-900 dark:text-white rounded-tl-sm'
+                    : 'bg-zinc-50 dark:bg-[#252525] border border-zinc-200/80 dark:border-[#383838] text-zinc-900 dark:text-white rounded-tl-sm'
                 }`}
               >
                 <div className="flex items-center justify-between gap-4 mb-1">
@@ -405,7 +383,7 @@ Feel free to ask any specific question below or click one of the suggested promp
             <div className="w-8 h-8 rounded-xl bg-[#34c4f2]/20 text-[#1689aa] dark:text-[#34c4f2] flex items-center justify-center flex-shrink-0 shadow-2xs">
               <Bot className="w-4 h-4" />
             </div>
-            <div className="bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-200 dark:border-[#4a4a4a] rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%] shadow-2xs">
+            <div className="bg-zinc-50 dark:bg-[#252525] border border-zinc-200/80 dark:border-[#383838] rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%] shadow-2xs">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#34c4f2] animate-bounce" />
                 <span
@@ -436,7 +414,7 @@ Feel free to ask any specific question below or click one of the suggested promp
       </div>
 
       {/* ── Chat Input Footer ─────────────────────────────────────── */}
-      <div className="p-4 border-t border-zinc-200 dark:border-[#4a4a4a] bg-white dark:bg-[#2b2b2b]">
+      <div className="p-4 border-t border-zinc-200 dark:border-[#383838] bg-white dark:bg-[#1e1e1e]">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -450,20 +428,20 @@ Feel free to ask any specific question below or click one of the suggested promp
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Ask anything about ${candidateName || 'this candidate’s'} answers, technical skills, or proctoring... (Enter to send)`}
-            className="w-full resize-none rounded-xl border border-zinc-200 dark:border-[#4a4a4a] bg-zinc-50 dark:bg-[#1f1f1f] px-4 py-3 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#34c4f2] transition-all"
+            placeholder={`Ask about ${candidateName || 'candidate’s'} answers, technical skills, or proctoring... (Enter to send)`}
+            className="w-full resize-none rounded-xl border border-zinc-200 dark:border-[#444] bg-zinc-50 dark:bg-[#252525] px-4 py-2.5 text-sm text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#34c4f2] transition-all"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="h-11 px-4.5 rounded-xl bg-[#34c4f2] text-zinc-900 font-black text-sm hover:bg-[#2db0db] disabled:opacity-40 transition-all shadow-md shadow-[#34c4f2]/20 flex items-center gap-1.5 cursor-pointer flex-shrink-0"
+            className="h-10 px-4 rounded-xl bg-[#34c4f2] text-zinc-900 font-bold text-sm hover:bg-[#2db0db] disabled:opacity-40 transition-all shadow-sm shadow-[#34c4f2]/20 flex items-center gap-1.5 cursor-pointer flex-shrink-0"
           >
             <Send className="w-4 h-4" />
             <span>Send</span>
           </button>
         </form>
-        <p className="text-xs text-zinc-400 mt-2 text-center">
+        <p className="text-[11px] text-zinc-400 mt-2 text-center">
           Grounds answers on verified session transcripts, competency rubrics, and proctoring events.
         </p>
       </div>
