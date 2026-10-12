@@ -83,12 +83,17 @@ export async function getAllRecordingChunks(interviewId: string): Promise<Blob[]
     try {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const index = store.index('interviewId');
-      const request = index.getAll(IDBKeyRange.only(interviewId));
+      const hasIndex = store.indexNames && store.indexNames.contains('interviewId');
+      const request = hasIndex
+        ? store.index('interviewId').getAll(IDBKeyRange.only(interviewId))
+        : store.getAll();
 
       request.onsuccess = () => {
-        const results = request.result || [];
-        const blobs: Blob[] = results
+        const rawResults = request.result || [];
+        const filtered = hasIndex
+          ? rawResults
+          : rawResults.filter((item: any) => item.interviewId === interviewId);
+        const blobs: Blob[] = filtered
           .sort((a: any, b: any) => (a.timestamp || 0) - (b.timestamp || 0))
           .map((item: any) => item.chunk)
           .filter(Boolean);
@@ -114,14 +119,19 @@ export async function hasRecordingChunks(interviewId: string): Promise<boolean> 
     try {
       const tx = db.transaction(STORE_NAME, 'readonly');
       const store = tx.objectStore(STORE_NAME);
-      const index = store.index('interviewId');
-      const request = index.count(IDBKeyRange.only(interviewId));
-
-      request.onsuccess = () => {
-        resolve((request.result || 0) > 0);
-      };
-
-      request.onerror = () => resolve(false);
+      const hasIndex = store.indexNames && store.indexNames.contains('interviewId');
+      if (hasIndex) {
+        const request = store.index('interviewId').count(IDBKeyRange.only(interviewId));
+        request.onsuccess = () => resolve((request.result || 0) > 0);
+        request.onerror = () => resolve(false);
+      } else {
+        const request = store.getAll();
+        request.onsuccess = () => {
+          const results = request.result || [];
+          resolve(results.some((item: any) => item.interviewId === interviewId));
+        };
+        request.onerror = () => resolve(false);
+      }
     } catch {
       resolve(false);
     }

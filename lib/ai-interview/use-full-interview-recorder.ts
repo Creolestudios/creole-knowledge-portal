@@ -52,7 +52,12 @@ export async function flushAndUploadCachedRecording(
 ): Promise<UploadResult> {
   if (typeof window === 'undefined') return { success: false, error: 'SSR environment' };
   try {
-    const cachedChunks = await getAllRecordingChunks(interviewId);
+    let cachedChunks = await getAllRecordingChunks(interviewId);
+    if (!cachedChunks || cachedChunks.length === 0) {
+      // Retry once after 500ms in case the write was settling during page transition
+      await new Promise((r) => setTimeout(r, 500));
+      cachedChunks = await getAllRecordingChunks(interviewId);
+    }
     if (!cachedChunks || cachedChunks.length === 0) {
       return { success: false, error: 'No cached recording chunks' };
     }
@@ -74,59 +79,76 @@ export async function flushAndUploadCachedRecording(
     let webViewLink: string | undefined;
     let previewUrl: string | undefined;
 
-    // 1. Try direct Google Drive Resumable Upload session first
-    try {
-      const sessionRes = await fetch('/api/interview/recording/session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interviewId,
-          fileSize: fullVideoBlob.size,
-          mimeType,
-          origin: clientOrigin,
-        }),
-      });
+    // 1. Try direct Google Drive Resumable Upload session first (skip on localhost to avoid browser CORS stall)
+    const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-      const sessionJson = await sessionRes.json().catch(() => null);
-      if (sessionJson?.uploadUrl) {
-        onProgress?.(40, 'Uploading video recording to Google Drive...');
-        const directResult = await new Promise<{ fileId?: string }>((resolveUpload, rejectUpload) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', sessionJson.uploadUrl, true);
-          xhr.setRequestHeader('Content-Type', mimeType);
-
-          xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable && event.total > 0) {
-              const percent = Math.min(95, Math.round(40 + (event.loaded / event.total) * 50));
-              onProgress?.(percent, `Uploading video recording to Google Drive... ${percent}%`);
-            }
-          };
-
-          xhr.onload = () => {
-            if (xhr.status === 200 || xhr.status === 201) {
-              try {
-                const driveFile = JSON.parse(xhr.responseText);
-                resolveUpload({ fileId: driveFile.id });
-              } catch {
-                resolveUpload({});
-              }
-            } else {
-              rejectUpload(new Error(`Drive PUT returned ${xhr.status}`));
-            }
-          };
-
-          xhr.onerror = () => rejectUpload(new Error('Network error during direct Drive upload'));
-          xhr.send(fullVideoBlob);
+    if (!isLocalhost) {
+      try {
+        const sessionRes = await fetch('/api/interview/recording/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            interviewId,
+            fileSize: fullVideoBlob.size,
+            mimeType,
+            origin: clientOrigin,
+          }),
         });
 
-        fileId = directResult.fileId;
-        if (fileId) {
-          webViewLink = `https://drive.google.com/file/d/${fileId}/view`;
-          previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+        const sessionJson = await sessionRes.json().catch(() => null);
+        if (sessionJson?.uploadUrl) {
+          onProgress?.(40, 'Uploading video recording to Google Drive...');
+          const directResult = await new Promise<{ fileId?: string }>((resolveUpload, rejectUpload) => {
+            const xhr = new XMLHttpRequest();
+            const timer = setTimeout(() => {
+              try { xhr.abort(); } catch {}
+              rejectUpload(new Error('Direct Drive upload timed out'));
+            }, 5000);
+
+            xhr.open('PUT', sessionJson.uploadUrl, true);
+            xhr.setRequestHeader('Content-Type', mimeType);
+
+            xhr.upload.onprogress = (event) => {
+              if (event.lengthComputable && event.total > 0) {
+                const percent = Math.min(95, Math.round(40 + (event.loaded / event.total) * 50));
+                onProgress?.(percent, `Uploading video recording to Google Drive... ${percent}%`);
+              }
+            };
+
+            xhr.onload = () => {
+              clearTimeout(timer);
+              if (xhr.status === 200 || xhr.status === 201) {
+                try {
+                  const driveFile = JSON.parse(xhr.responseText);
+                  resolveUpload({ fileId: driveFile.id });
+                } catch {
+                  resolveUpload({});
+                }
+              } else {
+                rejectUpload(new Error(`Drive PUT returned ${xhr.status}`));
+              }
+            };
+
+            xhr.onerror = () => {
+              clearTimeout(timer);
+              rejectUpload(new Error('Network error during direct Drive upload'));
+            };
+            xhr.ontimeout = () => {
+              clearTimeout(timer);
+              rejectUpload(new Error('Direct Drive upload timed out'));
+            };
+            xhr.send(fullVideoBlob);
+          });
+
+          fileId = directResult.fileId;
+          if (fileId) {
+            webViewLink = `https://drive.google.com/file/d/${fileId}/view`;
+            previewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+          }
         }
+      } catch (directErr) {
+        console.warn('[flushAndUploadCachedRecording] Direct Drive upload notice, falling back to server route:', directErr);
       }
-    } catch (directErr) {
-      console.warn('[flushAndUploadCachedRecording] Direct Drive upload notice, falling back to server route:', directErr);
     }
 
     // 2. Failsafe Fallback: server-side upload endpoint
@@ -154,6 +176,18 @@ export async function flushAndUploadCachedRecording(
 
     if (fileId) {
       await clearRecordingChunks(interviewId);
+      try {
+        await fetch('/api/interview/recording/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            interviewId,
+            fileId,
+          }),
+        });
+      } catch (completeErr) {
+        console.warn('[flushAndUploadCachedRecording] Failed to call complete route:', completeErr);
+      }
       onProgress?.(100, 'Interview video recording safely saved to Google Drive');
       console.info('[useFullInterviewRecorder] Recovered video successfully uploaded to Google Drive:', fileId);
       return {
@@ -738,8 +772,9 @@ export function useFullInterviewRecorder({
           const fileName = sessionJson?.fileName || `interview_${interviewId}.${ext}`;
 
           let fileId: string | undefined;
+          const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-          if (uploadUrl) {
+          if (uploadUrl && !isLocalhost) {
             try {
               setUploadStatusText('Uploading full interview video to Google Drive...');
               setUploadProgress(10);
@@ -747,6 +782,11 @@ export function useFullInterviewRecorder({
               // 2. Direct upload WHOLE video Blob to Google Drive with real-time progress
               const directResult = await new Promise<{ fileId?: string }>((uploadResolve, uploadReject) => {
                 const xhr = new XMLHttpRequest();
+                const timer = setTimeout(() => {
+                  try { xhr.abort(); } catch {}
+                  uploadReject(new Error('Direct Drive upload timed out'));
+                }, 5000);
+
                 xhr.open('PUT', uploadUrl, true);
                 xhr.setRequestHeader('Content-Type', mimeType);
 
@@ -759,6 +799,7 @@ export function useFullInterviewRecorder({
                 };
 
                 xhr.onload = () => {
+                  clearTimeout(timer);
                   if (xhr.status === 200 || xhr.status === 201) {
                     try {
                       const driveFile = JSON.parse(xhr.responseText);
@@ -772,7 +813,13 @@ export function useFullInterviewRecorder({
                 };
 
                 xhr.onerror = () => {
+                  clearTimeout(timer);
                   uploadReject(new Error('CORS or network error occurred during Google Drive direct upload'));
+                };
+
+                xhr.ontimeout = () => {
+                  clearTimeout(timer);
+                  uploadReject(new Error('Direct Drive upload timed out'));
                 };
 
                 xhr.send(fullVideoBlob);
@@ -893,6 +940,25 @@ export function useFullInterviewRecorder({
       }
     });
   }, [interviewId]);
+
+  // Flush pending MediaRecorder data to IndexedDB immediately on reload or page exit
+  useEffect(() => {
+    const handleUnloadFlush = () => {
+      try {
+        if (recorderRef.current && recorderRef.current.state === 'recording') {
+          recorderRef.current.requestData();
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('beforeunload', handleUnloadFlush);
+    window.addEventListener('pagehide', handleUnloadFlush);
+    return () => {
+      window.removeEventListener('beforeunload', handleUnloadFlush);
+      window.removeEventListener('pagehide', handleUnloadFlush);
+    };
+  }, []);
 
   // Prevent accidental window close or navigation while video upload is in progress
   useEffect(() => {

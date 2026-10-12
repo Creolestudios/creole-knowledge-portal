@@ -738,6 +738,10 @@ describe('InterviewEntryPage', () => {
 
     const secondMount = render(<InterviewEntryPage />);
     expect(await screen.findByText('Link is expired')).toBeInTheDocument();
+    expect(screen.getByText('Reason for Termination')).toBeInTheDocument();
+    expect(
+      screen.getByText('The candidate refreshed or closed the page during the live interview.')
+    ).toBeInTheDocument();
     expect(screen.getByText(/Note: This interview link has already been used and is expired/i)).toBeInTheDocument();
     secondMount.unmount();
   });

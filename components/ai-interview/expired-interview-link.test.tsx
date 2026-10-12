@@ -30,8 +30,8 @@ describe('ExpiredInterviewLink component', () => {
       />
     );
 
-    expect(screen.getByText(/🚫 Tab Switch & Focus Policy Violation/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: /Interview Terminated/i })).toBeInTheDocument();
+    expect(screen.getByText(/Tab Switch & Focus Policy Violation/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Link is expired/i })).toBeInTheDocument();
     expect(screen.getByText('This link is expired it is one time use')).toBeInTheDocument();
     expect(
       screen.getByText('The candidate clicked outside the interview window or switched tabs.')

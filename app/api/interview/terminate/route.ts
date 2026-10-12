@@ -17,9 +17,28 @@ export const runtime = 'nodejs';
  * Body: { interviewId: string, reason: string, warningCounts?: { face: number, object: number, voice: number } }
  */
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
-  const interviewId = body?.interviewId as string | undefined;
-  const reason = body?.reason as string | undefined;
+  let body: any = null;
+  try {
+    body = await req.json();
+  } catch {
+    try {
+      const text = await req.text();
+      if (text) body = JSON.parse(text);
+    } catch {
+      try {
+        const formData = await req.formData();
+        body = {
+          interviewId: formData.get('interviewId'),
+          reason: formData.get('reason'),
+        };
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const interviewId = (body?.interviewId as string | undefined)?.trim();
+  const reason = (body?.reason as string | undefined)?.trim();
   const warningCounts = body?.warningCounts as
     | { face: number; object: number; voice: number }
     | undefined;

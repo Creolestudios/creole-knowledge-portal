@@ -98,10 +98,85 @@ export default function InterviewEntryPage() {
   }, []);
 
   const [expiredNote, setExpiredNote] = useState<string>('Note: This interview link has already been used and is expired.');
-  const [expirationReason, setExpirationReason] = useState<string | undefined>(undefined);
-  const [expirationTitle, setExpirationTitle] = useState<string | undefined>(undefined);
-  const [expirationDetail, setExpirationDetail] = useState<string | undefined>(undefined);
-  const [expirationViolationReason, setExpirationViolationReason] = useState<string | undefined>(undefined);
+  const [expirationReason, setExpirationReason] = useState<string | undefined>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        const stored =
+          sessionStorage.getItem(`interview_expiration_reason_${interviewId}`) ||
+          localStorage.getItem(`interview_expiration_reason_${interviewId}`);
+        if (stored) return stored;
+        const status =
+          sessionStorage.getItem(`interview_status_${interviewId}`) ||
+          localStorage.getItem(`interview_status_${interviewId}`);
+        if (status === 'completed') return 'completed';
+        if (status === 'terminated') return 'violation';
+        if (
+          sessionStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          localStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`)
+        ) {
+          return 'violation';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return undefined;
+  });
+  const [expirationTitle, setExpirationTitle] = useState<string | undefined>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        const stored =
+          sessionStorage.getItem(`interview_reason_title_${interviewId}`) ||
+          localStorage.getItem(`interview_reason_title_${interviewId}`);
+        if (stored) return stored;
+        const status =
+          sessionStorage.getItem(`interview_status_${interviewId}`) ||
+          localStorage.getItem(`interview_status_${interviewId}`);
+        if (status === 'completed') return 'Interview Completed';
+        if (status === 'terminated') return 'Interview Terminated';
+        if (
+          sessionStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          localStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`)
+        ) {
+          return 'Interview Terminated';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return undefined;
+  });
+  const [expirationDetail, setExpirationDetail] = useState<string | undefined>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        return (
+          sessionStorage.getItem(`interview_reason_detail_${interviewId}`) ||
+          localStorage.getItem(`interview_reason_detail_${interviewId}`) ||
+          undefined
+        );
+      } catch {
+        // ignore
+      }
+    }
+    return undefined;
+  });
+  const [expirationViolationReason, setExpirationViolationReason] = useState<string | undefined>(() => {
+    if (typeof window !== 'undefined' && interviewId) {
+      try {
+        return (
+          sessionStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          localStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`) ||
+          undefined
+        );
+      } catch {
+        // ignore
+      }
+    }
+    return undefined;
+  });
   const [expirationWarningCount, setExpirationWarningCount] = useState<number | undefined>(undefined);
   const [isVerifyingLink, setIsVerifyingLink] = useState<boolean>(() => {
     if (process.env.NODE_ENV === 'test') {
@@ -153,6 +228,7 @@ export default function InterviewEntryPage() {
       try {
         return (
           sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`) ||
+          sessionStorage.getItem(`interview_terminated_reason_${interviewId}`) ||
           (sessionStorage.getItem(`interview_live_active_${interviewId}`) === 'true'
             ? 'The candidate refreshed or closed the page during the live interview.'
             : null)
@@ -277,11 +353,38 @@ export default function InterviewEntryPage() {
           try {
             localStorage.setItem(`interview_used_${interviewId}`, 'true');
             sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+            if (json.expirationReason === 'completed') {
+              localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+              sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+              localStorage.setItem(`interview_status_${interviewId}`, 'completed');
+              sessionStorage.setItem(`interview_status_${interviewId}`, 'completed');
+            } else if (json.expirationReason === 'violation' || json.violationReason) {
+              localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+              sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+              localStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+              sessionStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+            }
+            if (json.reasonTitle) {
+              localStorage.setItem(`interview_reason_title_${interviewId}`, json.reasonTitle);
+              sessionStorage.setItem(`interview_reason_title_${interviewId}`, json.reasonTitle);
+            }
+            if (json.violationReason) {
+              localStorage.setItem(`interview_termination_reason_${interviewId}`, json.violationReason);
+              sessionStorage.setItem(`interview_termination_reason_${interviewId}`, json.violationReason);
+            }
+            if (json.reasonDetail) {
+              localStorage.setItem(`interview_reason_detail_${interviewId}`, json.reasonDetail);
+              sessionStorage.setItem(`interview_reason_detail_${interviewId}`, json.reasonDetail);
+            }
           } catch {
             // ignore
           }
-          setExpirationReason(json.expirationReason || 'already_used');
-          setExpirationTitle(json.reasonTitle || 'Link is expired');
+          if (json.expirationReason) {
+            setExpirationReason(json.expirationReason);
+          }
+          if (json.reasonTitle) {
+            setExpirationTitle(json.reasonTitle);
+          }
           if (json.reasonDetail) {
             setExpirationDetail(json.reasonDetail);
           }
@@ -293,10 +396,26 @@ export default function InterviewEntryPage() {
             setExpirationWarningCount(json.warningCount);
           }
 
-          setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
+          const formattedNote = json.note || (json.error ? (json.error.toLowerCase().startsWith('note:') ? json.error : `Note: ${json.error}`) : 'Note: This interview link has already been used and is expired.');
+          setExpiredNote(formattedNote);
 
           // If the candidate refreshed during the live interview, they are viewing the termination screen.
-          // Keep the termination screen displayed! Do not switch to the expired link screen.
+          // Keep the termination screen displayed on this mount and clean up one-time refresh flag.
+          if (stageRef.current === 'terminated') {
+            try {
+              sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
+              sessionStorage.removeItem(`interview_live_active_${interviewId}`);
+            } catch {
+              // ignore
+            }
+            if (json.violationReason) {
+              setTerminationReason((prev) => prev || json.violationReason);
+            }
+            return;
+          }
+
+          setStageWithRef('expired');
+        } else if (res.ok) {
           if (stageRef.current === 'terminated') {
             try {
               sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
@@ -306,9 +425,6 @@ export default function InterviewEntryPage() {
             }
             return;
           }
-
-          setStageWithRef('expired');
-        } else if (res.ok) {
           try {
             localStorage.removeItem(`interview_used_${interviewId}`);
             sessionStorage.removeItem(`interview_used_${interviewId}`);
@@ -331,11 +447,14 @@ export default function InterviewEntryPage() {
                     accessCode: authData.accessCode,
                     email: authData.email,
                   }),
-                });
+                }).catch(() => null);
                 
-                if (verifyRes.ok) {
+                if (verifyRes && verifyRes.ok) {
                   const verifyJson = await verifyRes.json();
                   if (!isMounted) return;
+                  if ((stageRef.current as string) === 'terminated') {
+                    return;
+                  }
                   if (verifyJson.bypassProctoring) {
                     setBypassProctoring(true);
                   }
@@ -356,7 +475,7 @@ export default function InterviewEntryPage() {
                       setStageWithRef('instructions');
                     }
                   }
-                } else if (verifyRes.status === 410) {
+                } else if (verifyRes && verifyRes.status === 410) {
                   const verifyJson = await verifyRes.json().catch(() => ({}));
                   if (!isMounted) return;
                   try {
@@ -378,10 +497,10 @@ export default function InterviewEntryPage() {
                     setExpirationWarningCount(verifyJson.warningCount);
                   }
 
-                  if (stageRef.current === 'terminated') {
+                  if ((stageRef.current as string) === 'terminated') {
                     return;
                   }
-                  setExpiredNote(verifyJson.reasonDetail || verifyJson.note || verifyJson.error || 'Note: This interview link has already been used and is expired.');
+                  setExpiredNote(verifyJson.note || verifyJson.error || 'Note: This interview link has already been used and is expired.');
                   setStageWithRef('expired');
                 } else {
                   sessionStorage.removeItem(`interview_auth_${interviewId}`);
@@ -1016,6 +1135,14 @@ export default function InterviewEntryPage() {
     try {
       localStorage.setItem(`interview_used_${interviewId}`, 'true');
       sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+      localStorage.setItem(`interview_status_${interviewId}`, 'completed');
+      sessionStorage.setItem(`interview_status_${interviewId}`, 'completed');
+      localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+      sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+      localStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Completed');
+      sessionStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Completed');
+      localStorage.setItem(`interview_reason_detail_${interviewId}`, 'This link is expired it is one time use , your interview is completed we will get back to you soon');
+      sessionStorage.setItem(`interview_reason_detail_${interviewId}`, 'This link is expired it is one time use , your interview is completed we will get back to you soon');
     } catch {
       // ignore
     }
@@ -1116,6 +1243,14 @@ export default function InterviewEntryPage() {
     try {
       localStorage.setItem(`interview_used_${interviewId}`, 'true');
       sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+      localStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+      sessionStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+      localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+      sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+      localStorage.setItem(`interview_termination_reason_${interviewId}`, reason);
+      sessionStorage.setItem(`interview_termination_reason_${interviewId}`, reason);
+      localStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
+      sessionStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
       sessionStorage.setItem(
         `interview_refresh_terminated_${interviewId}`,
         sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`) || reason
@@ -1174,14 +1309,13 @@ export default function InterviewEntryPage() {
     if (stage === 'interview' && !isAdmin && interviewId) {
       try {
         sessionStorage.setItem(`interview_live_active_${interviewId}`, 'true');
-        sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
       } catch {
         // ignore
       }
     }
   }, [stage, isAdmin, interviewId]);
 
-  // Mark link used and clean up refresh tracking flags once terminated or completed stage is reached
+  // Mark link used and clean up live active flags once terminated or completed stage is reached
   useEffect(() => {
     if ((stage === 'terminated' || stage === 'completed') && interviewId) {
       try {
@@ -1189,11 +1323,32 @@ export default function InterviewEntryPage() {
         sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
         sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
         sessionStorage.removeItem(`interview_live_active_${interviewId}`);
+        if (stage === 'completed') {
+          localStorage.setItem(`interview_status_${interviewId}`, 'completed');
+          sessionStorage.setItem(`interview_status_${interviewId}`, 'completed');
+          localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+          sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+          localStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Completed');
+          sessionStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Completed');
+          localStorage.setItem(`interview_reason_detail_${interviewId}`, 'This link is expired it is one time use , your interview is completed we will get back to you soon');
+          sessionStorage.setItem(`interview_reason_detail_${interviewId}`, 'This link is expired it is one time use , your interview is completed we will get back to you soon');
+        } else if (stage === 'terminated') {
+          localStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+          sessionStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+          localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+          sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+          localStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
+          sessionStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
+          if (terminationReason) {
+            localStorage.setItem(`interview_termination_reason_${interviewId}`, terminationReason);
+            sessionStorage.setItem(`interview_termination_reason_${interviewId}`, terminationReason);
+          }
+        }
       } catch {
         // ignore
       }
     }
-  }, [stage, interviewId]);
+  }, [stage, interviewId, terminationReason]);
 
   useProctoringWatchdog({
     active: !isAdmin && stage === 'interview' && !bypassProctoring,
@@ -1208,11 +1363,24 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     if (stage !== 'interview' || isAdmin) return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const refreshNotice = 'The candidate refreshed or closed the page during the live interview.';
       try {
-        sessionStorage.setItem(
-          `interview_refresh_terminated_${interviewId}`,
-          'The candidate refreshed or closed the page during the live interview.'
-        );
+        sessionStorage.setItem(`interview_refresh_terminated_${interviewId}`, refreshNotice);
+        sessionStorage.setItem(`interview_terminated_reason_${interviewId}`, refreshNotice);
+        localStorage.setItem(`interview_termination_reason_${interviewId}`, refreshNotice);
+        localStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+        sessionStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+        localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+        sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+        localStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
+        sessionStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
+        localStorage.setItem(`interview_used_${interviewId}`, 'true');
+        sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+      } catch {
+        // ignore
+      }
+      try {
+        notifyTermination(refreshNotice);
       } catch {
         // ignore
       }
@@ -1220,23 +1388,26 @@ export default function InterviewEntryPage() {
       e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
       return e.returnValue;
     };
-
-    const handleFocus = () => {
-      if (stageRef.current === 'interview') {
-        try {
-          sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
-        } catch {
-          // ignore
-        }
-      }
-    };
     
     const handlePageHide = () => {
+      const refreshNotice = 'The candidate refreshed or closed the page during the live interview.';
       try {
-        sessionStorage.setItem(
-          `interview_refresh_terminated_${interviewId}`,
-          'The candidate refreshed or closed the page during the live interview.'
-        );
+        sessionStorage.setItem(`interview_refresh_terminated_${interviewId}`, refreshNotice);
+        sessionStorage.setItem(`interview_terminated_reason_${interviewId}`, refreshNotice);
+        localStorage.setItem(`interview_termination_reason_${interviewId}`, refreshNotice);
+        localStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+        sessionStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+        localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+        sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+        localStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
+        sessionStorage.setItem(`interview_reason_title_${interviewId}`, 'Interview Terminated');
+        localStorage.setItem(`interview_used_${interviewId}`, 'true');
+        sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+      } catch {
+        // ignore
+      }
+      try {
+        notifyTermination(refreshNotice);
       } catch {
         // ignore
       }
@@ -1248,7 +1419,7 @@ export default function InterviewEntryPage() {
       } catch {
         // ignore
       }
-      terminateInterviewRef.current('The candidate refreshed or closed the page during the live interview.');
+      terminateInterviewRef.current(refreshNotice);
     };
     
     const handleVisibilityChange = () => {
@@ -1263,14 +1434,12 @@ export default function InterviewEntryPage() {
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    window.addEventListener('focus', handleFocus);
     window.addEventListener('pagehide', handlePageHide);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      window.removeEventListener('focus', handleFocus);
       window.removeEventListener('pagehide', handlePageHide);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
@@ -1475,8 +1644,14 @@ export default function InterviewEntryPage() {
           accessCode: accessCode.trim() ? accessCode.trim() : undefined,
           email: email.trim() ? email.trim() : undefined,
         }),
-      });
-      const json = await res.json();
+      }).catch(() => null);
+
+      if (!res) {
+        setError('Verification failed. Please try again.');
+        setSubmitting(false);
+        return;
+      }
+      const json = await res.json().catch(() => ({}));
 
       if (res.status === 409 || json.concurrent) {
         setError(json.error || 'An active interview session is already in progress on another device. Simultaneous access to the same interview link is prohibited.');
@@ -1487,22 +1662,51 @@ export default function InterviewEntryPage() {
         try {
           localStorage.setItem(`interview_used_${interviewId}`, 'true');
           sessionStorage.setItem(`interview_used_${interviewId}`, 'true');
+          if (json.expirationReason === 'completed') {
+            localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+            sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'completed');
+            localStorage.setItem(`interview_status_${interviewId}`, 'completed');
+            sessionStorage.setItem(`interview_status_${interviewId}`, 'completed');
+          } else if (json.expirationReason === 'violation' || json.violationReason) {
+            localStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+            sessionStorage.setItem(`interview_expiration_reason_${interviewId}`, 'violation');
+            localStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+            sessionStorage.setItem(`interview_status_${interviewId}`, 'terminated');
+          }
+          if (json.reasonTitle) {
+            localStorage.setItem(`interview_reason_title_${interviewId}`, json.reasonTitle);
+            sessionStorage.setItem(`interview_reason_title_${interviewId}`, json.reasonTitle);
+          }
+          if (json.violationReason) {
+            localStorage.setItem(`interview_termination_reason_${interviewId}`, json.violationReason);
+            sessionStorage.setItem(`interview_termination_reason_${interviewId}`, json.violationReason);
+          }
+          if (json.reasonDetail) {
+            localStorage.setItem(`interview_reason_detail_${interviewId}`, json.reasonDetail);
+            sessionStorage.setItem(`interview_reason_detail_${interviewId}`, json.reasonDetail);
+          }
         } catch {
           // ignore
         }
-        setExpirationReason(json.expirationReason || 'already_used');
-        setExpirationTitle(json.reasonTitle || 'Link is expired');
+        if (json.expirationReason) {
+          setExpirationReason(json.expirationReason);
+        }
+        if (json.reasonTitle) {
+          setExpirationTitle(json.reasonTitle);
+        }
         if (json.reasonDetail) {
           setExpirationDetail(json.reasonDetail);
         }
         if (json.violationReason) {
           setExpirationViolationReason(json.violationReason);
+          setTerminationReason((prev) => prev || json.violationReason);
         }
         if (json.warningCount) {
           setExpirationWarningCount(json.warningCount);
         }
 
-        setExpiredNote(json.reasonDetail || json.note || json.error || 'Note: This interview link has already been used and is expired.');
+        const formattedNote = json.note || (json.error ? (json.error.toLowerCase().startsWith('note:') ? json.error : `Note: ${json.error}`) : 'Note: This interview link has already been used and is expired.');
+        setExpiredNote(formattedNote);
         setStageWithRef('expired');
         return;
       }
@@ -2522,15 +2726,67 @@ export default function InterviewEntryPage() {
   }
 
   if (stage === 'expired') {
+    const activeViolationReason =
+      expirationViolationReason ||
+      terminationReason ||
+      (typeof window !== 'undefined' && interviewId
+        ? sessionStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          localStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+          sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`)
+        : undefined) ||
+      undefined;
+
+    const isCompletedSession = Boolean(
+      expirationReason === 'completed' ||
+      (typeof window !== 'undefined' && interviewId &&
+        (sessionStorage.getItem(`interview_status_${interviewId}`) === 'completed' ||
+          localStorage.getItem(`interview_status_${interviewId}`) === 'completed' ||
+          sessionStorage.getItem(`interview_expiration_reason_${interviewId}`) === 'completed' ||
+          localStorage.getItem(`interview_expiration_reason_${interviewId}`) === 'completed'))
+    );
+
+    const isTerminatedSession = Boolean(
+      !isCompletedSession &&
+      (expirationReason === 'violation' ||
+        Boolean(activeViolationReason) ||
+        (typeof window !== 'undefined' && interviewId &&
+          (sessionStorage.getItem(`interview_status_${interviewId}`) === 'terminated' ||
+            localStorage.getItem(`interview_status_${interviewId}`) === 'terminated' ||
+            sessionStorage.getItem(`interview_expiration_reason_${interviewId}`) === 'violation' ||
+            localStorage.getItem(`interview_expiration_reason_${interviewId}`) === 'violation')))
+    );
+
+    const resolvedReasonProp = isCompletedSession
+      ? 'completed'
+      : isTerminatedSession
+      ? 'violation'
+      : (expirationReason || 'already_used');
+
+    const resolvedTitleProp =
+      expirationTitle && expirationTitle !== 'Interview Terminated'
+        ? expirationTitle
+        : 'Link is expired';
+
+    const resolvedDetailProp = isCompletedSession
+      ? (expirationDetail || 'This link is expired it is one time use , your interview is completed we will get back to you soon')
+      : (expirationDetail || 'This link is expired it is one time use');
+
+    const effectiveViolationProp = isTerminatedSession
+      ? (activeViolationReason || 'The candidate refreshed or closed the page during the live interview.')
+      : undefined;
+
     return (
       <ExpiredInterviewLink
         note={expiredNote}
         isUsed={true}
-        reason={expirationReason}
-        reasonTitle={expirationTitle}
-        reasonDetail={expirationDetail}
-        violationReason={expirationViolationReason || (expirationReason === 'violation' ? (terminationReason || undefined) : undefined)}
+        reason={resolvedReasonProp}
+        reasonTitle={resolvedTitleProp}
+        reasonDetail={resolvedDetailProp}
+        violationReason={effectiveViolationProp}
         warningCount={expirationWarningCount}
+        isUploading={isUploadingFullVideo || isRecoveryUploading}
+        uploadProgress={isRecoveryUploading ? recoveryProgress : fullVideoUploadProgress}
+        uploadStatusText={recoveryStatusText || fullVideoUploadStatusText}
       />
     );
   }

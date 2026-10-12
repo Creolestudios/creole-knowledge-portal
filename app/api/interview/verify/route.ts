@@ -54,7 +54,7 @@ export async function GET(req: Request) {
   try {
     const { data: interview } = await supabaseAdmin
       .from('ai_interviews')
-      .select('id, status, expires_at, used_at')
+      .select('id, status, expires_at, used_at, termination_reason')
       .eq('id', interviewId)
       .single();
 
@@ -119,12 +119,30 @@ export async function GET(req: Request) {
       invite.status === 'completed' ||
       invite.consumed_at
     ) {
-      const isCompleted = invite.status === 'completed';
-      const isRevoked = invite.status === 'revoked';
+      let isCompleted = invite.status === 'completed';
+      let isRevoked = invite.status === 'revoked';
       let violationReason: string | undefined;
       let warningCount: number | undefined;
 
-      if (isRevoked && invite.session_id) {
+      if (invite.session_id) {
+        try {
+          const { data: linkedSession } = await supabaseAdmin
+            .from('interview_sessions')
+            .select('status, voice_warning_count, face_warning_count, object_warning_count')
+            .eq('id', invite.session_id)
+            .maybeSingle();
+
+          if (linkedSession) {
+            if (linkedSession.status === 'cancelled' || linkedSession.status === 'terminated') {
+              isRevoked = true;
+            } else if (linkedSession.status === 'completed') {
+              isCompleted = true;
+            }
+            const total = (linkedSession.face_warning_count || 0) + (linkedSession.object_warning_count || 0) + (linkedSession.voice_warning_count || 0);
+            if (total > 0) warningCount = total;
+          }
+        } catch {}
+
         try {
           const { data: violationEvt } = await supabaseAdmin
             .from('interview_events')
@@ -138,18 +156,7 @@ export async function GET(req: Request) {
           const meta = (violationEvt?.meta || violationEvt?.metadata) as Record<string, any> | undefined;
           if (meta?.reason) {
             violationReason = String(meta.reason);
-          }
-        } catch {}
-
-        try {
-          const { data: linkedSession } = await supabaseAdmin
-            .from('interview_sessions')
-            .select('voice_warning_count, face_warning_count, object_warning_count')
-            .eq('id', invite.session_id)
-            .maybeSingle();
-          if (linkedSession) {
-            const total = (linkedSession.face_warning_count || 0) + (linkedSession.object_warning_count || 0) + (linkedSession.voice_warning_count || 0);
-            if (total > 0) warningCount = total;
+            isRevoked = true;
           }
         } catch {}
       }
@@ -401,7 +408,7 @@ export async function POST(req: Request) {
   try {
     const { data: interview } = await supabaseAdmin
       .from('ai_interviews')
-      .select('id, status, expires_at, access_code, used_at')
+      .select('id, status, expires_at, access_code, used_at, termination_reason')
       .eq('id', interviewId)
       .single();
 
@@ -528,12 +535,52 @@ export async function POST(req: Request) {
 
     if (invite.status === 'revoked' || invite.status === 'completed' || invite.status === 'expired') {
       if (lockAcquired) releaseJoinLock(interviewId, deviceId);
-      const isCompleted = invite.status === 'completed';
-      const isRevoked = invite.status === 'revoked';
+      let isCompleted = invite.status === 'completed';
+      let isRevoked = invite.status === 'revoked';
+      let violationReason: string | undefined;
+      let warningCount: number | undefined;
+
+      if (invite.session_id) {
+        try {
+          const { data: linkedSession } = await supabaseAdmin
+            .from('interview_sessions')
+            .select('status, voice_warning_count, face_warning_count, object_warning_count')
+            .eq('id', invite.session_id)
+            .maybeSingle();
+
+          if (linkedSession) {
+            if (linkedSession.status === 'cancelled' || linkedSession.status === 'terminated') {
+              isRevoked = true;
+            } else if (linkedSession.status === 'completed') {
+              isCompleted = true;
+            }
+            const total = (linkedSession.face_warning_count || 0) + (linkedSession.object_warning_count || 0) + (linkedSession.voice_warning_count || 0);
+            if (total > 0) warningCount = total;
+          }
+        } catch {}
+
+        try {
+          const { data: violationEvt } = await supabaseAdmin
+            .from('interview_events')
+            .select('meta, metadata')
+            .eq('session_id', invite.session_id)
+            .in('event_type', ['proctoring_violation', 'terminated'])
+            .order('ts_ms', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const meta = (violationEvt?.meta || violationEvt?.metadata) as Record<string, any> | undefined;
+          if (meta?.reason) {
+            violationReason = String(meta.reason);
+            isRevoked = true;
+          }
+        } catch {}
+      }
+
       return NextResponse.json({
         error: 'This interview link has already been used and is expired',
         note: 'Note: This interview link has already been used and is expired.',
-        status: 'expired',
+        status: isCompleted ? 'completed' : 'expired',
         expired: true,
         used: true,
         expirationReason: isCompleted ? 'completed' : (isRevoked ? 'violation' : 'already_used'),
@@ -541,6 +588,8 @@ export async function POST(req: Request) {
         reasonDetail: isCompleted
           ? 'This link is expired it is one time use , your interview is completed we will get back to you soon'
           : 'This link is expired it is one time use',
+        violationReason: isRevoked ? (violationReason || 'The interview session was terminated due to a proctoring violation.') : undefined,
+        warningCount,
       }, { status: 410 });
     }
 
@@ -553,15 +602,17 @@ export async function POST(req: Request) {
           await supabaseAdmin.from('interview_sessions').update({ status: 'terminated' }).eq('id', invite.session_id);
         }
         await broadcastTermination(interviewId);
+        const refreshReason = 'The candidate refreshed or closed the page during the live interview.';
         return NextResponse.json({
           error: 'This interview link has already been used and is expired',
           note: 'Note: This interview link has already been used and is expired.',
           status: 'expired',
           expired: true,
           used: true,
-          expirationReason: 'already_used',
-          reasonTitle: 'Link is expired',
-          reasonDetail: 'For security and assessment integrity, each interview link is strictly single-use. Because this link has already been accessed, it cannot be opened again.',
+          expirationReason: 'violation',
+          reasonTitle: 'Interview Terminated',
+          reasonDetail: 'This link is expired it is one time use',
+          violationReason: refreshReason,
         }, { status: 410 });
       }
 
