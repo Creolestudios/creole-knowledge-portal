@@ -1,0 +1,156 @@
+name: Build & Push to GHCR (Droplet)
+
+# Builds the images the DigitalOcean droplet runs and pushes them to GitHub
+# Container Registry. The droplet then pulls them — nothing is built on the
+# droplet itself (1 GB RAM cannot run `next build`, which needs ~4 GB).
+#
+# Manual trigger only, so a deploy is always a deliberate act. To build
+# automatically on every push to main, uncomment the `push:` block below.
+#
+# Images produced (GHCR requires lowercase names):
+#   ghcr.io/<owner>/creole-knowledge-portal-web:latest  + :<sha>
+#   ghcr.io/<owner>/creole-knowledge-portal-api:latest  + :<sha>
+#
+# The api image serves BOTH the FastAPI service and the Celery worker on the
+# droplet — same image, different command. See deploy/droplet/docker-compose.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_web:
+        description: Build and push the Next.js web image
+        type: boolean
+        default: true
+      build_api:
+        description: Build and push the fetch-blogs API/worker image
+        type: boolean
+        default: false
+      base_path:
+        description: NEXT_PUBLIC_BASE_PATH — leave EMPTY to serve the app at /
+        type: string
+        default: ""
+      supabase_url:
+        description: NEXT_PUBLIC_SUPABASE_URL (baked into the browser bundle)
+        type: string
+        default: "https://pcovgcyjzprkboxbjkey.supabase.co"
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - "app/**"
+  #     - "components/**"
+  #     - "lib/**"
+  #     - "public/**"
+  #     - "package.json"
+  #     - "Dockerfile"
+  #     - "fetch-blogs/**"
+  #     - ".github/workflows/deploy-droplet.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  web:
+    name: Web image (Next.js)
+    if: ${{ inputs.build_web }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR rejects uppercase in image references; the org is "Creolestudios".
+      - name: Resolve lowercase owner
+        id: names
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NEXT_PUBLIC_BASE_PATH=${{ inputs.base_path }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ inputs.supabase_url }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.names.outputs.owner }}/creole-knowledge-portal-web:latest
+            ${{ env.REGISTRY }}/${{ steps.names.outputs.owner }}/creole-knowledge-portal-web:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+      - name: Deploy instructions
+        run: |
+          {
+            echo "## Web image pushed"
+            echo ""
+            echo '```'
+            echo "${{ env.REGISTRY }}/${{ steps.names.outputs.owner }}/creole-knowledge-portal-web:latest"
+            echo "${{ env.REGISTRY }}/${{ steps.names.outputs.owner }}/creole-knowledge-portal-web:${{ github.sha }}"
+            echo '```'
+            echo ""
+            echo "Deploy on the droplet:"
+            echo '```bash'
+            echo "cd /opt/ckp && ./deploy.sh web"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  api:
+    name: API/worker image (fetch-blogs)
+    if: ${{ inputs.build_api }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve lowercase owner
+        id: names
+        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: fetch-blogs
+          file: fetch-blogs/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.names.outputs.owner }}/creole-knowledge-portal-api:latest
+            ${{ env.REGISTRY }}/${{ steps.names.outputs.owner }}/creole-knowledge-portal-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+      - name: Deploy instructions
+        run: |
+          {
+            echo "## API/worker image pushed"
+            echo ""
+            echo '```'
+            echo "${{ env.REGISTRY }}/${{ steps.names.outputs.owner }}/creole-knowledge-portal-api:latest"
+            echo '```'
+            echo ""
+            echo "Deploy on the droplet:"
+            echo '```bash'
+            echo "cd /opt/ckp && ./deploy.sh blog"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

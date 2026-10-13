@@ -1,0 +1,147 @@
+# CKP droplet stack — 143.110.245.16 (1 vCPU / 957 Mi RAM / 25 GB)
+#
+# Images are built by .github/workflows/deploy-droplet.yml and pulled from GHCR.
+# Nothing is built here: `next build` needs ~4 GB and this box has under 1 GB.
+#
+# STAGE 1 — interview module only (~250 Mi):
+#   docker compose up -d
+#
+# STAGE 2 — add the blog module (api + unified worker + redis, ~+400 Mi):
+#   docker compose --profile blog up -d
+#
+# Pin a specific build instead of latest:
+#   IMAGE_TAG=<git-sha> docker compose up -d
+#
+# NOTE: do not create a file named `.env` in this directory — Docker Compose
+# auto-loads it for variable interpolation. App secrets live in
+# .env.production (web) and .env.api (blog), which are passed via env_file.
+
+name: ckp
+
+services:
+  # ── Next.js portal: interview module, admin reports, blog UI ───────────────
+  web:
+    image: ghcr.io/creolestudios/creole-knowledge-portal-web:${IMAGE_TAG:-latest}
+    container_name: ckp-web
+    restart: unless-stopped
+    env_file:
+      - ./.env.production
+    ports:
+      # Loopback only. nginx is the sole public edge.
+      - "127.0.0.1:3000:3000"
+    mem_limit: 600m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Celery broker / result backend (blog module only) ─────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ckp-redis
+    profiles: ["blog"]
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 64mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+    mem_limit: 100m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ── FastAPI read layer: serves digests from MongoDB Atlas to the web app ──
+  api:
+    image: ghcr.io/creolestudios/creole-knowledge-portal-api:${IMAGE_TAG:-latest}
+    container_name: ckp-api
+    profiles: ["blog"]
+    restart: unless-stopped
+    # ONE worker, not the 4 in docker-compose.prod.yml — each is a full Python
+    # process (~180 Mi) and four of them will not fit on this box.
+    command: fastapi run --workers 1 src/main.py
+    env_file:
+      - ./.env.api
+    ports:
+      # Loopback only. Its sole auth is the X-Internal-Token header, so it must
+      # never be publicly reachable.
+      - "127.0.0.1:8000:8000"
+    mem_limit: 350m
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health').status==200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Unified Celery worker: all five queues in one process group ───────────
+  # Replaces the five separate worker containers in docker-compose.prod.yml.
+  # Saves ~400 Mi, which is what makes the blog module viable here at all.
+  worker:
+    image: ghcr.io/creolestudios/creole-knowledge-portal-api:${IMAGE_TAG:-latest}
+    container_name: ckp-worker
+    profiles: ["blog"]
+    restart: unless-stopped
+    command: >
+      celery -A src.workers.celery_app worker
+      -Q scrape_queue,extract_queue,rank_queue,generate_queue,publish_queue
+      -c 2 -n unified@%h --loglevel=info --time-limit=700
+    env_file:
+      - ./.env.api
+    mem_limit: 450m
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Celery beat: automatic daily digest at SCRAPING_CRON_SCHEDULE ──────────
+  # Only needed if digests must generate on a schedule without anyone clicking.
+  # Enable with: docker compose --profile blog --profile scheduler up -d
+  beat:
+    image: ghcr.io/creolestudios/creole-knowledge-portal-api:${IMAGE_TAG:-latest}
+    container_name: ckp-beat
+    profiles: ["scheduler"]
+    restart: unless-stopped
+    command: celery -A src.workers.celery_app beat --loglevel=info
+    env_file:
+      - ./.env.api
+    mem_limit: 150m
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
