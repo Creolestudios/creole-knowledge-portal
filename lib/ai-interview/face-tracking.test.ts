@@ -3,6 +3,7 @@ import {
   analyzeFaceMetrics,
   CandidateBaseline,
   computeIrisRatio,
+  ExtendedFaceTrackingResult,
   getHeadYaw,
   ProctoringTimeTracker,
 } from './face-tracking';
@@ -299,6 +300,44 @@ describe('face-tracking module', () => {
       expect(counts.object).toBe(1);
       expect(counts.face).toBe(1);
       expect(counts.total).toBe(3);
+    });
+
+    it('allows warnings beyond 3 strikes and tracks uncapped total when bypassLimit is enabled', () => {
+      const tracker = new ProctoringTimeTracker();
+      tracker.bypassLimit = true;
+
+      // Strike 1: Voice
+      const v1 = tracker.processGenericEvent('unauthorized_voice', 'voice', 'Background voice', 0, 1000, 1000);
+      expect(v1.shouldTriggerWarning).toBe(true);
+      expect(v1.warningCount).toBe(1);
+
+      // Strike 2: Object
+      const o1 = tracker.processGenericEvent('object_detected', 'cell_phone', 'Phone detected', 0, 1000, 2500);
+      expect(o1.shouldTriggerWarning).toBe(true);
+      expect(o1.warningCount).toBe(2);
+
+      // Strike 3: Face
+      const mockResult = analyzeFaceMetrics(undefined, [], []);
+      tracker.processResult(mockResult, 3000, { noFaceThresholdMs: 500 });
+      const f1 = tracker.processResult(mockResult, 4000, { noFaceThresholdMs: 500 });
+      expect(f1.shouldTriggerWarning).toBe(true);
+      expect(f1.warningCount).toBe(3);
+
+      // Strike 4: Face (cooldown satisfied at t = 25000ms) - DOES NOT BLOCK when bypassLimit is true!
+      const f2 = tracker.processResult(mockResult, 25000, { noFaceThresholdMs: 500 });
+      expect(f2.shouldTriggerWarning).toBe(true);
+      expect(f2.warningCount).toBe(4);
+
+      // Strike 5: Voice (cooldown satisfied at t = 30000ms)
+      const v2 = tracker.processGenericEvent('unauthorized_voice', 'voice', 'Second voice alert', 0, 1000, 30000);
+      expect(v2.shouldTriggerWarning).toBe(true);
+      expect(v2.warningCount).toBe(5);
+
+      const counts = tracker.getWarningCounts();
+      expect(counts.voice).toBe(2);
+      expect(counts.object).toBe(1);
+      expect(counts.face).toBe(2);
+      expect(counts.total).toBe(5);
     });
   });
 });

@@ -415,4 +415,88 @@ describe('AIInterviewManager', () => {
     fireEvent.click(document.getElementById('interview-link-modal-copy-link')!);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('http://localhost/interview/tok'));
   });
+
+  it('allows toggling bypass proctoring with confirmation dialog when not submitting', async () => {
+    global.fetch = mockFetchByUrl({
+      '/api/admin/ai-interviews': { interviews: [] },
+    }) as any;
+
+    render(<AIInterviewManager />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+    const toggleBtn = document.getElementById('bypass-proctoring-toggle') as HTMLButtonElement;
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+
+    // Click toggle to open confirm modal
+    fireEvent.click(toggleBtn);
+    expect(await screen.findByText('Confirm Bypass Proctoring')).toBeInTheDocument();
+
+    // Confirm bypass
+    fireEvent.click(screen.getByText('Confirm'));
+    await waitFor(() => {
+      expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
+      expect(toggleBtn.getAttribute('aria-checked')).toBe('true');
+    });
+
+    // Clicking again should toggle it off without modal
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
+  });
+
+  it('disables the bypass proctoring toggle during analysis and prevents showing confirmation popup', async () => {
+    let resolveExtract: (val: any) => void;
+    const extractPromise = new Promise((resolve) => {
+      resolveExtract = resolve;
+    });
+
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/admin/ai-interviews')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ interviews: [] }) });
+      }
+      if (url.includes('/api/ai-interview/extract')) {
+        return extractPromise;
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    }) as any;
+
+    render(<AIInterviewManager />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+
+    const toggleBtn = document.getElementById('bypass-proctoring-toggle') as HTMLButtonElement;
+    const labelSpan = document.getElementById('bypass-proctoring-label') as HTMLSpanElement;
+
+    expect(toggleBtn).toBeInTheDocument();
+    expect(toggleBtn).not.toBeDisabled();
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+
+    await attachResumeAndJd();
+
+    // Click Analyze button
+    fireEvent.click(screen.getByText('Analyze Resume & JD'));
+
+    // During analysis, toggle must be disabled
+    await waitFor(() => {
+      expect(toggleBtn).toBeDisabled();
+    });
+
+    // Clicking the disabled toggle or label while submitting should NOT open confirmation modal
+    fireEvent.click(toggleBtn);
+    expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(labelSpan);
+    expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+
+    // Resolve the extract call to complete submission
+    resolveExtract!({
+      ok: true,
+      json: () => Promise.resolve(extractionPayload),
+    });
+
+    // Once finished, analysis view is shown
+    expect(await screen.findByText('Candidate & JD Skill Analysis')).toBeInTheDocument();
+  });
 });
+

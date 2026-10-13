@@ -353,19 +353,28 @@ export class ProctoringTimeTracker {
   private faceWarningCount = 0;
   private objectWarningCount = 0;
   private voiceWarningCount = 0;
+  public bypassLimit = false;
 
-  /** Backward-compatible getter — total across all three types (capped strictly at 3) */
+  constructor(options?: { bypassLimit?: boolean }) {
+    if (options?.bypassLimit) {
+      this.bypassLimit = true;
+    }
+  }
+
+  /** Backward-compatible getter — total across all three types (capped strictly at 3 unless bypassLimit is true) */
   public get warningCount(): number {
-    return Math.min(3, this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount);
+    const rawTotal = this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount;
+    return this.bypassLimit ? rawTotal : Math.min(3, rawTotal);
   }
 
   /** Returns individual counts per warning type */
   public getWarningCounts(): WarningCounts {
+    const rawTotal = this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount;
     return {
       face: this.faceWarningCount,
       object: this.objectWarningCount,
       voice: this.voiceWarningCount,
-      total: Math.min(3, this.faceWarningCount + this.objectWarningCount + this.voiceWarningCount),
+      total: this.bypassLimit ? rawTotal : Math.min(3, rawTotal),
     };
   }
 
@@ -392,7 +401,7 @@ export class ProctoringTimeTracker {
     warningCount: number;
     reason: string;
   } {
-    if (this.warningCount >= 3) {
+    if (!this.bypassLimit && this.warningCount >= 3) {
       return { shouldTriggerWarning: false, category: 'none', warningCount: 3, reason: '' };
     }
 
@@ -448,7 +457,7 @@ export class ProctoringTimeTracker {
       const timeSinceLast = lastTrigger === undefined ? Infinity : nowMs - lastTrigger;
 
       if (timeSinceLast >= debounceMs) {
-        if (this.warningCount >= 3) {
+        if (!this.bypassLimit && this.warningCount >= 3) {
           return { shouldTriggerWarning: false, category: currentCategory, warningCount: 3, reason: '' };
         }
         this.lastWarningTime.set(currentCategory, nowMs);
@@ -509,7 +518,7 @@ export class ProctoringTimeTracker {
     warningCount: number;
     reason: string;
   } {
-    if (this.warningCount >= 3) {
+    if (!this.bypassLimit && this.warningCount >= 3) {
       return { shouldTriggerWarning: false, category, warningCount: 3, reason: '' };
     }
 
@@ -538,7 +547,7 @@ export class ProctoringTimeTracker {
       const timeSinceLast = lastTrigger === undefined ? Infinity : nowMs - lastTrigger;
 
       if (timeSinceLast >= debounceMs) {
-        if (this.warningCount >= 3) {
+        if (!this.bypassLimit && this.warningCount >= 3) {
           return { shouldTriggerWarning: false, category, warningCount: 3, reason: '' };
         }
         this.lastWarningTime.set(key, nowMs);

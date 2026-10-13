@@ -636,4 +636,132 @@ describe('ReportDetailView', () => {
     expect(driveLinks[1]).toHaveAttribute('href', 'https://drive.google.com/file/d/recording-file-xyz/view?t=1m12s');
     expect(driveLinks[2]).toHaveAttribute('href', 'https://drive.google.com/file/d/recording-file-xyz/view?t=1m55s');
   });
+
+  it('renders Warning Bypass badges, policy notes, criticality breakdown, risk summary, and uncapped warnings', () => {
+    const bypassWarnings = [
+      {
+        id: 'w-1',
+        strikeNumber: 1,
+        category: 'object' as const,
+        categoryLabel: 'Mobile Phone Detected',
+        criticality: 'critical' as const,
+        reason: 'Candidate looked down at a mobile phone.',
+        offsetSeconds: 15,
+        elapsedLabel: '00:15',
+      },
+      {
+        id: 'w-2',
+        strikeNumber: 2,
+        category: 'voice' as const,
+        categoryLabel: 'Multiple Speakers Detected',
+        criticality: 'critical' as const,
+        reason: 'Background voices detected providing assistance.',
+        offsetSeconds: 45,
+        elapsedLabel: '00:45',
+      },
+      {
+        id: 'w-3',
+        strikeNumber: 3,
+        category: 'face' as const,
+        categoryLabel: 'Gaze Away from Screen',
+        criticality: 'mild' as const,
+        reason: 'Candidate looked away repeatedly.',
+        offsetSeconds: 90,
+        elapsedLabel: '01:30',
+      },
+      {
+        id: 'w-4',
+        strikeNumber: 4,
+        category: 'face' as const,
+        categoryLabel: 'Reading Suspected',
+        criticality: 'mild' as const,
+        reason: 'Saccadic eye movements indicate off-screen reading.',
+        offsetSeconds: 135,
+        elapsedLabel: '02:15',
+      },
+      {
+        id: 'w-5',
+        strikeNumber: 5,
+        category: 'face' as const,
+        categoryLabel: 'Candidate Left Camera Frame',
+        criticality: 'basic' as const,
+        reason: 'No face detected in video feed.',
+        offsetSeconds: 180,
+        elapsedLabel: '03:00',
+      },
+    ];
+
+    const warningAudit = {
+      bypassEnabled: true,
+      totalWarnings: 5,
+      criticalCount: 2,
+      mildCount: 2,
+      basicCount: 1,
+      summary: 'Warning Bypass Session: Candidate completed interview under administrator bypass policy with 5 total warning(s) logged (2 Critical, 2 Mild, 1 Basic). Critical incidents involved external assistance or unauthorized device detection. Human audit recommended.',
+    };
+
+    const bypassRecording = {
+      fileId: 'recording-file-bypass',
+      webViewLink: 'https://drive.google.com/file/d/recording-file-bypass/view',
+      previewUrl: 'https://drive.google.com/file/d/recording-file-bypass/preview',
+      durationSeconds: 300,
+    };
+
+    render(
+      <ReportDetailView
+        session={mockSession}
+        recording={bypassRecording}
+        report={mockReport}
+        questions={mockQuestions}
+        answers={mockAnswers}
+        transcript={mockTranscript}
+        voiceWarningCount={1}
+        faceWarningCount={3}
+        objectWarningCount={1}
+        totalWarnings={5}
+        proctoringWarnings={bypassWarnings}
+        followUpQuestions={mockFollowUp}
+        isWarningBypass={true}
+        warningAudit={warningAudit}
+        criticalCount={2}
+        mildCount={2}
+        basicCount={1}
+      />
+    );
+
+    // 1. Header Warning Bypass badge
+    expect(screen.getByTestId('warning-bypass-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('warning-bypass-badge')).toHaveTextContent('Warning Bypass');
+
+    // 2. Warning Bypass Note Callout in Proctoring section
+    expect(screen.getByTestId('warning-bypass-note')).toBeInTheDocument();
+    expect(screen.getByText('Warning Bypass Note')).toBeInTheDocument();
+
+    // 3. Criticality breakdown cards
+    expect(screen.getByTestId('criticality-breakdown-cards')).toBeInTheDocument();
+    expect(screen.getByText('Critical Warnings')).toBeInTheDocument();
+    expect(screen.getByText('Mild Warnings')).toBeInTheDocument();
+    expect(screen.getByText('Basic Warnings')).toBeInTheDocument();
+
+    // 4. Warning audit summary
+    expect(screen.getByTestId('warning-audit-summary')).toBeInTheDocument();
+    expect(screen.getByText(/Warning Bypass Session: Candidate completed interview under administrator bypass policy/i)).toBeInTheDocument();
+
+    // 5. Uncapped warning items - ALL 5 warnings rendered (not capped at 3!)
+    expect(screen.getByText('Warning 1')).toBeInTheDocument();
+    expect(screen.getByText('Warning 2')).toBeInTheDocument();
+    expect(screen.getByText('Warning 3')).toBeInTheDocument();
+    expect(screen.getByText('Warning 4')).toBeInTheDocument();
+    expect(screen.getByText('Warning 5')).toBeInTheDocument();
+
+    // Verify criticality labels rendered on warning items
+    const criticalBadges = screen.getAllByText('critical');
+    expect(criticalBadges.length).toBeGreaterThanOrEqual(2);
+
+    const mildBadges = screen.getAllByText('mild');
+    expect(mildBadges.length).toBeGreaterThanOrEqual(2);
+
+    const basicBadges = screen.getAllByText('basic');
+    expect(basicBadges.length).toBeGreaterThanOrEqual(1);
+  });
 });

@@ -109,6 +109,18 @@ export interface ReportDetailViewProps {
   totalWarnings: number;
   proctoringWarnings?: ProctoringWarningItem[];
   followUpQuestions: string[];
+  isWarningBypass?: boolean;
+  warningAudit?: {
+    bypassEnabled?: boolean;
+    totalWarnings?: number;
+    criticalCount?: number;
+    mildCount?: number;
+    basicCount?: number;
+    summary?: string;
+  };
+  criticalCount?: number;
+  mildCount?: number;
+  basicCount?: number;
 }
 
 export interface ProctoringWarningItem {
@@ -116,6 +128,7 @@ export interface ProctoringWarningItem {
   strikeNumber?: number;
   category: 'voice' | 'face' | 'object' | 'general';
   categoryLabel: string;
+  criticality?: 'critical' | 'mild' | 'basic';
   reason: string;
   timestamp?: string;
   rawTsMs?: number;
@@ -419,6 +432,11 @@ export function ReportDetailView({
   totalWarnings,
   proctoringWarnings = [],
   followUpQuestions = [],
+  isWarningBypass = false,
+  warningAudit,
+  criticalCount = 0,
+  mildCount = 0,
+  basicCount = 0,
 }: ReportDetailViewProps) {
   const [questionFilter, setQuestionFilter] = useState<'all' | 'hr' | 'technical'>('all');
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
@@ -718,6 +736,15 @@ export function ReportDetailView({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isWarningBypass && (
+              <span
+                data-testid="warning-bypass-badge"
+                className="px-3 py-1.5 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider border bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700/60 shadow-xs flex items-center gap-1.5"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>Warning Bypass</span>
+              </span>
+            )}
             <span
               className={`px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-bold uppercase tracking-wider border ${
                 isCompleted
@@ -1214,23 +1241,121 @@ export function ReportDetailView({
             </div>
           </div>
 
-          {/* Feature 6: Proctoring & Session Integrity Card (STRICT INCIDENT LOG, NO NUMERIC COUNTERS, HIGH CONTRAST) */}
+          {/* Feature 6: Proctoring & Session Integrity Card (STRICT INCIDENT LOG, HIGH CONTRAST) */}
           <div className="bg-white dark:bg-[#2b2b2b] rounded-2xl border border-zinc-200 dark:border-[#4a4a4a] shadow-card p-6 space-y-5">
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                  totalWarnings === 0
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                    : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400'
-                }`}
-              >
-                {totalWarnings === 0 ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    totalWarnings === 0
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                      : isWarningBypass
+                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                      : 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400'
+                  }`}
+                >
+                  {totalWarnings === 0 ? <ShieldCheck className="w-4 h-4" /> : <ShieldAlert className="w-4 h-4" />}
+                </div>
+                <div>
+                  <h3 className="font-black text-zinc-900 dark:text-white text-base sm:text-lg">
+                    Session Integrity & Proctoring
+                  </h3>
+                  <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f] font-medium">
+                    {isWarningBypass
+                      ? 'Warning Bypass Policy Applied (Non-terminal warning monitoring)'
+                      : 'Continuous 3-strike violation audit'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-black text-zinc-900 dark:text-white text-base sm:text-lg">Session Integrity & Proctoring</h3>
-                <p className="text-xs sm:text-sm text-zinc-500 dark:text-[#9f9f9f] font-medium">Continuous 3-strike violation audit</p>
-              </div>
+              {isWarningBypass && (
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-700 flex items-center gap-1.5 shadow-xs">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Bypass Policy Active</span>
+                </span>
+              )}
             </div>
+
+            {/* Warning Bypass Informational Note */}
+            {isWarningBypass && (
+              <div
+                data-testid="warning-bypass-note"
+                className="rounded-xl p-4 bg-amber-50/90 dark:bg-[#2a2416] border border-amber-300 dark:border-amber-700/60 text-amber-950 dark:text-amber-200 shadow-sm space-y-1.5"
+              >
+                <div className="flex items-center gap-2 font-black text-xs sm:text-sm uppercase tracking-wider text-amber-900 dark:text-amber-300">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span>Warning Bypass Note</span>
+                </div>
+                <p className="text-xs sm:text-sm leading-relaxed text-amber-900/90 dark:text-amber-200/90 font-medium">
+                  This interview was conducted with administrator warning bypass enabled. All proctoring warnings were displayed in real-time to the candidate, but automatic 3-strike session termination was disabled. Tab switching and window blurring remained strict terminal violations.
+                </p>
+              </div>
+            )}
+
+            {/* Warning Criticality Breakdown (Critical, Mild, Basic) */}
+            {totalWarnings > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="criticality-breakdown-cards">
+                <div className="p-3.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider text-red-700 dark:text-red-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-red-600"></span>
+                      Critical Warnings
+                    </div>
+                    <div className="text-[11px] text-red-600/80 dark:text-red-400/80 font-medium">
+                      Device / Multi-face / Voice aid
+                    </div>
+                  </div>
+                  <span className="text-2xl font-black text-red-950 dark:text-red-200">
+                    {criticalCount}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                      Mild Warnings
+                    </div>
+                    <div className="text-[11px] text-amber-600/80 dark:text-amber-400/80 font-medium">
+                      Gaze deviation / Reading pattern
+                    </div>
+                  </div>
+                  <span className="text-2xl font-black text-amber-950 dark:text-amber-200">
+                    {mildCount}
+                  </span>
+                </div>
+
+                <div className="p-3.5 rounded-xl border border-sky-200 dark:border-sky-900/60 bg-sky-50/70 dark:bg-sky-950/20 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider text-sky-700 dark:text-sky-400 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+                      Basic Warnings
+                    </div>
+                    <div className="text-[11px] text-sky-600/80 dark:text-sky-400/80 font-medium">
+                      Framing / Temporary absence
+                    </div>
+                  </div>
+                  <span className="text-2xl font-black text-sky-950 dark:text-sky-200">
+                    {basicCount}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Severity & Risk Summary */}
+            {warningAudit?.summary && (
+              <div
+                data-testid="warning-audit-summary"
+                className="rounded-xl p-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-zinc-200 dark:border-[#4a4a4a] space-y-1.5"
+              >
+                <div className="text-xs font-black uppercase tracking-wider text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#0284c7] dark:text-[#38bdf8]" />
+                  <span>Proctoring Severity Analysis & Risk Summary</span>
+                </div>
+                <p className="text-xs sm:text-sm text-zinc-800 dark:text-zinc-200 leading-relaxed font-medium">
+                  {warningAudit.summary}
+                </p>
+              </div>
+            )}
 
             {totalWarnings === 0 ? (
               <div className="rounded-xl p-4 text-xs sm:text-sm font-bold flex items-center gap-2.5 bg-emerald-50 text-emerald-900 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-200 shadow-sm">
@@ -1242,33 +1367,71 @@ export function ReportDetailView({
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs sm:text-sm font-black uppercase tracking-wider text-zinc-800 dark:text-[#d9d9d9] flex items-center gap-1.5">
                     <ShieldAlert className="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                    Proctoring Incident Log
+                    {isWarningBypass
+                      ? `All Recorded Warnings (${proctoringWarnings.length})`
+                      : 'Proctoring Incident Log'}
                   </h4>
                   <span className="text-xs font-bold text-zinc-500 dark:text-[#9f9f9f]">
-                    Automated Event Log
+                    {isWarningBypass ? 'Uncapped Bypass Log' : 'Automated Event Log'}
                   </span>
                 </div>
 
                 {/* Strict Incident Log: High Contrast for both Light and Dark themes */}
                 <div className="space-y-2.5">
                   {(proctoringWarnings && proctoringWarnings.length > 0
-                    ? proctoringWarnings.slice(0, 3)
+                    ? (isWarningBypass ? proctoringWarnings : proctoringWarnings.slice(0, 3))
                     : []
                   ).map((warn, index) => {
                     const strikeNum = warn.strikeNumber ?? index + 1;
                     const videoJumpUrl = buildDriveTimestampUrl(recording, warn?.offsetSeconds);
+                    const crit = warn.criticality || 'critical';
+
+                    const critColor =
+                      crit === 'critical'
+                        ? {
+                            cardBg: 'border-red-200 dark:border-red-900/60 bg-red-50/90 dark:bg-[#2a171a]',
+                            badge: 'bg-red-600 text-white',
+                            critBadge: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border-red-300 dark:border-red-800',
+                            textColor: 'text-red-950 dark:text-red-100',
+                            reasonColor: 'text-red-950 dark:text-red-200',
+                            jumpBtn: 'bg-red-600/10 hover:bg-red-600/20 text-red-700 dark:text-red-300 border-red-300/80 dark:border-red-800',
+                          }
+                        : crit === 'mild'
+                        ? {
+                            cardBg: 'border-amber-200 dark:border-amber-900/60 bg-amber-50/90 dark:bg-[#2a2416]',
+                            badge: 'bg-amber-600 text-white',
+                            critBadge: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300 dark:border-amber-800',
+                            textColor: 'text-amber-950 dark:text-amber-100',
+                            reasonColor: 'text-amber-950 dark:text-amber-200',
+                            jumpBtn: 'bg-amber-600/10 hover:bg-amber-600/20 text-amber-700 dark:text-amber-300 border-amber-300/80 dark:border-amber-800',
+                          }
+                        : {
+                            cardBg: 'border-sky-200 dark:border-sky-900/60 bg-sky-50/90 dark:bg-[#13222e]',
+                            badge: 'bg-sky-600 text-white',
+                            critBadge: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border-sky-300 dark:border-sky-800',
+                            textColor: 'text-sky-950 dark:text-sky-100',
+                            reasonColor: 'text-sky-950 dark:text-sky-200',
+                            jumpBtn: 'bg-sky-600/10 hover:bg-sky-600/20 text-sky-700 dark:text-sky-300 border-sky-300/80 dark:border-sky-800',
+                          };
 
                     return (
                       <div
                         key={warn.id || `strike-${strikeNum}`}
-                        className="p-3.5 sm:p-4 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/90 dark:bg-[#2a171a] flex items-start gap-3 text-xs sm:text-sm shadow-sm"
+                        className={`p-3.5 sm:p-4 rounded-xl border flex items-start gap-3 text-xs sm:text-sm shadow-sm ${critColor.cardBg}`}
                       >
-                        <span className="px-2.5 py-0.5 rounded-md bg-red-600 text-white font-black text-xs uppercase tracking-wider flex-shrink-0 mt-0.5 shadow-xs">
-                          Strike {strikeNum}
-                        </span>
+                        <div className="flex flex-col items-center gap-1 flex-shrink-0 mt-0.5">
+                          <span className={`px-2.5 py-0.5 rounded-md font-black text-xs uppercase tracking-wider shadow-xs ${critColor.badge}`}>
+                            {isWarningBypass ? `Warning ${strikeNum}` : `Strike ${strikeNum}`}
+                          </span>
+                          {warn.criticality && (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${critColor.critBadge}`}>
+                              {warn.criticality}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
-                            <span className="font-black text-red-950 dark:text-red-100 text-xs sm:text-sm">
+                            <span className={`font-black text-xs sm:text-sm ${critColor.textColor}`}>
                               {warn.categoryLabel || 'Security Violation'}
                             </span>
                             <div className="flex items-center gap-2">
@@ -1276,7 +1439,7 @@ export function ReportDetailView({
                                 <button
                                   type="button"
                                   onClick={() => jumpToVideoOffset(warn?.offsetSeconds)}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-100/90 dark:bg-red-900/50 hover:bg-red-200 text-red-900 dark:text-red-200 font-bold text-xs transition-colors hover:underline cursor-pointer"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 hover:bg-zinc-300 text-zinc-900 dark:text-zinc-100 font-bold text-xs transition-colors hover:underline cursor-pointer"
                                   title={`In-Video Timestamp: ${warn.elapsedLabel} (Click to jump)`}
                                 >
                                   <span>⏱️ {warn.elapsedLabel}</span>
@@ -1286,14 +1449,14 @@ export function ReportDetailView({
                               <IncidentTimestamp rawTsMs={warn.rawTsMs} fallback={warn.timestamp} />
                             </div>
                           </div>
-                          <p className="text-sm sm:text-base font-semibold text-red-950 dark:text-red-200 leading-relaxed">
+                          <p className={`text-sm sm:text-base font-semibold leading-relaxed ${critColor.reasonColor}`}>
                             {warn.reason || 'Integrity violation recorded during interview.'}
                           </p>
                           <div className="mt-2.5 flex items-center gap-3 flex-wrap">
                             <button
                               type="button"
                               onClick={() => jumpToVideoOffset(warn?.offsetSeconds)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/10 hover:bg-red-600/20 text-red-700 dark:text-red-300 border border-red-300/80 dark:border-red-800 text-xs sm:text-sm font-black transition-colors hover:underline cursor-pointer"
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-black transition-colors hover:underline cursor-pointer border ${critColor.jumpBtn}`}
                               title={`Jump directly to ${warn.elapsedLabel || 'incident'} in recorded video`}
                             >
                               <span>▶ Jump directly to {warn.elapsedLabel ?? 'Offset'} in Video</span>

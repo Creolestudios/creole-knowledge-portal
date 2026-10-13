@@ -181,6 +181,7 @@ export default function AIInterviewManager() {
     }
 
 
+    setShowBypassConfirm(false);
     setSubmitting(true);
     try {
       setStatusMessage('Analyzing resume & job description...');
@@ -366,41 +367,47 @@ export default function AIInterviewManager() {
             id="candidate-name"
             type="text"
             required
+            disabled={submitting}
             value={candidateName}
             onChange={(e) => setCandidateName(e.target.value)}
             placeholder="Candidate name *"
-            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
           />
           <input
             id="candidate-email"
             type="email"
             required
+            disabled={submitting}
             value={candidateEmail}
             onChange={(e) => setCandidateEmail(e.target.value)}
             placeholder="Candidate email *"
-            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
           />
           <input
             id="job-title"
             type="text"
+            disabled={submitting}
             value={jobTitle}
             onChange={(e) => setJobTitle(e.target.value)}
             placeholder="Job title (optional)"
-            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
           />
           <input
             id="zoho-link"
             type="url"
+            disabled={submitting}
             value={zohoLink}
             onChange={(e) => setZohoLink(e.target.value)}
             placeholder="Zoho Recruiter Link (optional)"
-            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm"
+            className="px-4 py-3 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm disabled:opacity-60 disabled:cursor-not-allowed"
           />
         </div>
 
         <label
           htmlFor="resume-upload"
-          className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5 bg-zinc-50 dark:bg-[#1f1f1f] transition-all"
+          className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl ${
+            submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5'
+          } bg-zinc-50 dark:bg-[#1f1f1f] transition-all`}
         >
           <FileText className="w-6 h-6 text-[#34c4f2]" />
           <span className="text-sm font-bold text-[#1f1f1f] dark:text-white">
@@ -414,6 +421,7 @@ export default function AIInterviewManager() {
             type="file"
             accept=".pdf,.doc,.docx,.txt"
             className="hidden"
+            disabled={submitting}
             onChange={(e) => {
               setResume(e.target.files?.[0] ?? null);
               clearSuccessState();
@@ -430,8 +438,11 @@ export default function AIInterviewManager() {
               <button
                 id="jd-mode-text"
                 type="button"
+                disabled={submitting}
                 onClick={() => setJdMode('text')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                  submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                } ${
                   jdMode === 'text' ? 'bg-[#34c4f2] text-[#1f1f1f] shadow-sm' : 'text-[#4a4a4a] dark:text-[#9f9f9f]'
                 }`}
               >
@@ -441,8 +452,11 @@ export default function AIInterviewManager() {
               <button
                 id="jd-mode-file"
                 type="button"
+                disabled={submitting}
                 onClick={() => setJdMode('file')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                  submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                } ${
                   jdMode === 'file' ? 'bg-[#34c4f2] text-[#1f1f1f] shadow-sm' : 'text-[#4a4a4a] dark:text-[#9f9f9f]'
                 }`}
               >
@@ -455,6 +469,7 @@ export default function AIInterviewManager() {
           {jdMode === 'text' ? (
             <textarea
               id="jd-text"
+              disabled={submitting}
               value={jdText}
               onChange={(e) => {
                 setJdText(e.target.value);
@@ -463,12 +478,14 @@ export default function AIInterviewManager() {
               placeholder="Paste the job description here..."
               rows={6}
               maxLength={20000}
-              className="w-full p-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm resize-y"
+              className="w-full p-4 bg-zinc-50 dark:bg-[#1f1f1f] border border-[#d9d9d9] dark:border-[#4a4a4a] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2] text-[#1f1f1f] dark:text-white placeholder-[#9f9f9f] text-sm resize-y disabled:opacity-60 disabled:cursor-not-allowed"
             />
           ) : (
             <label
               htmlFor="jd-upload"
-              className="flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5 bg-zinc-50 dark:bg-[#1f1f1f] transition-all"
+              className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl ${
+                submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5'
+              } bg-zinc-50 dark:bg-[#1f1f1f] transition-all`}
             >
               <FileText className="w-6 h-6 text-[#34c4f2]" />
               <span className="text-sm font-bold text-[#1f1f1f] dark:text-white">
@@ -482,6 +499,7 @@ export default function AIInterviewManager() {
                 type="file"
                 accept=".pdf,.doc,.docx,.txt"
                 className="hidden"
+                disabled={submitting}
                 onChange={(e) => {
                   setJd(e.target.files?.[0] ?? null);
                   clearSuccessState();
@@ -491,19 +509,24 @@ export default function AIInterviewManager() {
           )}
 
           <div className="pt-2 flex items-center gap-2 px-1">
-            <div className="flex items-center gap-3 cursor-pointer">
+            <div className={`flex items-center gap-3 ${submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
               <button
+                id="bypass-proctoring-toggle"
                 type="button"
                 role="switch"
                 aria-checked={bypassProctoring}
+                disabled={submitting}
                 onClick={() => {
+                  if (submitting) return;
                   if (!bypassProctoring) {
                     setShowBypassConfirm(true);
                   } else {
                     setBypassProctoring(false);
                   }
                 }}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#34c4f2] focus:ring-offset-2 ${
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#34c4f2] focus:ring-offset-2 ${
+                  submitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                } ${
                   bypassProctoring ? 'bg-[#34c4f2]' : 'bg-zinc-200 dark:bg-[#4a4a4a]'
                 }`}
               >
@@ -516,8 +539,12 @@ export default function AIInterviewManager() {
                 />
               </button>
               <span 
-                className="text-sm font-semibold text-[#1f1f1f] dark:text-[#e0e0e0] hover:opacity-80 transition-opacity"
+                id="bypass-proctoring-label"
+                className={`text-sm font-semibold text-[#1f1f1f] dark:text-[#e0e0e0] ${
+                  submitting ? 'cursor-not-allowed opacity-50' : 'hover:opacity-80 transition-opacity cursor-pointer'
+                }`}
                 onClick={() => {
+                  if (submitting) return;
                   if (!bypassProctoring) setShowBypassConfirm(true);
                   else setBypassProctoring(false);
                 }}

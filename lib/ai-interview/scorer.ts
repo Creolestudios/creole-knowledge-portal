@@ -81,6 +81,43 @@ async function generateWithFallback(
   throw new Error(`All scoring models exhausted. Errors:\n${errors.join('\n')}`);
 }
 
+export type WarningCriticality = 'critical' | 'mild' | 'basic';
+
+export function classifyWarningCriticality(category: string, meta?: Record<string, unknown>): WarningCriticality {
+  const cat = (category || '').toLowerCase();
+  const obj = String(meta?.object || '').toLowerCase();
+
+  // Critical: outside devices, unauthorized voices, second faces, tab leaving
+  if (
+    cat === 'object' ||
+    cat === 'object_detected' ||
+    cat === 'cell_phone' ||
+    cat === 'notes_detected' ||
+    obj.includes('phone') ||
+    cat === 'unauthorized_voice' ||
+    cat === 'bg_voice' ||
+    cat === 'background_voice' ||
+    cat === 'multi_face' ||
+    cat === 'tab_switch' ||
+    cat === 'window_blur' ||
+    cat === 'proctoring_violation'
+  ) {
+    return 'critical';
+  }
+
+  // Mild: attention drift & reading off-screen
+  if (
+    cat === 'gaze_away' ||
+    cat === 'reading_suspected' ||
+    cat === 'head_turned_away'
+  ) {
+    return 'mild';
+  }
+
+  // Basic: face framing & minor posture adjustment
+  return 'basic';
+}
+
 /**
  * Main evaluation engine:
  * 1. Isolates ONLY candidate speech from interview_transcript.
@@ -109,6 +146,7 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
     { data: turnMetrics },
     { data: warningEvents },
     { data: rawAnswers },
+    { data: invite },
   ] = await Promise.all([
     supabaseAdmin.from('interview_sessions').select('*').eq('id', sessionId).single(),
     supabaseAdmin.from('interview_questions').select('*').eq('session_id', sessionId),
@@ -116,6 +154,7 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
     supabaseAdmin.from('interview_turn_metrics').select('*').eq('session_id', sessionId),
     supabaseAdmin.from('interview_events').select('*').eq('session_id', sessionId).eq('severity', 'warning'),
     supabaseAdmin.from('interview_answers').select('*').eq('session_id', sessionId),
+    supabaseAdmin.from('interview_invites').select('max_alerts').eq('session_id', sessionId).maybeSingle(),
   ]);
 
   if (!session) {
@@ -126,6 +165,11 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
   const metricsList = turnMetrics || [];
   const warningsList = warningEvents || [];
   const answersList = rawAnswers || [];
+
+  const isWarningBypass = Boolean(
+    ((invite as { max_alerts?: number } | null)?.max_alerts ?? 0) > 1000 ||
+    ((session.parsed_jd as Record<string, unknown> | null)?.bypassProctoring)
+  );
 
   // Check warnings count across all categories continuously
   const rawVoiceCount =
@@ -141,10 +185,23 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
       ? session.object_warning_count
       : warningsList.filter((w) => ['object_detected', 'cell_phone', 'notes_detected'].includes(w.category)).length;
 
-  const voiceWarningCount = Math.min(3, Math.max(0, rawVoiceCount));
-  const faceWarningCount = Math.min(3, Math.max(0, rawFaceCount));
-  const objectWarningCount = Math.min(3, Math.max(0, rawObjectCount));
-  const totalWarningCount = Math.min(3, voiceWarningCount + faceWarningCount + objectWarningCount);
+  const voiceWarningCount = isWarningBypass ? rawVoiceCount : Math.min(3, Math.max(0, rawVoiceCount));
+  const faceWarningCount = isWarningBypass ? rawFaceCount : Math.min(3, Math.max(0, rawFaceCount));
+  const objectWarningCount = isWarningBypass ? rawObjectCount : Math.min(3, Math.max(0, rawObjectCount));
+  const totalWarningCount = voiceWarningCount + faceWarningCount + objectWarningCount;
+
+  // Compute criticality counts across all warning events
+  let criticalCount = 0;
+  let mildCount = 0;
+  let basicCount = 0;
+
+  for (const w of warningsList) {
+    const meta = (w.meta || w.metadata || {}) as Record<string, unknown>;
+    const crit = classifyWarningCriticality(w.category || w.event_type || '', meta);
+    if (crit === 'critical') criticalCount++;
+    else if (crit === 'mild') mildCount++;
+    else basicCount++;
+  }
 
   // STRICT REQUIREMENT: Isolate ONLY candidate speech.
   // Quarantines any lines tagged as unauthorized_voice or flagged.
@@ -441,16 +498,26 @@ Return JSON ONLY:
     flags.push('interview_terminated');
   }
 
+  if (isWarningBypass) {
+    flags.push('warning_bypass_enabled');
+  }
+
   let recommendation: 'strong_yes' | 'yes' | 'maybe' | 'no' = 'yes';
   let recommendationRationale = '';
 
   // Continuous 3-warning rule: any 3 proctoring warnings (face, object, voice)
-  if (isSessionTerminated || totalWarningCount >= 3) {
+  if (isSessionTerminated) {
     recommendation = 'no';
     recommendationRationale = `Interview terminated due to continuous proctoring violations (${totalWarningCount} warnings: ${voiceWarningCount} voice, ${faceWarningCount} face, ${objectWarningCount} object).`;
+  } else if (!isWarningBypass && totalWarningCount >= 3) {
+    recommendation = 'no';
+    recommendationRationale = `Interview terminated due to continuous proctoring violations (${totalWarningCount} warnings: ${voiceWarningCount} voice, ${faceWarningCount} face, ${objectWarningCount} object).`;
+  } else if (isWarningBypass && criticalCount > 0) {
+    recommendation = 'maybe';
+    recommendationRationale = `Candidate completed interview with warning bypass policy enabled, but received ${totalWarningCount} proctoring warning(s) including ${criticalCount} critical violation(s) (${mildCount} mild, ${basicCount} basic). Technical score: ${cognitiveComposite}/100, Fluency: ${finalFluencyScore}/100. Human HR audit recommended.`;
   } else if (totalWarningCount >= 1) {
     recommendation = 'maybe';
-    recommendationRationale = `Candidate demonstrated competence (Cognitive: ${cognitiveComposite}/100, Fluency: ${finalFluencyScore}/100), but received ${totalWarningCount} proctoring warning(s) (${voiceWarningCount} voice, ${faceWarningCount} face, ${objectWarningCount} object). Human HR audit recommended.`;
+    recommendationRationale = `Candidate demonstrated competence (Cognitive: ${cognitiveComposite}/100, Fluency: ${finalFluencyScore}/100), but received ${totalWarningCount} proctoring warning(s) (${criticalCount} Critical, ${mildCount} Mild, ${basicCount} Basic)${isWarningBypass ? ' under administrator bypass policy' : ''}. Human HR audit recommended.`;
   } else if (cognitiveComposite >= 80 && finalFluencyScore >= 75) {
     recommendation = isLanguageSwitched ? 'yes' : 'strong_yes';
     recommendationRationale = isLanguageSwitched
@@ -552,9 +619,37 @@ Return JSON ONLY:
     ];
   }
 
+  let warningAuditSummary = '';
+  if (totalWarningCount > 0 || isWarningBypass) {
+    if (isWarningBypass) {
+      if (criticalCount > 0) {
+        warningAuditSummary = `Warning Bypass Session: Candidate completed interview under administrator bypass policy with ${totalWarningCount} total warning(s) logged (${criticalCount} Critical, ${mildCount} Mild, ${basicCount} Basic). Critical incidents involved external assistance or unauthorized device detection. Human audit recommended.`;
+      } else if (mildCount > 0) {
+        warningAuditSummary = `Warning Bypass Session: Candidate completed interview under administrator bypass policy with ${totalWarningCount} total warning(s) logged (${mildCount} Mild, ${basicCount} Basic). No critical security violations were detected; incidents consisted of off-screen gaze or reading indications.`;
+      } else if (basicCount > 0) {
+        warningAuditSummary = `Warning Bypass Session: Candidate completed interview under administrator bypass policy with ${totalWarningCount} basic framing warning(s). Zero critical or moderate violations recorded.`;
+      } else {
+        warningAuditSummary = `Warning Bypass Session: Candidate completed interview under administrator bypass policy with zero proctoring violations recorded.`;
+      }
+    } else {
+      warningAuditSummary = `Standard Proctoring Session: ${totalWarningCount} warning(s) recorded (${criticalCount} Critical, ${mildCount} Mild, ${basicCount} Basic).`;
+    }
+  }
+
+  const warningAudit = {
+    bypassEnabled: isWarningBypass,
+    totalWarnings: totalWarningCount,
+    criticalCount,
+    mildCount,
+    basicCount,
+    summary: warningAuditSummary,
+  };
+
   const enrichedFluencyBreakdown = {
     ...fluencyBreakdown,
     follow_up_recommendations: followUpRecommendations,
+    warning_audit: warningAudit,
+    warning_bypass: isWarningBypass,
   };
 
   // 7. Persist to interview_reports and resilient event store

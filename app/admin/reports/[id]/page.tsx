@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { ReportDetailView } from '@/components/ai-interview/report-detail-view';
 import { getInterviewReport } from '@/lib/ai-interview/report-store';
-import { scoreInterviewSession } from '@/lib/ai-interview/scorer';
+import { scoreInterviewSession, classifyWarningCriticality } from '@/lib/ai-interview/scorer';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,18 +48,21 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       .from('interview_answers')
       .select('*')
       .eq('session_id', id),
-    // Invite status to determine true session state
+    // Invite status and max_alerts to determine true session state & bypass policy
     supabaseAdmin
       .from('interview_invites')
-      .select('id, status')
+      .select('id, status, max_alerts')
       .eq('session_id', id)
       .maybeSingle(),
   ]);
 
   if (!session) notFound();
 
-  // ── Derive true terminal state from both session + invite ──────────
+  // ── Derive true terminal state and bypass policy ────────────────────
   const inviteStatus = invite?.status || '';
+  const inviteMaxAlerts = invite ? ((invite as { max_alerts?: number }).max_alerts ?? 0) : 0;
+  const parsedJdObj = session.parsed_jd as Record<string, unknown> | null;
+  const isWarningBypass = inviteMaxAlerts > 1000 || Boolean(parsedJdObj?.bypassProctoring);
   const rawStatus = session.status || 'draft';
   const isTerminated =
     rawStatus === 'cancelled' ||
@@ -332,8 +335,8 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     }
   }
 
-  // Cap to 3 strikes for this attempt
-  const finalStrikes = debouncedStrikes.slice(0, 3);
+  // In warning bypass mode, list all warnings; otherwise cap to 3 strikes for standard session
+  const finalStrikes = isWarningBypass ? debouncedStrikes : debouncedStrikes.slice(0, 3);
 
   // 1. Check for most recent explicit recording_started or session_started event for this run
   // Search in attemptEvents first, then in allEvents as a reliable fallback
@@ -461,9 +464,12 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       reason = rawReason || `${categoryLabel} recorded during interview.`;
     }
 
+    // Classify warning criticality: Critical vs Mild vs Basic
+    const criticality = classifyWarningCriticality(cat, meta);
+
     // Strike number strictly serial (Strike 1 = earliest, Strike 2 = second, Strike 3 = third)
     const storedStrikeNum = Number(meta.strikeNumber || meta.warningCount);
-    const strikeNum = Number.isInteger(storedStrikeNum) && storedStrikeNum >= 1 && storedStrikeNum <= 3
+    const strikeNum = Number.isInteger(storedStrikeNum) && storedStrikeNum >= 1 && (isWarningBypass || storedStrikeNum <= 3)
       ? storedStrikeNum
       : (index + 1);
 
@@ -501,6 +507,7 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       strikeNumber: strikeNum,
       category,
       categoryLabel,
+      criticality,
       reason,
       timestamp: warnDate
         ? warnDate.toLocaleTimeString('en-US', {
@@ -517,10 +524,10 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     };
   });
 
-  // Ensure strike numbers are strictly sequential (1, 2, 3) across warnings
+  // Ensure strike numbers are strictly sequential across warnings
   const assignedStrikes = new Set<number>();
   proctoringWarnings.forEach((warn, idx) => {
-    if (warn.strikeNumber && !assignedStrikes.has(warn.strikeNumber) && warn.strikeNumber >= 1 && warn.strikeNumber <= 3) {
+    if (warn.strikeNumber && !assignedStrikes.has(warn.strikeNumber) && warn.strikeNumber >= 1 && (isWarningBypass || warn.strikeNumber <= 3)) {
       assignedStrikes.add(warn.strikeNumber);
     } else {
       warn.strikeNumber = idx + 1;
@@ -560,6 +567,7 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
         strikeNumber: 1,
         category: 'general',
         categoryLabel: 'Terminal Integrity Violation',
+        criticality: 'critical',
         reason: terminationReason || 'The candidate clicked outside the interview window or switched tabs.',
         timestamp: termDate
           ? termDate.toLocaleTimeString('en-US', {
@@ -577,7 +585,39 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     ];
   }
 
-  const totalWarnings = Math.max(proctoringWarnings.length, realStrikeCount);
+  const totalWarnings = isWarningBypass ? proctoringWarnings.length : Math.max(proctoringWarnings.length, realStrikeCount);
+
+  // ── Compute Criticality Breakdown (Critical vs Mild vs Basic) ─────
+  const criticalCount = proctoringWarnings.filter((w) => w.criticality === 'critical').length;
+  const mildCount = proctoringWarnings.filter((w) => w.criticality === 'mild').length;
+  const basicCount = proctoringWarnings.filter((w) => w.criticality === 'basic').length;
+
+  const fluencyBreakdownObj = report?.fluency_breakdown as Record<string, unknown> | null;
+  const rawWarningAudit = fluencyBreakdownObj?.warning_audit as {
+    bypassEnabled?: boolean;
+    totalWarnings?: number;
+    criticalCount?: number;
+    mildCount?: number;
+    basicCount?: number;
+    summary?: string;
+  } | undefined;
+
+  const warningAudit = rawWarningAudit || {
+    bypassEnabled: isWarningBypass,
+    totalWarnings: proctoringWarnings.length,
+    criticalCount,
+    mildCount,
+    basicCount,
+    summary: isWarningBypass
+      ? (criticalCount > 0
+          ? `Warning Bypass Session: Candidate completed interview under administrator bypass policy with ${proctoringWarnings.length} total warning(s) logged (${criticalCount} Critical, ${mildCount} Mild, ${basicCount} Basic). Critical incidents involved external assistance or unauthorized device detection. Human audit recommended.`
+          : mildCount > 0
+            ? `Warning Bypass Session: Candidate completed interview under administrator bypass policy with ${proctoringWarnings.length} total warning(s) logged (${mildCount} Mild, ${basicCount} Basic). No critical security violations were detected; incidents consisted of off-screen gaze or reading indications.`
+            : basicCount > 0
+              ? `Warning Bypass Session: Candidate completed interview under administrator bypass policy with ${proctoringWarnings.length} basic framing warning(s). Zero critical or moderate violations recorded.`
+              : `Warning Bypass Session: Candidate completed interview under administrator bypass policy with zero proctoring violations recorded.`)
+      : `Standard Proctoring Session: ${proctoringWarnings.length} warning(s) recorded (${criticalCount} Critical, ${mildCount} Mild, ${basicCount} Basic).`,
+  };
 
   // ── Extract Zoho Recruiter Link if provided at interview creation ──
   const parsedResume = (session as unknown as { parsed_resume?: { zohoRecruiterLink?: string; zoho_recruiter_link?: string } | null })?.parsed_resume;
@@ -623,6 +663,11 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
       totalWarnings={totalWarnings}
       proctoringWarnings={proctoringWarnings}
       followUpQuestions={followUpQuestions}
+      isWarningBypass={isWarningBypass}
+      warningAudit={warningAudit}
+      criticalCount={criticalCount}
+      mildCount={mildCount}
+      basicCount={basicCount}
     />
   );
 }

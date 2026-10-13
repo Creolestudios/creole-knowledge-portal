@@ -68,7 +68,10 @@ export async function createInterviewSessionWithInvite(
       candidate_email: extraction.candidateProfile.email || '',
       candidate_phone: extraction.candidateProfile.phone || '',
       parsed_resume: extraction.candidateProfile,
-      parsed_jd: extraction.jdRequirements,
+      parsed_jd: {
+        ...extraction.jdRequirements,
+        bypassProctoring: Boolean(options.bypassProctoring),
+      },
       skill_gap: extraction.analysis,
       question_count: options.questionCount,
       duration_minutes: durationMinutes,

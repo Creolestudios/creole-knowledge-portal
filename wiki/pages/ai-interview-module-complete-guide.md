@@ -159,6 +159,28 @@ Continuous acoustic frequency analysis using Web Audio API across the speech ban
   - The camera or microphone track ends or is muted.
   - The screen sharing stream is closed by the user.
   - The browser tab is switched or minimized (`visibilityState === 'hidden'`).
+  - **Important**: Tab-switching and window blurring termination policies remain **strictly enforced at all times**, even when proctoring warning bypass is enabled.
+
+### E. Administrator Warning Bypass Policy & Incident Auditing
+When an administrator toggles **"Bypass Proctoring / Warning Bypass"** during interview creation:
+1. **In-Interview Experience (`/interview/[id]`)**:
+   - The bypass toggle is locked during resume/JD analysis to prevent race conditions.
+   - All real-time proctoring monitors (Face Tracking, Object Detection, Voice Guard) **remain active**.
+   - Warning banners and toasts **continue to display in real-time** to the candidate (`"Warning X (Proctoring Bypassed)"`).
+   - The **3-strike termination threshold is suppressed**; the interview does not terminate on strike 3, and the candidate is provided an auto-resume timer and "Resume Interview" button on all warning counts.
+   - **Tab Change Termination Continues**: If the candidate leaves the interview tab, changes windows, or minimizes the browser, the watchdog immediately terminates the session.
+2. **Proctoring Incident Severity Categorization (Critical, Mild, Basic)**:
+   - **Critical**: Outside devices (`cell_phone`), external notes (`notes_detected`), multiple persons (`multi_face`), unauthorized voices (`unauthorized_voice`, `bg_voice`), and window/tab changes (`tab_switch`, `window_blur`).
+   - **Mild**: Gaze shifts (`gaze_away`), suspected off-screen reading (`reading_suspected`), and looking away (`head_turned_away`).
+   - **Basic**: Face framing issues (`framing_issue`) and temporary absence (`no_face`).
+3. **Scoring & Evaluation (`scorer.ts`)**:
+   - When Warning Bypass is enabled, the recommendation engine does not automatically assign `"no"` solely due to 3 warnings. It evaluates actual answer quality and technical competency scores, factoring in the Critical vs Mild warning distribution into `warning_audit` within `fluency_breakdown`.
+4. **Admin Panel Report Dashboard (`/admin/reports/[id]`)**:
+   - **Warning Bypass Badge**: Displayed prominently in the top header.
+   - **Warning Bypass Note**: Callout banner explaining that warnings were shown without terminal interruption.
+   - **Criticality Metric Cards**: Summarizes total Critical, Mild, and Basic warnings.
+   - **Severity & Risk Summary**: AI/algorithmic assessment explaining whether violations stemmed from severe cheating attempts (Critical) or mild gaze drift (Mild/Basic).
+   - **Uncapped Incident Log**: Lists all recorded warnings sequentially with timestamps, video jump shortcuts, and severity badges without truncating to 3.
 
 ---
 

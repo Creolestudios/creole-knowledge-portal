@@ -332,6 +332,10 @@ export default function InterviewEntryPage() {
   const objectWorkerReadyRef = useRef<boolean>(false);
   const voiceDetectorRef = useRef<VoiceDetector | null>(null);
   const proctorTrackerRef = useRef<ProctoringTimeTracker>(new ProctoringTimeTracker());
+
+  useEffect(() => {
+    proctorTrackerRef.current.bypassLimit = bypassProctoring;
+  }, [bypassProctoring]);
   const baselineRef = useRef<CandidateBaseline | null>(null);
   const missingFramesRef = useRef<Map<string, number>>(new Map());
   const consecutiveDetectedFramesRef = useRef<Map<string, number>>(new Map());
@@ -1394,7 +1398,7 @@ export default function InterviewEntryPage() {
   }, [stage, interviewId, terminationReason]);
 
   useProctoringWatchdog({
-    active: !isAdmin && stage === 'interview' && !bypassProctoring,
+    active: !isAdmin && stage === 'interview',
     cameraStreamRef,
     screenStreamRef,
     onViolation: (reason) => {
@@ -1637,7 +1641,7 @@ export default function InterviewEntryPage() {
         }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
       })();
 
-      if (trackerStatus.warningCount >= 3) {
+      if (trackerStatus.warningCount >= 3 && !bypassProctoring) {
         if (!terminatingRef.current) {
           terminatingRef.current = true;
           setIsInterviewPaused(true);
@@ -1647,13 +1651,13 @@ export default function InterviewEntryPage() {
         }
       }
     }
-  }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast, isAdmin]);
+  }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast, isAdmin, bypassProctoring]);
 
   useAudioVoiceGuard({
     interviewId,
     stream: cameraStream,
     isAiSpeaking: false,
-    isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused && !bypassProctoring,
+    isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     takeSnapshot: async () => {
@@ -2156,7 +2160,7 @@ export default function InterviewEntryPage() {
   }, [stage, checkInterviewStatus]);
 
   useProctoringWatchdog({
-    active: stage === 'interview' && !bypassProctoring,
+    active: stage === 'interview',
     cameraStreamRef,
     screenStreamRef,
     onViolation: terminateInterview,
@@ -2336,7 +2340,7 @@ export default function InterviewEntryPage() {
   // Because this effect only mounts when stage === 'interview', there is NO
   // stale-closure issue — stageRef.current is always 'interview' here.
   useEffect(() => {
-    if (stage !== 'interview' || isAdmin || bypassProctoring) return;
+    if (stage !== 'interview' || isAdmin) return;
 
     if (typeof Worker === 'undefined') return;
 
@@ -2455,7 +2459,7 @@ export default function InterviewEntryPage() {
             }).catch((err) => console.warn('[proctor-event] fetch failed:', err));
           })();
 
-          if (trackerStatus.warningCount >= 3) {
+          if (trackerStatus.warningCount >= 3 && !bypassProctoring) {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
               setIsInterviewPaused(true);
@@ -2509,7 +2513,7 @@ export default function InterviewEntryPage() {
   // Starting during calibration wastes resources and may log false object
   // warnings before the candidate has even reached the interview screen.
   useEffect(() => {
-    if (isAdmin || stage === 'completed' || stage === 'terminated' || bypassProctoring) return;
+    if (isAdmin || stage === 'completed' || stage === 'terminated') return;
     if (typeof Worker === 'undefined') {
       console.warn('[ObjectDetection] Web Workers not supported in this browser environment');
       return;
@@ -2708,7 +2712,7 @@ export default function InterviewEntryPage() {
             }).catch((err) => console.warn('[object-event] fetch failed:', err));
           })();
 
-          if (trackerStatus.warningCount >= 3) {
+          if (trackerStatus.warningCount >= 3 && !bypassProctoring) {
             if (!terminatingRef.current) {
               terminatingRef.current = true;
               setIsInterviewPaused(true);
@@ -2784,9 +2788,9 @@ export default function InterviewEntryPage() {
     } catch { }
   }, [isAdmin]);
 
-  // ── Auto-Resume Interval: 30-second countdown for warnings 1 & 2 (Candidate only) ──
+  // ── Auto-Resume Interval: 30-second countdown for candidate warnings ──
   useEffect(() => {
-    if (isAdmin || !warningToast.show || warningToast.count >= 3 || !isInterviewPaused) {
+    if (isAdmin || !warningToast.show || (!bypassProctoring && warningToast.count >= 3) || !isInterviewPaused) {
       if (autoResumeTimerRef.current) {
         clearInterval(autoResumeTimerRef.current);
         autoResumeTimerRef.current = null;
@@ -2816,7 +2820,7 @@ export default function InterviewEntryPage() {
       clearInterval(interval);
       autoResumeTimerRef.current = null;
     };
-  }, [warningToast.show, warningToast.count, isInterviewPaused, handleResumeInterview]);
+  }, [warningToast.show, warningToast.count, isInterviewPaused, handleResumeInterview, bypassProctoring, isAdmin]);
 
   useEffect(() => {
     if (stage !== 'interview' || durationSecondsRef.current <= 0 || isInterviewPaused || isUploadingNext) return;
@@ -3299,7 +3303,7 @@ export default function InterviewEntryPage() {
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
             <div
               className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border gap-4 ${
-                warningToast.count >= 3
+                warningToast.count >= 3 && !bypassProctoring
                   ? 'bg-red-600 border-red-500'
                   : 'bg-amber-500 border-amber-400'
               }`}
@@ -3309,15 +3313,17 @@ export default function InterviewEntryPage() {
                 <div>
                   <p
                     className={`text-xs font-bold uppercase tracking-wider ${
-                      warningToast.count >= 3 ? 'text-red-100' : 'text-amber-100'
+                      warningToast.count >= 3 && !bypassProctoring ? 'text-red-100' : 'text-amber-100'
                     }`}
                   >
-                    {warningToast.count >= 3
+                    {warningToast.count >= 3 && !bypassProctoring
                       ? 'Warning 3 / 3 — Session Terminated'
-                      : `Warning ${warningToast.count} / 3`}
+                      : bypassProctoring
+                        ? `Warning ${warningToast.count} (Proctoring Bypassed)`
+                        : `Warning ${warningToast.count} / 3`}
                   </p>
                   <p className="text-sm font-semibold">{warningToast.reason}</p>
-                  {warningToast.count < 3 ? (
+                  {warningToast.count < 3 || bypassProctoring ? (
                     <p className="text-xs text-amber-100/90 mt-0.5">
                       {isAdmin ? (
                         'Candidate session paused. Awaiting candidate action.'
@@ -3334,7 +3340,7 @@ export default function InterviewEntryPage() {
                   )}
                 </div>
               </div>
-              {warningToast.count < 3 ? (
+              {warningToast.count < 3 || bypassProctoring ? (
                 isAdmin ? (
                   <div className="bg-amber-600/80 text-white font-semibold text-xs px-3 py-2 rounded-xl border border-amber-300/30 flex-shrink-0 flex items-center gap-1.5 shadow-xs">
                     <Clock className="w-3.5 h-3.5 animate-pulse" />
