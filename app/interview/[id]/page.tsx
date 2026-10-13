@@ -2002,6 +2002,17 @@ export default function InterviewEntryPage() {
         screenStreamRef.current = screenStream;
         setScreenStream(screenStream);
         setScreenGranted(true);
+
+        // Detect when the user clicks "Stop sharing" in the browser bar
+        // and immediately mark screen share as revoked so the Acknowledgment
+        // gate can block the candidate from proceeding without it.
+        const [screenVideoTrack] = screenStream.getVideoTracks();
+        if (screenVideoTrack) {
+          screenVideoTrack.addEventListener('ended', () => {
+            setScreenGranted(false);
+            setPermissionError('Screen sharing was stopped. Please click the button below to re-enable screen sharing before continuing.');
+          }, { once: true });
+        }
       } else {
         setScreenGranted(true);
       }
@@ -3145,6 +3156,11 @@ export default function InterviewEntryPage() {
   }
 
   if (stage === 'ready') {
+    // Live check: verify that all screen stream tracks are still running
+    const screenStillActive = screenGranted && (
+      screenStreamRef.current?.getTracks().every((t) => t.readyState === 'live') ?? false
+    );
+
     return (
       <main className="min-h-screen flex items-center justify-center bg-[#f8f9fa] dark:bg-[#0b0f14] px-4 py-10 transition-colors">
         <div className="max-w-lg w-full space-y-5">
@@ -3165,15 +3181,31 @@ export default function InterviewEntryPage() {
             settingsEnabled
           />
 
+          {/* Screen share lost warning */}
+          {!isAdmin && !screenStillActive && (
+            <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 text-sm">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <p className="font-medium leading-snug">
+                Screen sharing was stopped. You must re-enable screen sharing before joining.
+                Please go back and click <span className="font-bold">&quot;Allow &amp; Start Interview&quot;</span> again to restart the permissions.
+              </p>
+            </div>
+          )}
+
           {!isAdmin && (
             <button
               id="interview-join-btn"
               type="button"
+              disabled={!screenStillActive || !cameraGranted}
               onClick={() => {
+                // Final defensive check — do not proceed if any stream was revoked
+                const tracksStillLive =
+                  screenStreamRef.current?.getTracks().every((t) => t.readyState === 'live') ?? false;
+                if (!tracksStillLive || !screenGranted || !cameraGranted) return;
                 setCalibrationProgress(0);
                 setStageWithRef(process.env.NODE_ENV === 'test' ? 'interview' : 'calibration');
               }}
-              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer"
+              className="w-full bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold py-4 rounded-2xl transition-all shadow-xl shadow-[#34c4f2]/30 flex items-center justify-center space-x-3 active:scale-[0.98] uppercase tracking-[0.2em] text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
               <span>Join Interview</span>
             </button>
@@ -3822,10 +3854,23 @@ export default function InterviewEntryPage() {
                 </span>
               </label>
 
+              {/* Show error if permissions were revoked before clicking Next */}
+              {ackChecked && (!cameraGranted || !screenGranted) && (
+                <div className="flex items-start gap-2.5 p-3.5 mb-4 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800/60 rounded-xl">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <p className="font-medium leading-snug">
+                    {!screenGranted
+                      ? 'Screen sharing was stopped. Please close this dialog, click \'Allow & Start Interview\' again, and re-enable screen sharing.'
+                      : 'Camera or microphone access was revoked. Please close this dialog and re-enable the required permissions.'}
+                  </p>
+                </div>
+              )}
+
               <button
                 type="button"
-                disabled={!ackChecked}
+                disabled={!ackChecked || !cameraGranted || !screenGranted}
                 onClick={() => {
+                  if (!cameraGranted || !screenGranted) return;
                   try {
                     sessionStorage.setItem(`interview_ack_${interviewId}`, 'true');
                   } catch {

@@ -19,7 +19,8 @@ const INSTRUCTIONS = [
   'Answer every question yourself in your own voice — external help, notes, or additional devices are strictly prohibited.',
   '3-Warning Termination Policy: Any proctoring infraction triggers a strike. On the 3rd warning, the interview is immediately and permanently terminated with no option to resume.',
   '30-Second Auto-Resume: If an infraction pauses your interview (warnings 1 or 2), you have up to 30 seconds to click "Resume Interview". If not clicked within 30 seconds, the session will automatically resume.',
-  'When you finish speaking your answer, click "Next Question" to proceed, or the interview will automatically advance when your answer is complete or time expires.',
+  'When you finish speaking your answer, click "Next Question" to proceed to the next question. If the question time limit expires before you click, the session will automatically advance.',
+  'After submitting your final answer, do NOT close or refresh this tab. Your interview recording will be securely transferred to our servers — a progress indicator will appear and the page will automatically confirm once the upload is complete.',
 ];
 
 const DETECTION_RULES = [
