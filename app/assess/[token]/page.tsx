@@ -1164,20 +1164,30 @@ export default function CandidateAssessmentPage() {
     const nowMs = Date.now();
 
     let voiceReason = info.reason;
+    let subKey = 'voice';
     if (info.reason.includes('music')) {
       voiceReason = 'Background music detected.';
+      subKey = 'music';
+    } else if (info.reason.includes('pen')) {
+      voiceReason = 'Pen clicking / writing sounds detected.';
+      subKey = 'pen';
     } else if (info.reason.includes('typing')) {
       voiceReason = 'Keyboard typing sounds detected.';
-    } else if (info.durationMs && info.durationMs >= 10000) {
-      voiceReason = 'Background voice detected.';
+      subKey = 'typing';
+    } else if (info.reason.includes('AI') || info.reason.includes('assistant')) {
+      voiceReason = 'AI voice assistant detected.';
+      subKey = 'ai_voice';
+    } else if (info.reason.includes('Multiple') || info.reason.includes('simultaneous')) {
+      voiceReason = 'Multiple voices detected simultaneously.';
+      subKey = 'dual_voice';
     } else {
-      voiceReason =
-        'Background voice detected. Please ensure that no other person or voice is present during the interview.';
+      voiceReason = 'Background voice detected.';
+      subKey = 'voice';
     }
 
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
       'unauthorized_voice',
-      'voice',
+      subKey,
       voiceReason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
       10000, // 10-second break / cooldown between consecutive voice warnings

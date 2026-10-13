@@ -156,9 +156,13 @@ export function useAudioVoiceGuard({
       let consecutiveAiFrames = 0;
       let consecutiveMusicFrames = 0;
       let prevHighBandEnergy = 0;
+      let prevHighBandPeakEnergy = 0;
       let lastKeystrokeFrame = 0;
-      let lastKeystrokeTime = 0;
+      let lastPenClickFrame = 0;
+      let lastVoiceFrameTime = 0;
       const recentTypingTimestamps: number[] = [];
+      const recentPenClickTimestamps: number[] = [];
+      let consecutivePenWritingFrames = 0;
       let frameCount = 0;
 
       const checkAudio = () => {
@@ -247,7 +251,8 @@ export function useAudioVoiceGuard({
           consecutiveAiFrames = 0;
           consecutiveMusicFrames = 0;
           recentTypingTimestamps.length = 0;
-          lastKeystrokeTime = 0;
+          recentPenClickTimestamps.length = 0;
+          consecutivePenWritingFrames = 0;
         } else if (isCandidateTurnRef.current) {
           // Track candidate's own speech level when mouth is moving
           if (isCandidateMouthMovingRef.current && avgSpeechEnergy > 20) {
@@ -303,33 +308,86 @@ export function useAudioVoiceGuard({
             (avgLowMidEnergy >= 40 && avgSpeechEnergy >= 45);
 
           // ── TYPING SOUND DETECTION ─────────────────────────────────────────
-          // Sharp transient attack in high frequency band with audible click peak (>= 52).
-          // Sensitive to laptop keyboards, membrane switches, and external keypads.
-          // Ignored during active loud music playback and candidate speech sibilants.
-          const isAudibleClick = highBandPeakEnergy >= 52 && highBandEnergy >= 22 && !isLoudMusicPlaying;
+          // Check if transient energy extends down into keyboard mechanical body / click band (bins 25 to 34)
+          let typingBandEnergySum = 0;
+          for (let i = 25; i < 35 && i < bufferLength; i++) {
+            typingBandEnergySum += dataArray[i];
+          }
+          const isTypingBandActive = typingBandEnergySum / 10 >= 22;
+
+          const isAudibleClick = highBandPeakEnergy >= 36 && highBandEnergy >= 6 && !isLoudMusicPlaying;
           const typingTransientAttack =
             isAudibleClick &&
-            highBandEnergy - prevHighBandEnergy >= 8 &&
-            (!isCandidateSpeaking || highBandPeakEnergy >= 75) &&
-            frameCount - lastKeystrokeFrame >= 3;
+            isTypingBandActive &&
+            (highBandPeakEnergy - prevHighBandPeakEnergy >= 10 || highBandEnergy - prevHighBandEnergy >= 4) &&
+            (!isCandidateSpeaking || highBandPeakEnergy >= 60) &&
+            frameCount - lastKeystrokeFrame >= 2;
 
           if (isLoudMusicPlaying && consecutiveMusicFrames >= 10) {
-            // Only flush typing timestamps during sustained loud music
             recentTypingTimestamps.length = 0;
+            recentPenClickTimestamps.length = 0;
+            consecutivePenWritingFrames = 0;
           } else if (typingTransientAttack) {
             lastKeystrokeFrame = frameCount;
             recentTypingTimestamps.push(nowMs);
-            // Retain keystrokes within a 2.5-second rolling window
             while (recentTypingTimestamps.length > 0 && nowMs - recentTypingTimestamps[0] > 2500) {
               recentTypingTimestamps.shift();
             }
             if (recentTypingTimestamps.length >= 3) {
               recentTypingTimestamps.length = 0;
+              recentPenClickTimestamps.length = 0;
               const confidence = Math.min(0.92, 0.78 + (highBandEnergy / 255) * 0.15);
               triggerVoiceWarning('Keyboard typing sounds detected.', confidence);
             }
           }
+
+          // ── PEN CLICKING & WRITING SOUND DETECTION ─────────────────────────
+          // 1. Pen Clicking: Ultra-high frequency click impulse (> 36) in upper spectrum (bins 35+) with minimal low-mid body (< 24)
+          // Operates independently so distinct click-clack pulses are caught immediately
+          const isPenClickImpulse =
+            !isLoudMusicPlaying &&
+            !isCandidateSpeaking &&
+            !isTypingBandActive &&
+            highBandPeakEnergy >= 36 &&
+            avgLowMidEnergy < 24 &&
+            (highBandPeakEnergy - prevHighBandPeakEnergy >= 10 || highBandEnergy - prevHighBandEnergy >= 4) &&
+            frameCount - lastPenClickFrame >= 2;
+
+          if (isPenClickImpulse) {
+            lastPenClickFrame = frameCount;
+            recentPenClickTimestamps.push(nowMs);
+            while (recentPenClickTimestamps.length > 0 && nowMs - recentPenClickTimestamps[0] > 2500) {
+              recentPenClickTimestamps.shift();
+            }
+            if (recentPenClickTimestamps.length >= 2) {
+              recentPenClickTimestamps.length = 0;
+              recentTypingTimestamps.length = 0;
+              triggerVoiceWarning('Pen clicking / writing sounds detected.', 0.88);
+            }
+          }
+
+          // 2. Pen Writing / Scribbling: Continuous paper friction scratch in high band without speech or ambient drone
+          const isPenWritingScratch =
+            !isLoudMusicPlaying &&
+            isSilent &&
+            highBandPeakEnergy >= 32 &&
+            highBandEnergy >= 6 &&
+            avgSpeechEnergy < 32 &&
+            avgLowMidEnergy < 24 &&
+            avgFlux >= 1.4;
+
+          if (isPenWritingScratch) {
+            consecutivePenWritingFrames++;
+            if (consecutivePenWritingFrames >= 15) {
+              consecutivePenWritingFrames = 0;
+              triggerVoiceWarning('Pen clicking / writing sounds detected.', 0.85);
+            }
+          } else {
+            consecutivePenWritingFrames = Math.max(0, consecutivePenWritingFrames - 1);
+          }
+
           prevHighBandEnergy = highBandEnergy;
+          prevHighBandPeakEnergy = highBandPeakEnergy;
 
           // ── AI / SYNTHETIC VOICE DETECTION ─────────────────────────────────
           // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 1.8) while speech energy is clearly active (avg >= 65, peak >= 75).
@@ -337,13 +395,13 @@ export function useAudioVoiceGuard({
           const isAiVoice = avgSpeechEnergy >= 65 && peakEnergy >= 75 && avgFlux < 1.8 && frameCount > 15;
 
           // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
-          // Environmental silence and background hum (< 30) are ignored.
-          // Real human voice concentrates energy into harmonic formants (peak-to-average formant ratio >= 1.08).
+          // Environmental silence, fan drone, distant road traffic, and door/window thuds are strictly filtered out.
+          // True human vocalization requires clear formant concentration (ratio >= 1.14) and energy >= 48.
           const formantRatio = peakEnergy / (avgSpeechEnergy + 0.001);
-          const isClearSpeech = avgSpeechEnergy >= 32 && peakEnergy >= 45 && formantRatio >= 1.08;
+          const isClearSpeech = avgSpeechEnergy >= 48 && peakEnergy >= 64 && formantRatio >= 1.14;
 
-          // Must be clearly above the room's ambient noise floor (at least 6 units higher)
-          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 6;
+          // Must be clearly above the room's ambient noise floor (+14 units higher to ignore mild murmurs)
+          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 14;
 
           // (2) Candidate is NOT speaking (mouth not moving), but clear human speech is active in background
           const isBackgroundVoiceWhileSilent =
@@ -351,21 +409,23 @@ export function useAudioVoiceGuard({
             isSilent &&
             isClearSpeech &&
             isAboveNoiseFloor &&
-            avgFlux >= 1.6;
+            avgFlux >= 1.8;
 
           // (1) Candidate IS speaking (mouth moving), but another loud voice is present (dual speaker)
           // Must have distinct non-formant frequency separation (>= 5 bins) and strong energy exceeding candidate level
           const isDualSpeakerPresent =
             !isSilent &&
             Math.abs(peakBin - secondaryPeakBin) >= 5 &&
-            secondaryPeakEnergy >= 55 &&
+            secondaryPeakEnergy >= 58 &&
             secondaryPeakEnergy > actualSpeakerLevel * 1.05 &&
             avgFlux >= 2.0;
 
           // Any kind of background voice (AI voice, human background voice while silent, or secondary speaker)
-          const isVoiceDetected = !isMusic && (isAiVoice || isBackgroundVoiceWhileSilent || isDualSpeakerPresent);
+          // Runs independently of music so background music can NEVER be used to mask cheating voices!
+          const isVoiceDetected = isAiVoice || isBackgroundVoiceWhileSilent || isDualSpeakerPresent;
 
           if (isVoiceDetected) {
+            lastVoiceFrameTime = nowMs;
             consecutiveSuspiciousFrames++;
             if (voiceDetectedStartAt === 0) {
               voiceDetectedStartAt = nowMs;
@@ -381,10 +441,12 @@ export function useAudioVoiceGuard({
               triggerVoiceWarning('Background voice detected', confidence, continuousDurationMs);
             }
           } else {
-            // Gentle decay: decrease by 1 frame so natural speech micro-pauses (100-200ms) don't wipe out the detection
-            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 1);
-            if (consecutiveSuspiciousFrames === 0) {
+            // If silence or non-speech exceeds 1500ms, completely break the streak so sporadic ambient sounds never build up to 10s
+            if (nowMs - lastVoiceFrameTime > 1500) {
               voiceDetectedStartAt = 0;
+              consecutiveSuspiciousFrames = 0;
+            } else {
+              consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 1);
             }
           }
         }
@@ -392,7 +454,39 @@ export function useAudioVoiceGuard({
         animFrameRef.current = requestAnimationFrame(checkAudio);
       };
 
+      // In addition to acoustic keystroke detection, capture physical keyboard typing
+      // during candidate turn so typing notes/prompts on the keyboard is caught immediately
+      let keyStrokeTimestamps: number[] = [];
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) return;
+        if (!isCandidateTurnRef.current || isAiSpeakingRef.current) return;
+        const now = Date.now();
+        keyStrokeTimestamps.push(now);
+        while (keyStrokeTimestamps.length > 0 && now - keyStrokeTimestamps[0] > 2000) {
+          keyStrokeTimestamps.shift();
+        }
+        if (keyStrokeTimestamps.length >= 3) {
+          keyStrokeTimestamps = [];
+          triggerVoiceWarning('Keyboard typing sounds detected.', 0.95);
+        }
+      };
+
+      if (typeof window !== 'undefined') {
+        window.addEventListener('keydown', handleKeyDown);
+      }
+
       animFrameRef.current = requestAnimationFrame(checkAudio);
+
+      return () => {
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('keydown', handleKeyDown);
+        }
+        if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+        if (sourceRef.current) sourceRef.current.disconnect();
+        if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+          audioContextRef.current.close().catch(() => {});
+        }
+      };
     } catch (err) {
       console.warn('[voice-guard] Web Audio initialization failed:', err);
     }

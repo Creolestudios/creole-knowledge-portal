@@ -650,4 +650,139 @@ describe('useAudioVoiceGuard', () => {
       expect.objectContaining({ reason: 'Background voice detected' })
     );
   });
+
+  it('triggers warning when background speech is detected even while music is playing', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // High harmonic tonality across musical band (bins 5 to 65)
+      for (let i = 5; i < 65; i++) {
+        arr[i] = 40;
+      }
+      arr[25] = 120; // Music tonality peak
+
+      // Simultaneously, human speech formants are active in bins 3 to 36 with speech fluctuation
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 65 + ((i * 2 + frame * 3) % 20);
+      }
+      arr[15] = 100; // Human speech formant peak
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-voice-with-music',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false, // User mouth is silent, external voice speaking!
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // Run for 500 frames (~8.3s continuous)
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    // Voice detection must NOT be blocked by music!
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background voice detected',
+      })
+    );
+  });
+
+  it('triggers warning when pen clicking sounds are detected', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // Pen clicks: sharp high-frequency transient spike (bins 35-110) on frames 5 and 15, low bass body (< 20)
+      if (frame === 5 || frame === 15) {
+        for (let i = 35; i < 110; i++) {
+          arr[i] = 60;
+        }
+      } else {
+        arr.fill(10);
+      }
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-pen-clicking',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 30; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Pen clicking / writing sounds detected.',
+      })
+    );
+  });
+
+  it('does NOT trigger warning for mild background sounds and ambient murmurs below elevated threshold', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // Mild murmurs / faint noises (energy 35, peak 48, which previously triggered but must now be ignored)
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 35 + ((i + frame) % 5);
+      }
+      arr[15] = 48; // Peak below 62 threshold
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-mild-sounds',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // Run for 500 frames (~8.3s)
+    let currentTime = 1700000000000;
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
+  });
 });
+

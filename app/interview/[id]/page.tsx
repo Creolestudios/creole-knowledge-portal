@@ -377,7 +377,7 @@ export default function InterviewEntryPage() {
       .then(async (res) => {
         if (!isMounted) return;
         const json = await res.json().catch(() => ({}));
-        
+
         if (res.status === 410) {
           try {
             localStorage.setItem(`interview_used_${interviewId}`, 'true');
@@ -491,7 +491,7 @@ export default function InterviewEntryPage() {
                     email: authData.email,
                   }),
                 }).catch(() => null);
-                
+
                 if (verifyRes && verifyRes.ok) {
                   const verifyJson = await verifyRes.json();
                   if (!isMounted) return;
@@ -959,7 +959,7 @@ export default function InterviewEntryPage() {
           severity: 'info',
           meta: { startedAt: Date.now() },
         }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }, [stage, isAdmin, startFullVideoRecording, interviewId]);
 
@@ -1435,7 +1435,7 @@ export default function InterviewEntryPage() {
       e.returnValue = 'An interview is currently in progress. Leaving will terminate your session.';
       return e.returnValue;
     };
-    
+
     const handlePageHide = () => {
       const refreshNotice = 'The candidate refreshed or closed the page during the live interview.';
       try {
@@ -1468,7 +1468,7 @@ export default function InterviewEntryPage() {
       }
       terminateInterviewRef.current(refreshNotice);
     };
-    
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         // Fallback for mobile browsers where pagehide might not fire reliably
@@ -1484,7 +1484,7 @@ export default function InterviewEntryPage() {
     window.addEventListener('pagehide', handlePageHide);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
-    
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('pagehide', handlePageHide);
@@ -1545,20 +1545,30 @@ export default function InterviewEntryPage() {
     const nowMs = Date.now();
 
     let voiceReason = info.reason;
+    let subKey = 'voice';
     if (info.reason.includes('music')) {
       voiceReason = 'Background music detected.';
+      subKey = 'music';
+    } else if (info.reason.includes('pen')) {
+      voiceReason = 'Pen clicking / writing sounds detected.';
+      subKey = 'pen';
     } else if (info.reason.includes('typing')) {
       voiceReason = 'Keyboard typing sounds detected.';
-    } else if (info.durationMs && info.durationMs >= 10000) {
-      voiceReason = 'Background voice detected.';
+      subKey = 'typing';
+    } else if (info.reason.includes('AI') || info.reason.includes('assistant')) {
+      voiceReason = 'AI voice assistant detected.';
+      subKey = 'ai_voice';
+    } else if (info.reason.includes('Multiple') || info.reason.includes('simultaneous')) {
+      voiceReason = 'Multiple voices detected simultaneously.';
+      subKey = 'dual_voice';
     } else {
-      voiceReason =
-        'Background voice detected. Please ensure that no other person or voice is present during the interview.';
+      voiceReason = 'Background voice detected.';
+      subKey = 'voice';
     }
 
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
       'unauthorized_voice',
-      'voice',
+      subKey,
       voiceReason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
       15000,
@@ -1981,7 +1991,7 @@ export default function InterviewEntryPage() {
           controller = new CaptureController();
         }
 
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: 'monitor' } as any,
           ...(controller ? { controller } : {}),
         } as any);
@@ -1989,7 +1999,7 @@ export default function InterviewEntryPage() {
         if (controller) {
           try {
             controller.setFocusBehavior('no-focus-change');
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const [videoTrack] = screenStream.getVideoTracks();
@@ -2941,8 +2951,8 @@ export default function InterviewEntryPage() {
       terminationReason ||
       (typeof window !== 'undefined' && interviewId
         ? sessionStorage.getItem(`interview_termination_reason_${interviewId}`) ||
-          localStorage.getItem(`interview_termination_reason_${interviewId}`) ||
-          sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`)
+        localStorage.getItem(`interview_termination_reason_${interviewId}`) ||
+        sessionStorage.getItem(`interview_refresh_terminated_${interviewId}`)
         : undefined) ||
       undefined;
 
@@ -2969,8 +2979,8 @@ export default function InterviewEntryPage() {
     const resolvedReasonProp = isCompletedSession
       ? 'completed'
       : isTerminatedSession
-      ? 'violation'
-      : (expirationReason || 'already_used');
+        ? 'violation'
+        : (expirationReason || 'already_used');
 
     const resolvedTitleProp =
       expirationTitle && expirationTitle !== 'Interview Terminated'
@@ -3058,15 +3068,15 @@ export default function InterviewEntryPage() {
             {isAdmin
               ? 'The candidate has completed the interview and submitted all assessment responses.'
               : isAnyUploading
-                ? 'Thank you. Your responses are saved. Please keep this tab open while your interview video finalizes upload.'
-                : 'Thank you. Your responses and assessment video have been submitted. You may close this window now.'}
+                ? 'Thank you. Please wait until your assessment is completely finished. Keep this tab open while submission finalizes.'
+                : 'Thank you. Your assessment has been submitted. You may close this window now.'}
           </p>
 
           {!isAdmin && isAnyUploading && (
             <div className="mt-4 p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 text-left space-y-2">
               <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-[#34c4f2]" />
-                <span>{activeUploadStatusText || 'Saving interview video to Google Drive...'}</span>
+                <span>{activeUploadStatusText || 'Finalizing assessment submission...'}</span>
               </div>
               <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
                 <div
@@ -3075,7 +3085,7 @@ export default function InterviewEntryPage() {
                 />
               </div>
               <p className="text-[11px] text-zinc-400 leading-tight">
-                Please wait a moment while your recording is securely uploaded to Google Drive.
+                Please wait a moment while your assessment is being finalized and completed.
               </p>
             </div>
           )}
@@ -3259,10 +3269,10 @@ export default function InterviewEntryPage() {
               </div>
               <div className="space-y-2">
                 <h3 className="text-xl font-black text-zinc-900 dark:text-white">
-                  Securing Interview Recording
+                  Finalizing Assessment
                 </h3>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Please do not close or refresh this tab while your video is securely transferred to Google Drive.
+                  Please wait until your assessment gets completely finished. Do not close or refresh this tab while submission finalizes.
                 </p>
               </div>
               <div className="space-y-2">
@@ -3273,7 +3283,7 @@ export default function InterviewEntryPage() {
                   />
                 </div>
                 <div className="flex justify-between items-center text-xs font-mono text-zinc-500 dark:text-zinc-400">
-                  <span>{fullVideoUploadStatusText || 'Uploading to Google Drive...'}</span>
+                  <span>{fullVideoUploadStatusText || 'Finalizing assessment submission...'}</span>
                   <span className="font-bold text-[#34c4f2]">{fullVideoUploadProgress}%</span>
                 </div>
               </div>
@@ -3302,19 +3312,17 @@ export default function InterviewEntryPage() {
         {warningToast.show && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
             <div
-              className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border gap-4 ${
-                warningToast.count >= 3 && !bypassProctoring
-                  ? 'bg-red-600 border-red-500'
-                  : 'bg-amber-500 border-amber-400'
-              }`}
+              className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border gap-4 ${warningToast.count >= 3 && !bypassProctoring
+                ? 'bg-red-600 border-red-500'
+                : 'bg-amber-500 border-amber-400'
+                }`}
             >
               <div className="flex items-center space-x-3">
                 <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
                 <div>
                   <p
-                    className={`text-xs font-bold uppercase tracking-wider ${
-                      warningToast.count >= 3 && !bypassProctoring ? 'text-red-100' : 'text-amber-100'
-                    }`}
+                    className={`text-xs font-bold uppercase tracking-wider ${warningToast.count >= 3 && !bypassProctoring ? 'text-red-100' : 'text-amber-100'
+                      }`}
                   >
                     {warningToast.count >= 3 && !bypassProctoring
                       ? 'Warning 3 / 3 — Session Terminated'
@@ -3408,13 +3416,12 @@ export default function InterviewEntryPage() {
                 {/* Overall Interview Timer */}
                 <div
                   id="interview-overall-timer-badge"
-                  className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all duration-500 ${
-                    durationSeconds <= 60
-                      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800'
-                      : durationSeconds <= 600
+                  className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all duration-500 ${durationSeconds <= 60
+                    ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800'
+                    : durationSeconds <= 600
                       ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 border border-orange-200 dark:border-orange-800'
                       : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700'
-                  } ${durationSeconds === 600 ? 'animate-bounce scale-110' : ''}`}
+                    } ${durationSeconds === 600 ? 'animate-bounce scale-110' : ''}`}
                   title="Total time remaining for the entire interview"
                 >
                   <Clock className={`w-4 h-4 ${durationSeconds === 600 ? 'animate-pulse text-orange-600 dark:text-orange-400' : 'opacity-70'}`} />
@@ -3425,8 +3432,8 @@ export default function InterviewEntryPage() {
                 <div
                   id="interview-question-timer-badge"
                   className={`rounded-xl px-3.5 py-2.5 text-sm font-black tabular-nums flex items-center gap-1.5 shadow-sm transition-all ${questionRemainingSec <= 30
-                      ? 'bg-red-600 text-white animate-pulse'
-                      : 'bg-[#34c4f2] text-zinc-900 dark:text-white border border-[#34c4f2]/30'
+                    ? 'bg-red-600 text-white animate-pulse'
+                    : 'bg-[#34c4f2] text-zinc-900 dark:text-white border border-[#34c4f2]/30'
                     }`}
                   title="Time remaining for this specific question"
                 >
@@ -3660,26 +3667,24 @@ export default function InterviewEntryPage() {
                 <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 pb-1.5">
                   <div className="flex items-center gap-1.5">
                     <ShieldAlert
-                      className={`w-3.5 h-3.5 ${
-                        candidateWarnings.length === 0
-                          ? 'text-emerald-500'
-                          : candidateWarnings.length === 1
+                      className={`w-3.5 h-3.5 ${candidateWarnings.length === 0
+                        ? 'text-emerald-500'
+                        : candidateWarnings.length === 1
                           ? 'text-amber-500'
                           : 'text-red-500'
-                      }`}
+                        }`}
                     />
                     <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-200">
                       Candidate Warning Status
                     </span>
                   </div>
                   <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      candidateWarnings.length === 0
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
-                        : candidateWarnings.length === 1
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${candidateWarnings.length === 0
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
+                      : candidateWarnings.length === 1
                         ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800'
                         : 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800 animate-pulse'
-                    }`}
+                      }`}
                   >
                     {candidateWarnings.length} / 3 Strikes
                   </span>
@@ -3693,11 +3698,10 @@ export default function InterviewEntryPage() {
                     return (
                       <div
                         key={slot}
-                        className={`py-1 px-1.5 rounded-lg border text-center transition-all ${
-                          isFaced
-                            ? 'bg-amber-50/80 border-amber-300 text-amber-900 dark:bg-amber-950/50 dark:border-amber-800 dark:text-amber-200 shadow-xs'
-                            : 'bg-zinc-50 border-zinc-200 text-zinc-500 dark:bg-[#1f1f1f] dark:border-zinc-700 dark:text-zinc-400'
-                        }`}
+                        className={`py-1 px-1.5 rounded-lg border text-center transition-all ${isFaced
+                          ? 'bg-amber-50/80 border-amber-300 text-amber-900 dark:bg-amber-950/50 dark:border-amber-800 dark:text-amber-200 shadow-xs'
+                          : 'bg-zinc-50 border-zinc-200 text-zinc-500 dark:bg-[#1f1f1f] dark:border-zinc-700 dark:text-zinc-400'
+                          }`}
                       >
                         <div className="text-[9px] uppercase font-bold tracking-wider leading-tight">Strike {slot}</div>
                         <div className="text-[10px] font-semibold mt-0.5">
@@ -3845,7 +3849,7 @@ export default function InterviewEntryPage() {
               <p className="text-sm text-zinc-600 dark:text-[#9f9f9f] mb-5 leading-relaxed">
                 Please confirm that you have read all the instructions, understand the proctoring rules, and have successfully granted the required permissions.
               </p>
-              
+
               <label className="flex items-start gap-3 cursor-pointer p-3 bg-zinc-50 dark:bg-[#1f1f1f] rounded-xl border border-zinc-200 dark:border-[#4a4a4a] mb-6 hover:bg-zinc-100 dark:hover:bg-[#242424] transition-colors">
                 <div className="pt-0.5">
                   <input
@@ -3977,7 +3981,7 @@ export default function InterviewEntryPage() {
                     setError(null);
                     try {
                       sessionStorage.removeItem(`interview_on_passcode_${interviewId}`);
-                    } catch {}
+                    } catch { }
                   }}
                   className="text-[#34c4f2] hover:underline font-semibold ml-2 shrink-0 cursor-pointer"
                 >

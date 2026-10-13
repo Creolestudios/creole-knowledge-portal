@@ -62,7 +62,7 @@ export async function flushAndUploadCachedRecording(
       return { success: false, error: 'No cached recording chunks' };
     }
 
-    onProgress?.(10, 'Securing interview video recording to Google Drive...');
+    onProgress?.(10, 'Finalizing assessment submission...');
 
     const mimeType = pickSupportedMimeType() || 'video/webm';
     const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
@@ -72,7 +72,7 @@ export async function flushAndUploadCachedRecording(
       return { success: false, error: 'Empty cached recording' };
     }
 
-    onProgress?.(25, 'Requesting secure Google Drive upload session...');
+    onProgress?.(25, 'Finalizing assessment submission...');
 
     const clientOrigin = typeof window !== 'undefined' ? window.location.origin : undefined;
     let fileId: string | undefined;
@@ -97,7 +97,7 @@ export async function flushAndUploadCachedRecording(
 
         const sessionJson = await sessionRes.json().catch(() => null);
         if (sessionJson?.uploadUrl) {
-          onProgress?.(40, 'Uploading video recording to Google Drive...');
+          onProgress?.(40, 'Finalizing assessment submission...');
           const directResult = await new Promise<{ fileId?: string }>((resolveUpload, rejectUpload) => {
             const xhr = new XMLHttpRequest();
             const timer = setTimeout(() => {
@@ -111,7 +111,7 @@ export async function flushAndUploadCachedRecording(
             xhr.upload.onprogress = (event) => {
               if (event.lengthComputable && event.total > 0) {
                 const percent = Math.min(95, Math.round(40 + (event.loaded / event.total) * 50));
-                onProgress?.(percent, `Uploading video recording to Google Drive... ${percent}%`);
+                onProgress?.(percent, `Finalizing assessment submission... ${percent}%`);
               }
             };
 
@@ -193,7 +193,7 @@ export async function flushAndUploadCachedRecording(
       } catch (completeErr) {
         console.warn('[flushAndUploadCachedRecording] Failed to call complete route:', completeErr);
       }
-      onProgress?.(100, 'Interview video recording safely saved to Google Drive');
+      onProgress?.(100, 'Assessment submission completed');
       console.info('[useFullInterviewRecorder] Recovered video successfully uploaded to Google Drive:', fileId);
       return {
         success: true,
@@ -713,7 +713,7 @@ export function useFullInterviewRecorder({
         try {
           // Fast-path: If chunks were streamed to Drive in real time, finalize immediately (< 1s)
           if (uploadedByteOffsetRef.current > 0) {
-            setUploadStatusText('Finalizing video recording in Google Drive...');
+            setUploadStatusText('Finalizing assessment submission...');
             setUploadProgress(95);
 
             const streamResult = await drainStreamingBuffer(true);
@@ -722,7 +722,7 @@ export function useFullInterviewRecorder({
               streamingBufferRef.current = [];
               void clearRecordingChunks(interviewId);
               setUploadProgress(100);
-              setUploadStatusText('Interview recording secured successfully!');
+              setUploadStatusText('Assessment submission completed successfully!');
               setIsUploading(false);
               resolve(streamResult);
               return;
@@ -747,7 +747,7 @@ export function useFullInterviewRecorder({
             return;
           }
 
-          setUploadStatusText('Requesting secure Google Drive upload session...');
+          setUploadStatusText('Finalizing assessment submission...');
           setUploadProgress(5);
 
           const clientOrigin = typeof window !== 'undefined' ? window.location.origin : undefined;
@@ -781,7 +781,7 @@ export function useFullInterviewRecorder({
 
           if (uploadUrl && !isLocalhost) {
             try {
-              setUploadStatusText('Uploading full interview video to Google Drive...');
+              setUploadStatusText('Finalizing assessment submission...');
               setUploadProgress(10);
 
               // 2. Direct upload WHOLE video Blob to Google Drive with real-time progress
@@ -799,7 +799,7 @@ export function useFullInterviewRecorder({
                   if (event.lengthComputable && event.total > 0) {
                     const percent = Math.round(10 + (event.loaded / event.total) * 80);
                     setUploadProgress(percent);
-                    setUploadStatusText(`Uploading full interview video to Google Drive... ${percent}%`);
+                    setUploadStatusText(`Finalizing assessment submission... ${percent}%`);
                   }
                 };
 
@@ -843,7 +843,7 @@ export function useFullInterviewRecorder({
 
           // Failsafe fallback: when direct upload is blocked by browser CORS or session init was rejected, stream via server
           if (!fileId) {
-            setUploadStatusText('Uploading interview video securely via interview server...');
+            setUploadStatusText('Submitting assessment securely via server...');
             setUploadProgress(25);
 
             const formData = new FormData();
@@ -866,7 +866,7 @@ export function useFullInterviewRecorder({
             chunksRef.current = [];
             void clearRecordingChunks(interviewId);
             setUploadProgress(100);
-            setUploadStatusText('Interview recording secured successfully!');
+            setUploadStatusText('Assessment submission completed successfully!');
             setIsUploading(false);
 
             resolve({
@@ -882,7 +882,7 @@ export function useFullInterviewRecorder({
           chunksRef.current = [];
 
           setUploadProgress(95);
-          setUploadStatusText('Finalizing video permissions and saving to dashboard...');
+          setUploadStatusText('Finalizing assessment submission...');
 
           // 4. Notify backend to finalize permissions and record event in interview_events
           const completeRes = await fetch('/api/interview/recording/complete', {
@@ -970,7 +970,7 @@ export function useFullInterviewRecorder({
     if (!isUploading) return;
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = 'Interview video recording is uploading to Google Drive. Please wait until upload completes.';
+      e.returnValue = 'Please wait until your assessment gets completely finished. Closing the tab will interrupt final submission.';
       return e.returnValue;
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
