@@ -83,6 +83,13 @@ services:
       # Loopback only. Its sole auth is the X-Internal-Token header, so it must
       # never be publicly reachable.
       - "127.0.0.1:8000:8000"
+    volumes:
+      # src/extractors/topic_filter.py resolves the keyword allowlist as
+      # Path(__file__).parents[3]/"shared"/"tech-keywords.json" — which is the
+      # repo root on a dev machine, but "/" inside this image (code lives at
+      # /app/src). The Dockerfile's context is fetch-blogs/, so the repo-root
+      # shared/ directory cannot be copied in. Mount it instead.
+      - ./shared:/shared:ro
     mem_limit: 350m
     depends_on:
       redis:
@@ -109,12 +116,23 @@ services:
     container_name: ckp-worker
     profiles: ["blog"]
     restart: unless-stopped
+    # --pool=solo runs tasks in the parent process: no forked children, so the
+    # heavyweight imports (scikit-learn, numpy, newspaper3k) are resident once
+    # instead of per-worker. One task at a time, which is the right trade on a
+    # 957 Mi host. Switch to `-c 2` only after a resize.
     command: >
       celery -A src.workers.celery_app worker
       -Q scrape_queue,extract_queue,rank_queue,generate_queue,publish_queue
-      -c 2 -n unified@%h --loglevel=info --time-limit=700
+      --pool=solo -n unified@%h --loglevel=info --time-limit=700
     env_file:
       - ./.env.api
+    volumes:
+      # Same keyword allowlist the extract stage needs. See the api service.
+      - ./shared:/shared:ro
+    # The image carries a HEALTHCHECK that probes the FastAPI port, which a
+    # Celery worker does not listen on — it would report "unhealthy" forever.
+    healthcheck:
+      disable: true
     mem_limit: 450m
     depends_on:
       redis:
