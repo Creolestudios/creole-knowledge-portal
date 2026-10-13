@@ -396,12 +396,12 @@ export function useAudioVoiceGuard({
 
           // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
           // Environmental silence, fan drone, distant road traffic, and door/window thuds are strictly filtered out.
-          // True human vocalization requires clear formant concentration (ratio >= 1.14) and energy >= 48.
+          // True human vocalization requires clear formant concentration (ratio >= 1.15) and energy >= 50.
           const formantRatio = peakEnergy / (avgSpeechEnergy + 0.001);
-          const isClearSpeech = avgSpeechEnergy >= 48 && peakEnergy >= 64 && formantRatio >= 1.14;
+          const isClearSpeech = avgSpeechEnergy >= 50 && peakEnergy >= 66 && formantRatio >= 1.15;
 
-          // Must be clearly above the room's ambient noise floor (+14 units higher to ignore mild murmurs)
-          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 14;
+          // Must be clearly above the room's ambient noise floor (+18 units higher to ignore mild fan/traffic murmurs)
+          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 18;
 
           // (2) Candidate is NOT speaking (mouth not moving), but clear human speech is active in background
           const isBackgroundVoiceWhileSilent =
@@ -432,17 +432,18 @@ export function useAudioVoiceGuard({
             }
             const continuousDurationMs = nowMs - voiceDetectedStartAt;
             const targetMs = continuousVoiceMsRef.current ?? 8000;
-            const targetFrames = Math.max(30, Math.round(targetMs / 16.66));
+            const requiredFrames = Math.max(100, Math.round(targetMs / 25));
 
-            if (continuousDurationMs >= targetMs || consecutiveSuspiciousFrames >= targetFrames) {
+            // Strictly requires BOTH full duration (10s in interview) AND high active speech frame density
+            if (continuousDurationMs >= targetMs && consecutiveSuspiciousFrames >= requiredFrames) {
               voiceDetectedStartAt = 0;
               consecutiveSuspiciousFrames = 0;
               const confidence = Math.min(0.95, 0.78 + (avgSpeechEnergy / 255) * 0.2);
               triggerVoiceWarning('Background voice detected', confidence, continuousDurationMs);
             }
           } else {
-            // If silence or non-speech exceeds 1500ms, completely break the streak so sporadic ambient sounds never build up to 10s
-            if (nowMs - lastVoiceFrameTime > 1500) {
+            // If silence or non-speech exceeds 1000ms, completely break the streak so sporadic ambient sounds never build up to 10s
+            if (nowMs - lastVoiceFrameTime > 1000) {
               voiceDetectedStartAt = 0;
               consecutiveSuspiciousFrames = 0;
             } else {

@@ -111,17 +111,53 @@ export function getOrCreateObjectRule(className: string): ObjectRule {
   };
 }
 
-const DEFAULT_OBJECT_CLASSES = [
+export const CHEATING_OBJECT_CLASSES = new Set<string>([
   'cell phone',
-  'headphones',
-  'book',
+  'mobile phone',
+  'phone',
+  'telephone',
+  'tablet',
+  'calculator',
   'laptop',
+  'keyboard',
+  'mouse',
+  'book',
+  'notebook',
+  'paper',
+  'pen',
+  'pencil',
+  'headphones',
+  'earphones',
+  'earbuds',
+  'headset',
+  'airpods',
   'tv',
   'remote',
-  'pen',
-  'paper',
-  'earphones',
-];
+]);
+
+/**
+ * Checks if a detected object class is a prohibited cheating or communication tool.
+ */
+export function isCheatingObject(className: string): boolean {
+  const lower = (className || '').toLowerCase().trim();
+  if (isRoomEnvironment(lower)) return false;
+  if (CHEATING_OBJECT_CLASSES.has(lower)) return true;
+  return (
+    lower.includes('phone') ||
+    lower.includes('laptop') ||
+    lower.includes('keyboard') ||
+    lower.includes('mouse') ||
+    lower.includes('calculator') ||
+    lower.includes('headphone') ||
+    lower.includes('earphone') ||
+    lower.includes('earbud') ||
+    lower.includes('book') ||
+    lower.includes('pen') ||
+    lower.includes('paper')
+  );
+}
+
+const DEFAULT_OBJECT_CLASSES = Array.from(CHEATING_OBJECT_CLASSES);
 
 const baseRules: Record<string, ObjectRule> = Object.fromEntries(
   DEFAULT_OBJECT_CLASSES.map((key) => [key, getOrCreateObjectRule(key)]),
@@ -152,11 +188,11 @@ export interface DetectedObjectEvent {
 }
 
 /**
- * Filters raw object detections dynamically:
+ * Filters raw object detections strictly:
  * 1. Checks candidate presence: The first 'person' is the candidate themselves (allowed).
  * 2. Checks multi-person presence: If an additional 'person' is detected in camera view, it flags as violation!
- * 3. Filters out mundane room fixtures (chair, clock, watch, desk, couch, cup, etc.).
- * 4. Flags any other detected object (phone, laptop, book, earphones, notes, pen, paper, remote, or any suspicious item) dynamically.
+ * 3. Enforces strict cheating object detection: ONLY flags explicit cheating objects (phone, calculator, laptop, keyboard, mouse, book, pen, paper, earphones, etc.).
+ * 4. Filters out all mundane room fixtures, furniture, hydration items, and environmental objects (chair, sofa, table, mug, cup, bottle, clock, watch, etc.).
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
@@ -196,12 +232,17 @@ export function filterTrackedObjects(
       continue;
     }
 
-    // ── Ignore Room Environment & Furniture (chair, clock, watch, etc.) ──
+    // ── Ignore Room Environment & Furniture (chair, clock, watch, cup, mug, sofa, etc.) ──
     if (isRoomEnvironment(normalizedClass)) {
       continue;
     }
 
-    // ── Any Other Suspicious Object (Phone, Book, Laptop, Earphones, Pen, Paper, etc.) ──
+    // ── Strict Cheating Object Whitelist ──
+    // Only flag prohibited cheating and communication items. Ignore any other ambient household clutter.
+    if (!isCheatingObject(normalizedClass)) {
+      continue;
+    }
+
     if (d.score >= minConfidence) {
       results.push({
         label: d.class,

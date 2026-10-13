@@ -55,6 +55,38 @@ describe('object-detection module', () => {
     }
   });
 
+  it('detects cheating objects (calculator, keyboard, mouse, laptop, headphones) and strictly ignores environmental items (mug, sofa, couch, bottle, table)', () => {
+    const rawDetections = [
+      { class: 'person', score: 0.95, bbox: [0, 0, 100, 100] as [number, number, number, number] }, // Candidate
+      { class: 'mug', score: 0.85, bbox: [10, 10, 20, 20] as [number, number, number, number] }, // Environmental -> Ignore
+      { class: 'sofa', score: 0.90, bbox: [20, 20, 150, 150] as [number, number, number, number] }, // Environmental -> Ignore
+      { class: 'couch', score: 0.80, bbox: [30, 30, 120, 120] as [number, number, number, number] }, // Environmental -> Ignore
+      { class: 'bottle', score: 0.85, bbox: [40, 40, 30, 80] as [number, number, number, number] }, // Environmental -> Ignore
+      { class: 'table', score: 0.88, bbox: [50, 50, 200, 100] as [number, number, number, number] }, // Environmental -> Ignore
+      { class: 'calculator', score: 0.82, bbox: [60, 60, 40, 60] as [number, number, number, number] }, // Cheating -> Detect
+      { class: 'keyboard', score: 0.85, bbox: [70, 70, 120, 40] as [number, number, number, number] }, // Cheating -> Detect
+      { class: 'mouse', score: 0.78, bbox: [80, 80, 30, 40] as [number, number, number, number] }, // Cheating -> Detect
+      { class: 'laptop', score: 0.92, bbox: [90, 90, 140, 100] as [number, number, number, number] }, // Cheating -> Detect
+      { class: 'headphones', score: 0.89, bbox: [100, 100, 50, 50] as [number, number, number, number] }, // Cheating -> Detect
+    ];
+
+    const results = filterTrackedObjects(rawDetections);
+    expect(results).toHaveLength(5); // calculator, keyboard, mouse, laptop, headphones
+    const labels = results.map((r) => r.label);
+    expect(labels).toContain('calculator');
+    expect(labels).toContain('keyboard');
+    expect(labels).toContain('mouse');
+    expect(labels).toContain('laptop');
+    expect(labels).toContain('headphones');
+
+    expect(labels).not.toContain('mug');
+    expect(labels).not.toContain('sofa');
+    expect(labels).not.toContain('couch');
+    expect(labels).not.toContain('bottle');
+    expect(labels).not.toContain('table');
+    expect(labels).not.toContain('person');
+  });
+
   it('flags when another person is detected in the camera frame along with candidate', () => {
     const rawDetections = [
       { class: 'person', score: 0.95, bbox: [0, 0, 100, 100] as [number, number, number, number] }, // Candidate
