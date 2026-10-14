@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS public.interview_sessions (
   duration_minutes integer,
   similarity_confirmed boolean NOT NULL DEFAULT false,
   status varchar(30) NOT NULL DEFAULT 'draft',
+  audio_device_type text DEFAULT 'mic',
   created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -29,7 +30,8 @@ CREATE TABLE IF NOT EXISTS public.interview_sessions (
 ALTER TABLE public.interview_sessions
   ADD COLUMN IF NOT EXISTS question_count integer,
   ADD COLUMN IF NOT EXISTS duration_minutes integer,
-  ADD COLUMN IF NOT EXISTS similarity_confirmed boolean NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS similarity_confirmed boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS audio_device_type text DEFAULT 'mic';
 
 CREATE TABLE IF NOT EXISTS public.hr_question_bank (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

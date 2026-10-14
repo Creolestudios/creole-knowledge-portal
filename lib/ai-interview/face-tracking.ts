@@ -201,28 +201,7 @@ export function analyzeFaceMetrics(
     };
   }
 
-  // 1. If head is turned away or candidate's eyes look away, it is an eye movement / attention violation (gaze_away)
-  if (headTurnedAway || lookingAway) {
-    return {
-      facePresent: true,
-      eyesClosed,
-      lookingAway,
-      headTurnedAway,
-      eyeConfidence,
-      alert: 'warning',
-      numFaces: 1,
-      multiFaceDetected: false,
-      readingSuspected,
-      mouthMoving,
-      relativeYaw,
-      relativePitch,
-      irisRatioOffset,
-      expression,
-      category: 'gaze_away',
-    };
-  }
-
-  // 2. Multi-face: Only trigger when more than one distinct person is present in frame while candidate is facing camera
+  // 1. Multi-face: Prioritize over gaze away — unauthorized presence / multiple persons is a primary proctoring violation
   if (multiFaceDetected) {
     return {
       facePresent: true,
@@ -240,6 +219,27 @@ export function analyzeFaceMetrics(
       irisRatioOffset,
       expression,
       category: 'multi_face',
+    };
+  }
+
+  // 2. If head is turned away or candidate's eyes look away, it is an eye movement / attention violation (gaze_away)
+  if (headTurnedAway || lookingAway) {
+    return {
+      facePresent: true,
+      eyesClosed,
+      lookingAway,
+      headTurnedAway,
+      eyeConfidence,
+      alert: 'warning',
+      numFaces,
+      multiFaceDetected: false,
+      readingSuspected,
+      mouthMoving,
+      relativeYaw,
+      relativePitch,
+      irisRatioOffset,
+      expression,
+      category: 'gaze_away',
     };
   }
 
@@ -390,7 +390,7 @@ export class ProctoringTimeTracker {
       gazeAwayThresholdMs?: number; // default 1500ms
       readingThresholdMs?: number; // default 3500ms
       noFaceThresholdMs?: number; // default 1500ms
-      multiFaceThresholdMs?: number; // default 1000ms
+      multiFaceThresholdMs?: number; // default 0ms for instant trigger
       framingThresholdMs?: number; // default 2000ms
       debounceMs?: number; // default 5000ms
       categoryBreakMs?: number; // default 5000ms cooldown between face warnings
@@ -409,7 +409,7 @@ export class ProctoringTimeTracker {
       gazeAwayThresholdMs = 1500,
       readingThresholdMs = 3500,
       noFaceThresholdMs = 1500,
-      multiFaceThresholdMs = 1000,
+      multiFaceThresholdMs = 0,
       framingThresholdMs = 2000,
       debounceMs = 5000,
       categoryBreakMs,

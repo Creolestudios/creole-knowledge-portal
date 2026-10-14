@@ -19,6 +19,7 @@ import {
   LogOut,
   RefreshCw,
   UploadCloud,
+  Bluetooth,
 } from 'lucide-react';
 import { CalibrationModal } from '@/components/ai-interview/CalibrationModal';
 import { CandidateBaseline, ProctoringTimeTracker, ExtendedFaceTrackingResult } from '@/lib/ai-interview/face-tracking';
@@ -904,11 +905,30 @@ export default function InterviewEntryPage() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
 
-  const { isHeadsetDevice } = useAudioDeviceType(cameraStream || cameraPreview);
+  const { isHeadsetDevice, deviceLabel } = useAudioDeviceType(cameraStream || cameraPreview);
   const isHeadsetDeviceRef = useRef(false);
   useEffect(() => {
     isHeadsetDeviceRef.current = isHeadsetDevice;
   }, [isHeadsetDevice]);
+
+  // Persist detected audio device ('bluetooth' or 'mic') to DB
+  const lastRecordedAudioDeviceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!interviewId) return;
+    const deviceType = isHeadsetDevice ? 'bluetooth' : 'mic';
+    if (lastRecordedAudioDeviceRef.current === deviceType) return;
+    lastRecordedAudioDeviceRef.current = deviceType;
+
+    void fetch('/api/interview/device', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interviewId,
+        audioDeviceType: deviceType,
+        deviceLabel,
+      }),
+    }).catch(() => { });
+  }, [interviewId, isHeadsetDevice, deviceLabel]);
 
   const { remoteStream, leave: leaveWebRTC } = useWebRTC(
     interviewId,
@@ -3621,20 +3641,41 @@ export default function InterviewEntryPage() {
                   <Camera className="w-3.5 h-3.5 text-zinc-500 dark:text-[#9f9f9f]" />
                   Live Video
                 </span>
-                <span className={[
-                  'text-[10px] font-semibold flex items-center gap-1.5 px-2 py-0.5 rounded-full',
-                  faceTrackingStatus === 'tracking' && faceDetected
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/80 dark:text-emerald-300 dark:border-transparent'
-                    : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/80 dark:text-amber-300 dark:border-transparent',
-                ].join(' ')}>
+                <div className="flex items-center gap-2">
+                  {isHeadsetDevice ? (
+                    <span
+                      id="bluetooth-connected-indicator"
+                      className="text-[10px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/70 dark:text-sky-300 dark:border-sky-800"
+                      title="Bluetooth / Headset connected — headset objects are exempted from proctoring alerts"
+                    >
+                      <Bluetooth className="w-3 h-3 text-sky-600 dark:text-sky-400 animate-pulse" />
+                      <span>Bluetooth</span>
+                    </span>
+                  ) : (
+                    <span
+                      id="mic-connected-indicator"
+                      className="text-[10px] font-medium flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
+                      title="Standard microphone active"
+                    >
+                      <Mic className="w-3 h-3 text-zinc-500" />
+                      <span>Mic</span>
+                    </span>
+                  )}
                   <span className={[
-                    'inline-block w-1.5 h-1.5 rounded-full',
-                    faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-500 dark:bg-emerald-400 animate-pulse' : 'bg-amber-500 dark:bg-amber-300',
-                  ].join(' ')} />
-                  {faceTrackingStatus === 'loading' && 'Face loading…'}
-                  {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
-                  {faceTrackingStatus === 'error' && 'Tracking unavailable'}
-                </span>
+                    'text-[10px] font-semibold flex items-center gap-1.5 px-2 py-0.5 rounded-full',
+                    faceTrackingStatus === 'tracking' && faceDetected
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/80 dark:text-emerald-300 dark:border-transparent'
+                      : 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/80 dark:text-amber-300 dark:border-transparent',
+                  ].join(' ')}>
+                    <span className={[
+                      'inline-block w-1.5 h-1.5 rounded-full',
+                      faceTrackingStatus === 'tracking' && faceDetected ? 'bg-emerald-500 dark:bg-emerald-400 animate-pulse' : 'bg-amber-500 dark:bg-amber-300',
+                    ].join(' ')} />
+                    {faceTrackingStatus === 'loading' && 'Face loading…'}
+                    {faceTrackingStatus === 'tracking' && (faceDetected ? 'Face detected' : 'No face detected')}
+                    {faceTrackingStatus === 'error' && 'Tracking unavailable'}
+                  </span>
+                </div>
               </div>
 
               <div className="space-y-3">

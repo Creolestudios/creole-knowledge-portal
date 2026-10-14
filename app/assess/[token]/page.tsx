@@ -168,11 +168,30 @@ export default function CandidateAssessmentPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
-  const { isHeadsetDevice } = useAudioDeviceType(cameraStream);
+  const { isHeadsetDevice, deviceLabel } = useAudioDeviceType(cameraStream);
   const isHeadsetDeviceRef = useRef(false);
   useEffect(() => {
     isHeadsetDeviceRef.current = isHeadsetDevice;
   }, [isHeadsetDevice]);
+
+  // Persist detected audio device ('bluetooth' or 'mic') to DB
+  const lastRecordedAudioDeviceRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    const deviceType = isHeadsetDevice ? 'bluetooth' : 'mic';
+    if (lastRecordedAudioDeviceRef.current === deviceType) return;
+    lastRecordedAudioDeviceRef.current = deviceType;
+
+    void fetch('/api/interview/device', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interviewId: token,
+        audioDeviceType: deviceType,
+        deviceLabel,
+      }),
+    }).catch(() => { });
+  }, [token, isHeadsetDevice, deviceLabel]);
 
   // ── Proctoring & Calibration State ──
   const [calibrationProgress, setCalibrationProgress] = useState(0);

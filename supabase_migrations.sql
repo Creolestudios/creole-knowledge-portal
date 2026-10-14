@@ -251,10 +251,13 @@ CREATE TABLE IF NOT EXISTS public.interview_sessions (
     skill_gap JSONB DEFAULT '{}'::jsonb,
     experience_level VARCHAR(50) DEFAULT 'mid',
     status VARCHAR(30) DEFAULT 'draft' CHECK (status IN ('draft', 'parsed', 'questions_generated', 'invite_issued', 'in_progress', 'completed', 'cancelled')),
+    audio_device_type TEXT DEFAULT 'mic',
     created_by UUID REFERENCES public.user_profiles(user_id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE public.interview_sessions ADD COLUMN IF NOT EXISTS audio_device_type TEXT DEFAULT 'mic';
 
 CREATE INDEX IF NOT EXISTS idx_interview_sessions_status ON public.interview_sessions (status);
 CREATE INDEX IF NOT EXISTS idx_interview_sessions_created_by ON public.interview_sessions (created_by);

@@ -52,9 +52,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           },
           runningMode: 'VIDEO',
           numFaces: 4, // Track multiple faces robustly (up to 4)
-          minFaceDetectionConfidence: 0.65,
-          minFacePresenceConfidence: 0.65,
-          minTrackingConfidence: 0.65,
+          minFaceDetectionConfidence: 0.45,
+          minFacePresenceConfidence: 0.45,
+          minTrackingConfidence: 0.45,
           outputFaceBlendshapes: true,
           outputFacialTransformationMatrixes: true,
         });
@@ -68,9 +68,9 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           },
           runningMode: 'VIDEO',
           numFaces: 4,
-          minFaceDetectionConfidence: 0.65,
-          minFacePresenceConfidence: 0.65,
-          minTrackingConfidence: 0.65,
+          minFaceDetectionConfidence: 0.45,
+          minFacePresenceConfidence: 0.45,
+          minTrackingConfidence: 0.45,
           outputFaceBlendshapes: true,
           outputFacialTransformationMatrixes: true,
         });
@@ -120,7 +120,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
     const rawFaces = result.faceLandmarks ?? [];
     let numFaces = rawFaces.length;
 
-    // Filter out phantom profile splits where 2 face detections are on the same person (< 0.22 distance)
+    // Filter out phantom profile splits where 2 face detections are on the exact same person (< 0.08 distance)
     if (rawFaces.length >= 2) {
       const f0 = rawFaces[0];
       const f1 = rawFaces[1];
@@ -130,7 +130,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         const c1x = (f1[1].x + f1[152].x) / 2;
         const c1y = (f1[1].y + f1[152].y) / 2;
         const faceSeparation = Math.hypot(c0x - c1x, c0y - c1y);
-        if (faceSeparation < 0.22) {
+        if (faceSeparation < 0.08) {
           numFaces = 1;
         }
       }

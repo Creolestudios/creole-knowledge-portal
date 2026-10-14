@@ -239,7 +239,7 @@ export function filterTrackedObjects(
       }
 
       // Another person is detected in the camera view!
-      if (d.score >= Math.max(0.45, minConfidence)) {
+      if (d.score >= Math.max(0.3, minConfidence)) {
         results.push({
           label: 'second person',
           confidence: d.score,
