@@ -24,7 +24,7 @@ This document provides a concise overview of all third-party services, APIs, dat
   1. **Relational Database**: Stores all structured business records:
      - `interview_sessions` (candidate profiles, interview state, proctoring warning tallies).
      - `interview_questions` & `interview_answers` (generated questions, transcripts, durations).
-     - `interview_events` (proctoring violation logs, snapshots, recording metadata).
+     - `interview_events` (proctoring violation logs, in-video timestamps, recording metadata).
      - `interview_reports` (final evaluations, cognitive & fluency scores, recommendations).
   2. **User Authentication**: Manages secure email/password logins, session cookies, and JWT token verification for HR and Admin portals (`lib/supabase/admin.ts`, `middleware.ts`).
   3. **Document Storage**: Manages the private **`ai-interview-documents`** bucket for securely uploading and generating signed download links for candidate resumes and Job Descriptions (JDs).

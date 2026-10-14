@@ -297,43 +297,6 @@ export default function CandidateAssessmentPage() {
     setStageWithRef('terminated');
   }, [notifyTermination, stopAllMedia, setStageWithRef, questions, currentIndex, answerText, token]);
 
-  const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
-    const video = cameraVideoRef.current;
-    if (!video) return null;
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, 'image/jpeg', 0.8);
-      });
-      if (!blob) return null;
-
-      const formData = new FormData();
-      formData.append('token', token);
-      formData.append('category', category);
-      formData.append('file', blob, 'snapshot.jpg');
-
-      const res = await fetch('/api/assess/snapshots', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!res.ok) {
-        console.warn('[assess-snapshot] upload failed with status:', res.status);
-        return null;
-      }
-      const data = await res.json();
-      return (data?.path as string) || null;
-    } catch (err) {
-      console.warn('[assess-snapshot] capture exception:', err);
-      return null;
-    }
-  }, [token]);
-
   // Release devices on unmount
   useEffect(() => {
     return () => {
@@ -925,14 +888,12 @@ export default function CandidateAssessmentPage() {
           });
 
           void (async () => {
-            const snapshotPath = await captureEvidenceSnapshot(trackerStatus.category);
             await fetch(`/api/assess/${token}/events`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 category: trackerStatus.category,
                 severity: 'warning',
-                snapshotPath: snapshotPath || undefined,
                 meta: { warningCount: trackerStatus.warningCount, reason: trackerStatus.reason },
               }),
             }).catch((err) => console.warn('[assess-proctor-event] fetch failed:', err));
@@ -1110,26 +1071,20 @@ export default function CandidateAssessmentPage() {
             'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
           );
 
-          // 1. Direct synchronous capture snapshot from live video frame FIRST
-          const snapshotPromise = captureEvidenceSnapshot('object');
-
-          // 2. Direct show warning toast to user
+          // Direct show warning toast to user
           setWarningToast({
             show: true,
             count: trackerStatus.warningCount,
             reason: trackerStatus.reason,
           });
 
-          // Evidence snapshot + DB event with snapshot_path
           void (async () => {
-            const snapshotPath = await snapshotPromise;
             await fetch(`/api/assess/${token}/events`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 category: 'object',
                 severity: rule.severity,
-                snapshotPath: snapshotPath || undefined,
                 meta: { object: rule.object, confidence: detection.confidence, warningCount: trackerStatus.warningCount },
               }),
             }).catch((err) => console.warn('[assess-object-event] fetch failed:', err));
@@ -1259,7 +1214,6 @@ export default function CandidateAssessmentPage() {
       });
 
       void (async () => {
-        const snapshotPath = await captureEvidenceSnapshot('unauthorized_voice');
         await fetch(`/api/assess/${token}/events`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1267,7 +1221,6 @@ export default function CandidateAssessmentPage() {
             category: 'unauthorized_voice',
             severity: 'warning',
             confidence: info.confidence,
-            snapshotPath: snapshotPath || undefined,
             meta: { warningCount: trackerStatus.warningCount, reason: voiceReason },
           }),
         }).catch((err) => console.warn('[assess-voice-event] fetch failed:', err));
@@ -1282,7 +1235,7 @@ export default function CandidateAssessmentPage() {
         }
       }
     }
-  }, [token, captureEvidenceSnapshot, terminateInterview]);
+  }, [token, terminateInterview]);
 
   useAudioVoiceGuard({
     interviewId: sessionId || '',
@@ -1293,10 +1246,6 @@ export default function CandidateAssessmentPage() {
     isCandidateTurn: stage === 'interview' && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
-    takeSnapshot: async () => {
-      await captureEvidenceSnapshot('unauthorized_voice');
-      return null;
-    },
     readingGracePeriodMs: 0,
     continuousVoiceMs: 10000,
   });

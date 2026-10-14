@@ -1533,47 +1533,6 @@ export default function InterviewEntryPage() {
     };
   }, [stage, isAdmin, bypassProctoring, interviewId]);
 
-  const captureEvidenceSnapshot = useCallback(async (category: string): Promise<string | null> => {
-    const video = cameraVideoRef.current;
-    // Guard: video element must have decoded at least one frame and have valid dimensions
-    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
-      console.warn('[snapshot] skipping capture — video not ready (readyState:', video?.readyState, ', size:', video?.videoWidth, 'x', video?.videoHeight, ')');
-      return null;
-    }
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob(resolve, 'image/jpeg', 0.8);
-      });
-      if (!blob) return null;
-
-      const formData = new FormData();
-      formData.append('interviewId', interviewId);
-      formData.append('category', category);
-      formData.append('file', blob, 'snapshot.jpg');
-
-      const res = await fetch('/api/interview/snapshots', {
-        method: 'POST',
-        body: formData,
-      });
-      if (!res.ok) {
-        console.warn('[snapshot] upload failed with status:', res.status);
-        return null;
-      }
-      const data = await res.json();
-      return (data?.path as string) || null;
-    } catch (err) {
-      console.warn('[snapshot] capture exception:', err);
-      return null;
-    }
-  }, [interviewId]);
-
   // ── Real-time Speech-to-Text & Audio Voice Guard ──
   const handleUnauthorizedVoice = useCallback((info: { reason: string; confidence: number; durationMs?: number }) => {
     if (
@@ -1685,14 +1644,6 @@ export default function InterviewEntryPage() {
 
       const warnEventTs = toastShownTs;
       void (async () => {
-        let snapshotPath: string | null = null;
-        try {
-          snapshotPath = await Promise.race([
-            captureEvidenceSnapshot('unauthorized_voice'),
-            new Promise<null>((r) => setTimeout(() => r(null), 800)),
-          ]);
-        } catch { }
-
         await fetch('/api/interview/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1702,7 +1653,6 @@ export default function InterviewEntryPage() {
             category: 'unauthorized_voice',
             severity: 'warning',
             confidence: info.confidence,
-            snapshotPath: snapshotPath || undefined,
             meta: {
               warningCount: trackerStatus.warningCount,
               strikeNumber: trackerStatus.warningCount,
@@ -1726,7 +1676,7 @@ export default function InterviewEntryPage() {
         }
       }
     }
-  }, [interviewId, captureEvidenceSnapshot, terminateInterview, setWarningToast, isAdmin, bypassProctoring]);
+  }, [interviewId, terminateInterview, setWarningToast, isAdmin, bypassProctoring]);
 
   useAudioVoiceGuard({
     interviewId,
@@ -1735,10 +1685,6 @@ export default function InterviewEntryPage() {
     isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
-    takeSnapshot: async () => {
-      await captureEvidenceSnapshot('unauthorized_voice');
-      return null;
-    },
     readingGracePeriodMs: 0,
     continuousVoiceMs: 10000,
   });
@@ -2504,14 +2450,6 @@ export default function InterviewEntryPage() {
 
           const warnEventTs = toastShownTs;
           void (async () => {
-            let snapshotPath: string | null = null;
-            try {
-              snapshotPath = await Promise.race([
-                captureEvidenceSnapshot(trackerStatus.category),
-                new Promise<null>((r) => setTimeout(() => r(null), 800)),
-              ]);
-            } catch { }
-
             await fetch('/api/interview/events', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -2520,7 +2458,6 @@ export default function InterviewEntryPage() {
                 interviewId,
                 category: trackerStatus.category,
                 severity: 'warning',
-                snapshotPath: snapshotPath || undefined,
                 meta: {
                   warningCount: trackerStatus.warningCount,
                   strikeNumber: trackerStatus.warningCount,
@@ -2717,8 +2654,6 @@ export default function InterviewEntryPage() {
             'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
           );
 
-          // 1. Direct synchronous capture snapshot from live video frame FIRST
-          const snapshotPromise = captureEvidenceSnapshot('object');
 
           const objectWarning: CandidateWarning = {
             id: `${Date.now()}-${Math.random()}`,
@@ -2760,17 +2695,8 @@ export default function InterviewEntryPage() {
             } catch { }
           }
 
-          // Evidence snapshot + DB event with snapshot_path
           const warnEventTs = toastShownTs;
           void (async () => {
-            let snapshotPath: string | null = null;
-            try {
-              snapshotPath = await Promise.race([
-                snapshotPromise,
-                new Promise<null>((r) => setTimeout(() => r(null), 800)),
-              ]);
-            } catch { }
-
             await fetch('/api/interview/events', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -2780,7 +2706,6 @@ export default function InterviewEntryPage() {
                 category: 'object',
                 severity: rule.severity,
                 confidence: detection.confidence,
-                snapshotPath: snapshotPath || undefined,
                 meta: {
                   object: rule.object,
                   confidence: detection.confidence,
@@ -2846,7 +2771,7 @@ export default function InterviewEntryPage() {
         objectWorkerReadyRef.current = false;
       }
     };
-  }, [stage, isAdmin, bypassProctoring, captureEvidenceSnapshot, interviewId, terminateInterview]);
+  }, [stage, isAdmin, bypassProctoring, interviewId, terminateInterview]);
 
   const handleResumeInterview = useCallback(() => {
     if (isAdmin) return; // Only candidates have the option to resume

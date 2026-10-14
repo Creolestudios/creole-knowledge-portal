@@ -252,10 +252,10 @@ flowchart LR
   worker --> canvas["OffscreenCanvas 320x240 Downscaling"]
   face --> calib["3-Second Dot Calibration Baseline"]
   calib --> tracker["ProctoringTimeTracker Engine"]
-  tracker -->|Time-Window & 20s Debounce| events["interview_events DB & Realtime"]
+  tracker -->|Time-Window & Cooldown| events["interview_events DB & Realtime"]
   events --> counter[Server Warning Counter]
   counter -->|"3 warnings"| terminate[Automatic Termination]
-  tracker --> snapshots["JPEG Evidence Upload to Storage"]
+  events --> video["Full Video Session Deep-Links (Drive)"]
 ```
 
 ### 10.2 Detection rules
@@ -269,11 +269,11 @@ flowchart LR
 | Multiple faces (`multi_face`) | FaceLandmarker configured for `numFaces: 2` | $\ge 2$ faces detected continuously for $> 2\text{s}$ |
 | Absent candidate (`no_face`) | FaceLandmarker | No face detected continuously for $> 3\text{s}$ |
 
-Every rule is debounced ($20\text{s}$ per category) and requires continuous time-window validation.
+Every rule is debounced and requires continuous time-window validation.
 
 ### 10.3 Evidence & Realtime Monitoring
 
-Each violation generates a JPEG evidence frame uploaded to Supabase Storage (`interview-snapshots/`) and publishes a Realtime event to the HR live monitoring channel.
+Each violation logs an event with exact in-video offset timestamps to `interview_events` and publishes a Realtime event to the HR live monitoring channel. Recruiters can jump directly to the incident in the full interview video recording via deep-linked timestamps.
 
 ---
 

@@ -13,7 +13,7 @@ The **Creole AI Interview Module** is an autonomous, end-to-end technical and no
   - Web Speech API (real-time candidate speech recognition & transcription).
 - **Backend & Database**:
   - Supabase PostgreSQL (`interview_sessions`, `interview_questions`, `interview_answers`, `interview_transcript`, `interview_events`, `interview_reports`).
-  - Supabase Storage (evidence snapshots captured during proctoring violations).
+  - Google Drive Full Session Video Recording (continuous screen + webcam + audio recording replacing static snapshot storage).
   - Google Gemini Flash (technical evaluation, CEFR fluency analysis, bluff detection, and Round 2 question generation).
 
 ---
@@ -218,7 +218,7 @@ To ensure audit accuracy and zero cross-contamination:
    - Stores candidate answer transcripts mapped to `question_id`.
    - Guaranteed coverage: if a question was skipped or timed out, a record with `transcript: ''` is automatically preserved so no question is ever missing.
 4. **`interview_events`**:
-   - Audits every proctoring incident with snapshot image paths and metadata (`warningCount: 1, 2, 3`).
+   - Audits every proctoring incident with precise video offset timestamps (`offsetSeconds`, `screenToastOffsetSec`) and metadata (`warningCount: 1, 2, 3`), replacing static snapshots with deep-links directly into the full recording video.
    - Serves structured warnings (`warnings: CandidateWarning[]`, `totalWarnings`) via `GET /api/interview/events` to ensure admins entering mid-session can immediately view candidate strikes.
    - Also serves as the resilient secondary storage fallback for `scoring_report` payloads when `interview_reports` is missing from the database schema.
 5. **`interview_reports`**:

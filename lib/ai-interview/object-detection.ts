@@ -4,8 +4,7 @@
  * Maps COCO-SSD detected object labels to proctoring categories, severity levels,
  * and per-object sustained-detection thresholds.
  *
- * Fast object detection flow:
- * - Immediate alert triggers (thresholdMs = 0) so warnings & snapshots fire instantaneously.
+ * - Immediate alert triggers (thresholdMs = 0) so warnings fire instantaneously.
  * - Allows ONLY the candidate's body ('person').
  * - Flags any other detected unauthorized object (phone, book, remote, laptop, etc.).
  */
