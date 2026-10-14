@@ -42,4 +42,12 @@ describe('MeetingVideoTile', () => {
     render(<MeetingVideoTile stream={makeStream(true)} micOn label="Candidate" />);
     expect(screen.getByText('Candidate')).toBeInTheDocument();
   });
+
+  it('renders headset/bluetooth indicator when isHeadset is true', () => {
+    const { rerender } = render(<MeetingVideoTile stream={makeStream(true)} micOn isHeadset />);
+    expect(document.querySelector('[title="Bluetooth / Headset audio active"]')).toBeInTheDocument();
+
+    rerender(<MeetingVideoTile stream={makeStream(true)} micOn={false} isHeadset />);
+    expect(document.querySelector('[title="Bluetooth / Headset muted"]')).toBeInTheDocument();
+  });
 });

@@ -18,6 +18,7 @@ Welcome to the wiki for the Creole Knowledge Portal project! This wiki serves as
 *   [[pages/gatekeeper-plan.md|Gatekeeper Module Design]]
 *   [[pages/resume-jd-assessment-plan.md|Student Mock Interview / Assessment Module]]
 *   [[pages/ai-interview-module-complete-guide.md|AI Interview Module — Complete Technical & Functional Guide]]
+*   [[Google_Drive_Video_Storage_Setup_Guide.md|Google Cloud Service Account & Video Storage Setup Guide]]
 *   [[components/index.md|Components]]
 *   [[decisions/index.md|Architectural Decisions]]
 *   [[logs/index.md|Changelogs]]

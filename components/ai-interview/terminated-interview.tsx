@@ -63,12 +63,12 @@ export function TerminatedInterview({
             : 'This session has ended and cannot be resumed. Please contact your interviewer if you believe this was a mistake.'}
         </p>
 
-        {/* Video recording upload progress indicator */}
+        {/* Assessment finalization progress indicator */}
         {!isAdmin && isUploading && (
           <div className="mt-4 p-4 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 text-left space-y-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[#34c4f2]" />
-              <span>{uploadStatusText || 'Securing video recording to Google Drive...'}</span>
+              <span>{uploadStatusText || 'Finalizing assessment submission...'}</span>
             </div>
             <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2 overflow-hidden">
               <div
@@ -77,7 +77,7 @@ export function TerminatedInterview({
               />
             </div>
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
-              Please do not close this window until your video upload is saved.
+              Please do not close this window until your assessment submission is saved.
             </p>
           </div>
         )}
@@ -85,7 +85,7 @@ export function TerminatedInterview({
         {!isAdmin && !isUploading && uploadProgress === 100 && (
           <div className="mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800 flex items-center justify-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-            <span>Interview video recording safely saved to Google Drive</span>
+            <span>Your assessment completed</span>
           </div>
         )}
 
