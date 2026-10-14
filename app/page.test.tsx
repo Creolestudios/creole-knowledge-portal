@@ -99,4 +99,36 @@ describe('LoginPage', () => {
       expect(screen.getByText('OAuth misconfigured')).toBeInTheDocument();
     });
   });
+
+  it('blocks non-@creolestudios.com email addresses without calling Supabase', async () => {
+    render(<LoginPage />);
+    await waitFor(() => screen.getByLabelText('Email Address'));
+
+    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'attacker@gmail.com' } });
+    fireEvent.click(screen.getByText('Send Magic Link'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Access restricted/i)).toBeInTheDocument();
+    });
+    expect(mockSignInWithOtp).not.toHaveBeenCalled();
+  });
+
+  it('passes hd=creolestudios.com query param to Google OAuth to restrict domain picker', async () => {
+    mockSignInWithOAuth.mockResolvedValue({ error: null });
+    render(<LoginPage />);
+    await waitFor(() => screen.getByText('Continue with Google'));
+
+    fireEvent.click(screen.getByText('Continue with Google'));
+
+    await waitFor(() => {
+      expect(mockSignInWithOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'google',
+          options: expect.objectContaining({
+            queryParams: expect.objectContaining({ hd: 'creolestudios.com' }),
+          }),
+        }),
+      );
+    });
+  });
 });

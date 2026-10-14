@@ -52,6 +52,7 @@ export default function LoginPage() {
         provider,
         options: {
           redirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
+          ...(provider === 'google' ? { queryParams: { hd: 'creolestudios.com' } } : {}),
         },
       });
       if (error) throw error;
@@ -66,9 +67,16 @@ export default function LoginPage() {
     setError(null);
     setSuccess(false);
 
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail.endsWith('@creolestudios.com')) {
+      setError('Access restricted. Only @creolestudios.com email addresses are allowed.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        email,
+        email: cleanEmail,
         options: {
           emailRedirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
         },

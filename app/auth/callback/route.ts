@@ -50,6 +50,20 @@ export async function GET(request: Request) {
 
       if (data.user) {
         const user = data.user;
+        const userEmail = (user.email || '').toLowerCase();
+
+        // ── Domain Restriction ─────────────────────────────────────────────
+        // Only @creolestudios.com accounts are permitted. Block any other
+        // domain (including personal Gmail via Google OAuth) immediately.
+        if (!userEmail.endsWith('@creolestudios.com')) {
+          console.warn(`[Auth Callback] Blocked non-creolestudios account: ${userEmail}`);
+          await supabase.auth.signOut();
+          return NextResponse.redirect(
+            `${origin}/?error=${encodeURIComponent('Access restricted. Only @creolestudios.com accounts are allowed.')}`
+          );
+        }
+        // ───────────────────────────────────────────────────────────────────
+
         let isAdmin = false;
         try {
           const { data: profile, error: profileError } = await supabase
@@ -60,8 +74,7 @@ export async function GET(request: Request) {
           
           if (profileError || !profile) {
             // Profile does not exist, let's create a default one using supabaseAdmin
-            const userEmail = user.email || '';
-            const isPriyaAdmin = userEmail.toLowerCase() === 'priya.dhanani@creolestudios.com';
+            const isPriyaAdmin = userEmail === 'priya.dhanani@creolestudios.com';
             
             const { error: insertError } = await supabaseAdmin
               .from('user_profiles')
