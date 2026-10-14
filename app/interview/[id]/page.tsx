@@ -26,7 +26,8 @@ import { MeetingVideoTile } from '@/components/ai-interview/meeting-video-tile';
 import { MeetingControlBar } from '@/components/ai-interview/meeting-control-bar';
 import { DeviceSettingsPanel } from '@/components/ai-interview/device-settings-panel';
 import { useProctoringWatchdog } from '@/lib/ai-interview/use-proctoring-watchdog';
-import { OBJECT_RULES, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
+import { OBJECT_RULES, isHeadphoneObject, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
+import { useAudioDeviceType } from '@/lib/ai-interview/device-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 
 type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated' | 'expired' | 'not_started';
@@ -902,6 +903,12 @@ export default function InterviewEntryPage() {
   // proctoring watchdog, cleanup) that must always see the latest stream.
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+
+  const { isHeadsetDevice } = useAudioDeviceType(cameraStream || cameraPreview);
+  const isHeadsetDeviceRef = useRef(false);
+  useEffect(() => {
+    isHeadsetDeviceRef.current = isHeadsetDevice;
+  }, [isHeadsetDevice]);
 
   const { remoteStream, leave: leaveWebRTC } = useWebRTC(
     interviewId,
@@ -2568,7 +2575,12 @@ export default function InterviewEntryPage() {
             if (frameCount % 20 === 1) {
               console.log(`[ObjectDetection] Captured frame #${frameCount} (${bitmap.width}x${bitmap.height}), running inference...`);
             }
-            worker?.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
+            worker?.postMessage({
+              type: 'frame',
+              bitmap,
+              timestamp: performance.now(),
+              allowHeadphones: isHeadsetDeviceRef.current,
+            }, [bitmap]);
           })
           .catch((err) => {
             console.warn('[ObjectDetection] Frame capture error:', err);
@@ -2619,6 +2631,11 @@ export default function InterviewEntryPage() {
       for (const detection of msg.detections) {
         const rule = detection.rule;
         if (!rule) continue;
+
+        // Skip headphones/earphones when candidate is legitimately using a Bluetooth/headphone device
+        if (isHeadsetDeviceRef.current && isHeadphoneObject(detection.label || rule.object)) {
+          continue;
+        }
 
         const subKey = rule.object; // e.g. 'phone', 'earbuds', 'book', 'second_screen'
         seenSubKeys.add(subKey);
@@ -3186,13 +3203,14 @@ export default function InterviewEntryPage() {
             </p>
           </div>
 
-          <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" />
+          <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" isHeadset={isHeadsetDevice} />
 
           <MeetingControlBar
             micOn={micOn}
             onToggleMic={handleToggleMic}
             onOpenSettings={() => setSettingsOpen(true)}
             settingsEnabled
+            isHeadset={isHeadsetDevice}
           />
 
           {/* Screen share lost warning */}
@@ -3635,6 +3653,7 @@ export default function InterviewEntryPage() {
                         muted={true}
                         mirror={true}
                         videoRef={cameraVideoRef}
+                        isHeadset={isHeadsetDevice}
                       />
                     </div>
                   </>
@@ -3655,6 +3674,7 @@ export default function InterviewEntryPage() {
                 onToggleMic={handleToggleMic}
                 onLeave={isAdmin ? handleAdminLeave : undefined}
                 settingsEnabled={false}
+                isHeadset={isHeadsetDevice}
               />
             </div>
 

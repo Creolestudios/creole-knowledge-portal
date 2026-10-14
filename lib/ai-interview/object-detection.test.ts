@@ -87,6 +87,25 @@ describe('object-detection module', () => {
     expect(labels).not.toContain('person');
   });
 
+  it('selectively ignores headphones when allowHeadphones is enabled, but still detects other cheating objects', () => {
+    const rawDetections = [
+      { class: 'person', score: 0.95, bbox: [0, 0, 100, 100] as [number, number, number, number] },
+      { class: 'headphones', score: 0.88, bbox: [20, 20, 50, 50] as [number, number, number, number] },
+      { class: 'earphones', score: 0.82, bbox: [30, 30, 40, 40] as [number, number, number, number] },
+      { class: 'cell phone', score: 0.91, bbox: [50, 50, 60, 60] as [number, number, number, number] },
+      { class: 'laptop', score: 0.85, bbox: [70, 70, 100, 80] as [number, number, number, number] },
+    ];
+
+    // When candidate uses Bluetooth/headset audio (allowHeadphones: true)
+    const results = filterTrackedObjects(rawDetections, { allowHeadphones: true });
+    expect(results).toHaveLength(2); // cell phone and laptop
+    const labels = results.map((r) => r.label);
+    expect(labels).toContain('cell phone');
+    expect(labels).toContain('laptop');
+    expect(labels).not.toContain('headphones');
+    expect(labels).not.toContain('earphones');
+  });
+
   it('flags when another person is detected in the camera frame along with candidate', () => {
     const rawDetections = [
       { class: 'person', score: 0.95, bbox: [0, 0, 100, 100] as [number, number, number, number] }, // Candidate

@@ -44,4 +44,16 @@ describe('MeetingControlBar', () => {
     render(<MeetingControlBar micOn onToggleMic={vi.fn()} onOpenSettings={vi.fn()} settingsEnabled={false} />);
     expect(document.getElementById('meeting-open-settings')).toBeDisabled();
   });
+
+  it('renders Bluetooth / Headset icon and title when isHeadset is true and mic is on', () => {
+    render(<MeetingControlBar micOn onToggleMic={vi.fn()} isHeadset />);
+    const btButton = screen.getByTitle('Mute Bluetooth / Headset microphone');
+    expect(btButton).toBeInTheDocument();
+    expect(btButton.querySelector('svg.lucide-bluetooth')).toBeInTheDocument();
+  });
+
+  it('shows unmute title with Bluetooth context when isHeadset is true and mic is off', () => {
+    render(<MeetingControlBar micOn={false} onToggleMic={vi.fn()} isHeadset />);
+    expect(screen.getByTitle('Unmute Bluetooth / Headset microphone')).toBeInTheDocument();
+  });
 });

@@ -26,7 +26,8 @@ import {
   ProctoringTimeTracker,
   ExtendedFaceTrackingResult,
 } from '@/lib/ai-interview/face-tracking';
-import { OBJECT_RULES, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
+import { OBJECT_RULES, isHeadphoneObject, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
+import { useAudioDeviceType } from '@/lib/ai-interview/device-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
@@ -166,6 +167,12 @@ export default function CandidateAssessmentPage() {
   const [micOn, setMicOn] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  const { isHeadsetDevice } = useAudioDeviceType(cameraStream);
+  const isHeadsetDeviceRef = useRef(false);
+  useEffect(() => {
+    isHeadsetDeviceRef.current = isHeadsetDevice;
+  }, [isHeadsetDevice]);
 
   // ── Proctoring & Calibration State ──
   const [calibrationProgress, setCalibrationProgress] = useState(0);
@@ -1004,7 +1011,12 @@ export default function CandidateAssessmentPage() {
             if (frameCount % 20 === 1) {
               console.log(`[ObjectDetection] Captured frame #${frameCount} (${bitmap.width}x${bitmap.height}), running inference...`);
             }
-            worker?.postMessage({ type: 'frame', bitmap, timestamp: performance.now() }, [bitmap]);
+            worker?.postMessage({
+              type: 'frame',
+              bitmap,
+              timestamp: performance.now(),
+              allowHeadphones: isHeadsetDeviceRef.current,
+            }, [bitmap]);
           })
           .catch((err) => {
             console.warn('[ObjectDetection] Frame capture error:', err);
@@ -1051,6 +1063,11 @@ export default function CandidateAssessmentPage() {
       for (const detection of msg.detections) {
         const rule = detection.rule;
         if (!rule) continue;
+
+        // Skip headphones/earphones when candidate is legitimately using a Bluetooth/headphone device
+        if (isHeadsetDeviceRef.current && isHeadphoneObject(detection.label || rule.object)) {
+          continue;
+        }
 
         const subKey = rule.object;
         seenSubKeys.add(subKey);
@@ -1739,9 +1756,9 @@ export default function CandidateAssessmentPage() {
                 </div>
               </div>
 
-              <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" videoRef={cameraVideoRef} />
+              <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" videoRef={cameraVideoRef} isHeadset={isHeadsetDevice} />
 
-              <MeetingControlBar micOn={micOn} onToggleMic={handleToggleMic} settingsEnabled={false} />
+              <MeetingControlBar micOn={micOn} onToggleMic={handleToggleMic} settingsEnabled={false} isHeadset={isHeadsetDevice} />
             </div>
 
             {faceTrackingError && (
@@ -1822,13 +1839,14 @@ export default function CandidateAssessmentPage() {
             </p>
           </div>
 
-          <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" />
+          <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" isHeadset={isHeadsetDevice} />
 
           <MeetingControlBar
             micOn={micOn}
             onToggleMic={handleToggleMic}
             onOpenSettings={() => setSettingsOpen(true)}
             settingsEnabled
+            isHeadset={isHeadsetDevice}
           />
 
           <button

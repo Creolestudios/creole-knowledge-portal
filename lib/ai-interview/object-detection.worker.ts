@@ -27,7 +27,9 @@ let isBusy = false;
 
 console.log('[ObjectDetection Worker] Worker script evaluated, ready for init');
 
-self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap; timestamp?: number }>) => {
+self.onmessage = async (
+  event: MessageEvent<{ type: string; bitmap?: ImageBitmap; timestamp?: number; allowHeadphones?: boolean }>,
+) => {
   const message = event.data;
 
   // ─── INIT ────────────────────────────────────────────────────────────────
@@ -112,7 +114,10 @@ self.onmessage = async (event: MessageEvent<{ type: string; bitmap?: ImageBitmap
       rawDetections = await model.detect(message.bitmap as unknown as ImageData, 20, 0.22);
     }
 
-    const detections: DetectedObjectEvent[] = filterTrackedObjects(rawDetections, 0.22);
+    const detections: DetectedObjectEvent[] = filterTrackedObjects(rawDetections, {
+      minConfidence: 0.22,
+      allowHeadphones: Boolean(message.allowHeadphones),
+    });
     if (detections.length > 0) {
       console.log(
         '[ObjectDetection Worker] Found tracked objects:',

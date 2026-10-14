@@ -1,6 +1,6 @@
 'use client';
 
-import { Mic, MicOff, Video, Settings, Lock, LogOut } from 'lucide-react';
+import { Mic, MicOff, Video, Settings, Lock, LogOut, Bluetooth } from 'lucide-react';
 
 interface MeetingControlBarProps {
   micOn: boolean;
@@ -10,6 +10,7 @@ interface MeetingControlBarProps {
    * proctoring watchdog's track listeners once the interview is live. */
   settingsEnabled?: boolean;
   onLeave?: () => void;
+  isHeadset?: boolean;
 }
 
 /**
@@ -25,6 +26,7 @@ export function MeetingControlBar({
   onOpenSettings,
   settingsEnabled = true,
   onLeave,
+  isHeadset = false,
 }: MeetingControlBarProps) {
   return (
     <div className="flex items-center justify-center gap-3 p-3 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors">
@@ -33,14 +35,32 @@ export function MeetingControlBar({
         type="button"
         onClick={onToggleMic}
         aria-pressed={micOn}
-        title={micOn ? 'Mute microphone' : 'Unmute microphone'}
+        title={
+          isHeadset
+            ? micOn
+              ? 'Mute Bluetooth / Headset microphone'
+              : 'Unmute Bluetooth / Headset microphone'
+            : micOn
+              ? 'Mute microphone'
+              : 'Unmute microphone'
+        }
         className={`flex items-center justify-center w-11 h-11 rounded-full transition-all cursor-pointer ${
           micOn
-            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700'
+            ? isHeadset
+              ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800 hover:bg-sky-100 dark:hover:bg-sky-900/50 shadow-xs'
+              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-white hover:bg-zinc-200 dark:hover:bg-zinc-700'
             : 'bg-red-500 text-white hover:bg-red-400'
         }`}
       >
-        {micOn ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+        {micOn ? (
+          isHeadset ? (
+            <Bluetooth className="w-5 h-5 text-sky-600 dark:text-sky-400 animate-pulse" />
+          ) : (
+            <Mic className="w-5 h-5" />
+          )
+        ) : (
+          <MicOff className="w-5 h-5" />
+        )}
       </button>
 
       <button

@@ -188,16 +188,41 @@ export interface DetectedObjectEvent {
 }
 
 /**
+ * Checks if a detected object is a headphone, earphone, or audio headset.
+ */
+export function isHeadphoneObject(className: string): boolean {
+  const lower = (className || '').toLowerCase().trim();
+  return (
+    lower.includes('headphone') ||
+    lower.includes('earphone') ||
+    lower.includes('earbud') ||
+    lower.includes('airpod') ||
+    lower.includes('headset')
+  );
+}
+
+/**
  * Filters raw object detections strictly:
  * 1. Checks candidate presence: The first 'person' is the candidate themselves (allowed).
  * 2. Checks multi-person presence: If an additional 'person' is detected in camera view, it flags as violation!
  * 3. Enforces strict cheating object detection: ONLY flags explicit cheating objects (phone, calculator, laptop, keyboard, mouse, book, pen, paper, earphones, etc.).
  * 4. Filters out all mundane room fixtures, furniture, hydration items, and environmental objects (chair, sofa, table, mug, cup, bottle, clock, watch, etc.).
+ * 5. Selectively allows headphones when candidate is confirmed using a Bluetooth/headphone device (allowHeadphones: true).
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
-  minConfidence = 0.22,
+  minConfidenceOrOptions: number | { minConfidence?: number; allowHeadphones?: boolean } = 0.22,
+  legacyAllowHeadphones = false,
 ): DetectedObjectEvent[] {
+  const minConfidence =
+    typeof minConfidenceOrOptions === 'number'
+      ? minConfidenceOrOptions
+      : (minConfidenceOrOptions.minConfidence ?? 0.22);
+  const allowHeadphones =
+    typeof minConfidenceOrOptions === 'object'
+      ? Boolean(minConfidenceOrOptions.allowHeadphones)
+      : legacyAllowHeadphones;
+
   let candidateFound = false;
 
   const results: DetectedObjectEvent[] = [];
@@ -234,6 +259,11 @@ export function filterTrackedObjects(
 
     // ── Ignore Room Environment & Furniture (chair, clock, watch, cup, mug, sofa, etc.) ──
     if (isRoomEnvironment(normalizedClass)) {
+      continue;
+    }
+
+    // ── Conditional Headphone Exemption (when candidate uses Bluetooth / Headset audio) ──
+    if (allowHeadphones && isHeadphoneObject(normalizedClass)) {
       continue;
     }
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { Mic, MicOff, User } from 'lucide-react';
+import { Mic, MicOff, User, Bluetooth } from 'lucide-react';
 
 interface MeetingVideoTileProps {
   stream: MediaStream | null;
@@ -11,6 +11,7 @@ interface MeetingVideoTileProps {
   videoRef?: React.RefObject<HTMLVideoElement | null>;
   muted?: boolean;
   mirror?: boolean;
+  isHeadset?: boolean;
 }
 
 /**
@@ -90,10 +91,31 @@ export function MeetingVideoTile({
 
       <div
         className={`absolute bottom-2 right-2 flex items-center justify-center w-6 h-6 rounded-full ${
-          micOn ? 'bg-black/60' : 'bg-red-500'
+          micOn
+            ? isHeadset
+              ? 'bg-sky-600/90 text-white'
+              : 'bg-black/60 text-white'
+            : 'bg-red-500 text-white'
         }`}
+        title={
+          isHeadset
+            ? micOn
+              ? 'Bluetooth / Headset audio active'
+              : 'Bluetooth / Headset muted'
+            : micOn
+              ? 'Microphone active'
+              : 'Microphone muted'
+        }
       >
-        {micOn ? <Mic className="w-3 h-3 text-white" /> : <MicOff className="w-3 h-3 text-white" />}
+        {micOn ? (
+          isHeadset ? (
+            <Bluetooth className="w-3.5 h-3.5 text-white animate-pulse" />
+          ) : (
+            <Mic className="w-3 h-3 text-white" />
+          )
+        ) : (
+          <MicOff className="w-3 h-3 text-white" />
+        )}
       </div>
     </div>
   );
