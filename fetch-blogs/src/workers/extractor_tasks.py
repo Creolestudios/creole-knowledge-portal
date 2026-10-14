@@ -17,7 +17,7 @@ from src.workers.runtime import ensure_db, run_async
 
 log = structlog.get_logger(__name__)
 
-_EXTRACT_LIMIT = 24
+_EXTRACT_LIMIT = 12
 _LONG_ENOUGH = 400
 
 
