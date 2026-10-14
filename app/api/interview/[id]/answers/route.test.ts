@@ -157,6 +157,23 @@ describe('POST /api/interview/[id]/answers', () => {
     );
   });
 
+  it('preserves existing candidate transcript when incoming transcript is empty', async () => {
+    state.existingAnswer = { id: 'answer-1', transcript: 'Previously saved detailed answer' } as any;
+
+    const req = new NextRequest('http://localhost/api/interview/sess-1/answers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionId: 'q1', transcript: '' }),
+    });
+    req.cookies.set('interview_verified_id', 'sess-1');
+
+    const res = await POST(req, makeParams());
+    expect(res.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalledWith(
+      expect.not.objectContaining({ transcript: '' })
+    );
+  });
+
   it('uploads the recording when transcription fails, saving the answer without a transcript', async () => {
     mockTranscribe.mockRejectedValue(new Error('gemini quota exceeded'));
 

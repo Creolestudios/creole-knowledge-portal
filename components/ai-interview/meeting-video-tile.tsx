@@ -29,6 +29,7 @@ export function MeetingVideoTile({
   videoRef: externalVideoRef,
   muted: isMuted = true,
   mirror = true,
+  isHeadset = false,
 }: MeetingVideoTileProps) {
   const internalVideoRef = useRef<HTMLVideoElement>(null);
   const activeVideoRef = externalVideoRef ?? internalVideoRef;

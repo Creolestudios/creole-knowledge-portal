@@ -140,7 +140,10 @@ export async function POST(
         total_time_taken_sec: durationSec || existing.total_time_taken_sec || 0,
       };
       // Only overwrite transcript if incoming is non-empty, or existing has no transcript
-      if (transcript !== null) {
+      if (
+        transcript !== null &&
+        (typeof transcript !== 'string' || transcript.trim().length > 0 || !existing.transcript)
+      ) {
         updateData.transcript = typeof transcript === 'string' ? transcript.trim() : transcript;
       }
       if (storagePath) {

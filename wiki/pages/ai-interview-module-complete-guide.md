@@ -146,12 +146,17 @@ Continuous acoustic frequency analysis using Web Audio API across the speech ban
 3. **10-Second Break / Cooldown for Subsequent Warnings**:
    - Enforces a **10-second break** (`cooldownMs = 10000ms`) after any warning is issued.
    - If background voice continues to be heard after the 10-second break, the second warning is triggered.
-4. **Music & Keyboard Detection**:
-   - High harmonic tonality across music bands triggers `"Background music detected."`.
+4. **Internal Sound / Music & Keyboard Detection**:
+   - High harmonic tonality across music/media playback bands triggers:
+     > **`"Internal sound / music detected. Please stop all media playback."`**
    - Sharp transient high-frequency clusters trigger `"Keyboard typing sounds detected."`.
-5. **Noise Filtering & Suppression**:
+5. **Noise Filtering & Candidate Answer Preservation**:
    - Mild environmental noise, quiet room tone, and low-level ambient hiss (< 35 energy) are safely ignored.
    - Voice alarms are suppressed while the AI system prompt is speaking.
+   - **Primary Speaker Audio Isolation**: The Gemini transcription model is instructed to focus exclusively on the primary foreground interview candidate, actively ignoring secondary background voices, television audio, or background music.
+   - **Contamination Guard During Proctor Warnings**: When an unauthorized voice or audio violation pauses the interview (`isInterviewPausedRef.current === true`), incoming speech stream updates are suppressed to prevent background noise or the candidate's reaction to the warning from polluting their answer text.
+   - **Immediate In-Flight Answer Persistence**: When any proctoring violation pauses or terminates the interview, any uncommitted candidate speech is flushed immediately to the answer storage API with `keepalive: true` to prevent data loss.
+   - **Empty-Transcript Overwrite Protection**: Backend endpoints (`/api/interview/[id]/answers` and `/api/assess/[token]/answer`) protect existing candidate responses, ensuring that transient empty speech payloads never overwrite already-recorded answers.
 
 ### D. System Watchdog (`useProctoringWatchdog`)
 - Checks hardware and media integrity every 1.5 seconds.

@@ -58,10 +58,10 @@ export function useAudioDeviceType(stream: MediaStream | null): {
 
     updateDeviceInfo();
 
-    if (typeof navigator !== 'undefined' && navigator.mediaDevices) {
+    if (typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.addEventListener === 'function') {
       navigator.mediaDevices.addEventListener('devicechange', updateDeviceInfo);
       return () => {
-        navigator.mediaDevices?.removeEventListener('devicechange', updateDeviceInfo);
+        navigator.mediaDevices?.removeEventListener?.('devicechange', updateDeviceInfo);
       };
     }
   }, [stream]);

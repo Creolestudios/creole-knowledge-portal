@@ -8,15 +8,16 @@ const TRANSCRIPTION_MODEL = 'gemini-3.6-flash';
 const TRANSCRIPTION_TIMEOUT_MS = 45_000;
 
 const TRANSCRIPTION_PROMPT = `
-Write down exactly what the speaker says in this audio recording.
+Write down exactly what the primary interview candidate says in this audio recording.
 
 Rules:
-- Return ONLY the spoken words as plain text. No labels, no timestamps, no commentary.
-- Transcribe STRICTLY VERBATIM. Do NOT smooth, edit, or polish the speech.
-- Capture and transcribe all filler words, vocal hesitations, and disfluencies exactly as spoken (e.g., "umm", "uh", "uhh", "er", "ah", "like", "you know", "sort of", "kind of").
-- Include false starts, self-corrections, and repeated words exactly as uttered.
-- Do not summarise or rephrase. Transcribe what was actually said.
-- If the audio contains no intelligible speech, return an empty response.
+- Return ONLY the spoken words of the primary candidate as plain text. No labels, no timestamps, no commentary.
+- Transcribe STRICTLY VERBATIM what the candidate uttered. Do NOT smooth, edit, or polish the candidate's speech.
+- Focus exclusively on the primary speaker (foreground candidate closest to the microphone). Ignore background noise, secondary background voices, TV/media chatter, or background music.
+- Capture and transcribe all candidate filler words, vocal hesitations, and disfluencies exactly as spoken (e.g., "umm", "uh", "uhh", "er", "ah", "like", "you know", "sort of", "kind of").
+- Include false starts, self-corrections, and repeated words exactly as uttered by the candidate.
+- Do not summarise or rephrase. Transcribe what the candidate actually said.
+- If the audio contains no intelligible candidate speech, return an empty response.
 `.trim();
 
 /**

@@ -983,8 +983,17 @@ export default function InterviewEntryPage() {
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSavingRealtime, setIsSavingRealtime] = useState(false);
   const [hasSavedRealtime, setHasSavedRealtime] = useState(false);
+  const currentSpokenTextRef = useRef('');
+  const interimTextRef = useRef('');
+
+  useEffect(() => {
+    currentSpokenTextRef.current = currentSpokenText;
+  }, [currentSpokenText]);
 
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
+    // Suppress speech ingestion while the interview is paused (e.g. warning banner active)
+    // so that background chatter or interruptions do not pollute the candidate's answer
+    if (isInterviewPausedRef.current) return;
     if (line.isFinal) {
       setCurrentSpokenText((prev) => (prev ? `${prev} ${line.text}` : line.text));
     }
@@ -996,6 +1005,10 @@ export default function InterviewEntryPage() {
     isCandidateTurn: stage === 'interview' && !isAdmin,
     onTranscriptLine: handleTranscriptLine,
   });
+
+  useEffect(() => {
+    interimTextRef.current = interimText;
+  }, [interimText]);
 
   // Debounced real-time answer persistence to DB while candidate is speaking
   useEffect(() => {
@@ -1553,8 +1566,14 @@ export default function InterviewEntryPage() {
 
     let voiceReason = info.reason;
     let subKey = 'voice';
-    if (info.reason.includes('music')) {
-      voiceReason = 'Background music detected.';
+    const reasonLower = info.reason.toLowerCase();
+    if (
+      reasonLower.includes('music') ||
+      reasonLower.includes('internal sound') ||
+      reasonLower.includes('internal audio') ||
+      reasonLower.includes('media playback')
+    ) {
+      voiceReason = 'Internal sound / music detected. Please stop all media playback.';
       subKey = 'music';
     } else if (info.reason.includes('pen')) {
       voiceReason = 'Pen clicking / writing sounds detected.';
@@ -1583,6 +1602,25 @@ export default function InterviewEntryPage() {
     );
 
     if (trackerStatus.shouldTriggerWarning) {
+      // Immediately preserve user's spoken answer so far even if background voice occurs
+      const liveAnswer = [
+        currentSpokenTextRef.current.trim(),
+        interimTextRef.current ? interimTextRef.current.trim() : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      const currentQ = questionsRef.current[currentQuestionRef.current];
+      if (currentQ?.id && liveAnswer && liveAnswer !== lastSavedSpokenTextRef.current) {
+        lastSavedSpokenTextRef.current = liveAnswer;
+        fetch(`/api/interview/${interviewId}/answers`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId: currentQ.id, transcript: liveAnswer }),
+          keepalive: true,
+        }).catch((err) => console.warn('[voice-guard] Immediate answer sync failed:', err));
+      }
+
       const voiceWarning: CandidateWarning = {
         id: `${Date.now()}-${Math.random()}`,
         count: trackerStatus.warningCount,
@@ -2028,7 +2066,7 @@ export default function InterviewEntryPage() {
         // and immediately mark screen share as revoked so the Acknowledgment
         // gate can block the candidate from proceeding without it.
         const [screenVideoTrack] = screenStream.getVideoTracks();
-        if (screenVideoTrack) {
+        if (screenVideoTrack && typeof screenVideoTrack.addEventListener === 'function') {
           screenVideoTrack.addEventListener('ended', () => {
             setScreenGranted(false);
             setPermissionError('Screen sharing was stopped. Please click the button below to re-enable screen sharing before continuing.');

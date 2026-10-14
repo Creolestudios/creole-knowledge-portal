@@ -1182,8 +1182,14 @@ export default function CandidateAssessmentPage() {
 
     let voiceReason = info.reason;
     let subKey = 'voice';
-    if (info.reason.includes('music')) {
-      voiceReason = 'Background music detected.';
+    const reasonLower = info.reason.toLowerCase();
+    if (
+      reasonLower.includes('music') ||
+      reasonLower.includes('internal sound') ||
+      reasonLower.includes('internal audio') ||
+      reasonLower.includes('media playback')
+    ) {
+      voiceReason = 'Internal sound / music detected. Please stop all media playback.';
       subKey = 'music';
     } else if (info.reason.includes('pen')) {
       voiceReason = 'Pen clicking / writing sounds detected.';
@@ -1212,6 +1218,19 @@ export default function CandidateAssessmentPage() {
     );
 
     if (trackerStatus.shouldTriggerWarning) {
+      // Immediately preserve user's spoken answer so far even if background voice occurs
+      const curQ = questions[currentIndex];
+      const liveInterim = interimTextRef.current ? interimTextRef.current.trim() : '';
+      const currentSpeech = (answerText ? liveInterim ? `${answerText.trim()} ${liveInterim}` : answerText.trim() : liveInterim).trim();
+      if (curQ?.id && currentSpeech) {
+        fetch(`/api/assess/${token}/answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question_id: curQ.id, transcript: currentSpeech }),
+          keepalive: true,
+        }).catch((err) => console.warn('[assess-voice-guard] Immediate answer sync failed:', err));
+      }
+
       setIsInterviewPaused(true);
       isInterviewPausedRef.current = true;
       setWarningToast({
@@ -1263,7 +1282,13 @@ export default function CandidateAssessmentPage() {
     continuousVoiceMs: 10000,
   });
 
+  const lastSavedAnswerTextRef = useRef<string>('');
+  const autoSaveAnswerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
+    // Suppress speech ingestion while the interview is paused (warning banner active)
+    // so background chatter or people talking during the pause do NOT pollute candidate's answer
+    if (isInterviewPausedRef.current) return;
     if (line.text.trim().length > 0) {
       if (firstSpeechAtRef.current === null) {
         firstSpeechAtRef.current = Date.now();
@@ -1295,6 +1320,39 @@ export default function CandidateAssessmentPage() {
       });
     }
   }, [interimText]);
+
+  // Debounced real-time answer persistence to DB while candidate is speaking
+  useEffect(() => {
+    if (stage !== 'interview') return;
+    const currentQ = questions[currentIndex];
+    if (!currentQ?.id) return;
+
+    const fullSpoken = answerText.trim();
+    if (!fullSpoken || fullSpoken === lastSavedAnswerTextRef.current) return;
+
+    if (autoSaveAnswerTimerRef.current) {
+      clearTimeout(autoSaveAnswerTimerRef.current);
+    }
+
+    autoSaveAnswerTimerRef.current = setTimeout(async () => {
+      try {
+        lastSavedAnswerTextRef.current = fullSpoken;
+        await fetch(`/api/assess/${token}/answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question_id: currentQ.id, transcript: fullSpoken }),
+        });
+      } catch (err) {
+        console.warn('[assess] Real-time answer auto-save failed:', err);
+      }
+    }, 1200);
+
+    return () => {
+      if (autoSaveAnswerTimerRef.current) {
+        clearTimeout(autoSaveAnswerTimerRef.current);
+      }
+    };
+  }, [answerText, stage, currentIndex, questions, token]);
 
   useEffect(() => {
     if (stage === 'interview') {
@@ -1388,6 +1446,7 @@ export default function CandidateAssessmentPage() {
         autoSubmittedQuestionIdxRef.current = null;
         setQuestionRemainingSec(nextQSec);
         setAnswerText('');
+        lastSavedAnswerTextRef.current = '';
         setCurrentIndex(nextIdx);
       }
     } catch (err) {
@@ -1403,6 +1462,7 @@ export default function CandidateAssessmentPage() {
         autoSubmittedQuestionIdxRef.current = null;
         setQuestionRemainingSec(nextQSec);
         setAnswerText('');
+        lastSavedAnswerTextRef.current = '';
         setCurrentIndex(nextIdx);
       } else {
         setError(err instanceof Error ? err.message : 'Failed to save your answer. Please try again.');

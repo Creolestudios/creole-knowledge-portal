@@ -43,15 +43,27 @@ export async function POST(
     return NextResponse.json({ error: 'Question does not belong to this session' }, { status: 400 });
   }
 
+  const { data: existingAnswer } = await supabaseAdmin
+    .from('interview_answers')
+    .select('id, transcript, time_to_first_response_sec, total_time_taken_sec')
+    .eq('session_id', invite.session_id)
+    .eq('question_id', questionId)
+    .maybeSingle();
+
+  const finalTranscript =
+    typeof transcript === 'string' && transcript.trim().length > 0
+      ? transcript.trim()
+      : (existingAnswer?.transcript || '');
+
   const { data: answer, error: insertErr } = await supabaseAdmin
     .from('interview_answers')
     .upsert(
       {
         session_id: invite.session_id,
         question_id: questionId,
-        transcript,
-        time_to_first_response_sec: timeToFirstResponseSec,
-        total_time_taken_sec: totalTimeTakenSec,
+        transcript: finalTranscript,
+        time_to_first_response_sec: timeToFirstResponseSec || existingAnswer?.time_to_first_response_sec || 0,
+        total_time_taken_sec: totalTimeTakenSec || existingAnswer?.total_time_taken_sec || 0,
       },
       { onConflict: 'session_id,question_id' }
     )

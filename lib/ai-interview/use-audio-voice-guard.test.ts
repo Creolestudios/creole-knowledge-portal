@@ -360,7 +360,7 @@ describe('useAudioVoiceGuard', () => {
 
     expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
       expect.objectContaining({
-        reason: 'Background music detected.',
+        reason: 'Internal sound / music detected. Please stop all media playback.',
       })
     );
   });

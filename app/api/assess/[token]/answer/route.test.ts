@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { NextRequest } from 'next/server';
 import { POST } from './route';
 
 const { state, mockFrom, mockResolveInvite } = vi.hoisted(() => {
@@ -7,6 +8,7 @@ const { state, mockFrom, mockResolveInvite } = vi.hoisted(() => {
     question: null as any,
     questionError: null as any,
     answer: null as any,
+    existingAnswer: null as any,
     insertError: null as any,
     insertedPayload: null as any,
   };
@@ -33,6 +35,13 @@ const { state, mockFrom, mockResolveInvite } = vi.hoisted(() => {
         };
       };
       return {
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: state.existingAnswer, error: null }),
+            }),
+          }),
+        }),
         insert: saveHandler,
         upsert: saveHandler,
       };
@@ -54,7 +63,7 @@ vi.mock('@/lib/ai-interview/invite-token', () => ({
 }));
 
 function makeRequest(body: unknown) {
-  return new Request('http://localhost/api/assess/token123/answer', {
+  return new NextRequest('http://localhost/api/assess/token123/answer', {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -119,6 +128,25 @@ describe('POST /api/assess/[token]/answer', () => {
         transcript: 'My answer',
         time_to_first_response_sec: 0,
         total_time_taken_sec: 0,
+      }),
+    );
+  });
+
+  it('preserves existing transcript when incoming transcript is empty', async () => {
+    state.invite = { id: 'inv1', session_id: 's1', status: 'in_progress' };
+    state.question = { id: 'q1', session_id: 's1' };
+    state.answer = { id: 'ans1' };
+    state.existingAnswer = { id: 'ans1', transcript: 'Existing spoken candidate answer' };
+
+    const res = await POST(
+      makeRequest({ question_id: 'q1', transcript: '' }),
+      makeParams(),
+    );
+
+    expect(res.status).toBe(200);
+    expect(state.insertedPayload).toEqual(
+      expect.objectContaining({
+        transcript: 'Existing spoken candidate answer',
       }),
     );
   });

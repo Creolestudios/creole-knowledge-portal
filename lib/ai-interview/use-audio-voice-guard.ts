@@ -289,7 +289,7 @@ export function useAudioVoiceGuard({
             if (consecutiveMusicFrames >= 30) {
               consecutiveMusicFrames = 0;
               const confidence = Math.min(0.92, 0.75 + (avgMusicEnergy / 255) * 0.2);
-              triggerVoiceWarning('Background music detected.', confidence);
+              triggerVoiceWarning('Internal sound / music detected. Please stop all media playback.', confidence);
             }
           } else {
             consecutiveMusicFrames = Math.max(0, consecutiveMusicFrames - 1);
