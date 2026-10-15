@@ -365,6 +365,84 @@ describe('useAudioVoiceGuard', () => {
     );
   });
 
+  it('does NOT trigger internal sound warning when Bluetooth is on and candidate is speaking', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // High harmonic tonality from compressed speech vocal resonance on Bluetooth
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 5; i < 35; i++) {
+        arr[i] = 42;
+      }
+      arr[12] = 140; // Vocal formant peak
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-bt-speaking',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: true,
+        isHeadset: true,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 45; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Internal sound / music detected. Please stop all media playback.',
+      })
+    );
+  });
+
+  it('triggers internal sound warning when Bluetooth is on but candidate is NOT speaking and media is playing', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // High harmonic tonality across musical band with candidate silent
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 5; i < 65; i++) {
+        arr[i] = 38;
+      }
+      arr[25] = 120;
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-bt-silent-music',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        isHeadset: true,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 45; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Internal sound / music detected. Please stop all media playback.',
+      })
+    );
+  });
+
   it('triggers warning when keyboard typing sounds are detected', () => {
     const onUnauthorizedVoiceDetected = vi.fn();
 

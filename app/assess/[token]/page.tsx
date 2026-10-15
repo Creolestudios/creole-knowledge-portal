@@ -1245,6 +1245,7 @@ export default function CandidateAssessmentPage() {
     // there's no longer a 1-4s blocking window; transitions are instant.
     isCandidateTurn: stage === 'interview' && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
+    isHeadset: isHeadsetDevice,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     readingGracePeriodMs: 0,
     continuousVoiceMs: 10000,

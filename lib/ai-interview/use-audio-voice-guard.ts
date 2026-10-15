@@ -8,6 +8,7 @@ export interface VoiceGuardOptions {
   isAiSpeaking: boolean;
   isCandidateTurn: boolean;
   isCandidateMouthMoving?: boolean;
+  isHeadset?: boolean;
   onUnauthorizedVoiceDetected: (info: { reason: string; confidence: number; durationMs?: number }) => void;
   takeSnapshot?: () => Promise<string | null>;
   readingGracePeriodMs?: number;
@@ -29,6 +30,7 @@ export function useAudioVoiceGuard({
   isAiSpeaking,
   isCandidateTurn,
   isCandidateMouthMoving,
+  isHeadset = false,
   onUnauthorizedVoiceDetected,
   takeSnapshot,
   readingGracePeriodMs = 0,
@@ -46,10 +48,15 @@ export function useAudioVoiceGuard({
   const isAiSpeakingRef = useRef<boolean>(isAiSpeaking);
   const isCandidateTurnRef = useRef<boolean>(isCandidateTurn);
   const isCandidateMouthMovingRef = useRef<boolean>(isCandidateMouthMoving ?? false);
+  const isHeadsetRef = useRef<boolean>(isHeadset ?? false);
   const candidateTurnStartedAtRef = useRef<number>(0);
   const readingGracePeriodMsRef = useRef<number>(readingGracePeriodMs);
   const continuousVoiceMsRef = useRef<number>(continuousVoiceMs);
   const cooldownMsRef = useRef<number>(cooldownMs);
+
+  useEffect(() => {
+    isHeadsetRef.current = isHeadset ?? false;
+  }, [isHeadset]);
 
   useEffect(() => {
     isAiSpeakingRef.current = isAiSpeaking;
@@ -163,6 +170,7 @@ export function useAudioVoiceGuard({
       const recentTypingTimestamps: number[] = [];
       const recentPenClickTimestamps: number[] = [];
       let consecutivePenWritingFrames = 0;
+      let lastCandidateSpeechTime = 0;
       let frameCount = 0;
 
       const checkAudio = () => {
@@ -256,6 +264,7 @@ export function useAudioVoiceGuard({
         } else if (isCandidateTurnRef.current) {
           // Track candidate's own speech level when mouth is moving
           if (isCandidateMouthMovingRef.current && avgSpeechEnergy > 20) {
+            lastCandidateSpeechTime = nowMs;
             actualSpeakerEnergyRef.current = actualSpeakerEnergyRef.current * 0.92 + avgSpeechEnergy * 0.08;
             if (actualSpeakerEnergyRef.current < 35) {
               actualSpeakerEnergyRef.current = 35;
@@ -283,8 +292,22 @@ export function useAudioVoiceGuard({
 
           // ── MUSIC DETECTION ────────────────────────────────────────────────
           // High harmonic tonality (tonality ratio >= 2.8) and sustained energy
-          const isMusic = avgMusicEnergy >= 38 && musicTonality >= 2.8 && !isReadingGracePeriod;
-          if (isMusic) {
+          // When Bluetooth is connected and candidate is speaking, suppress false internal sound triggers
+          // caused by Bluetooth hands-free codec bandwidth cutoff and vocal resonance peaks.
+          const isSpeakingOnBluetooth =
+            isHeadsetRef.current &&
+            (isCandidateMouthMovingRef.current || (lastCandidateSpeechTime > 0 && nowMs - lastCandidateSpeechTime < 1500)) &&
+            avgSpeechEnergy >= 30;
+
+          const isMusic =
+            !isSpeakingOnBluetooth &&
+            avgMusicEnergy >= 38 &&
+            musicTonality >= 2.8 &&
+            !isReadingGracePeriod;
+
+          if (isSpeakingOnBluetooth) {
+            consecutiveMusicFrames = 0;
+          } else if (isMusic) {
             consecutiveMusicFrames++;
             if (consecutiveMusicFrames >= 30) {
               consecutiveMusicFrames = 0;
@@ -392,7 +415,12 @@ export function useAudioVoiceGuard({
           // ── AI / SYNTHETIC VOICE DETECTION ─────────────────────────────────
           // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 1.8) while speech energy is clearly active (avg >= 65, peak >= 75).
           // Steady ambient background drone, laptop fans, or mic hiss (< 60) are strictly filtered out.
-          const isAiVoice = avgSpeechEnergy >= 65 && peakEnergy >= 75 && avgFlux < 1.8 && frameCount > 15;
+          const isAiVoice =
+            !isSpeakingOnBluetooth &&
+            avgSpeechEnergy >= 65 &&
+            peakEnergy >= 75 &&
+            avgFlux < 1.8 &&
+            frameCount > 15;
 
           // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
           // Environmental silence, fan drone, distant road traffic, and door/window thuds are strictly filtered out.

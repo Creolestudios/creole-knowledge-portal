@@ -1684,6 +1684,7 @@ export default function InterviewEntryPage() {
     isAiSpeaking: false,
     isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
+    isHeadset: isHeadsetDevice,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     readingGracePeriodMs: 0,
     continuousVoiceMs: 10000,

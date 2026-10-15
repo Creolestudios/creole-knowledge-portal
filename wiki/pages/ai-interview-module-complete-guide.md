@@ -149,6 +149,7 @@ Continuous acoustic frequency analysis using Web Audio API across the speech ban
 4. **Internal Sound / Music & Keyboard Detection**:
    - High harmonic tonality across music/media playback bands triggers:
      > **`"Internal sound / music detected. Please stop all media playback."`**
+   - **Bluetooth Speech Isolation**: When a Bluetooth headset is connected (`isHeadset: true`) and the candidate is speaking (`isCandidateMouthMoving` or recent active speech within 1.5s), false internal sound / music triggers caused by Bluetooth codec truncation and vocal resonance peaks are suppressed (`consecutiveMusicFrames = 0`). In-device sound / music remains strictly detected when the candidate is not speaking or media playback is active.
    - Sharp transient high-frequency clusters trigger `"Keyboard typing sounds detected."`.
 5. **Noise Filtering & Candidate Answer Preservation**:
    - Mild environmental noise, quiet room tone, and low-level ambient hiss (< 35 energy) are safely ignored.
