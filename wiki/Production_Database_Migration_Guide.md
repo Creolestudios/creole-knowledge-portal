@@ -34,7 +34,7 @@ There are two ways to apply all migrations to your new Supabase project:
 
 #### Option A: Supabase CLI (Recommended & Automated)
 
-The repository already contains 20 sequential migrations in `supabase/migrations/`.
+The repository contains 24 sequential migrations in `supabase/migrations/`.
 
 1. **Install or use Supabase CLI via `npx`**:
    ```bash
@@ -51,7 +51,7 @@ The repository already contains 20 sequential migrations in `supabase/migrations
    ```bash
    npx supabase db push
    ```
-   This command applies all 20 migration files in chronological order and maintains the migration tracking table automatically.
+   This command applies all 24 migration files in chronological order and maintains the migration tracking table automatically.
 
 ---
 
@@ -62,28 +62,32 @@ If you do not have CLI access, run the scripts directly in the Supabase Web Dash
 1. Go to **Supabase Dashboard** → **SQL Editor** → **New query**.
 2. **First**, run the baseline schema file located at:
    - [`supabase_migrations.sql`](file:///c:/Users/juzar/creole-knowledge-portal/supabase_migrations.sql)
-     *(Creates extensions, gamification schema, user activity tables, streaks, and badges).*
-3. **Next**, run the SQL files from [`supabase/migrations/`](file:///c:/Users/juzar/creole-knowledge-portal/supabase/migrations/) in sequential timestamp order:
-   1. `20260524000000_daily_activity_tracker.sql`
-   2. `20260613000000_create_quiz_tables.sql`
-   3. `20260613120000_blog_roulette.sql`
-   4. `20260616120000_blog_roulette_storage.sql`
-   5. `20260623120000_blog_roulette_leaderboard.sql`
-   6. `20260704120000_blog_roulette_drive_link.sql`
-   7. `20260817000000_alter_quiz_attempts.sql`
-   8. `20260825000000_add_match_percentage.sql`
-   9. `20260825000001_create_user_activity.sql`
-   10. `20260907120000_create_quiz_proctor_storage.sql`
-   11. `20260911000000_create_ai_interviews.sql`
-   12. `20260914000000_add_ai_interview_terminated_status.sql`
-   13. `20260917000000_create_ai_interview_question_system.sql`
-   14. `20260918000000_create_interview_events.sql`
-   15. `20260918120000_create_interview_invites_and_events.sql`
-   16. `20260921000000_add_custom_interview_questions.sql`
-   17. `20260921111407_add_termination_reason_to_interview_sessions.sql`
-   18. `20260922000000_create_interview_answer_audio.sql`
-   19. `20260923000000_fix_interview_events_and_warnings.sql`
-   20. `20260924000000_interview_transcript_and_scoring.sql`
+     *(Creates extensions, core user profiles, blogs, gamification schema, user activity tables, streaks, badges, and interview tables).*
+3. **Alternatively**, run the individual SQL files from [`supabase/migrations/`](file:///c:/Users/juzar/creole-knowledge-portal/supabase/migrations/) in sequential timestamp order:
+   1. `20260501000000_create_user_profiles.sql` (Creates `user_profiles` table, RLS, and auth trigger)
+   2. `20260501000001_create_blog_sources.sql` (Creates `blog_sources` table for crawling feeds)
+   3. `20260501000002_create_blogs.sql` (Creates `blogs` table for synthesized briefings and articles)
+   4. `20260524000000_daily_activity_tracker.sql` (Creates gamification, streaks, badges, leaderboard)
+   5. `20260613000000_create_quiz_tables.sql` (Creates `quiz_questions`, `quiz_attempts`, `quiz_answers`)
+   6. `20260613120000_blog_roulette.sql` (Creates `roulette_blogs`, `roulette_seo_keywords`, etc.)
+   7. `20260616120000_blog_roulette_storage.sql` (Configures blog-roulette storage bucket)
+   8. `20260623120000_blog_roulette_leaderboard.sql` (Creates `roulette_leaderboard`)
+   9. `20260704120000_blog_roulette_drive_link.sql` (Adds Drive link columns to `roulette_blogs`)
+   10. `20260817000000_alter_quiz_attempts.sql` (Adds attempt numbering & best attempt flag)
+   11. `20260825000000_add_match_percentage.sql` (Adds `match_percentage` to `quiz_questions`)
+   12. `20260825000001_create_user_activity.sql` (Idempotent `user_activity_logs`)
+   13. `20260907120000_create_quiz_proctor_storage.sql` (Creates `quiz_proctor_events`, `quiz_proctor_media`)
+   14. `20260911000000_create_ai_interviews.sql` (Creates `ai_interviews`)
+   15. `20260914000000_add_ai_interview_terminated_status.sql` (Adds termination status to `ai_interviews`)
+   16. `20260917000000_create_ai_interview_question_system.sql` (Creates `interview_sessions`, `hr_question_bank`, etc.)
+   17. `20260918000000_create_interview_events.sql` (Creates `interview_events`)
+   18. `20260918120000_create_interview_invites_and_events.sql` (Creates `interview_invites`)
+   19. `20260921000000_add_custom_interview_questions.sql` (Adds custom questions to `interview_sessions`)
+   20. `20260921111407_add_termination_reason_to_interview_sessions.sql` (Adds `termination_reason`)
+   21. `20260922000000_create_interview_answer_audio.sql` (Adds audio storage path to `interview_answers`)
+   22. `20260923000000_fix_interview_events_and_warnings.sql` (Fixes interview warning and event triggers)
+   23. `20260923230000_create_interview_reports.sql` (Creates `interview_reports`)
+   24. `20260924000000_interview_transcript_and_scoring.sql` (Creates transcripts, turn metrics, scoring columns)
 
 ---
 

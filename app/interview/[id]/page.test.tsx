@@ -247,6 +247,42 @@ describe('InterviewEntryPage', () => {
     expect(stop).toHaveBeenCalled();
   });
 
+  it('rejects screen share when system audio is not shared', async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ requiresAccessCode: true }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ verified: true, interviewId: 'interview-1' }),
+    }).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({
+        session: { duration_minutes: 30 },
+        questions: [{ id: 'q1', question_text: 'Tell us about yourself.', category: 'hr', question_order: 1 }],
+      }),
+    }) as any;
+
+    const stop = vi.fn();
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [], getVideoTracks: () => [], getAudioTracks: () => [] });
+    const getDisplayMedia = vi.fn().mockResolvedValue({
+      getVideoTracks: () => [{ getSettings: () => ({ displaySurface: 'monitor' }) }],
+      getAudioTracks: () => [], // No audio shared!
+      getTracks: () => [{ stop }],
+    });
+    Object.defineProperty(global.navigator, 'mediaDevices', {
+      value: { getUserMedia, getDisplayMedia },
+      configurable: true,
+    });
+
+    await verifyPasscode();
+    fireEvent.click(screen.getByText('Allow & Start Interview'));
+
+    expect(
+      await screen.findByText('System audio sharing is required. Please check "Share audio" when selecting your entire screen.'),
+    ).toBeInTheDocument();
+    expect(stop).toHaveBeenCalled();
+  });
+
   it('shows an error when permissions are denied', async () => {
     global.fetch = vi.fn().mockResolvedValueOnce({
       ok: true,

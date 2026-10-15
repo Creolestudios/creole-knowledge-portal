@@ -147,9 +147,10 @@ Continuous acoustic frequency analysis using Web Audio API across the speech ban
    - Enforces a **10-second break** (`cooldownMs = 10000ms`) after any warning is issued.
    - If background voice continues to be heard after the 10-second break, the second warning is triggered.
 4. **Internal Sound / Music & Keyboard Detection**:
-   - High harmonic tonality across music/media playback bands triggers:
+   - **Device System Audio Isolation**: The warning:
      > **`"Internal sound / music detected. Please stop all media playback."`**
-   - **Bluetooth Speech Isolation**: When a Bluetooth headset is connected (`isHeadset: true`) and the candidate is speaking (`isCandidateMouthMoving` or recent active speech within 1.5s), false internal sound / music triggers caused by Bluetooth codec truncation and vocal resonance peaks are suppressed (`consecutiveMusicFrames = 0`). In-device sound / music remains strictly detected when the candidate is not speaking or media playback is active.
+     is strictly triggered by active digital audio on the candidate's device (`systemAudioStream` from screen sharing).
+   - **Room Acoustic Sound Isolation**: The candidate's physical microphone will never trigger this warning for ambient room music, ensuring candidates are never falsely penalized for background room sound. Room music presence is solely used to suppress false typing alarms.
    - Sharp transient high-frequency clusters trigger `"Keyboard typing sounds detected."`.
 5. **Noise Filtering & Candidate Answer Preservation**:
    - Mild environmental noise, quiet room tone, and low-level ambient hiss (< 35 energy) are safely ignored.

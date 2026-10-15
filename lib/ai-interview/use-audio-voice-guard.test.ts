@@ -327,63 +327,24 @@ describe('useAudioVoiceGuard', () => {
     expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
   });
 
-  it('triggers warning when background music is detected', () => {
+  it('does NOT trigger internal sound warning for acoustic room music on microphone stream', () => {
     const onUnauthorizedVoiceDetected = vi.fn();
 
-    // High harmonic tonality across musical band (bins 5 to 65) with sustained peak
+    // High harmonic tonality across musical band (bins 5 to 65) with sustained peak in room mic
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
       for (let i = 5; i < 65; i++) {
         arr[i] = 38;
       }
-      arr[25] = 120; // High tonality peak (120 / ~39 > 3.0)
+      arr[25] = 120; // High tonality peak
     });
 
     renderHook(() =>
       useAudioVoiceGuard({
-        interviewId: 'test-8',
+        interviewId: 'test-room-music-only',
         stream: fakeStream,
         isAiSpeaking: false,
         isCandidateTurn: true,
         isCandidateMouthMoving: false,
-        readingGracePeriodMs: 0,
-        onUnauthorizedVoiceDetected,
-      })
-    );
-
-    for (let f = 0; f < 45; f++) {
-      if (rafCallback) {
-        const cb = rafCallback;
-        rafCallback = null;
-        cb(performance.now());
-      }
-    }
-
-    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: 'Internal sound / music detected. Please stop all media playback.',
-      })
-    );
-  });
-
-  it('does NOT trigger internal sound warning when Bluetooth is on and candidate is speaking', () => {
-    const onUnauthorizedVoiceDetected = vi.fn();
-
-    // High harmonic tonality from compressed speech vocal resonance on Bluetooth
-    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
-      for (let i = 5; i < 35; i++) {
-        arr[i] = 42;
-      }
-      arr[12] = 140; // Vocal formant peak
-    });
-
-    renderHook(() =>
-      useAudioVoiceGuard({
-        interviewId: 'test-bt-speaking',
-        stream: fakeStream,
-        isAiSpeaking: false,
-        isCandidateTurn: true,
-        isCandidateMouthMoving: true,
-        isHeadset: true,
         readingGracePeriodMs: 0,
         onUnauthorizedVoiceDetected,
       })
@@ -404,21 +365,62 @@ describe('useAudioVoiceGuard', () => {
     );
   });
 
-  it('triggers internal sound warning when Bluetooth is on but candidate is NOT speaking and media is playing', () => {
+  it('triggers internal sound warning when device audio playback is detected on systemAudioStream', () => {
     const onUnauthorizedVoiceDetected = vi.fn();
 
-    // High harmonic tonality across musical band with candidate silent
     mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
-      for (let i = 5; i < 65; i++) {
-        arr[i] = 38;
-      }
-      arr[25] = 120;
+      // System audio track active media playback
+      arr.fill(32);
     });
+
+    const fakeSysStream = {
+      getAudioTracks: () => [{ kind: 'audio', readyState: 'live' }],
+    } as unknown as MediaStream;
 
     renderHook(() =>
       useAudioVoiceGuard({
-        interviewId: 'test-bt-silent-music',
+        interviewId: 'test-device-media',
         stream: fakeStream,
+        systemAudioStream: fakeSysStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 35; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Internal sound / music detected. Please stop all media playback.',
+      })
+    );
+  });
+
+  it('triggers internal sound warning on systemAudioStream even when Bluetooth headset is active', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      arr.fill(28);
+    });
+
+    const fakeSysStream = {
+      getAudioTracks: () => [{ kind: 'audio', readyState: 'live' }],
+    } as unknown as MediaStream;
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-device-media-bluetooth',
+        stream: fakeStream,
+        systemAudioStream: fakeSysStream,
         isAiSpeaking: false,
         isCandidateTurn: true,
         isCandidateMouthMoving: false,
@@ -428,7 +430,7 @@ describe('useAudioVoiceGuard', () => {
       })
     );
 
-    for (let f = 0; f < 45; f++) {
+    for (let f = 0; f < 35; f++) {
       if (rafCallback) {
         const cb = rafCallback;
         rafCallback = null;

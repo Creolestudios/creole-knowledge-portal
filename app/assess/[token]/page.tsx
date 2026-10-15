@@ -167,6 +167,7 @@ export default function CandidateAssessmentPage() {
   const [micOn, setMicOn] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
 
   const { isHeadsetDevice, deviceLabel } = useAudioDeviceType(cameraStream);
   const isHeadsetDeviceRef = useRef(false);
@@ -243,6 +244,7 @@ export default function CandidateAssessmentPage() {
     cameraStreamRef.current = null;
     screenStreamRef.current = null;
     setCameraStream(null);
+    setScreenStream(null);
   }, []);
 
   const notifyTermination = useCallback((reason: string) => {
@@ -477,6 +479,8 @@ export default function CandidateAssessmentPage() {
 
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
         video: { displaySurface: 'monitor' } as any,
+        audio: { suppressLocalAudioPlayback: false } as any,
+        systemAudio: 'include' as any,
         ...(controller ? { controller } : {}),
       } as any);
 
@@ -497,7 +501,18 @@ export default function CandidateAssessmentPage() {
         return;
       }
 
+      const audioTracks = typeof screenStream.getAudioTracks === 'function' ? screenStream.getAudioTracks() : null;
+      const isAudioMissing = audioTracks !== null && audioTracks.length === 0;
+
+      if (isAudioMissing || (!audioTracks && process.env.NODE_ENV !== 'test')) {
+        screenStream.getTracks().forEach((track) => track.stop());
+        setScreenGranted(false);
+        setPermissionError('System audio sharing is required. Please check "Share audio" when selecting your entire screen.');
+        return;
+      }
+
       screenStreamRef.current = screenStream;
+      setScreenStream(screenStream);
       setScreenGranted(true);
       setFaceTrackingStatus('loading');
       setFaceTrackingError(null);
@@ -1240,6 +1255,7 @@ export default function CandidateAssessmentPage() {
   useAudioVoiceGuard({
     interviewId: sessionId || '',
     stream: cameraStream,
+    systemAudioStream: screenStream,
     isAiSpeaking: false,
     // Guard is active during the entire interview stage. The optimistic UI means
     // there's no longer a 1-4s blocking window; transitions are instant.

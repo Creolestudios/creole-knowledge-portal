@@ -13,7 +13,7 @@ import {
 
 const INSTRUCTIONS = [
   'Find a quiet, well-lit room and sit facing your camera directly for the full duration of the interview.',
-  'Keep your webcam, microphone, and entire screen-share on at all times — the session cannot continue if any is turned off.',
+  'Keep your webcam, microphone, and entire screen-share (with system audio enabled) on at all times — the session cannot continue if any is turned off.',
   'Do not switch tabs, minimize the window, or open other applications during the assessment.',
   'Ensure a stable internet connection before you begin; the session cannot be paused once started.',
   'Answer every question yourself in your own voice — external help, notes, or additional devices are strictly prohibited.',
@@ -180,7 +180,7 @@ export function ProctoringInstructions({
             <div className="flex items-center justify-between text-xs sm:text-sm text-zinc-700 dark:text-[#d9d9d9]">
               <span className="flex items-center space-x-2.5">
                 <MonitorUp className="w-4 h-4 text-zinc-500" />
-                <span className="font-medium">Entire screen share</span>
+                <span className="font-medium">Entire screen share (with system audio)</span>
               </span>
               {screenGranted ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-bold">

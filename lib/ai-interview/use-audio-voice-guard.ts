@@ -5,6 +5,7 @@ import { useEffect, useRef, useCallback } from 'react';
 export interface VoiceGuardOptions {
   interviewId: string;
   stream: MediaStream | null;
+  systemAudioStream?: MediaStream | null;
   isAiSpeaking: boolean;
   isCandidateTurn: boolean;
   isCandidateMouthMoving?: boolean;
@@ -27,6 +28,7 @@ export interface VoiceGuardOptions {
 export function useAudioVoiceGuard({
   interviewId,
   stream,
+  systemAudioStream,
   isAiSpeaking,
   isCandidateTurn,
   isCandidateMouthMoving,
@@ -290,10 +292,11 @@ export function useAudioVoiceGuard({
             nowMs >= candidateTurnStartedAtRef.current &&
             nowMs - candidateTurnStartedAtRef.current < readingGracePeriodMsRef.current;
 
-          // ── MUSIC DETECTION ────────────────────────────────────────────────
-          // High harmonic tonality (tonality ratio >= 2.8) and sustained energy
-          // When Bluetooth is connected and candidate is speaking, suppress false internal sound triggers
-          // caused by Bluetooth hands-free codec bandwidth cutoff and vocal resonance peaks.
+          // ── MUSIC DETECTION & DISCRIMINATION ──────────────────────────────
+          // High harmonic tonality (tonality ratio >= 2.8) and sustained energy.
+          // Note: In-device sound warnings are strictly triggered by digital systemAudioStream.
+          // The room microphone only tracks music presence to suppress keyboard typing false-positives
+          // and prevent background music from interfering with legitimate candidate speech.
           const isSpeakingOnBluetooth =
             isHeadsetRef.current &&
             (isCandidateMouthMovingRef.current || (lastCandidateSpeechTime > 0 && nowMs - lastCandidateSpeechTime < 1500)) &&
@@ -309,11 +312,6 @@ export function useAudioVoiceGuard({
             consecutiveMusicFrames = 0;
           } else if (isMusic) {
             consecutiveMusicFrames++;
-            if (consecutiveMusicFrames >= 30) {
-              consecutiveMusicFrames = 0;
-              const confidence = Math.min(0.92, 0.75 + (avgMusicEnergy / 255) * 0.2);
-              triggerVoiceWarning('Internal sound / music detected. Please stop all media playback.', confidence);
-            }
           } else {
             consecutiveMusicFrames = Math.max(0, consecutiveMusicFrames - 1);
           }
@@ -528,6 +526,116 @@ export function useAudioVoiceGuard({
       }
     };
   }, [stream, triggerVoiceWarning]);
+
+  // ── DEVICE SYSTEM AUDIO MONITORING ─────────────────────────────────────────
+  // When the candidate shares system audio via screen share, monitor the direct
+  // digital device audio track. If active audio output (Spotify, YouTube, video,
+  // media playback) is detected originating from the device, trigger the in-device sound warning.
+  useEffect(() => {
+    if (!systemAudioStream || typeof systemAudioStream.getAudioTracks !== 'function') return;
+    const audioTracks = systemAudioStream.getAudioTracks();
+    if (!audioTracks || !audioTracks.length) return;
+    const sysTrack = audioTracks[0];
+    if (!sysTrack || sysTrack.readyState === 'ended') return;
+
+    let sysAudioCtx: AudioContext | null = null;
+    let sysAnalyser: AnalyserNode | null = null;
+    let sysSource: MediaStreamAudioSourceNode | null = null;
+    let animId: number | null = null;
+
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+
+      sysAudioCtx = new AudioCtx();
+      if (sysAudioCtx.state === 'suspended') {
+        sysAudioCtx.resume().catch(() => {});
+      }
+
+      sysAnalyser = sysAudioCtx.createAnalyser();
+      sysAnalyser.fftSize = 256;
+      sysAnalyser.smoothingTimeConstant = 0.6;
+
+      sysSource = sysAudioCtx.createMediaStreamSource(systemAudioStream);
+      sysSource.connect(sysAnalyser);
+
+      const bufferLength = sysAnalyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+      let consecutiveSysAudioFrames = 0;
+
+      const checkSystemAudio = () => {
+        if (!sysAnalyser) return;
+        sysAnalyser.getByteFrequencyData(dataArray);
+        const nowMs = Date.now();
+
+        let energySum = 0;
+        let peakEnergy = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          const val = dataArray[i];
+          energySum += val;
+          if (val > peakEnergy) peakEnergy = val;
+        }
+        const avgEnergy = energySum / bufferLength;
+
+        const cooldown = cooldownMsRef.current ?? 10000;
+        const isCooldownOrAiSpeaking =
+          isAiSpeakingRef.current ||
+          (lastWarningTimeRef.current > 0 && nowMs - lastWarningTimeRef.current < cooldown);
+
+        if (isCooldownOrAiSpeaking) {
+          consecutiveSysAudioFrames = 0;
+        } else if (isCandidateTurnRef.current) {
+          // System audio stream is completely silent when nothing is playing on device.
+          // Non-zero sustained sound pressure indicates media playback on device.
+          if (avgEnergy >= 16 || peakEnergy >= 30) {
+            consecutiveSysAudioFrames++;
+            if (consecutiveSysAudioFrames >= 20) {
+              consecutiveSysAudioFrames = 0;
+              const confidence = Math.min(0.95, 0.8 + (avgEnergy / 255) * 0.15);
+              triggerVoiceWarning(
+                'Internal sound / music detected. Please stop all media playback.',
+                confidence
+              );
+            }
+          } else {
+            consecutiveSysAudioFrames = Math.max(0, consecutiveSysAudioFrames - 1);
+          }
+        }
+
+        animId = requestAnimationFrame(checkSystemAudio);
+      };
+
+      animId = requestAnimationFrame(checkSystemAudio);
+
+      return () => {
+        if (animId) cancelAnimationFrame(animId);
+        try {
+          if (sysSource) sysSource.disconnect();
+          if (sysAudioCtx && sysAudioCtx.state !== 'closed') {
+            sysAudioCtx.close().catch(() => {});
+          }
+        } catch {
+          // ignore cleanup errors
+        }
+      };
+    } catch (err) {
+      console.warn('[voice-guard] System audio initialization failed:', err);
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+      try {
+        if (sysSource) sysSource.disconnect();
+        if (sysAudioCtx && sysAudioCtx.state !== 'closed') {
+          sysAudioCtx.close().catch(() => {});
+        }
+      } catch {
+        // ignore cleanup errors
+      }
+    };
+  }, [systemAudioStream, triggerVoiceWarning]);
 
   return {
     isAiSpeakingRef,

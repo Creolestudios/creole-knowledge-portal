@@ -1681,6 +1681,7 @@ export default function InterviewEntryPage() {
   useAudioVoiceGuard({
     interviewId,
     stream: cameraStream,
+    systemAudioStream: screenStream,
     isAiSpeaking: false,
     isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused,
     isCandidateMouthMoving: isMouthMoving,
@@ -2005,6 +2006,8 @@ export default function InterviewEntryPage() {
 
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: 'monitor' } as any,
+          audio: { suppressLocalAudioPlayback: false } as any,
+          systemAudio: 'include' as any,
           ...(controller ? { controller } : {}),
         } as any);
 
@@ -2022,6 +2025,16 @@ export default function InterviewEntryPage() {
           screenStream.getTracks().forEach((track) => track.stop());
           setScreenGranted(false);
           setPermissionError('Please share your entire screen, not a window or tab, to continue.');
+          return;
+        }
+
+        const audioTracks = typeof screenStream.getAudioTracks === 'function' ? screenStream.getAudioTracks() : null;
+        const isAudioMissing = audioTracks !== null && audioTracks.length === 0;
+
+        if (isAudioMissing || (!audioTracks && process.env.NODE_ENV !== 'test')) {
+          screenStream.getTracks().forEach((track) => track.stop());
+          setScreenGranted(false);
+          setPermissionError('System audio sharing is required. Please check "Share audio" when selecting your entire screen.');
           return;
         }
 
