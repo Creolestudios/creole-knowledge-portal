@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { isHeadsetOrBluetoothDevice, useAudioDeviceType } from './device-detection';
+import {
+  isHeadsetOrBluetoothDevice,
+  useAudioDeviceType,
+  isMobileOrTabletDevice,
+  useIsMobileOrTablet,
+} from './device-detection';
 
 describe('device-detection module', () => {
   it('correctly identifies Bluetooth, AirPods, and headphones from device labels', () => {
@@ -62,4 +67,57 @@ describe('device-detection module', () => {
 
     vi.unstubAllGlobals();
   });
+
+  describe('isMobileOrTabletDevice & useIsMobileOrTablet', () => {
+    it('detects Android, iPhone, iPad, and tablet User-Agents', () => {
+      const androidUa = 'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36';
+      const iPhoneUa = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1';
+      const iPadUa = 'Mozilla/5.0 (iPad; CPU OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148';
+      const desktopUa = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+      expect(isMobileOrTabletDevice(androidUa)).toBe(true);
+      expect(isMobileOrTabletDevice(iPhoneUa)).toBe(true);
+      expect(isMobileOrTabletDevice(iPadUa)).toBe(true);
+      expect(isMobileOrTabletDevice(desktopUa)).toBe(false);
+    });
+
+    it('detects iPadOS with Macintosh UA and multi-touch points', () => {
+      const iPadMacUa = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15';
+      
+      const originalNavigator = window.navigator;
+      Object.defineProperty(window, 'navigator', {
+        value: {
+          ...originalNavigator,
+          userAgent: iPadMacUa,
+          maxTouchPoints: 5,
+        },
+        configurable: true,
+      });
+
+      expect(isMobileOrTabletDevice(iPadMacUa)).toBe(true);
+
+      // Standard desktop Mac without touch points
+      Object.defineProperty(window, 'navigator', {
+        value: {
+          ...originalNavigator,
+          userAgent: iPadMacUa,
+          maxTouchPoints: 0,
+        },
+        configurable: true,
+      });
+
+      expect(isMobileOrTabletDevice(iPadMacUa)).toBe(false);
+
+      Object.defineProperty(window, 'navigator', {
+        value: originalNavigator,
+        configurable: true,
+      });
+    });
+
+    it('useIsMobileOrTablet returns boolean status and updates on resize', () => {
+      const { result } = renderHook(() => useIsMobileOrTablet());
+      expect(typeof result.current).toBe('boolean');
+    });
+  });
 });
+

@@ -27,7 +27,7 @@ import {
   ExtendedFaceTrackingResult,
 } from '@/lib/ai-interview/face-tracking';
 import { OBJECT_RULES, isHeadphoneObject, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
-import { useAudioDeviceType } from '@/lib/ai-interview/device-detection';
+import { useAudioDeviceType, useIsMobileOrTablet } from '@/lib/ai-interview/device-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
@@ -48,6 +48,7 @@ interface AssessQuestion {
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
+import { DesktopOnlyWarning } from '@/components/ai-interview/desktop-only-warning';
 
 export default function CandidateAssessmentPage() {
   const params = useParams();
@@ -169,6 +170,7 @@ export default function CandidateAssessmentPage() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
 
+  const isMobileOrTablet = useIsMobileOrTablet();
   const { isHeadsetDevice, deviceLabel } = useAudioDeviceType(cameraStream);
   const isHeadsetDeviceRef = useRef(false);
   useEffect(() => {
@@ -1474,6 +1476,10 @@ export default function CandidateAssessmentPage() {
         </div>
       </main>
     );
+  }
+
+  if (isMobileOrTablet) {
+    return <DesktopOnlyWarning />;
   }
 
   if (stage === 'expired') {

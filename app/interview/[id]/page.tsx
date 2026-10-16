@@ -28,7 +28,7 @@ import { MeetingControlBar } from '@/components/ai-interview/meeting-control-bar
 import { DeviceSettingsPanel } from '@/components/ai-interview/device-settings-panel';
 import { useProctoringWatchdog } from '@/lib/ai-interview/use-proctoring-watchdog';
 import { OBJECT_RULES, isHeadphoneObject, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
-import { useAudioDeviceType } from '@/lib/ai-interview/device-detection';
+import { useAudioDeviceType, useIsMobileOrTablet } from '@/lib/ai-interview/device-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 
 type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated' | 'expired' | 'not_started';
@@ -54,6 +54,7 @@ export type CandidateWarning = {
 import { ProctoringInstructions } from '@/components/ai-interview/proctoring-instructions';
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
+import { DesktopOnlyWarning } from '@/components/ai-interview/desktop-only-warning';
 import { HighlightedVerbatimAnswer } from '@/components/ai-interview/highlighted-verbatim-answer';
 import { createClient } from '@/lib/supabase/client';
 import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
@@ -650,8 +651,10 @@ export default function InterviewEntryPage() {
               map.set(incomingWarning.count, incomingWarning);
               return Array.from(map.values()).sort((a, b) => a.count - b.count);
             });
-            setIsInterviewPaused(true);
-            isInterviewPausedRef.current = true;
+            if (!bypassProctoring) {
+              setIsInterviewPaused(true);
+              isInterviewPausedRef.current = true;
+            }
             setLiveEvents((prev) => [
               {
                 id: `${Date.now()}-${Math.random()}`,
@@ -905,6 +908,7 @@ export default function InterviewEntryPage() {
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
 
+  const isMobileOrTablet = useIsMobileOrTablet();
   const { isHeadsetDevice, deviceLabel } = useAudioDeviceType(cameraStream || cameraPreview);
   const isHeadsetDeviceRef = useRef(false);
   useEffect(() => {
@@ -1612,15 +1616,17 @@ export default function InterviewEntryPage() {
         voiceWarning,
       ];
       setCandidateWarnings(candidateWarningsRef.current);
-      setIsInterviewPaused(true);
-      isInterviewPausedRef.current = true;
+      if (!bypassProctoring) {
+        setIsInterviewPaused(true);
+        isInterviewPausedRef.current = true;
+        setWarningToast({
+          show: true,
+          count: trackerStatus.warningCount,
+          reason: trackerStatus.reason,
+        });
+      }
       const toastShownOffsetSec = getRecordingOffsetSeconds();
       const toastShownTs = Date.now();
-      setWarningToast({
-        show: true,
-        count: trackerStatus.warningCount,
-        reason: trackerStatus.reason,
-      });
 
       // Broadcast warning to admin monitoring channel immediately (same as face and object detection)
       if (!isAdmin) {
@@ -2434,15 +2440,17 @@ export default function InterviewEntryPage() {
             faceWarning,
           ];
           setCandidateWarnings(candidateWarningsRef.current);
-          setIsInterviewPaused(true);
-          isInterviewPausedRef.current = true;
+          if (!bypassProctoring) {
+            setIsInterviewPaused(true);
+            isInterviewPausedRef.current = true;
+            setWarningToast({
+              show: true,
+              count: trackerStatus.warningCount,
+              reason: trackerStatus.reason,
+            });
+          }
           const toastShownOffsetSec = getRecordingOffsetSeconds();
           const toastShownTs = Date.now();
-          setWarningToast({
-            show: true,
-            count: trackerStatus.warningCount,
-            reason: trackerStatus.reason,
-          });
 
           // Broadcast warning to admin monitoring channel immediately (same as object detection path)
           if (!isAdmin) {
@@ -2661,8 +2669,7 @@ export default function InterviewEntryPage() {
         );
 
         if (trackerStatus.shouldTriggerWarning) {
-          setIsInterviewPaused(true);
-          isInterviewPausedRef.current = true;
+
           console.warn(
             `%c[ObjectDetection] ⚠️ PROCTORING ALERT #${trackerStatus.warningCount}: ${trackerStatus.reason}`,
             'color: #dc2626; font-weight: bold; font-size: 14px; background: #fee2e2; padding: 4px; border-radius: 4px;',
@@ -2682,14 +2689,18 @@ export default function InterviewEntryPage() {
           ];
           setCandidateWarnings(candidateWarningsRef.current);
 
-          // 2. Direct show warning toast to user
+          // 2. Direct show warning toast to user (only if proctoring is not bypassed)
+          if (!bypassProctoring) {
+            setIsInterviewPaused(true);
+            isInterviewPausedRef.current = true;
+            setWarningToast({
+              show: true,
+              count: trackerStatus.warningCount,
+              reason: trackerStatus.reason,
+            });
+          }
           const toastShownOffsetSec = getRecordingOffsetSeconds();
           const toastShownTs = Date.now();
-          setWarningToast({
-            show: true,
-            count: trackerStatus.warningCount,
-            reason: trackerStatus.reason,
-          });
 
           // Also broadcast realtime sync for admin monitoring immediately
           if (!isAdmin) {
@@ -2957,6 +2968,10 @@ export default function InterviewEntryPage() {
         </div>
       </main>
     );
+  }
+
+  if (isMobileOrTablet && !isAdmin) {
+    return <DesktopOnlyWarning />;
   }
 
   if (stage === 'expired') {
@@ -3307,7 +3322,7 @@ export default function InterviewEntryPage() {
         )}
 
         {/* Full Screen Blur Overlay on Pause */}
-        {isInterviewPaused && (
+        {isInterviewPaused && !bypassProctoring && (
           <div
             className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md transition-all duration-300 pointer-events-auto"
             aria-hidden="true"
@@ -3324,7 +3339,7 @@ export default function InterviewEntryPage() {
         )}
 
         {/* Warning Toast Banner */}
-        {warningToast.show && (
+        {warningToast.show && !bypassProctoring && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
             <div
               className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border gap-4 ${warningToast.count >= 3 && !bypassProctoring
