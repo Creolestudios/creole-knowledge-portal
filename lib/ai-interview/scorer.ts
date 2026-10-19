@@ -97,6 +97,8 @@ export function classifyWarningCriticality(category: string, meta?: Record<strin
     cat === 'unauthorized_voice' ||
     cat === 'bg_voice' ||
     cat === 'background_voice' ||
+    cat === 'internal_device_audio' ||
+    cat === 'internal_audio' ||
     cat === 'multi_face' ||
     cat === 'tab_switch' ||
     cat === 'window_blur' ||
@@ -175,7 +177,14 @@ export async function scoreInterviewSession({ sessionId }: ScoreInterviewOptions
   const rawVoiceCount =
     session.voice_warning_count !== undefined && session.voice_warning_count !== null
       ? session.voice_warning_count
-      : warningsList.filter((w) => w.category === 'unauthorized_voice' || w.category === 'bg_voice' || w.category === 'background_voice').length;
+      : warningsList.filter(
+          (w) =>
+            w.category === 'unauthorized_voice' ||
+            w.category === 'bg_voice' ||
+            w.category === 'background_voice' ||
+            w.category === 'internal_device_audio' ||
+            w.category === 'internal_audio'
+        ).length;
   const rawFaceCount =
     session.face_warning_count !== undefined && session.face_warning_count !== null
       ? session.face_warning_count

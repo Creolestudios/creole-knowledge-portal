@@ -145,7 +145,7 @@ export async function POST(
       e.severity === 'critical' ||
       e.severity === 'error' ||
       e.event_type === 'proctoring_violation' ||
-      ['unauthorized_voice', 'bg_voice', 'background_voice', 'gaze_away', 'no_face', 'multi_face', 'cell_phone', 'object_detected', 'reading_suspected', 'tab_switched', 'tab_switch'].includes(e.category),
+      ['unauthorized_voice', 'bg_voice', 'background_voice', 'internal_device_audio', 'internal_audio', 'gaze_away', 'no_face', 'multi_face', 'cell_phone', 'object_detected', 'reading_suspected', 'tab_switched', 'tab_switch'].includes(e.category),
   );
 
   // Termination reason event if any

@@ -97,7 +97,7 @@ export function isRoomEnvironment(className: string): boolean {
 
 /**
  * Dynamic Object Rule generator for any detected object.
- * Every detected unauthorized object receives the standardized warning reason and 0ms immediate threshold.
+ * Every detected unauthorized object receives the standardized warning reason and 800ms sustained threshold.
  */
 export function getOrCreateObjectRule(className: string): ObjectRule {
   const normalized = className.toLowerCase().trim();
@@ -105,10 +105,11 @@ export function getOrCreateObjectRule(className: string): ObjectRule {
     category: 'object_detected',
     object: normalized,
     severity: 'warning',
-    thresholdMs: 0,
+    thresholdMs: 800,
     reason: GENERAL_UNAUTHORIZED_OBJECT_REASON,
   };
 }
+
 
 export const CHEATING_OBJECT_CLASSES = new Set<string>([
   'cell phone',
@@ -210,13 +211,13 @@ export function isHeadphoneObject(className: string): boolean {
  */
 export function filterTrackedObjects(
   detections: Array<{ class: string; score: number; bbox: [number, number, number, number] }>,
-  minConfidenceOrOptions: number | { minConfidence?: number; allowHeadphones?: boolean } = 0.22,
+  minConfidenceOrOptions: number | { minConfidence?: number; allowHeadphones?: boolean } = 0.28,
   legacyAllowHeadphones = false,
 ): DetectedObjectEvent[] {
   const minConfidence =
     typeof minConfidenceOrOptions === 'number'
       ? minConfidenceOrOptions
-      : (minConfidenceOrOptions.minConfidence ?? 0.22);
+      : (minConfidenceOrOptions.minConfidence ?? 0.28);
   const allowHeadphones =
     typeof minConfidenceOrOptions === 'object'
       ? Boolean(minConfidenceOrOptions.allowHeadphones)
@@ -247,7 +248,7 @@ export function filterTrackedObjects(
             category: 'object_detected',
             object: 'multiple_persons',
             severity: 'warning',
-            thresholdMs: 0,
+            thresholdMs: 500,
             reason:
               'Multiple persons detected in camera view. Please ensure that only you are present during the interview.',
           },

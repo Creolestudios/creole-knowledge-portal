@@ -405,13 +405,14 @@ export class ProctoringTimeTracker {
       return { shouldTriggerWarning: false, category: 'none', warningCount: 3, reason: '' };
     }
 
+    const defaultDebounce = this.bypassLimit ? 30000 : 5000;
     const {
       gazeAwayThresholdMs = 1500,
       readingThresholdMs = 3500,
       noFaceThresholdMs = 1500,
-      multiFaceThresholdMs = 0,
+      multiFaceThresholdMs = 500,
       framingThresholdMs = 2000,
-      debounceMs = 5000,
+      debounceMs = defaultDebounce,
       categoryBreakMs,
     } = options;
 
@@ -509,7 +510,7 @@ export class ProctoringTimeTracker {
     subKey: string,
     reason: string,
     thresholdMs: number,
-    debounceMs = 5000,
+    debounceMs?: number,
     nowMs: number = Date.now(),
     categoryBreakMs?: number,
   ): {
@@ -530,8 +531,9 @@ export class ProctoringTimeTracker {
 
     const elapsed = nowMs - (this.categoryStartTime.get(key) ?? nowMs);
 
+    const effectiveDebounce = debounceMs ?? (this.bypassLimit ? 30000 : 5000);
     const broadCategory = getBroadCategory(category);
-    const breakWindow = categoryBreakMs ?? debounceMs;
+    const breakWindow = categoryBreakMs ?? effectiveDebounce;
 
     // Check same-category break / cooldown
     const lastCategoryTrigger = this.lastCategoryWarningTime.get(broadCategory);
@@ -546,7 +548,7 @@ export class ProctoringTimeTracker {
       const lastTrigger = this.lastWarningTime.get(key);
       const timeSinceLast = lastTrigger === undefined ? Infinity : nowMs - lastTrigger;
 
-      if (timeSinceLast >= debounceMs) {
+      if (timeSinceLast >= effectiveDebounce) {
         if (!this.bypassLimit && this.warningCount >= 3) {
           return { shouldTriggerWarning: false, category, warningCount: 3, reason: '' };
         }

@@ -1550,14 +1550,16 @@ export default function InterviewEntryPage() {
     let voiceReason = info.reason;
     let subKey = 'voice';
     const reasonLower = info.reason.toLowerCase();
-    if (
+    const isInternalAudio =
       reasonLower.includes('music') ||
       reasonLower.includes('internal sound') ||
       reasonLower.includes('internal audio') ||
-      reasonLower.includes('media playback')
-    ) {
-      voiceReason = 'Internal sound / music detected. Please stop all media playback.';
-      subKey = 'music';
+      reasonLower.includes('internal device') ||
+      reasonLower.includes('media playback');
+
+    if (isInternalAudio) {
+      voiceReason = 'Internal device audio detected. Voice or media sound is playing from within the computer.';
+      subKey = 'internal_device_audio';
     } else if (info.reason.includes('pen')) {
       voiceReason = 'Pen clicking / writing sounds detected.';
       subKey = 'pen';
@@ -1575,13 +1577,16 @@ export default function InterviewEntryPage() {
       subKey = 'voice';
     }
 
+    const warnCategory = isInternalAudio ? 'internal_device_audio' : 'unauthorized_voice';
+
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
-      'unauthorized_voice',
+      warnCategory,
       subKey,
       voiceReason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
-      15000,
+      bypassProctoring ? 30000 : 15000,
       nowMs,
+      bypassProctoring ? 30000 : 15000,
     );
 
     if (trackerStatus.shouldTriggerWarning) {
@@ -1607,7 +1612,7 @@ export default function InterviewEntryPage() {
       const voiceWarning: CandidateWarning = {
         id: `${Date.now()}-${Math.random()}`,
         count: trackerStatus.warningCount,
-        category: 'unauthorized_voice',
+        category: warnCategory,
         reason: trackerStatus.reason,
         ts: Date.now(),
       };
@@ -1638,7 +1643,7 @@ export default function InterviewEntryPage() {
               type: 'warning-alert',
               count: trackerStatus.warningCount,
               reason: trackerStatus.reason,
-              category: 'unauthorized_voice',
+              category: warnCategory,
               ts: toastShownTs,
               warnings: candidateWarningsRef.current,
             },
@@ -1656,7 +1661,7 @@ export default function InterviewEntryPage() {
           keepalive: true,
           body: JSON.stringify({
             interviewId,
-            category: 'unauthorized_voice',
+            category: warnCategory,
             severity: 'warning',
             confidence: info.confidence,
             meta: {
@@ -2658,14 +2663,15 @@ export default function InterviewEntryPage() {
         seenSubKeys.add(subKey);
         missingFramesRef.current.set(subKey, 0);
 
-        // Immediately process unauthorized object upon detection
+        // Process unauthorized object detection with 30s cooldown during bypass mode
         const trackerStatus = proctorTrackerRef.current.processGenericEvent(
           rule.category,
           subKey,
           rule.reason,
           rule.thresholdMs,
-          5000, // 5s debounce between repeated warnings for same object
+          bypassProctoring ? 30000 : 5000,
           nowMs,
+          bypassProctoring ? 30000 : 5000,
         );
 
         if (trackerStatus.shouldTriggerWarning) {

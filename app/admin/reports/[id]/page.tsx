@@ -96,6 +96,8 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     'unauthorized_voice',
     'bg_voice',
     'background_voice',
+    'internal_device_audio',
+    'internal_audio',
     'gaze_away',
     'no_face',
     'multi_face',
@@ -128,7 +130,9 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
   });
 
   const voiceEvents = deduplicatedWarnEvents.filter((w) =>
-    ['unauthorized_voice', 'bg_voice', 'background_voice'].includes(w.category || w.event_type)
+    ['unauthorized_voice', 'bg_voice', 'background_voice', 'internal_device_audio', 'internal_audio'].includes(
+      w.category || w.event_type
+    )
   );
   const faceEvents = deduplicatedWarnEvents.filter((w) =>
     ['gaze_away', 'no_face', 'multi_face', 'reading_suspected'].includes(w.category || w.event_type)
@@ -418,8 +422,20 @@ export default async function AdminInterviewReportPage({ params }: PageProps) {
     let category: 'voice' | 'face' | 'object' | 'general' = 'general';
     let categoryLabel = 'Proctoring Violation';
     let reason = rawReason;
+    const reasonLower = rawReason.toLowerCase();
 
-    if (['unauthorized_voice', 'bg_voice', 'background_voice'].includes(cat)) {
+    if (
+      cat === 'internal_device_audio' ||
+      cat === 'internal_audio' ||
+      reasonLower.includes('internal sound') ||
+      reasonLower.includes('internal audio') ||
+      reasonLower.includes('internal device') ||
+      reasonLower.includes('media playback')
+    ) {
+      category = 'voice';
+      categoryLabel = 'Internal Device Audio / Voice Violation';
+      reason = rawReason || 'Internal device audio detected. Voice or media sound playing from within the computer.';
+    } else if (['unauthorized_voice', 'bg_voice', 'background_voice'].includes(cat)) {
       category = 'voice';
       categoryLabel = 'Background Audio / Voice Violation';
       reason = rawReason || 'Background voice or secondary speech detected in the room.';

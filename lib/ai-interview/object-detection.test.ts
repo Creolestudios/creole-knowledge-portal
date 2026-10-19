@@ -6,7 +6,7 @@ describe('object-detection module', () => {
   it('defines rules for key unauthorized proctoring objects dynamically', () => {
     expect(OBJECT_RULES['cell phone']).toBeDefined();
     expect(OBJECT_RULES['cell phone'].object).toBe('cell phone');
-    expect(OBJECT_RULES['cell phone'].thresholdMs).toBe(0);
+    expect(OBJECT_RULES['cell phone'].thresholdMs).toBe(800);
 
     expect(OBJECT_RULES.headphones).toBeDefined();
     expect(OBJECT_RULES.headphones.object).toBe('headphones');
@@ -138,24 +138,36 @@ describe('object-detection module', () => {
     expect(results[1].rule?.reason).toContain('Prohibited object detected');
   });
 
-  it('enforces thresholdMs === 0 for immediate proctoring alert triggers', () => {
+  it('enforces thresholdMs === 800 for sustained proctoring alert triggers', () => {
     for (const [key, rule] of Object.entries(OBJECT_RULES)) {
-      expect(rule.thresholdMs, `Expected ${key} thresholdMs to be 0 for instant warning`).toBe(0);
+      expect(rule.thresholdMs, `Expected ${key} thresholdMs to be 800 for sustained warning`).toBe(800);
     }
   });
 
-  it('triggers proctoring warning immediately on first detection frame with generalized reason', () => {
+  it('triggers proctoring warning after sustained presence with generalized reason', () => {
     const tracker = new ProctoringTimeTracker();
     const phoneRule = OBJECT_RULES['cell phone'];
     const now = Date.now();
 
+    // First frame (t = 0): starts sustained presence timer, does not fire yet
+    const initial = tracker.processGenericEvent(
+      phoneRule.category,
+      phoneRule.object,
+      phoneRule.reason,
+      phoneRule.thresholdMs, // 800ms
+      5000,
+      now,
+    );
+    expect(initial.shouldTriggerWarning).toBe(false);
+
+    // After 800ms sustained presence: fires warning
     const result = tracker.processGenericEvent(
       phoneRule.category,
       phoneRule.object,
       phoneRule.reason,
-      phoneRule.thresholdMs, // 0ms
+      phoneRule.thresholdMs, // 800ms
       5000,
-      now,
+      now + 800,
     );
 
     expect(result.shouldTriggerWarning).toBe(true);
@@ -165,26 +177,41 @@ describe('object-detection module', () => {
     );
   });
 
-  it('triggers on single frame immediately without requiring multiple consecutive frames', () => {
-    const rawDetections = [
+  it('filters out noisy detections below 0.28 confidence and fires on sustained valid detections', () => {
+    const noisyDetections = [
       { class: 'cell phone', score: 0.25, bbox: [50, 50, 100, 150] as [number, number, number, number] },
     ];
-    const filtered = filterTrackedObjects(rawDetections);
-    expect(filtered).toHaveLength(1);
-    expect(filtered[0].label).toBe('cell phone');
-    expect(filtered[0].rule.thresholdMs).toBe(0);
+    const filteredNoisy = filterTrackedObjects(noisyDetections);
+    expect(filteredNoisy).toHaveLength(0); // 0.25 is filtered out by 0.28 threshold
+
+    const validDetections = [
+      { class: 'cell phone', score: 0.32, bbox: [50, 50, 100, 150] as [number, number, number, number] },
+    ];
+    const filteredValid = filterTrackedObjects(validDetections);
+    expect(filteredValid).toHaveLength(1);
+    expect(filteredValid[0].label).toBe('cell phone');
+    expect(filteredValid[0].rule.thresholdMs).toBe(800);
 
     const tracker = new ProctoringTimeTracker();
-    const event = tracker.processGenericEvent(
-      filtered[0].rule.category,
-      filtered[0].rule.object,
-      filtered[0].rule.reason,
-      filtered[0].rule.thresholdMs,
+    const now = Date.now();
+    tracker.processGenericEvent(
+      filteredValid[0].rule.category,
+      filteredValid[0].rule.object,
+      filteredValid[0].rule.reason,
+      filteredValid[0].rule.thresholdMs,
       5000,
-      Date.now(),
+      now,
     );
-    expect(event.shouldTriggerWarning).toBe(true);
-    expect(event.warningCount).toBe(1);
+    const sustainedEvent = tracker.processGenericEvent(
+      filteredValid[0].rule.category,
+      filteredValid[0].rule.object,
+      filteredValid[0].rule.reason,
+      filteredValid[0].rule.thresholdMs,
+      5000,
+      now + 850,
+    );
+    expect(sustainedEvent.shouldTriggerWarning).toBe(true);
+    expect(sustainedEvent.warningCount).toBe(1);
   });
 });
 

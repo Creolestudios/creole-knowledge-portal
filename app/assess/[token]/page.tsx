@@ -1174,14 +1174,16 @@ export default function CandidateAssessmentPage() {
     let voiceReason = info.reason;
     let subKey = 'voice';
     const reasonLower = info.reason.toLowerCase();
-    if (
+    const isInternalAudio =
       reasonLower.includes('music') ||
       reasonLower.includes('internal sound') ||
       reasonLower.includes('internal audio') ||
-      reasonLower.includes('media playback')
-    ) {
-      voiceReason = 'Internal sound / music detected. Please stop all media playback.';
-      subKey = 'music';
+      reasonLower.includes('internal device') ||
+      reasonLower.includes('media playback');
+
+    if (isInternalAudio) {
+      voiceReason = 'Internal device audio detected. Voice or media sound is playing from within the computer.';
+      subKey = 'internal_device_audio';
     } else if (info.reason.includes('pen')) {
       voiceReason = 'Pen clicking / writing sounds detected.';
       subKey = 'pen';
@@ -1199,8 +1201,10 @@ export default function CandidateAssessmentPage() {
       subKey = 'voice';
     }
 
+    const warnCategory = isInternalAudio ? 'internal_device_audio' : 'unauthorized_voice';
+
     const trackerStatus = proctorTrackerRef.current.processGenericEvent(
-      'unauthorized_voice',
+      warnCategory,
       subKey,
       voiceReason,
       0, // Threshold 0: useAudioVoiceGuard already confirmed sustained phonemic speech frames
@@ -1235,7 +1239,7 @@ export default function CandidateAssessmentPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            category: 'unauthorized_voice',
+            category: warnCategory,
             severity: 'warning',
             confidence: info.confidence,
             meta: { warningCount: trackerStatus.warningCount, reason: voiceReason },

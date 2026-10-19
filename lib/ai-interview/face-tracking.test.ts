@@ -323,13 +323,13 @@ describe('face-tracking module', () => {
       expect(f1.shouldTriggerWarning).toBe(true);
       expect(f1.warningCount).toBe(3);
 
-      // Strike 4: Face (cooldown satisfied at t = 25000ms) - DOES NOT BLOCK when bypassLimit is true!
-      const f2 = tracker.processResult(mockResult, 25000, { noFaceThresholdMs: 500 });
+      // Strike 4: Face (30s cooldown satisfied at t = 35000ms) - DOES NOT BLOCK when bypassLimit is true!
+      const f2 = tracker.processResult(mockResult, 35000, { noFaceThresholdMs: 500 });
       expect(f2.shouldTriggerWarning).toBe(true);
       expect(f2.warningCount).toBe(4);
 
-      // Strike 5: Voice (cooldown satisfied at t = 30000ms)
-      const v2 = tracker.processGenericEvent('unauthorized_voice', 'voice', 'Second voice alert', 0, 1000, 30000);
+      // Strike 5: Voice (30s cooldown satisfied at t = 36000ms)
+      const v2 = tracker.processGenericEvent('unauthorized_voice', 'voice', 'Second voice alert', 0, 1000, 36000);
       expect(v2.shouldTriggerWarning).toBe(true);
       expect(v2.warningCount).toBe(5);
 
