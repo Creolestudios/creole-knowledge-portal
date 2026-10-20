@@ -55,7 +55,6 @@ import { ProctoringInstructions } from '@/components/ai-interview/proctoring-ins
 import { TerminatedInterview } from '@/components/ai-interview/terminated-interview';
 import { ExpiredInterviewLink } from '@/components/ai-interview/expired-interview-link';
 import { DesktopOnlyWarning } from '@/components/ai-interview/desktop-only-warning';
-import { HighlightedVerbatimAnswer } from '@/components/ai-interview/highlighted-verbatim-answer';
 import { createClient } from '@/lib/supabase/client';
 import { useWebRTC } from '@/lib/ai-interview/use-webrtc';
 import { useAnswerRecorder } from '@/lib/ai-interview/use-answer-recorder';
@@ -1040,7 +1039,10 @@ export default function InterviewEntryPage() {
     const currentQ = questions[currentQuestion];
     if (!currentQ?.id) return;
 
-    const fullSpoken = currentSpokenText.trim();
+    const fullSpoken = [currentSpokenText.trim(), interimText ? interimText.trim() : '']
+      .filter(Boolean)
+      .join(' ')
+      .trim();
     if (!fullSpoken || fullSpoken === lastSavedSpokenTextRef.current) return;
 
     if (autoSaveTimerRef.current) {
@@ -1067,7 +1069,7 @@ export default function InterviewEntryPage() {
     return () => {
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
-  }, [currentSpokenText, currentQuestion, stage, isAdmin, interviewId, questions]);
+  }, [currentSpokenText, interimText, currentQuestion, stage, isAdmin, interviewId, questions]);
 
   // Only the candidate is recorded — never the admin interviewer's side of the call.
   const recordingQuestionId =
@@ -3542,17 +3544,11 @@ export default function InterviewEntryPage() {
                   </span>
                 </div>
 
-                <div className="text-sm text-zinc-100 leading-relaxed font-medium">
-                  {currentSpokenText ? (
-                    <HighlightedVerbatimAnswer
-                      text={currentSpokenText}
-                      showLegend={true}
-                      className="text-sm"
-                    />
-                  ) : null}
+                <div className="text-sm sm:text-base text-zinc-100 leading-relaxed font-normal whitespace-pre-wrap">
+                  {currentSpokenText}
                   {interimText && (
-                    <span className="italic text-sky-400/90 ml-1 inline-block animate-pulse">
-                      {currentSpokenText ? ` ${interimText}` : interimText}
+                    <span className="italic text-[#34c4f2]/90 ml-1.5 inline-block">
+                      {interimText}
                     </span>
                   )}
                 </div>

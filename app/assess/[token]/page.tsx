@@ -613,23 +613,9 @@ export default function CandidateAssessmentPage() {
         questionRemainingSecRef.current -= 1;
         setQuestionRemainingSec(questionRemainingSecRef.current);
 
-        // 3. Silence auto-advance (when candidate has spoken and remains silent for >= 5s)
-        if (
-          lastSpeechAtRef.current > 0 &&
-          !isSubmittingAnswerRef.current &&
-          handleSubmitAnswerRef.current
-        ) {
-          const silentSec = (Date.now() - lastSpeechAtRef.current) / 1000;
-          if (silentSec >= 7) {
-            setSilenceCountdown(null);
-            autoSubmittedQuestionIdxRef.current = currentIndexRef.current;
-            void handleSubmitAnswerRef.current();
-          } else if (silentSec >= 4) {
-            setSilenceCountdown(Math.max(1, Math.ceil(7 - silentSec)));
-          } else {
-            setSilenceCountdown(null);
-          }
-        }
+        // Candidate is allowed to pause, think, and complete their full answer without being prematurely cut off.
+        // Answer is submitted when candidate clicks "Next Question" or question countdown timer reaches 0.
+        setSilenceCountdown(null);
       }
     }, 1000);
     return () => window.clearInterval(timer);
@@ -1318,7 +1304,10 @@ export default function CandidateAssessmentPage() {
     const currentQ = questions[currentIndex];
     if (!currentQ?.id) return;
 
-    const fullSpoken = answerText.trim();
+    const fullSpoken = [answerText.trim(), interimText ? interimText.trim() : '']
+      .filter(Boolean)
+      .join(' ')
+      .trim();
     if (!fullSpoken || fullSpoken === lastSavedAnswerTextRef.current) return;
 
     if (autoSaveAnswerTimerRef.current) {
@@ -1343,7 +1332,7 @@ export default function CandidateAssessmentPage() {
         clearTimeout(autoSaveAnswerTimerRef.current);
       }
     };
-  }, [answerText, stage, currentIndex, questions, token]);
+  }, [answerText, interimText, stage, currentIndex, questions, token]);
 
   useEffect(() => {
     if (stage === 'interview') {

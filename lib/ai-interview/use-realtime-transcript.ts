@@ -48,6 +48,22 @@ export interface UseRealtimeTranscriptOptions {
   onTranscriptLine?: (line: { text: string; isFinal: boolean }) => void;
 }
 
+function getBestLanguage(): string {
+  if (typeof navigator === 'undefined') return 'en-US';
+  if (navigator.languages?.some((l) => l.toLowerCase() === 'en-in')) {
+    return 'en-IN';
+  }
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz && (tz.includes('Calcutta') || tz.includes('Kolkata') || tz.includes('Asia/Colombo'))) {
+      return 'en-IN';
+    }
+  } catch {
+    // ignore
+  }
+  return navigator.languages?.[0] || navigator.language || 'en-US';
+}
+
 export function useRealtimeTranscript({
   interviewId,
   currentQuestionOrd = 1,
@@ -58,11 +74,9 @@ export function useRealtimeTranscript({
   const [accumulatedText, setAccumulatedText] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(
-    // Eagerly detect speech API support so we never call setState synchronously
-    // inside the effect body (react-hooks/set-state-in-effect).
     () =>
       typeof window === 'undefined'
-        ? true // SSR: assume supported, effect will correct if needed
+        ? true
         : !!(window.SpeechRecognition || window.webkitSpeechRecognition)
   );
 
@@ -74,9 +88,9 @@ export function useRealtimeTranscript({
   const speechMsAccumRef = useRef<number>(0);
   const pausesCountRef = useRef<number>(0);
   const lastFinalTimestampRef = useRef<number>(0);
-  // Accumulates the full answer text across all final phrases; flushed in completeTurn as a
-  // single DB row instead of one row per phrase.
   const accumulatedTextRef = useRef('');
+  const interimTextRef = useRef('');
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     isCandidateTurnRef.current = isCandidateTurn;
@@ -86,8 +100,12 @@ export function useRealtimeTranscript({
     currentQuestionOrdRef.current = currentQuestionOrd;
   }, [currentQuestionOrd]);
 
+  const onTranscriptLineRef = useRef(onTranscriptLine);
+  useEffect(() => {
+    onTranscriptLineRef.current = onTranscriptLine;
+  }, [onTranscriptLine]);
+
   // Persists the full consolidated answer for a question turn as a single DB row.
-  // Called only once per question (inside completeTurn) to avoid fragmented storage.
   const persistFullAnswer = useCallback(
     async (text: string) => {
       if (!interviewId) return;
@@ -109,28 +127,138 @@ export function useRealtimeTranscript({
     [interviewId]
   );
 
-  // Safely restarts the speech recognition engine with a clean audio session
-  const restartRecognition = useCallback(() => {
-    const rec = recognitionRef.current;
-    if (!rec) return;
-    try {
-      rec.abort();
-    } catch {
-      // ignore
+  // Instantiates a fresh SpeechRecognition session. Chrome often refuses to restart
+  // or drops into a dead state if start() is called on an instance that already fired onend.
+  const createAndStartRecognition = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      setIsSupported(false);
+      return;
     }
-    window.setTimeout(() => {
-      if (isCandidateTurnRef.current && recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-          setIsListening(true);
-        } catch {
-          // already started or transitioning
-        }
+
+    // Tear down any existing instance cleanly
+    if (recognitionRef.current) {
+      const prev = recognitionRef.current;
+      recognitionRef.current = null;
+      try {
+        prev.onresult = null;
+        prev.onerror = null;
+        prev.onend = null;
+        prev.abort();
+      } catch {
+        // ignore
       }
-    }, 70);
+    }
+
+    if (!isCandidateTurnRef.current) {
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.lang = getBestLanguage();
+
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        if (!isCandidateTurnRef.current) return;
+
+        const now = Date.now();
+        if (speechStartRef.current === 0) {
+          speechStartRef.current = now;
+        }
+
+        let currentInterim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const item = event.results[i];
+          const phrase = item[0]?.transcript || '';
+
+          if (item.isFinal) {
+            const trimmed = phrase.trim();
+            if (trimmed) {
+              const next = accumulatedTextRef.current
+                ? `${accumulatedTextRef.current} ${trimmed}`
+                : trimmed;
+              accumulatedTextRef.current = next;
+              setAccumulatedText(next);
+              onTranscriptLineRef.current?.({ text: trimmed, isFinal: true });
+
+              if (lastFinalTimestampRef.current > 0 && now - lastFinalTimestampRef.current > 800) {
+                pausesCountRef.current += 1;
+              }
+              speechMsAccumRef.current += Math.max(500, now - lastFinalTimestampRef.current);
+              lastFinalTimestampRef.current = now;
+            }
+          } else {
+            currentInterim += phrase;
+          }
+        }
+
+        interimTextRef.current = currentInterim;
+        setInterimText(currentInterim);
+        if (currentInterim) {
+          onTranscriptLineRef.current?.({ text: currentInterim, isFinal: false });
+        }
+      };
+
+      recognition.onerror = (e: any) => {
+        if (e?.error === 'not-allowed') {
+          setIsListening(false);
+        }
+        // 'no-speech' or 'aborted' happens during natural pauses or filler word hesitations.
+        // We do not terminate listening; onend will automatically reconnect with a fresh session.
+      };
+
+      recognition.onend = () => {
+        // If an interim phrase was in-flight when candidate paused, commit it immediately
+        if (interimTextRef.current && interimTextRef.current.trim()) {
+          const remainingInterim = interimTextRef.current.trim();
+          const next = accumulatedTextRef.current
+            ? `${accumulatedTextRef.current} ${remainingInterim}`
+            : remainingInterim;
+          accumulatedTextRef.current = next;
+          setAccumulatedText(next);
+          onTranscriptLineRef.current?.({ text: remainingInterim, isFinal: true });
+          interimTextRef.current = '';
+          setInterimText('');
+        }
+
+        // Cleanly restart listener if candidate turn is still active
+        if (isCandidateTurnRef.current) {
+          if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+          restartTimerRef.current = setTimeout(() => {
+            if (isCandidateTurnRef.current) {
+              createAndStartRecognition();
+            }
+          }, 50);
+        } else {
+          setIsListening(false);
+        }
+      };
+
+      recognition.start();
+      setIsListening(true);
+      recognitionRef.current = recognition;
+    } catch {
+      // If immediate start throws, retry cleanly after a short pause
+      if (isCandidateTurnRef.current) {
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = setTimeout(() => {
+          if (isCandidateTurnRef.current) {
+            createAndStartRecognition();
+          }
+        }, 100);
+      }
+    }
   }, []);
 
-  // Starts real-time listening for a question turn
+  const restartRecognition = useCallback(() => {
+    createAndStartRecognition();
+  }, [createAndStartRecognition]);
+
   const startTurn = useCallback(() => {
     turnStartTimeRef.current = Date.now();
     speechStartRef.current = 0;
@@ -141,39 +269,29 @@ export function useRealtimeTranscript({
     setAccumulatedText('');
     setInterimText('');
 
-    restartRecognition();
-  }, [restartRecognition]);
+    createAndStartRecognition();
+  }, [createAndStartRecognition]);
 
-  // Explicit manual trigger for the candidate to start speaking if recognition stopped
   const startListening = useCallback(() => {
-    const rec = recognitionRef.current;
-    if (!rec) return;
-    try {
-      rec.start();
-      setIsListening(true);
-    } catch {
-      // If already active or in another state, cycle it cleanly
-      restartRecognition();
-    }
-  }, [restartRecognition]);
+    createAndStartRecognition();
+  }, [createAndStartRecognition]);
 
-  // Completes a turn: flushes the full accumulated answer as ONE transcript row and saves turn metrics.
   const completeTurn = useCallback(
     async (overrideText?: string, unauthorizedVoiceDetected = false) => {
       const now = Date.now();
-      const responseLatencyMs = speechStartRef.current > 0
-        ? Math.max(0, speechStartRef.current - turnStartTimeRef.current)
-        : 0;
+      const responseLatencyMs =
+        speechStartRef.current > 0
+          ? Math.max(0, speechStartRef.current - turnStartTimeRef.current)
+          : 0;
 
       const totalSpeechMs = speechMsAccumRef.current;
-      // Use the overrideText if provided (e.g. currentSpokenText from UI), else fallback to accumulated ref
-      const fullAnswerText = (overrideText !== undefined && overrideText !== null && overrideText.trim())
-        ? overrideText.trim()
-        : accumulatedTextRef.current.trim();
+      const fullAnswerText =
+        overrideText !== undefined && overrideText !== null && overrideText.trim()
+          ? overrideText.trim()
+          : accumulatedTextRef.current.trim();
       const totalWords = fullAnswerText ? fullAnswerText.split(/\s+/).filter(Boolean).length : 0;
       const { count: fillerCount } = countFillerWords(fullAnswerText);
 
-      // Persist the whole answer as a single consolidated DB row ONLY if non-empty
       if (fullAnswerText) {
         await persistFullAnswer(fullAnswerText);
       }
@@ -203,125 +321,41 @@ export function useRealtimeTranscript({
     [interviewId, persistFullAnswer]
   );
 
-  const onTranscriptLineRef = useRef(onTranscriptLine);
-  useEffect(() => {
-    onTranscriptLineRef.current = onTranscriptLine;
-  }, [onTranscriptLine]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRec) {
-      // Defer to avoid calling setState synchronously inside an effect body.
-      window.setTimeout(() => setIsSupported(false), 0);
-      return;
-    }
-
-    const recognition = new SpeechRec();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-    const browserLang = typeof navigator !== 'undefined' ? navigator.language : 'en-US';
-    recognition.lang = browserLang && browserLang.startsWith('en') ? browserLang : 'en-US';
-
-    recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      if (!isCandidateTurnRef.current) return;
-
-      const now = Date.now();
-      if (speechStartRef.current === 0) {
-        speechStartRef.current = now;
-      }
-
-      let currentInterim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const item = event.results[i];
-        const phrase = item[0]?.transcript || '';
-
-        if (item.isFinal) {
-          const trimmed = phrase.trim();
-          if (trimmed) {
-            // Accumulate locally — do NOT write to DB here; the full answer is
-            // flushed as a single row in completeTurn when the question ends.
-            const next = accumulatedTextRef.current
-              ? `${accumulatedTextRef.current} ${trimmed}`
-              : trimmed;
-            accumulatedTextRef.current = next;
-            setAccumulatedText(next);
-            onTranscriptLineRef.current?.({ text: trimmed, isFinal: true });
-
-            // Check if there was a pause since the last final chunk (>800ms)
-            if (lastFinalTimestampRef.current > 0 && now - lastFinalTimestampRef.current > 800) {
-              pausesCountRef.current += 1;
-            }
-            speechMsAccumRef.current += Math.max(500, now - lastFinalTimestampRef.current);
-            lastFinalTimestampRef.current = now;
-          }
-        } else {
-          currentInterim += phrase;
-        }
-      }
-
-      setInterimText(currentInterim);
-      if (currentInterim) {
-        onTranscriptLineRef.current?.({ text: currentInterim, isFinal: false });
-      }
-    };
-
-    recognition.onerror = (e: any) => {
-      if (e?.error === 'not-allowed') {
-        setIsListening(false);
-      }
-    };
-
-    recognition.onend = () => {
-      // If candidate turn is still active, restart listener cleanly after a short pause
-      if (isCandidateTurnRef.current) {
-        window.setTimeout(() => {
-          if (isCandidateTurnRef.current && recognitionRef.current) {
-            try {
-              recognitionRef.current.start();
-              setIsListening(true);
-            } catch {
-              // ignore
-            }
-          }
-        }, 150);
-      } else {
-        setIsListening(false);
-      }
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      try {
-        recognition.stop();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
-    };
-  }, []);
-
   useEffect(() => {
     if (isCandidateTurn) {
-      const timer = window.setTimeout(() => {
-        startListening();
-      }, 0);
-      return () => window.clearTimeout(timer);
+      createAndStartRecognition();
     } else {
-      try {
-        recognitionRef.current?.stop();
-      } catch {
-        // ignore
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (recognitionRef.current) {
+        const prev = recognitionRef.current;
+        recognitionRef.current = null;
+        try {
+          prev.onresult = null;
+          prev.onerror = null;
+          prev.onend = null;
+          prev.abort();
+        } catch {
+          // ignore
+        }
       }
-      const timer = window.setTimeout(() => {
-        setIsListening(false);
-      }, 0);
-      return () => window.clearTimeout(timer);
+      setIsListening(false);
     }
-  }, [isCandidateTurn, startListening]);
+    return () => {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (recognitionRef.current) {
+        const prev = recognitionRef.current;
+        recognitionRef.current = null;
+        try {
+          prev.onresult = null;
+          prev.onerror = null;
+          prev.onend = null;
+          prev.abort();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [isCandidateTurn, createAndStartRecognition]);
 
   return {
     isSupported,

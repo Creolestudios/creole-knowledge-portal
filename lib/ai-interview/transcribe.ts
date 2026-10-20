@@ -1,10 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 
-const TRANSCRIPTION_MODEL = 'gemini-3.6-flash';
-
-// The candidate's UI waits on this upload, and a hung Gemini call has been seen to sit for
-// 5 minutes before the socket gives up. Past this point the answer is saved without a
-// transcript instead, and can be re-transcribed later from the stored audio.
+const TRANSCRIPTION_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'];
 const TRANSCRIPTION_TIMEOUT_MS = 45_000;
 
 const TRANSCRIPTION_PROMPT = `
@@ -38,24 +34,49 @@ export async function transcribeAnswer(audio: Buffer, mimeType: string): Promise
 
   const ai = new GoogleGenAI({ apiKey });
 
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const response = await Promise.race([
-    ai.models.generateContent({
-      model: TRANSCRIPTION_MODEL,
-      contents: [
-        { inlineData: { mimeType, data: audio.toString('base64') } },
-        TRANSCRIPTION_PROMPT,
-      ],
-      config: { temperature: 0 },
-    }),
-    new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(
-        () => reject(new Error(`Transcription timed out after ${TRANSCRIPTION_TIMEOUT_MS}ms`)),
-        TRANSCRIPTION_TIMEOUT_MS
-      );
-    }),
-  ]).finally(() => clearTimeout(timeoutHandle));
+  let lastError: unknown;
+  for (let i = 0; i < TRANSCRIPTION_MODELS.length; i++) {
+    const model = TRANSCRIPTION_MODELS[i];
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
 
-  const transcript = (response?.text || '').trim();
-  return transcript.length > 0 ? transcript : null;
+    try {
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model,
+          contents: [
+            { inlineData: { mimeType, data: audio.toString('base64') } },
+            TRANSCRIPTION_PROMPT,
+          ],
+          config: { temperature: 0 },
+        }),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(`Transcription timed out after ${TRANSCRIPTION_TIMEOUT_MS}ms`)),
+            TRANSCRIPTION_TIMEOUT_MS
+          );
+        }),
+      ]).finally(() => clearTimeout(timeoutHandle));
+
+      const transcript = (response?.text || '').trim();
+      return transcript.length > 0 ? transcript : null;
+    } catch (err: any) {
+      lastError = err;
+      const isTransient =
+        err?.status === 503 ||
+        err?.code === 503 ||
+        err?.message?.includes('503') ||
+        err?.message?.includes('high demand') ||
+        err?.message?.includes('UNAVAILABLE');
+
+      // Only attempt fallback model if transient overload error and more models remain
+      if (isTransient && i < TRANSCRIPTION_MODELS.length - 1) {
+        console.warn(`[interview-transcribe] Model ${model} unavailable, trying fallback ${TRANSCRIPTION_MODELS[i + 1]}`);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (lastError) throw lastError;
+  return null;
 }

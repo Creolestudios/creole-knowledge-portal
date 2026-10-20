@@ -95,15 +95,22 @@ export async function POST(
       const buffer = Buffer.from(await audioFile.arrayBuffer());
       storagePath = `${id}/${questionId}.${extension}`;
 
-      if (clientTranscript && clientTranscript.trim()) {
-        transcript = clientTranscript.trim();
-      } else {
-        try {
-          // Transcribe the buffer IN-MEMORY first
-          transcript = await transcribeAnswer(buffer, mimeType);
-        } catch (err) {
-          console.error('[interview-answers] transcription failed:', err);
+      const clientTrimmed = clientTranscript?.trim() || '';
+
+      try {
+        // ALWAYS transcribe the full recorded audio buffer via Gemini for accurate verbatim transcription.
+        // Gemini captures technical vocabulary, handles candidate accents, and records all words without cutting off during pauses.
+        const serverTranscript = await transcribeAnswer(buffer, mimeType);
+        if (serverTranscript && serverTranscript.trim().length > 0) {
+          transcript = serverTranscript.trim();
+        } else if (clientTrimmed) {
+          transcript = clientTrimmed;
+        } else {
+          transcript = null;
         }
+      } catch (err) {
+        console.error('[interview-answers] transcription failed, falling back to client transcript:', err);
+        transcript = clientTrimmed || null;
       }
 
       // DATA MINIMIZATION: Only save audio to storage if we failed to get a transcript
