@@ -23,6 +23,9 @@ describe('device-detection module', () => {
     expect(isHeadsetOrBluetoothDevice('Internal Microphone (Realtek(R) Audio)')).toBe(false);
     expect(isHeadsetOrBluetoothDevice('Microphone Array (Intel Smart Sound)')).toBe(false);
     expect(isHeadsetOrBluetoothDevice('Default - Realtek High Definition Audio')).toBe(false);
+    expect(isHeadsetOrBluetoothDevice('Tiger Lake-LP Smart Sound Technology Audio Controller Speaker + Headphones')).toBe(false);
+    expect(isHeadsetOrBluetoothDevice('Built-in Audio Analog Stereo (Speaker + Headphones)')).toBe(false);
+    expect(isHeadsetOrBluetoothDevice('Tiger Lake-LP Smart Sound Technology Audio Controller Digital Microphone')).toBe(false);
     expect(isHeadsetOrBluetoothDevice('')).toBe(false);
     expect(isHeadsetOrBluetoothDevice(null)).toBe(false);
     expect(isHeadsetOrBluetoothDevice(undefined)).toBe(false);

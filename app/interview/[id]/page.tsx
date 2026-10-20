@@ -30,6 +30,7 @@ import { useProctoringWatchdog } from '@/lib/ai-interview/use-proctoring-watchdo
 import { OBJECT_RULES, isHeadphoneObject, type DetectedObjectEvent } from '@/lib/ai-interview/object-detection';
 import { useAudioDeviceType, useIsMobileOrTablet } from '@/lib/ai-interview/device-detection';
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
+import { isLinuxClient, acquireLinuxSystemAudioMonitorStream } from '@/lib/ai-interview/platform';
 
 type Stage = 'passcode' | 'instructions' | 'permissions' | 'calibration' | 'ready' | 'interview' | 'completed' | 'terminated' | 'expired' | 'not_started';
 
@@ -244,6 +245,7 @@ export default function InterviewEntryPage() {
 
   const [cameraGranted, setCameraGranted] = useState(false);
   const [screenGranted, setScreenGranted] = useState(false);
+  const [systemAudioGranted, setSystemAudioGranted] = useState(false);
   const [requestingPermissions, setRequestingPermissions] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
@@ -918,6 +920,7 @@ export default function InterviewEntryPage() {
   const lastRecordedAudioDeviceRef = useRef<string | null>(null);
   useEffect(() => {
     if (!interviewId) return;
+    if (process.env.NODE_ENV === 'test') return;
     const deviceType = isHeadsetDevice ? 'bluetooth' : 'mic';
     if (lastRecordedAudioDeviceRef.current === deviceType) return;
     lastRecordedAudioDeviceRef.current = deviceType;
@@ -1552,16 +1555,24 @@ export default function InterviewEntryPage() {
     let voiceReason = info.reason;
     let subKey = 'voice';
     const reasonLower = info.reason.toLowerCase();
+    const isDeviceVoice =
+      reasonLower.includes('device voice') ||
+      reasonLower.includes('system voice');
     const isInternalAudio =
-      reasonLower.includes('music') ||
-      reasonLower.includes('internal sound') ||
-      reasonLower.includes('internal audio') ||
-      reasonLower.includes('internal device') ||
-      reasonLower.includes('media playback');
+      isDeviceVoice ||
+      reasonLower.includes('internal') ||
+      reasonLower.includes('device audio') ||
+      reasonLower.includes('system audio');
 
-    if (isInternalAudio) {
+    if (isDeviceVoice) {
+      voiceReason = 'Device voice detected. Voice is playing from within the computer.';
+      subKey = 'device_voice';
+    } else if (isInternalAudio) {
       voiceReason = 'Internal device audio detected. Voice or media sound is playing from within the computer.';
       subKey = 'internal_device_audio';
+    } else if (reasonLower.includes('music')) {
+      voiceReason = 'Background music detected. Please ensure a quiet environment without music.';
+      subKey = 'music';
     } else if (info.reason.includes('pen')) {
       voiceReason = 'Pen clicking / writing sounds detected.';
       subKey = 'pen';
@@ -1626,12 +1637,12 @@ export default function InterviewEntryPage() {
       if (!bypassProctoring) {
         setIsInterviewPaused(true);
         isInterviewPausedRef.current = true;
-        setWarningToast({
-          show: true,
-          count: trackerStatus.warningCount,
-          reason: trackerStatus.reason,
-        });
       }
+      setWarningToast({
+        show: true,
+        count: trackerStatus.warningCount,
+        reason: trackerStatus.reason,
+      });
       const toastShownOffsetSec = getRecordingOffsetSeconds();
       const toastShownTs = Date.now();
 
@@ -1696,12 +1707,13 @@ export default function InterviewEntryPage() {
     stream: cameraStream,
     systemAudioStream: screenStream,
     isAiSpeaking: false,
-    isCandidateTurn: stage === 'interview' && !isAdmin && !isInterviewPaused,
+    isCandidateTurn: stage === 'interview' && !isAdmin && (!isInterviewPaused || bypassProctoring),
     isCandidateMouthMoving: isMouthMoving,
     isHeadset: isHeadsetDevice,
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     readingGracePeriodMs: 0,
     continuousVoiceMs: 10000,
+    continuousSystemVoiceMs: 10000,
   });
 
   useEffect(() => {
@@ -2003,7 +2015,14 @@ export default function InterviewEntryPage() {
 
     try {
       if (!hasLiveCameraStream()) {
-        const newCameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const audioConstraints = isLinuxClient()
+          ? {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: true,
+            }
+          : true;
+        const newCameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioConstraints });
         cameraStreamRef.current = newCameraStream;
         setCameraPreview(newCameraStream);
         setCameraStream(newCameraStream);
@@ -2019,8 +2038,16 @@ export default function InterviewEntryPage() {
 
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: { displaySurface: 'monitor' } as any,
-          audio: { suppressLocalAudioPlayback: false } as any,
+          audio: {
+            suppressLocalAudioPlayback: false,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          } as any,
           systemAudio: 'include' as any,
+          monitorTypeSurfaces: 'include' as any,
+          surfaceSwitching: 'include' as any,
+          selfBrowserSurface: 'exclude' as any,
           ...(controller ? { controller } : {}),
         } as any);
 
@@ -2037,20 +2064,40 @@ export default function InterviewEntryPage() {
         if (isPartialShare) {
           screenStream.getTracks().forEach((track) => track.stop());
           setScreenGranted(false);
+          setSystemAudioGranted(false);
           setPermissionError('Please share your entire screen, not a window or tab, to continue.');
           return;
         }
 
         const audioTracks = typeof screenStream.getAudioTracks === 'function' ? screenStream.getAudioTracks() : null;
-        const isAudioMissing = audioTracks !== null && audioTracks.length === 0;
+        let isAudioMissing = audioTracks !== null && audioTracks.length === 0;
+        const isLinux = isLinuxClient();
 
-        if (isAudioMissing || (!audioTracks && process.env.NODE_ENV !== 'test')) {
-          screenStream.getTracks().forEach((track) => track.stop());
-          setScreenGranted(false);
-          setPermissionError('System audio sharing is required. Please check "Share audio" when selecting your entire screen.');
-          return;
+        if (isAudioMissing && isLinux) {
+          // On Linux, getDisplayMedia might not expose the system audio track unless loopback is enabled.
+          // Opportunistically capture the desktop audio monitor/loopback source via getUserMedia.
+          const monitorStream = await acquireLinuxSystemAudioMonitorStream();
+          if (monitorStream) {
+            const [monitorTrack] = monitorStream.getAudioTracks();
+            if (monitorTrack) {
+              screenStream.addTrack(monitorTrack);
+              isAudioMissing = false;
+            }
+          }
         }
 
+        if (isAudioMissing || (!audioTracks && process.env.NODE_ENV !== 'test')) {
+          if (!isLinux) {
+            screenStream.getTracks().forEach((track) => track.stop());
+            setScreenGranted(false);
+            setSystemAudioGranted(false);
+            setPermissionError('System audio sharing is required. Please check "Share audio" when selecting your entire screen.');
+            return;
+          }
+        }
+
+        const hasAudioTrack = typeof screenStream.getAudioTracks === 'function' && screenStream.getAudioTracks().length > 0;
+        setSystemAudioGranted(hasAudioTrack);
         screenStreamRef.current = screenStream;
         setScreenStream(screenStream);
         setScreenGranted(true);
@@ -2450,12 +2497,12 @@ export default function InterviewEntryPage() {
           if (!bypassProctoring) {
             setIsInterviewPaused(true);
             isInterviewPausedRef.current = true;
-            setWarningToast({
-              show: true,
-              count: trackerStatus.warningCount,
-              reason: trackerStatus.reason,
-            });
           }
+          setWarningToast({
+            show: true,
+            count: trackerStatus.warningCount,
+            reason: trackerStatus.reason,
+          });
           const toastShownOffsetSec = getRecordingOffsetSeconds();
           const toastShownTs = Date.now();
 
@@ -2701,12 +2748,12 @@ export default function InterviewEntryPage() {
           if (!bypassProctoring) {
             setIsInterviewPaused(true);
             isInterviewPausedRef.current = true;
-            setWarningToast({
-              show: true,
-              count: trackerStatus.warningCount,
-              reason: trackerStatus.reason,
-            });
           }
+          setWarningToast({
+            show: true,
+            count: trackerStatus.warningCount,
+            reason: trackerStatus.reason,
+          });
           const toastShownOffsetSec = getRecordingOffsetSeconds();
           const toastShownTs = Date.now();
 
@@ -2831,9 +2878,9 @@ export default function InterviewEntryPage() {
     } catch { }
   }, [isAdmin]);
 
-  // ── Auto-Resume Interval: 30-second countdown for candidate warnings ──
+  // ── Auto-Resume Interval: 30-second countdown for candidate warnings (8s for bypassed warnings) ──
   useEffect(() => {
-    if (isAdmin || !warningToast.show || (!bypassProctoring && warningToast.count >= 3) || !isInterviewPaused) {
+    if (isAdmin || !warningToast.show || (!bypassProctoring && warningToast.count >= 3) || (!isInterviewPaused && !bypassProctoring)) {
       if (autoResumeTimerRef.current) {
         clearInterval(autoResumeTimerRef.current);
         autoResumeTimerRef.current = null;
@@ -2841,16 +2888,21 @@ export default function InterviewEntryPage() {
       return;
     }
 
-    // Reset countdown to 30s on each pause/warning
-    setAutoResumeCountdown(30);
+    // Reset countdown (30s if paused, 8s if proctoring bypassed)
+    const initialCountdown = bypassProctoring ? 8 : 30;
+    setAutoResumeCountdown(initialCountdown);
 
     const interval = setInterval(() => {
       setAutoResumeCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
           autoResumeTimerRef.current = null;
-          // Auto-resume after 30 seconds
-          handleResumeInterview();
+          // Auto-resume or auto-dismiss
+          if (bypassProctoring) {
+            setWarningToast((prevToast) => ({ ...prevToast, show: false }));
+          } else {
+            handleResumeInterview();
+          }
           return 0;
         }
         return prev - 1;
@@ -2954,9 +3006,12 @@ export default function InterviewEntryPage() {
     videoDeviceId: string;
     audioDeviceId: string;
   }) => {
+    const audioConstraints = isLinuxClient()
+      ? { deviceId: { exact: audioDeviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: true }
+      : { deviceId: { exact: audioDeviceId } };
     const newStream = await navigator.mediaDevices.getUserMedia({
       video: { deviceId: { exact: videoDeviceId } },
-      audio: { deviceId: { exact: audioDeviceId } },
+      audio: audioConstraints,
     });
     newStream.getAudioTracks().forEach((track) => {
       track.enabled = micOn;
@@ -3346,11 +3401,11 @@ export default function InterviewEntryPage() {
           </div>
         )}
 
-        {/* Warning Toast Banner */}
+        {/* Warning Toast Banner - Only shown for standard proctoring (never when bypassed) */}
         {warningToast.show && !bypassProctoring && (
           <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-full px-4 animate-in slide-in-from-top duration-300">
             <div
-              className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border gap-4 ${warningToast.count >= 3 && !bypassProctoring
+              className={`text-white rounded-2xl shadow-2xl p-4 flex items-center justify-between border gap-4 ${warningToast.count >= 3
                 ? 'bg-red-600 border-red-500'
                 : 'bg-amber-500 border-amber-400'
                 }`}
@@ -3359,17 +3414,15 @@ export default function InterviewEntryPage() {
                 <AlertTriangle className="w-6 h-6 flex-shrink-0 animate-bounce" />
                 <div>
                   <p
-                    className={`text-xs font-bold uppercase tracking-wider ${warningToast.count >= 3 && !bypassProctoring ? 'text-red-100' : 'text-amber-100'
+                    className={`text-xs font-bold uppercase tracking-wider ${warningToast.count >= 3 ? 'text-red-100' : 'text-amber-100'
                       }`}
                   >
-                    {warningToast.count >= 3 && !bypassProctoring
+                    {warningToast.count >= 3
                       ? 'Warning 3 / 3 — Session Terminated'
-                      : bypassProctoring
-                        ? `Warning ${warningToast.count} (Proctoring Bypassed)`
-                        : `Warning ${warningToast.count} / 3`}
+                      : `Warning ${warningToast.count} / 3`}
                   </p>
                   <p className="text-sm font-semibold">{warningToast.reason}</p>
-                  {warningToast.count < 3 || bypassProctoring ? (
+                  {warningToast.count < 3 ? (
                     <p className="text-xs text-amber-100/90 mt-0.5">
                       {isAdmin ? (
                         'Candidate session paused. Awaiting candidate action.'
@@ -3386,7 +3439,7 @@ export default function InterviewEntryPage() {
                   )}
                 </div>
               </div>
-              {warningToast.count < 3 || bypassProctoring ? (
+              {warningToast.count < 3 ? (
                 isAdmin ? (
                   <div className="bg-amber-600/80 text-white font-semibold text-xs px-3 py-2 rounded-xl border border-amber-300/30 flex-shrink-0 flex items-center gap-1.5 shadow-xs">
                     <Clock className="w-3.5 h-3.5 animate-pulse" />
@@ -3711,6 +3764,19 @@ export default function InterviewEntryPage() {
                 settingsEnabled={false}
                 isHeadset={isHeadsetDevice}
               />
+
+              {/* Bypassed Proctoring Red Message Below Video */}
+              {!isAdmin && bypassProctoring && warningToast.show && (
+                <div
+                  id="bypassed-proctoring-inline-message"
+                  className="rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 p-3 text-xs text-red-700 dark:text-red-300 flex items-start gap-2 shadow-sm animate-in fade-in duration-200"
+                >
+                  <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold leading-snug">{warningToast.reason}</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Candidate Warning Status Card (Admin Overview of Candidate Warnings) */}
@@ -3885,6 +3951,8 @@ export default function InterviewEntryPage() {
         <ProctoringInstructions
           cameraGranted={cameraGranted}
           screenGranted={screenGranted}
+          systemAudioGranted={systemAudioGranted}
+          isLinux={isLinuxClient()}
           permissionError={permissionError}
           requestingPermissions={requestingPermissions}
           onRequestPermissions={requestPermissions}

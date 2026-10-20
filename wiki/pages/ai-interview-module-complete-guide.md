@@ -43,7 +43,10 @@ graph TD
 - The candidate must explicitly grant access to:
   1. **Webcam**: Used for continuous face, gaze, and object detection.
   2. **Microphone**: Used for speech-to-text and background voice analysis.
-  3. **Entire Screen Sharing (`getDisplayMedia`)**: Ensures candidate does not open secondary windows or tabs.
+  3. **Entire Screen Sharing (`getDisplayMedia`)**: Ensures candidate does not open secondary windows or tabs (`displaySurface === 'monitor'`).
+  4. **System Audio Sharing (Adaptive Policy)**:
+     - **Windows & macOS**: Strictly required. Unchecking "Share audio" displays a mandatory prompt.
+     - **Linux**: Handled adaptively via `isLinuxClient()`. Because Chromium on Linux disables the PulseAudio/PipeWire loopback picker on `getDisplayMedia` by default, the portal opportunistically scans `navigator.mediaDevices.enumerateDevices()` for desktop monitor sources (`Monitor of Built-in Audio`, `Loopback`, `Virtual_Microphone`) and acquires them via `getUserMedia` to feed direct in-device audio to `useAudioVoiceGuard`. If digital loopback is not exposed by the OS, the candidate is permitted into the interview, where the room microphone strictly monitors physical room acoustic background events (voice and music) while in-device audio warnings are strictly reserved for verified system audio streams. Internal speaker/DAC combinations (e.g. `Speaker + Headphones`) are properly filtered from false Bluetooth classifications. Power users can also launch Chrome with `--enable-features=PulseaudioLoopbackForScreenShare`.
 
 ### Stage 3: Ready Screen (`ready`)
 - Pre-interview sanity check ensuring active audio/video feeds before proctoring starts.
@@ -137,23 +140,43 @@ Analyzes camera frames using a TensorFlow.js background worker:
 
 ### C. Real-Time Audio & Voice Guard (`useAudioVoiceGuard`)
 Continuous acoustic frequency analysis using Web Audio API across the speech band (300 Hz – 3,400 Hz):
-1. **Generalized Warning Note**:
-   - All voice detections (secondary speaker, human voice while candidate is silent, external/AI voice) display the generalized warning note:
-     > **`"Background voice detected"`**
-2. **Continuous Voice Duration (8 to 10 Seconds)**:
-   - Voice must be detected continuously for **8 to 10 seconds** (`continuousVoiceMs = 8000ms` or equivalent sustained frames) before a warning note is triggered.
-   - Brief or transient noises under 8 seconds are ignored and auto-reset.
+1. **Differentiated Voice Detection**:
+   - **Device Voice / System Voice (Digital Audio via Screen Share & Acoustic Speaker Bleed)**:
+     - Directly analyzes the digital system audio stream (`systemAudioStream`) for speech energy and vocal formant ratios (`avgSysSpeechEnergy >= 20`, `sysSpeechPeakEnergy >= 32`, `sysFormantRatio >= 1.08`).
+     - **Microphone Acoustic Speaker-Bleed Discrimination (Linux / Missing Digital Track)**: When digital audio tracks are not exposed (e.g. Linux Chromium entire-screen sharing) or when sound plays out loud through laptop speakers, the physical microphone analyzer detects laptop micro-speaker acoustic frequency signatures (sub-260Hz physical bass roll-off `fundamentalBassEnergy < 22` with mid-range speech ratio `speakerAcousticRatio >= 2.4`).
+     - Must be present continuously for **10 seconds** before triggering:
+       > **`"Device voice detected. Voice is playing from within the computer."`**
+     - Category: `internal_device_audio`, subKey: `device_voice`.
+     - **Speaker Acoustic Bleed Suppression**: When system audio or device voice is active, the physical microphone analyzer cross-references this activity and suppresses background voice flags. This prevents laptop speaker bleed from ever being misclassified as an external background voice in the room.
+   - **Room Background Voice (Physical Room Microphone)**:
+     - Monitors the room microphone (`stream`) when the candidate's mouth is not moving, the system audio stream is silent/inactive, and clear human speech formants are detected (`avgSpeechEnergy >= 38`, `peakEnergy >= 52`, `formantRatio >= 1.10`, `avgFlux >= 1.2`).
+     - Must be present continuously for **10 seconds** before triggering:
+       > **`"Background voice detected."`**
+     - Category: `unauthorized_voice`, subKey: `voice` (or `background_voice`).
+2. **Continuous Voice Duration (10 Seconds)**:
+   - Both system voice and background voice require **10 seconds of continuous vocalization** (`continuousVoiceMs = 10000ms`, `continuousSystemVoiceMs = 10000ms`) before a warning is issued.
+   - Transient noises, brief hums, or sporadic speech under 10 seconds are filtered out and auto-reset after 1 second of silence.
 3. **10-Second Break / Cooldown for Subsequent Warnings**:
    - Enforces a **10-second break** (`cooldownMs = 10000ms`) after any warning is issued.
-   - If background voice continues to be heard after the 10-second break, the second warning is triggered.
-4. **Internal Sound / Music & Keyboard Detection**:
-   - **Device System Audio Isolation**: The warning:
-     > **`"Internal sound / music detected. Please stop all media playback."`**
-     is strictly triggered by active digital audio on the candidate's device (`systemAudioStream` from screen sharing).
-   - **Room Acoustic Sound Isolation**: The candidate's physical microphone will never trigger this warning for ambient room music, ensuring candidates are never falsely penalized for background room sound. Room music presence is solely used to suppress false typing alarms.
-   - Sharp transient high-frequency clusters trigger `"Keyboard typing sounds detected."`.
+   - If voice continues to be heard after the 10-second break, the next strike is triggered.
+4. **Internal Sound, Room Background Music & Voice Discrimination**:
+   - **Stream-Based Audio Isolation Architecture**:
+     - **Digital System Audio (`systemAudioStream` via Screen Share)**:
+       - **Device Voice**: Voices originating from media, meetings, calls, or video players on the computer trigger `"Device voice detected. Voice is playing from within the computer."` after 10s continuous voice.
+       - **Non-Voice System Audio / Music**: Non-vocal system audio (sound effects, game audio, instrumental media) triggers `"Internal sound / music detected. Please stop all media playback."`.
+     - **Room Microphone Stream (`stream` via Webcam/Mic)**:
+       - Strictly monitors the physical acoustic room environment:
+       - **Room Background Music**: When acoustic music, songs, radio, or TV audio are playing in the candidate's physical room (harmonic tonality `musicTonality >= 2.5` across musical bands without vocal speech formants), the guard triggers:
+         > **`"Background music detected. Please ensure a quiet environment without music."`**
+         (Category: `unauthorized_voice`, subKey: `music`).
+       - **Room Background Voice**: When another person is talking in the room or whispering while system audio is silent, triggers:
+         > **`"Background voice detected."`**
+         (Category: `unauthorized_voice`, subKey: `voice`) after 10.0 seconds of sustained vocalization.
+   - **Keyboard & Pen Acoustic Detection**:
+     - Sharp transient high-frequency clusters trigger `"Keyboard typing sounds detected."`.
+     - Distinct impulsive click pulses or paper scratching trigger `"Pen clicking / writing sounds detected."`.
 5. **Noise Filtering & Candidate Answer Preservation**:
-   - Mild environmental noise, quiet room tone, and low-level ambient hiss (< 35 energy) are safely ignored.
+   - Mild environmental noise, quiet room tone, and low-level ambient hiss (< 26 energy) are safely ignored.
    - Voice alarms are suppressed while the AI system prompt is speaking.
    - **Primary Speaker Audio Isolation**: The Gemini transcription model is instructed to focus exclusively on the primary foreground interview candidate, actively ignoring secondary background voices, television audio, or background music.
    - **Contamination Guard During Proctor Warnings**: When an unauthorized voice or audio violation pauses the interview (`isInterviewPausedRef.current === true`), incoming speech stream updates are suppressed to prevent background noise or the candidate's reaction to the warning from polluting their answer text.
@@ -172,10 +195,12 @@ Continuous acoustic frequency analysis using Web Audio API across the speech ban
 When an administrator toggles **"Bypass Proctoring / Warning Bypass"** during interview creation:
 1. **In-Interview Experience (`/interview/[id]`)**:
    - The bypass toggle is locked during resume/JD analysis to prevent race conditions.
-   - All real-time proctoring monitors (Face Tracking, Object Detection, Voice Guard) **remain active**.
-   - Warning banners and toasts **continue to display in real-time** to the candidate (`"Warning X (Proctoring Bypassed)"`).
-   - The **3-strike termination threshold is suppressed**; the interview does not terminate on strike 3, and the candidate is provided an auto-resume timer and "Resume Interview" button on all warning counts.
-   - **Tab Change Termination Continues**: If the candidate leaves the interview tab, changes windows, or minimizes the browser, the watchdog immediately terminates the session.
+   - All real-time proctoring monitors (Face Tracking, Object Detection, Voice Guard) **remain active and continuously running** (`isCandidateTurn: stage === 'interview' && !isAdmin && (!isInterviewPaused || bypassProctoring)`).
+   - **No Warning Popup**: The large modal/popup warning toast at the top of the screen is suppressed (`!bypassProctoring`).
+   - **Inline Red Message Below Video**: Instead of a disruptive popup or strike banner, an inline red notification appears directly beneath the candidate's camera video tile showing **the message only** (e.g. `"Internal device audio detected. Voice or media sound is playing from within the computer."`), without warning prefixes, strike numbers, or countdown buttons.
+   - **Auto-Dismiss**: The inline red message automatically dismisses after 8 seconds without interrupting candidate speaking flow.
+   - The **3-strike termination threshold is suppressed**; the interview does not terminate on strike 3, allowing full uncapped proctoring auditing.
+   - **Tab Change Termination Remains Strictly Enforced**: If the candidate leaves the interview tab, changes windows, or minimizes the browser (e.g. switching to another browser tab to play YouTube music), the proctoring watchdog immediately terminates the session with `"The candidate clicked outside the interview window or switched tabs."` To test background media during an interview, music/video must be played from an external window/device or background loopback without switching away from the interview tab.
 2. **Proctoring Incident Severity Categorization (Critical, Mild, Basic)**:
    - **Critical**: Outside devices (`cell_phone`), external notes (`notes_detected`), multiple persons (`multi_face`), unauthorized voices (`unauthorized_voice`, `bg_voice`), and window/tab changes (`tab_switch`, `window_blur`).
    - **Mild**: Gaze shifts (`gaze_away`), suspected off-screen reading (`reading_suspected`), and looking away (`head_turned_away`).

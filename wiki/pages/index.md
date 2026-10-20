@@ -19,3 +19,5 @@ This section contains important overview pages for the Creole Knowledge Portal p
 *   [[pages/ai-interview-extractor.md|AI Interview Module]]
 *   [[pages/full-interview-video-recording.md|Full Interview Video Recording & Google Drive Storage]]
 *   [[pages/blog-fetch-and-ai-interview-complete-flow.md|Blog Fetch and AI Interview Complete Flow]]
+*   [[pages/user-and-admin-journey-document.md|User & Admin Journey Document — Blog Fetch & AI Interview Complete Flow]]
+*   [[pages/unified-model-matrix-gemini-flash-lite.md|Costing Matrix (gemini-3.8-flash-lite)]]

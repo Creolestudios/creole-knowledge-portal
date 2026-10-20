@@ -16,9 +16,13 @@ vi.mock('@/lib/ai-interview/report-store', () => ({
   getInterviewReport: vi.fn(),
 }));
 
-vi.mock('@/lib/ai-interview/scorer', () => ({
-  scoreInterviewSession: vi.fn(),
-}));
+vi.mock('@/lib/ai-interview/scorer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ai-interview/scorer')>();
+  return {
+    ...actual,
+    scoreInterviewSession: vi.fn(),
+  };
+});
 
 vi.mock('next/navigation', () => ({
   notFound: vi.fn(),

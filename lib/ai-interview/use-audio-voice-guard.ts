@@ -14,6 +14,7 @@ export interface VoiceGuardOptions {
   takeSnapshot?: () => Promise<string | null>;
   readingGracePeriodMs?: number;
   continuousVoiceMs?: number;
+  continuousSystemVoiceMs?: number;
   cooldownMs?: number;
 }
 
@@ -37,6 +38,7 @@ export function useAudioVoiceGuard({
   takeSnapshot,
   readingGracePeriodMs = 0,
   continuousVoiceMs = 8000,
+  continuousSystemVoiceMs = 10000,
   cooldownMs = 10000,
 }: VoiceGuardOptions) {
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -46,7 +48,7 @@ export function useAudioVoiceGuard({
 
   const lastWarningTimeRef = useRef<number>(0);
   const actualSpeakerEnergyRef = useRef<number>(45);
-  const ambientNoiseFloorRef = useRef<number>(30);
+  const ambientNoiseFloorRef = useRef<number>(24);
   const isAiSpeakingRef = useRef<boolean>(isAiSpeaking);
   const isCandidateTurnRef = useRef<boolean>(isCandidateTurn);
   const isCandidateMouthMovingRef = useRef<boolean>(isCandidateMouthMoving ?? false);
@@ -54,7 +56,20 @@ export function useAudioVoiceGuard({
   const candidateTurnStartedAtRef = useRef<number>(0);
   const readingGracePeriodMsRef = useRef<number>(readingGracePeriodMs);
   const continuousVoiceMsRef = useRef<number>(continuousVoiceMs);
+  const continuousSystemVoiceMsRef = useRef<number>(continuousSystemVoiceMs);
   const cooldownMsRef = useRef<number>(cooldownMs);
+  const systemAudioStreamRef = useRef<MediaStream | null>(systemAudioStream ?? null);
+
+  // Cross-stream activity indicators: prevent physical microphone from misclassifying
+  // speaker output from device/system audio as external background room voice.
+  const isSystemVoiceActiveRef = useRef<boolean>(false);
+  const isSystemAudioActiveRef = useRef<boolean>(false);
+  const lastSystemVoiceTimeRef = useRef<number>(0);
+  const lastSystemAudioTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    systemAudioStreamRef.current = systemAudioStream ?? null;
+  }, [systemAudioStream]);
 
   useEffect(() => {
     isHeadsetRef.current = isHeadset ?? false;
@@ -80,6 +95,10 @@ export function useAudioVoiceGuard({
   useEffect(() => {
     continuousVoiceMsRef.current = continuousVoiceMs;
   }, [continuousVoiceMs]);
+
+  useEffect(() => {
+    continuousSystemVoiceMsRef.current = continuousSystemVoiceMs;
+  }, [continuousSystemVoiceMs]);
 
   useEffect(() => {
     cooldownMsRef.current = cooldownMs;
@@ -162,8 +181,13 @@ export function useAudioVoiceGuard({
 
       let consecutiveSuspiciousFrames = 0;
       let voiceDetectedStartAt = 0;
+      let consecutiveMicDeviceVoiceFrames = 0;
+      let micDeviceVoiceStartAt = 0;
+      let lastMicDeviceVoiceFrameTime = 0;
+      let lastAcousticDeviceVoiceTime = 0;
       let consecutiveAiFrames = 0;
       let consecutiveMusicFrames = 0;
+      let consecutiveRoomMusicFrames = 0;
       let prevHighBandEnergy = 0;
       let prevHighBandPeakEnergy = 0;
       let lastKeystrokeFrame = 0;
@@ -215,6 +239,7 @@ export function useAudioVoiceGuard({
 
         const avgSpeechEnergy = speechEnergySum / (endBin - startBin);
         const avgFlux = spectralFlux / (endBin - startBin);
+        const formantRatio = peakEnergy / (avgSpeechEnergy + 0.001);
 
         // Music frequency band (bins 5 to 65, ~470Hz - 6100Hz)
         let musicEnergySum = 0;
@@ -258,8 +283,11 @@ export function useAudioVoiceGuard({
         if (isAiSpeakingRef.current || (lastWarningTimeRef.current > 0 && nowMs - lastWarningTimeRef.current < cooldown)) {
           consecutiveSuspiciousFrames = 0;
           voiceDetectedStartAt = 0;
+          consecutiveMicDeviceVoiceFrames = 0;
+          micDeviceVoiceStartAt = 0;
           consecutiveAiFrames = 0;
           consecutiveMusicFrames = 0;
+          consecutiveRoomMusicFrames = 0;
           recentTypingTimestamps.length = 0;
           recentPenClickTimestamps.length = 0;
           consecutivePenWritingFrames = 0;
@@ -277,11 +305,13 @@ export function useAudioVoiceGuard({
           const isSilent = !isCandidateMouthMovingRef.current;
 
           if (isSilent) {
-            // Adapt ambient room noise floor during silence when below normal speech levels
-            if (avgSpeechEnergy < 60) {
+            // Adapt ambient room noise floor during stationary quiet room periods (fan drone, AC, room hiss)
+            // Exclude dynamic speech/media/music tonality so audio playback never pulls up the noise floor
+            const isStationaryNoise = (avgSpeechEnergy < 30 && formantRatio < 1.08 && musicTonality < 1.6) || avgSpeechEnergy < 20;
+            if (isStationaryNoise) {
               ambientNoiseFloorRef.current = ambientNoiseFloorRef.current * 0.96 + avgSpeechEnergy * 0.04;
-              if (ambientNoiseFloorRef.current < 25) ambientNoiseFloorRef.current = 25;
-              if (ambientNoiseFloorRef.current > 55) ambientNoiseFloorRef.current = 55;
+              if (ambientNoiseFloorRef.current < 20) ambientNoiseFloorRef.current = 20;
+              if (ambientNoiseFloorRef.current > 32) ambientNoiseFloorRef.current = 32;
             }
           }
 
@@ -304,8 +334,8 @@ export function useAudioVoiceGuard({
 
           const isMusic =
             !isSpeakingOnBluetooth &&
-            avgMusicEnergy >= 38 &&
-            musicTonality >= 2.8 &&
+            avgMusicEnergy >= 26 &&
+            musicTonality >= 2.2 &&
             !isReadingGracePeriod;
 
           if (isSpeakingOnBluetooth) {
@@ -321,10 +351,9 @@ export function useAudioVoiceGuard({
           // Loud music exhibits sustained harmonic tonality (>= 2.5) with music energy (>= 36),
           // active music frames, or high continuous broadband sound pressure across low-mids (>= 40)
           // and speech bands (>= 45).
-          const isCandidateSpeaking = isCandidateMouthMovingRef.current && avgSpeechEnergy >= 40;
+          const isCandidateSpeaking = isCandidateMouthMovingRef.current && avgSpeechEnergy >= 36;
           const isLoudMusicPlaying =
-            isMusic ||
-            consecutiveMusicFrames >= 3 ||
+            (isMusic && consecutiveMusicFrames >= 3) ||
             (avgMusicEnergy >= 36 && musicTonality >= 2.5) ||
             (avgLowMidEnergy >= 40 && avgSpeechEnergy >= 45);
 
@@ -410,45 +439,156 @@ export function useAudioVoiceGuard({
           prevHighBandEnergy = highBandEnergy;
           prevHighBandPeakEnergy = highBandPeakEnergy;
 
+          // Check if system audio is actively playing or recently played on device (within last 1500ms)
+          // When device voice plays through laptop speakers, the physical microphone picks it up acoustically.
+          // We MUST NOT treat speaker bleed as an external background voice!
+          const isDeviceAudioActive =
+            isSystemVoiceActiveRef.current ||
+            isSystemAudioActiveRef.current ||
+            (lastSystemVoiceTimeRef.current > 0 && nowMs - lastSystemVoiceTimeRef.current < 1500) ||
+            (lastSystemAudioTimeRef.current > 0 && nowMs - lastSystemAudioTimeRef.current < 1500);
+
+          // ── HUMAN SPEECH FREQUENCY METRICS ─────────────────────────────────
+          // Environmental silence, fan drone, distant road traffic, and door/window thuds are strictly filtered out.
+          // True human vocalization requires clear formant concentration (ratio >= 1.10) and speech energy.
+          const isClearSpeech = avgSpeechEnergy >= 38 && peakEnergy >= 52 && formantRatio >= 1.10;
+
+          // Must be clearly above the room's ambient noise floor (+10 units higher to ignore mild fan/traffic murmurs)
+          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 10;
+
+          // ── ACOUSTIC SPEAKER-BLEED (DEVICE VOICE) DISCRIMINATION ───────────
+          // On laptops/computers where system audio stream has 0 tracks (such as Linux Chromium entire-screen sharing),
+          // audio played from the device (e.g. YouTube, media) plays physically through laptop speakers and is captured
+          // by the physical microphone.
+          // Acoustic discrimination:
+          // 1. Laptop micro-speakers physically roll off heavily below ~260Hz. Live human room voices have fundamental pitch F0 in bins 1-2 (85Hz-255Hz).
+          // 2. High speech formant mid-range energy (bins 6-24, ~550Hz-2250Hz >= 32).
+          // 3. Low fundamental bass (bins 1-2 < 22) and elevated acoustic ratio (>= 2.4).
+          const fundamentalBassEnergy = (dataArray[1] + dataArray[2]) / 2;
+          let midSpeechEnergySum = 0;
+          const midSpeechStart = 6;
+          const midSpeechEnd = Math.min(25, bufferLength);
+          for (let i = midSpeechStart; i < midSpeechEnd; i++) {
+            midSpeechEnergySum += dataArray[i];
+          }
+          const avgMidSpeechEnergy = midSpeechEnergySum / (midSpeechEnd - midSpeechStart);
+          const speakerAcousticRatio = avgMidSpeechEnergy / (fundamentalBassEnergy + 1);
+
+          const isAcousticSpeakerBleedVoice =
+            isClearSpeech &&
+            isSilent &&
+            !isSpeakingOnBluetooth &&
+            fundamentalBassEnergy >= 2 &&
+            avgMidSpeechEnergy >= 24 &&
+            speakerAcousticRatio >= 0.5;
+
+          if (isAcousticSpeakerBleedVoice) {
+            lastAcousticDeviceVoiceTime = nowMs;
+          }
+
+          const isAcousticDeviceVoiceActive =
+            isAcousticSpeakerBleedVoice ||
+            (lastAcousticDeviceVoiceTime > 0 && nowMs - lastAcousticDeviceVoiceTime < 1800);
+
+          const isDeviceVoiceActive = isDeviceAudioActive || isAcousticDeviceVoiceActive;
+
           // ── AI / SYNTHETIC VOICE DETECTION ─────────────────────────────────
           // Synthetic / TTS voices exhibit unnaturally flat spectral flux (< 1.8) while speech energy is clearly active (avg >= 65, peak >= 75).
           // Steady ambient background drone, laptop fans, or mic hiss (< 60) are strictly filtered out.
           const isAiVoice =
             !isSpeakingOnBluetooth &&
+            !isDeviceVoiceActive &&
             avgSpeechEnergy >= 65 &&
             peakEnergy >= 75 &&
             avgFlux < 1.8 &&
             frameCount > 15;
 
-          // ── HUMAN SPEECH & DUAL-SPEAKER DETECTION ──────────────────────────
-          // Environmental silence, fan drone, distant road traffic, and door/window thuds are strictly filtered out.
-          // True human vocalization requires clear formant concentration (ratio >= 1.15) and energy >= 50.
-          const formantRatio = peakEnergy / (avgSpeechEnergy + 0.001);
-          const isClearSpeech = avgSpeechEnergy >= 50 && peakEnergy >= 66 && formantRatio >= 1.15;
-
-          // Must be clearly above the room's ambient noise floor (+18 units higher to ignore mild fan/traffic murmurs)
-          const isAboveNoiseFloor = avgSpeechEnergy >= ambientNoiseFloorRef.current + 18;
-
           // (2) Candidate is NOT speaking (mouth not moving), but clear human speech is active in background
+          // CRITICAL: Suppressed if device voice is active, as that voice is coming from the computer/speakers!
           const isBackgroundVoiceWhileSilent =
             !isReadingGracePeriod &&
+            !isDeviceVoiceActive &&
             isSilent &&
             isClearSpeech &&
             isAboveNoiseFloor &&
-            avgFlux >= 1.8;
+            avgFlux >= 1.2;
 
-          // (1) Candidate IS speaking (mouth moving), but another loud voice is present (dual speaker)
+          // (1) Candidate IS speaking (mouth moving), but another loud voice is present (dual speaker in the room)
           // Must have distinct non-formant frequency separation (>= 5 bins) and strong energy exceeding candidate level
           const isDualSpeakerPresent =
             !isSilent &&
+            !isDeviceVoiceActive &&
             Math.abs(peakBin - secondaryPeakBin) >= 5 &&
-            secondaryPeakEnergy >= 58 &&
+            secondaryPeakEnergy >= 52 &&
             secondaryPeakEnergy > actualSpeakerLevel * 1.05 &&
-            avgFlux >= 2.0;
+            avgFlux >= 1.5;
 
-          // Any kind of background voice (AI voice, human background voice while silent, or secondary speaker)
+          // ── DEVICE VOICE DETECTION VIA MICROPHONE (FOR LINUX / MISSING SYSTEM AUDIO TRACK) ──
+          // If digital system audio stream is not actively reporting voice, but acoustic speaker bleed
+          // is heard on the microphone, track continuous device voice for 10 seconds.
+          if (isAcousticDeviceVoiceActive && !isSystemVoiceActiveRef.current) {
+            lastMicDeviceVoiceFrameTime = nowMs;
+            consecutiveMicDeviceVoiceFrames++;
+            if (micDeviceVoiceStartAt === 0) {
+              micDeviceVoiceStartAt = nowMs;
+            }
+            const continuousDurationMs = nowMs - micDeviceVoiceStartAt;
+            const targetMs = continuousSystemVoiceMsRef.current ?? 10000;
+            const requiredFrames = Math.max(35, Math.round(targetMs / 45));
+
+            // While acoustic device voice is accumulating, decay the background voice frames so it doesn't fire
+            consecutiveSuspiciousFrames = Math.max(0, consecutiveSuspiciousFrames - 1);
+
+            if (continuousDurationMs >= targetMs && consecutiveMicDeviceVoiceFrames >= requiredFrames) {
+              micDeviceVoiceStartAt = 0;
+              consecutiveMicDeviceVoiceFrames = 0;
+              lastAcousticDeviceVoiceTime = 0;
+              const confidence = Math.min(0.95, 0.8 + (avgSpeechEnergy / 255) * 0.15);
+              triggerVoiceWarning(
+                'Device voice detected. Voice is playing from within the computer.',
+                confidence,
+                continuousDurationMs
+              );
+            }
+          } else {
+            if (nowMs - lastMicDeviceVoiceFrameTime > 1500) {
+              micDeviceVoiceStartAt = 0;
+              consecutiveMicDeviceVoiceFrames = 0;
+            } else {
+              consecutiveMicDeviceVoiceFrames = Math.max(0, consecutiveMicDeviceVoiceFrames - 1);
+            }
+          }
+
+          // Any kind of background room voice (AI voice, human background voice while silent, or secondary speaker)
           // Runs independently of music so background music can NEVER be used to mask cheating voices!
           const isVoiceDetected = isAiVoice || isBackgroundVoiceWhileSilent || isDualSpeakerPresent;
+
+          // ── ROOM BACKGROUND MUSIC DETECTION (PHYSICAL MICROPHONE) ───────────
+          // Detects acoustic music, background songs, radio, or TV soundtrack in the candidate's room.
+          // High harmonic tonality (>= 2.5) across musical frequency band without human vocal formants.
+          const isRoomMusicActive =
+            !isSpeakingOnBluetooth &&
+            !isReadingGracePeriod &&
+            !isVoiceDetected &&
+            !isClearSpeech &&
+            (isMusic ||
+              (avgMusicEnergy >= 28 && musicTonality >= 2.5 && avgMusicEnergy >= ambientNoiseFloorRef.current + 3) ||
+              (avgLowMidEnergy >= 34 && avgMusicEnergy >= 30 && musicTonality >= 2.2 && avgMusicEnergy >= ambientNoiseFloorRef.current + 3));
+
+          if (isRoomMusicActive) {
+            consecutiveRoomMusicFrames++;
+            if (!isCandidateSpeaking && consecutiveRoomMusicFrames >= 30) {
+              consecutiveRoomMusicFrames = 0;
+              const confidence = Math.min(0.95, 0.8 + (avgMusicEnergy / 255) * 0.15);
+              triggerVoiceWarning('Background music detected', confidence);
+            } else if (isCandidateSpeaking && consecutiveRoomMusicFrames >= 45) {
+              consecutiveRoomMusicFrames = 0;
+              const confidence = Math.min(0.95, 0.85 + (avgMusicEnergy / 255) * 0.15);
+              triggerVoiceWarning('Background music detected', confidence);
+            }
+          } else {
+            consecutiveRoomMusicFrames = Math.max(0, consecutiveRoomMusicFrames - 1);
+          }
 
           if (isVoiceDetected) {
             lastVoiceFrameTime = nowMs;
@@ -458,9 +598,9 @@ export function useAudioVoiceGuard({
             }
             const continuousDurationMs = nowMs - voiceDetectedStartAt;
             const targetMs = continuousVoiceMsRef.current ?? 8000;
-            const requiredFrames = Math.max(100, Math.round(targetMs / 25));
+            const requiredFrames = Math.max(40, Math.round(targetMs / 40));
 
-            // Strictly requires BOTH full duration (10s in interview) AND high active speech frame density
+            // Requires continuous duration and sustained phonemic speech frame density
             if (continuousDurationMs >= targetMs && consecutiveSuspiciousFrames >= requiredFrames) {
               voiceDetectedStartAt = 0;
               consecutiveSuspiciousFrames = 0;
@@ -468,7 +608,7 @@ export function useAudioVoiceGuard({
               triggerVoiceWarning('Background voice detected', confidence, continuousDurationMs);
             }
           } else {
-            // If silence or non-speech exceeds 1000ms, completely break the streak so sporadic ambient sounds never build up to 10s
+            // If silence or non-speech exceeds 1000ms, completely break the streak so sporadic ambient sounds never build up
             if (nowMs - lastVoiceFrameTime > 1000) {
               voiceDetectedStartAt = 0;
               consecutiveSuspiciousFrames = 0;
@@ -529,8 +669,11 @@ export function useAudioVoiceGuard({
 
   // ── DEVICE SYSTEM AUDIO MONITORING ─────────────────────────────────────────
   // When the candidate shares system audio via screen share, monitor the direct
-  // digital device audio track. If active audio output (Spotify, YouTube, video,
-  // media playback) is detected originating from the device, trigger the in-device sound warning.
+  // digital device audio track.
+  // 1. Device Voice: If active speech/voice is detected originating from the device
+  //    (YouTube video, meeting, AI voice, call) continuously for 10 seconds, trigger
+  //    the specific device voice warning: "Device voice detected. Voice is playing from within the computer."
+  // 2. Internal Media / Music: If non-voice sound / media is detected, trigger internal sound warning.
   useEffect(() => {
     if (!systemAudioStream || typeof systemAudioStream.getAudioTracks !== 'function') return;
     const audioTracks = systemAudioStream.getAudioTracks();
@@ -555,7 +698,7 @@ export function useAudioVoiceGuard({
       }
 
       sysAnalyser = sysAudioCtx.createAnalyser();
-      sysAnalyser.fftSize = 256;
+      sysAnalyser.fftSize = 512;
       sysAnalyser.smoothingTimeConstant = 0.6;
 
       sysSource = sysAudioCtx.createMediaStreamSource(systemAudioStream);
@@ -563,7 +706,11 @@ export function useAudioVoiceGuard({
 
       const bufferLength = sysAnalyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
+      const prevDataArray = new Uint8Array(bufferLength);
       let consecutiveSysAudioFrames = 0;
+      let consecutiveSysVoiceFrames = 0;
+      let sysVoiceStartAt = 0;
+      let lastSysVoiceFrameTime = 0;
 
       const checkSystemAudio = () => {
         if (!sysAnalyser) return;
@@ -579,6 +726,44 @@ export function useAudioVoiceGuard({
         }
         const avgEnergy = energySum / bufferLength;
 
+        // Digital speech band analysis (bins 3 to 36, ~300Hz - 3400Hz)
+        const sysStartBin = 3;
+        const sysEndBin = Math.min(36, bufferLength);
+        let sysSpeechEnergySum = 0;
+        let sysSpeechPeakEnergy = 0;
+        let sysSpectralFlux = 0;
+
+        for (let i = sysStartBin; i < sysEndBin; i++) {
+          const val = dataArray[i];
+          sysSpeechEnergySum += val;
+          if (val > sysSpeechPeakEnergy) sysSpeechPeakEnergy = val;
+          sysSpectralFlux += Math.abs(val - prevDataArray[i]);
+          prevDataArray[i] = val;
+        }
+
+        const avgSysSpeechEnergy = sysSpeechEnergySum / (sysEndBin - sysStartBin);
+        const sysFormantRatio = sysSpeechPeakEnergy / (avgSysSpeechEnergy + 0.001);
+
+        // System audio is active if sound pressure exists on digital track
+        const isSysAudioActive = avgEnergy >= 14 || peakEnergy >= 25;
+        isSystemAudioActiveRef.current = isSysAudioActive;
+        if (isSysAudioActive) {
+          lastSystemAudioTimeRef.current = nowMs;
+        }
+
+        // Voice on system audio exhibits formant energy concentration and speech energy.
+        // Digital audio has no background room noise, so speech is crisp and distinct.
+        const isSysVoiceActive =
+          isSysAudioActive &&
+          avgSysSpeechEnergy >= 20 &&
+          sysSpeechPeakEnergy >= 32 &&
+          sysFormantRatio >= 1.08;
+
+        isSystemVoiceActiveRef.current = isSysVoiceActive;
+        if (isSysVoiceActive) {
+          lastSystemVoiceTimeRef.current = nowMs;
+        }
+
         const cooldown = cooldownMsRef.current ?? 10000;
         const isCooldownOrAiSpeaking =
           isAiSpeakingRef.current ||
@@ -586,21 +771,53 @@ export function useAudioVoiceGuard({
 
         if (isCooldownOrAiSpeaking) {
           consecutiveSysAudioFrames = 0;
+          consecutiveSysVoiceFrames = 0;
+          sysVoiceStartAt = 0;
         } else if (isCandidateTurnRef.current) {
-          // System audio stream is completely silent when nothing is playing on device.
-          // Non-zero sustained sound pressure indicates media playback on device.
-          if (avgEnergy >= 16 || peakEnergy >= 30) {
-            consecutiveSysAudioFrames++;
-            if (consecutiveSysAudioFrames >= 20) {
-              consecutiveSysAudioFrames = 0;
-              const confidence = Math.min(0.95, 0.8 + (avgEnergy / 255) * 0.15);
+          if (isSysVoiceActive) {
+            // Track continuous system/device voice (10-second requirement)
+            lastSysVoiceFrameTime = nowMs;
+            consecutiveSysVoiceFrames++;
+            if (sysVoiceStartAt === 0) {
+              sysVoiceStartAt = nowMs;
+            }
+            const continuousDurationMs = nowMs - sysVoiceStartAt;
+            const targetMs = continuousSystemVoiceMsRef.current ?? 10000;
+            const requiredFrames = Math.max(40, Math.round(targetMs / 40));
+
+            if (continuousDurationMs >= targetMs && consecutiveSysVoiceFrames >= requiredFrames) {
+              sysVoiceStartAt = 0;
+              consecutiveSysVoiceFrames = 0;
+              const confidence = Math.min(0.98, 0.85 + (avgSysSpeechEnergy / 255) * 0.15);
               triggerVoiceWarning(
-                'Internal sound / music detected. Please stop all media playback.',
-                confidence
+                'Device voice detected. Voice is playing from within the computer.',
+                confidence,
+                continuousDurationMs
               );
             }
           } else {
-            consecutiveSysAudioFrames = Math.max(0, consecutiveSysAudioFrames - 1);
+            // If silence or non-speech exceeds 1000ms, reset streak
+            if (nowMs - lastSysVoiceFrameTime > 1000) {
+              sysVoiceStartAt = 0;
+              consecutiveSysVoiceFrames = 0;
+            } else {
+              consecutiveSysVoiceFrames = Math.max(0, consecutiveSysVoiceFrames - 1);
+            }
+
+            // Non-voice media playback detection (e.g. background music / sound effects)
+            if (isSysAudioActive && !isSysVoiceActive) {
+              consecutiveSysAudioFrames++;
+              if (consecutiveSysAudioFrames >= 12) {
+                consecutiveSysAudioFrames = 0;
+                const confidence = Math.min(0.95, 0.8 + (avgEnergy / 255) * 0.15);
+                triggerVoiceWarning(
+                  'Internal sound / music detected. Please stop all media playback.',
+                  confidence
+                );
+              }
+            } else {
+              consecutiveSysAudioFrames = Math.max(0, consecutiveSysAudioFrames - 1);
+            }
           }
         }
 
@@ -611,6 +828,8 @@ export function useAudioVoiceGuard({
 
       return () => {
         if (animId) cancelAnimationFrame(animId);
+        isSystemAudioActiveRef.current = false;
+        isSystemVoiceActiveRef.current = false;
         try {
           if (sysSource) sysSource.disconnect();
           if (sysAudioCtx && sysAudioCtx.state !== 'closed') {
@@ -626,6 +845,8 @@ export function useAudioVoiceGuard({
 
     return () => {
       if (animId) cancelAnimationFrame(animId);
+      isSystemAudioActiveRef.current = false;
+      isSystemVoiceActiveRef.current = false;
       try {
         if (sysSource) sysSource.disconnect();
         if (sysAudioCtx && sysAudioCtx.state !== 'closed') {

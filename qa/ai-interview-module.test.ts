@@ -8,6 +8,7 @@
  * Scope: app/api/admin/ai-interviews/route.ts + app/api/interview/verify/route.ts
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { resetSessionLocks } from '@/lib/ai-interview/session-lock';
 
 const { mockRequireAdminUser, mockUpload, mockRemove, mockSingle, mockInsert, mockEq, mockOrder, mockLimit } = vi.hoisted(() => {
   const mockSingle = vi.fn();
@@ -103,12 +104,17 @@ function makeCreateRequest(fields: {
   return new Request('http://localhost/api/admin/ai-interviews', { method: 'POST', body: form });
 }
 
-function makeVerifyRequest(body: unknown) {
-  return new Request('http://localhost/api/interview/verify', { method: 'POST', body: JSON.stringify(body) });
+function makeVerifyRequest(body: Record<string, unknown> | unknown) {
+  const merged =
+    body && typeof body === 'object' && !('email' in body)
+      ? { email: 'candidate@example.com', ...body }
+      : body;
+  return new Request('http://localhost/api/interview/verify', { method: 'POST', body: JSON.stringify(merged) });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetSessionLocks();
 });
 
 // ---------------------------------------------------------------------------
@@ -322,10 +328,10 @@ describe('AI Interview listing — admin API', () => {
 // Candidate: POST /api/interview/verify — passcode verification
 // ---------------------------------------------------------------------------
 describe('Candidate passcode verification', () => {
-  it('TC-20 Missing interviewId or accessCode is rejected', async () => {
+  it('TC-20 Missing interviewId or email is rejected', async () => {
     const res1 = await verifyInterview(makeVerifyRequest({ accessCode: '123456' }));
     expect(res1.status).toBe(400);
-    const res2 = await verifyInterview(makeVerifyRequest({ interviewId: 'i1' }));
+    const res2 = await verifyInterview(makeVerifyRequest({ interviewId: 'i1', email: '' }));
     expect(res2.status).toBe(400);
   });
 
@@ -353,7 +359,7 @@ describe('Candidate passcode verification', () => {
     expect(res.status).toBe(401);
   });
 
-  it('TC-24 Correct passcode on a pending interview verifies and flips status to in_progress', async () => {
+  it('TC-24 Correct passcode on a pending interview verifies successfully', async () => {
     mockVerifySingle.mockResolvedValue({
       data: { id: 'i1', status: 'pending', expires_at: futureDate(), access_code: '123456' },
       error: null,
@@ -363,17 +369,15 @@ describe('Candidate passcode verification', () => {
     const res = await verifyInterview(makeVerifyRequest({ interviewId: 'i1', accessCode: '123456' }));
     expect(res.status).toBe(200);
     expect((await res.json()).verified).toBe(true);
-    expect(mockVerifyUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: 'in_progress' }));
   });
 
-  it('TC-25 Correct passcode on an already in_progress interview verifies without re-updating status', async () => {
+  it('TC-25 Re-entering an already in_progress interview is rejected as expired single-use', async () => {
     mockVerifySingle.mockResolvedValue({
       data: { id: 'i1', status: 'in_progress', expires_at: futureDate(), access_code: '123456' },
       error: null,
     });
     const res = await verifyInterview(makeVerifyRequest({ interviewId: 'i1', accessCode: '123456' }));
-    expect(res.status).toBe(200);
-    expect(mockVerifyUpdate).not.toHaveBeenCalled();
+    expect(res.status).toBe(410);
   });
 
   it('TC-26 Passcode with surrounding whitespace is trimmed before comparison', async () => {

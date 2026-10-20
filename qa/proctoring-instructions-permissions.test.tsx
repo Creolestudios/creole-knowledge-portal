@@ -101,7 +101,10 @@ function mockMediaDevices(overrides: Partial<{ getUserMedia: any; getDisplayMedi
     getDisplayMedia: vi
       .fn()
       .mockResolvedValue(
-        fakeStream([liveTrack({ getSettings: () => ({ displaySurface: 'monitor' }) } as any)]),
+        fakeStream([
+          liveTrack({ getSettings: () => ({ displaySurface: 'monitor' }) } as any),
+          liveTrack({ kind: 'audio' }),
+        ]),
       ),
     ...overrides,
   };
@@ -188,10 +191,14 @@ describe('Instructions & permissions gate', () => {
     fireEvent.click(screen.getByText('Allow & Start Interview'));
 
     expect(await screen.findByText("You're verified")).toBeInTheDocument();
-    expect(media.getUserMedia).toHaveBeenCalledWith({ video: true, audio: true });
-    expect(media.getDisplayMedia).toHaveBeenCalledWith({
-      video: { displaySurface: 'monitor' },
-    });
+    expect(media.getUserMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ video: true }),
+    );
+    expect(media.getDisplayMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        video: { displaySurface: 'monitor' },
+      }),
+    );
   });
 
   it('TC-PROC-06 rejects a partial (tab/window) screen share and asks for the entire screen', async () => {
@@ -375,19 +382,16 @@ describe('In-session proctoring (live stage)', () => {
   it('TC-PROC-12 terminates the interview when the screen-share track ends mid-session', async () => {
     global.fetch = verifiedFetchMock();
     let endedHandler: (() => void) | undefined;
-    const screenTrack = {
-      getSettings: () => ({ displaySurface: 'monitor' }),
-      stop: vi.fn(),
-      addEventListener: (_evt: string, cb: () => void) => {
+    const screenTrack = liveTrack({
+      getSettings: () => ({ displaySurface: 'monitor' }) as any,
+      addEventListener: vi.fn((_evt: string, cb: () => void) => {
         endedHandler = cb;
-      },
-      removeEventListener: vi.fn(),
-    };
-    mockMediaDevices({
-      getDisplayMedia: vi.fn().mockResolvedValue({
-        getVideoTracks: () => [screenTrack],
-        getTracks: () => [screenTrack],
       }),
+    });
+    mockMediaDevices({
+      getDisplayMedia: vi.fn().mockResolvedValue(
+        fakeStream([screenTrack, liveTrack({ kind: 'audio' })])
+      ),
     });
     await goToLiveInterview();
 

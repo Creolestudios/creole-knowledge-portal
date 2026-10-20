@@ -128,7 +128,7 @@ describe('AI Interview Proctoring Warning System - Complete Workflow', () => {
         expect(item.rule.reason).toBe(
           'Prohibited object detected. Please remove it from your surroundings before continuing.',
         );
-        expect(item.rule.thresholdMs).toBe(0); // immediate trigger
+        expect(item.rule.thresholdMs).toBe(800); // sustained presence trigger
       }
     });
   });
@@ -236,6 +236,106 @@ describe('AI Interview Proctoring Warning System - Complete Workflow', () => {
       const alertFinal = tracker.processResult(noFaceResult, 3600, { noFaceThresholdMs: 1500 });
       expect(alertFinal.shouldTriggerWarning).toBe(true);
       expect(alertFinal.warningCount).toBe(1);
+    });
+
+    it('accumulates and triggers warnings beyond 3 strikes when bypass proctoring is enabled', () => {
+      const tracker = new ProctoringTimeTracker({ bypassLimit: true });
+
+      // Trigger 4 consecutive warnings (beyond normal strike limit of 3)
+      for (let i = 1; i <= 4; i++) {
+        const alert = tracker.processGenericEvent(
+          'internal_device_audio',
+          'voice',
+          'Internal sound / music detected. Please stop all media playback.',
+          0,
+          1000,
+          i * 35000,
+        );
+        expect(alert.shouldTriggerWarning).toBe(true);
+        expect(alert.warningCount).toBe(i);
+        expect(alert.reason).toContain('Internal sound / music detected');
+      }
+    });
+
+    it('strictly separates background music, background voice, and internal device audio violations', () => {
+      const tracker = new ProctoringTimeTracker();
+
+      // 1. Room background music event (physical room microphone)
+      const musicEvent = tracker.processGenericEvent(
+        'unauthorized_voice',
+        'music',
+        'Background music detected. Please ensure a quiet environment without music.',
+        0,
+        5000,
+        1000,
+      );
+      expect(musicEvent.shouldTriggerWarning).toBe(true);
+      expect(musicEvent.category).toBe('unauthorized_voice');
+      expect(musicEvent.reason).toBe('Background music detected. Please ensure a quiet environment without music.');
+      expect(tracker.getWarningCounts().voice).toBe(1);
+
+      // 2. Room background human speech event (physical room microphone)
+      const voiceEvent = tracker.processGenericEvent(
+        'unauthorized_voice',
+        'voice',
+        'Background voice detected.',
+        0,
+        5000,
+        7000,
+      );
+      expect(voiceEvent.shouldTriggerWarning).toBe(true);
+      expect(voiceEvent.category).toBe('unauthorized_voice');
+      expect(voiceEvent.reason).toBe('Background voice detected.');
+      expect(tracker.getWarningCounts().voice).toBe(2);
+
+      // 3. Internal device audio event (system loopback stream)
+      const internalAudioEvent = tracker.processGenericEvent(
+        'internal_device_audio',
+        'internal_device_audio',
+        'Internal device audio detected. Voice or media sound is playing from within the computer.',
+        0,
+        5000,
+        13000,
+      );
+      expect(internalAudioEvent.shouldTriggerWarning).toBe(true);
+      expect(internalAudioEvent.category).toBe('internal_device_audio');
+      expect(internalAudioEvent.reason).toBe(
+        'Internal device audio detected. Voice or media sound is playing from within the computer.'
+      );
+      expect(tracker.getWarningCounts().total).toBe(3);
+    });
+
+    it('strictly differentiates device voice from background voice with distinct subKeys and warning messages', () => {
+      const tracker = new ProctoringTimeTracker();
+
+      // 1. Device voice event (originating digitally from systemAudioStream on the computer)
+      const deviceVoiceEvent = tracker.processGenericEvent(
+        'internal_device_audio',
+        'device_voice',
+        'Device voice detected. Voice is playing from within the computer.',
+        0,
+        5000,
+        1000,
+      );
+      expect(deviceVoiceEvent.shouldTriggerWarning).toBe(true);
+      expect(deviceVoiceEvent.category).toBe('internal_device_audio');
+      expect(deviceVoiceEvent.reason).toBe('Device voice detected. Voice is playing from within the computer.');
+
+      // 2. Background voice event (originating acoustically in the room)
+      const bgVoiceEvent = tracker.processGenericEvent(
+        'unauthorized_voice',
+        'background_voice',
+        'Background voice detected.',
+        0,
+        5000,
+        7000,
+      );
+      expect(bgVoiceEvent.shouldTriggerWarning).toBe(true);
+      expect(bgVoiceEvent.category).toBe('unauthorized_voice');
+      expect(bgVoiceEvent.reason).toBe('Background voice detected.');
+
+      // Both count toward proctoring violation strikes
+      expect(tracker.getWarningCounts().total).toBe(2);
     });
   });
 });

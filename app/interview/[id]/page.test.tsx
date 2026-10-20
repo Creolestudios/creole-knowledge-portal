@@ -128,7 +128,7 @@ describe('InterviewEntryPage', () => {
         body: JSON.stringify({ interviewId: 'interview-1', accessCode: '123456', email: 'test@example.com' }),
       }),
     );
-    expect(screen.getByText('Entire screen share')).toBeInTheDocument();
+    expect(screen.getByText(/Entire screen share/i)).toBeInTheDocument();
   });
 
   it('bypasses access code and directly verifies if admin email is entered', async () => {

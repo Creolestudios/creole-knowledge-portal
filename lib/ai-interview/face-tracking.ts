@@ -331,7 +331,14 @@ export interface WarningCounts {
 export function getBroadCategory(category: string): 'face' | 'object' | 'voice' | string {
   const lower = (category || '').toLowerCase().trim();
   if (lower.startsWith('object') || lower.includes('object')) return 'object';
-  if (lower.startsWith('voice') || lower.includes('voice')) return 'voice';
+  if (
+    lower.startsWith('voice') ||
+    lower.includes('voice') ||
+    lower.includes('audio') ||
+    lower.includes('device')
+  ) {
+    return 'voice';
+  }
   if (
     lower.startsWith('face') ||
     lower === 'no_face' ||

@@ -62,24 +62,31 @@ describe('Admin create-interview form — UI scenarios', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
     fireEvent.click(screen.getByText('Upload File'));
-    expect(screen.getByText('Upload Job Description')).toBeInTheDocument();
+    expect(screen.getByText(/Upload (or Drag & Drop )?Job Description/)).toBeInTheDocument();
     expect(screen.queryByPlaceholderText('Paste the job description here...')).not.toBeInTheDocument();
   });
 
+  function fillCandidateInfo(name = 'Jane Doe', email = 'jane@example.com') {
+    fireEvent.change(screen.getByPlaceholderText('Candidate name *'), { target: { value: name } });
+    fireEvent.change(screen.getByPlaceholderText('Candidate email *'), { target: { value: email } });
+  }
+
   it('TC-UI-03 Blocks submission with no resume attached', async () => {
-    global.fetch = vi.fn().mockReturnValueOnce(jsonResponse({ interviews: [] })) as any;
+    global.fetch = vi.fn().mockReturnValue(jsonResponse({ interviews: [] })) as any;
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
+    fillCandidateInfo();
     fireEvent.click(screen.getByText('Analyze Resume & JD'));
     expect(await screen.findByText(/please attach a resume/i)).toBeInTheDocument();
   });
 
   it('TC-UI-04 Blocks submission with a resume but empty JD text', async () => {
-    global.fetch = vi.fn().mockReturnValueOnce(jsonResponse({ interviews: [] })) as any;
+    global.fetch = vi.fn().mockReturnValue(jsonResponse({ interviews: [] })) as any;
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
+    fillCandidateInfo();
     fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
       target: { files: [new File(['r'], 'resume.pdf', { type: 'application/pdf' })] },
     });
@@ -88,10 +95,11 @@ describe('Admin create-interview form — UI scenarios', () => {
   });
 
   it('TC-UI-05 Blocks submission in file mode with no JD file selected', async () => {
-    global.fetch = vi.fn().mockReturnValueOnce(jsonResponse({ interviews: [] })) as any;
+    global.fetch = vi.fn().mockReturnValue(jsonResponse({ interviews: [] })) as any;
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
+    fillCandidateInfo();
     fireEvent.click(screen.getByText('Upload File'));
     fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
       target: { files: [new File(['r'], 'resume.pdf', { type: 'application/pdf' })] },
@@ -143,6 +151,7 @@ describe('Admin create-interview form — UI scenarios', () => {
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
+    fillCandidateInfo();
     fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
       target: { files: [new File(['r'], 'resume.pdf', { type: 'application/pdf' })] },
     });
@@ -170,6 +179,7 @@ describe('Admin create-interview form — UI scenarios', () => {
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
+    fillCandidateInfo();
     fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
       target: { files: [new File(['r'], 'resume.pdf', { type: 'application/pdf' })] },
     });
@@ -191,6 +201,7 @@ describe('Admin create-interview form — UI scenarios', () => {
     render(<AIInterviewManager />);
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
+    fillCandidateInfo();
     fireEvent.change(document.getElementById('resume-upload') as HTMLInputElement, {
       target: { files: [new File(['r'], 'resume.pdf', { type: 'application/pdf' })] },
     });
@@ -243,6 +254,8 @@ describe('Candidate passcode entry page — UI scenarios', () => {
     try {
       localStorage.clear();
       sessionStorage.clear();
+      sessionStorage.setItem('interview_on_passcode_interview-1', 'true');
+      sessionStorage.setItem('interview_candidate_email_interview-1', 'candidate@example.com');
     } catch {
       // ignore
     }
@@ -305,6 +318,6 @@ describe('Candidate passcode entry page — UI scenarios', () => {
     fireEvent.change(screen.getByPlaceholderText('000000'), { target: { value: '123456' } });
     fireEvent.click(screen.getByText('Continue'));
 
-    expect(await screen.findByText(/something went wrong/i)).toBeInTheDocument();
+    expect(await screen.findByText(/verification failed/i)).toBeInTheDocument();
   });
 });

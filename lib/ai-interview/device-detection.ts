@@ -67,7 +67,7 @@ export function isHeadsetOrBluetoothDevice(deviceLabel?: string | null): boolean
   if (!deviceLabel) return false;
   const lower = deviceLabel.toLowerCase().trim();
 
-  // Exclude built-in laptop motherboards and internal sound chipsets
+  // 1. Exclude built-in laptop motherboards and internal sound chipsets
   const isInternalChipset =
     lower.includes('realtek') ||
     lower.includes('intel smart sound') ||
@@ -79,6 +79,19 @@ export function isHeadsetOrBluetoothDevice(deviceLabel?: string | null): boolean
     lower.includes('cirrus');
 
   if (isInternalChipset) {
+    return false;
+  }
+
+  // 2. Internal motherboard audio sinks/sources like "Speaker + Headphones", "Speakers + Headphones",
+  // or "Built-in Audio" are shared DAC nodes on laptops, NOT external headsets or Bluetooth devices.
+  const isInternalSpeakerOrDac =
+    (lower.includes('speaker') || lower.includes('internal') || lower.includes('built-in')) &&
+    !lower.includes('bluetooth') &&
+    !lower.includes('wireless') &&
+    !lower.includes('airpod') &&
+    !lower.includes('buds');
+
+  if (isInternalSpeakerOrDac) {
     return false;
   }
 
@@ -141,7 +154,9 @@ export function useAudioDeviceType(stream: MediaStream | null): {
             );
             if (connectedHeadset) {
               isBluetooth = true;
-              resolvedLabel = connectedHeadset.label;
+              if (!resolvedLabel || resolvedLabel.toLowerCase().includes('default') || !isHeadsetOrBluetoothDevice(resolvedLabel)) {
+                resolvedLabel = connectedHeadset.label;
+              }
             }
           }
         } catch {

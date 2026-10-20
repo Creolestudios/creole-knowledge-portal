@@ -7,7 +7,10 @@ const mockAdminInsert = vi.fn();
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockResolvedValue({
-    auth: { exchangeCodeForSession: (...args: any[]) => mockExchangeCodeForSession(...args) },
+    auth: {
+      exchangeCodeForSession: (...args: any[]) => mockExchangeCodeForSession(...args),
+      signOut: vi.fn().mockResolvedValue({}),
+    },
     from: vi.fn().mockReturnValue({
       select: vi.fn().mockReturnValue({
         eq: vi.fn().mockReturnValue({ single: (...args: any[]) => mockProfileSingle(...args) }),
@@ -60,8 +63,16 @@ describe('GET /auth/callback', () => {
     expect(location).toContain('Login%20session%20expired');
   });
 
+  it('blocks non-creolestudios accounts and redirects with an error', async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'user@gmail.com' } }, error: null });
+
+    const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
+    const location = res.headers.get('location');
+    expect(location).toContain('Only%20%40creolestudios.com%20accounts%20are%20allowed');
+  });
+
   it('redirects to /dashboard for a regular authenticated user', async () => {
-    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@x.com' } }, error: null });
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'a@creolestudios.com' } }, error: null });
     mockProfileSingle.mockResolvedValue({ data: { role: 'user' } });
 
     const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
@@ -70,7 +81,7 @@ describe('GET /auth/callback', () => {
   });
 
   it('redirects admin users to /admin/dashboard', async () => {
-    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'admin@x.com' } }, error: null });
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'admin@creolestudios.com' } }, error: null });
     mockProfileSingle.mockResolvedValue({ data: { role: 'admin' } });
 
     const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
@@ -95,7 +106,7 @@ describe('GET /auth/callback', () => {
   });
 
   it('still redirects to the intended destination when the profile lookup throws', async () => {
-    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'user@creolestudios.com' } }, error: null });
     mockProfileSingle.mockRejectedValue(new Error('profile lookup failed'));
 
     const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123&next=/dashboard/quizzes'));
@@ -104,7 +115,7 @@ describe('GET /auth/callback', () => {
   });
 
   it('creates a default user profile if none exists and redirects to /dashboard', async () => {
-    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u123', email: 'user@x.com' } }, error: null });
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u123', email: 'user@creolestudios.com' } }, error: null });
     mockProfileSingle.mockResolvedValue({ data: null, error: { message: 'Profile not found' } });
 
     const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
@@ -112,7 +123,7 @@ describe('GET /auth/callback', () => {
     expect(res.headers.get('location')).toContain('/dashboard');
     expect(mockAdminInsert).toHaveBeenCalledWith(expect.objectContaining({
       user_id: 'u123',
-      email: 'user@x.com',
+      email: 'user@creolestudios.com',
       role: 'user',
     }));
   });
@@ -132,7 +143,7 @@ describe('GET /auth/callback', () => {
   });
 
   it('handles database insertion error when creating a default profile', async () => {
-    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u789', email: 'user@x.com' } }, error: null });
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u789', email: 'user@creolestudios.com' } }, error: null });
     mockProfileSingle.mockResolvedValue({ data: null, error: { message: 'Profile not found' } });
     mockAdminInsert.mockResolvedValue({ error: new Error('Database insert failed') });
 

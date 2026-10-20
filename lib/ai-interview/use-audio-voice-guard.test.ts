@@ -7,6 +7,7 @@ describe('useAudioVoiceGuard', () => {
   let mockGetByteFrequencyData: ReturnType<typeof vi.fn>;
   let rafCallback: FrameRequestCallback | null = null;
   let rafIdCounter = 1;
+  const originalNavigator = global.navigator;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -48,6 +49,11 @@ describe('useAudioVoiceGuard', () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    Object.defineProperty(global, 'navigator', {
+      value: originalNavigator,
+      configurable: true,
+      writable: true,
+    });
   });
 
   const fakeStream = {
@@ -361,6 +367,168 @@ describe('useAudioVoiceGuard', () => {
     expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalledWith(
       expect.objectContaining({
         reason: 'Internal sound / music detected. Please stop all media playback.',
+      })
+    );
+  });
+
+  it('triggers background music warning for room music on microphone', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // High harmonic tonality across musical band (bins 5 to 65) with sustained peak
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 5; i < 65; i++) {
+        arr[i] = 40;
+      }
+      arr[45] = 130; // High tonality peak in music band
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-room-music-playback',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 35; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background music detected',
+      })
+    );
+  });
+
+  it('triggers background voice warning for external AI voice on microphone', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // Synthetic AI voice while candidate is silent: avgSpeechEnergy >= 65, peak >= 75, flat flux < 1.8
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 68;
+      }
+      arr[10] = 80; // Peak
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-external-ai-voice',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background voice detected',
+      })
+    );
+  });
+
+  it('triggers background voice warning for external speech / dialogue on microphone', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // External speech / dialogue: vocal formant concentration (avg ~40, peak ~60), flux > 1.2
+    let toggle = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      toggle = (toggle + 1) % 2;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 40 + toggle * 6;
+      }
+      arr[12] = 60; // Speech formant peak
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-external-speech-dialogue',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 500; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background voice detected',
+      })
+    );
+  });
+
+  it('triggers background music warning for room media / video soundtrack on microphone', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // Video media: harmonic low-mid energy and music energy with peak at bin 45
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 5; i < 65; i++) {
+        arr[i] = 36;
+      }
+      arr[45] = 95; // Music peak (tonality >= 2.5)
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-room-soundtrack',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 35; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background music detected',
       })
     );
   });
@@ -863,6 +1031,517 @@ describe('useAudioVoiceGuard', () => {
     }
 
     expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
+  });
+
+  it('does NOT trigger internal sound warning for sustained ambient noise on microphone', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // Ambient noise / drone: broadband energy without musical tonality or speech formants
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 30;
+      }
+      arr[15] = 40;
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-ambient-noise-no-internal',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 35; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Internal sound / music detected. Please stop all media playback.',
+      })
+    );
+  });
+
+  it('triggers warning when alternating dialogue and soundtrack play in room', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // Alternate between speech frame and soundtrack frame
+      if (frame % 2 === 0) {
+        for (let i = 3; i < 36; i++) {
+          arr[i] = 36;
+        }
+        arr[12] = 52; // Speech formant peak
+      } else {
+        for (let i = 5; i < 65; i++) {
+          arr[i] = 36;
+        }
+        arr[45] = 95; // Music tonality peak
+      }
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-alternating-media',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 50; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalled();
+  });
+
+  it('triggers background music warning when loud music plays while candidate is speaking', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // Candidate speaking (mouth moving, avgSpeech >= 38) while loud music/soundtrack is playing in background
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 42;
+      }
+      for (let i = 5; i < 65; i++) {
+        arr[i] = 34;
+      }
+      arr[45] = 95; // Music tonality >= 2.5
+    });
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-music-while-speaking',
+        stream: fakeStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: true, // Candidate mouth is moving!
+        readingGracePeriodMs: 0,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    for (let f = 0; f < 55; f++) {
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(performance.now());
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background music detected',
+      })
+    );
+  });
+
+  it('triggers device voice warning when human speech/voice is active on systemAudioStream for 10s', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      // Formant energy concentration in speech band on digital system stream
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 30 + ((i + frame) % 10);
+      }
+      arr[12] = 75; // Strong vocal formant peak
+    });
+
+    const fakeSysStream = {
+      getAudioTracks: () => [{ kind: 'audio', readyState: 'live' }],
+    } as unknown as MediaStream;
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-device-voice-10s',
+        stream: fakeStream,
+        systemAudioStream: fakeSysStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousSystemVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 620 frames at ~16.66ms = ~10,330ms (exceeds 10 seconds continuous requirement)
+    for (let f = 0; f < 620; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Device voice detected. Voice is playing from within the computer.',
+      })
+    );
+  });
+
+  it('does NOT trigger device voice warning if voice on systemAudioStream is heard for less than 10 seconds', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 30 + ((i + frame) % 10);
+      }
+      arr[12] = 75;
+    });
+
+    const fakeSysStream = {
+      getAudioTracks: () => [{ kind: 'audio', readyState: 'live' }],
+    } as unknown as MediaStream;
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-device-voice-short',
+        stream: fakeStream,
+        systemAudioStream: fakeSysStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousSystemVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 300 frames at ~16.66ms = 5,000ms (5 seconds, well below 10 seconds)
+    for (let f = 0; f < 300; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: expect.stringContaining('Device voice detected'),
+      })
+    );
+  });
+
+  it('suppresses background voice warning when system voice is actively playing on device', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    // Both microphone and system audio receive speech data (simulating laptop speakers playing voice into room mic)
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 50 + ((i + frame) % 10);
+      }
+      arr[14] = 85;
+    });
+
+    const fakeSysStream = {
+      getAudioTracks: () => [{ kind: 'audio', readyState: 'live' }],
+    } as unknown as MediaStream;
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-no-bg-voice-during-device-voice',
+        stream: fakeStream,
+        systemAudioStream: fakeSysStream,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousVoiceMs: 10000,
+        continuousSystemVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // Run for 300 frames (~5s)
+    for (let f = 0; f < 300; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    // Microphone must NEVER have triggered "Background voice detected" for device voice!
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background voice detected',
+      })
+    );
+  });
+
+  it('triggers background voice warning after 10 seconds of continuous voice on microphone', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 70 + ((i * 3 + frame * 5) % 25);
+      }
+      arr[15] = 110;
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-bg-voice-10s',
+        stream: fakeStream,
+        systemAudioStream: null, // Silent / no system stream
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 620 frames at ~16.66ms = ~10,330ms (exceeds 10s)
+    for (let f = 0; f < 620; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background voice detected',
+        durationMs: expect.any(Number),
+      })
+    );
+  });
+
+  it('does NOT trigger background voice warning if heard for less than 10 seconds when continuousVoiceMs is 10000', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 70 + ((i * 3 + frame * 5) % 25);
+      }
+      arr[15] = 110;
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-bg-voice-under-10s',
+        stream: fakeStream,
+        systemAudioStream: null,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 400 frames at ~16.66ms = ~6,664ms (under 10s requirement)
+    for (let f = 0; f < 400; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
+  });
+
+  it('triggers device voice warning for acoustic speaker bleed on microphone when systemAudioStream is unavailable', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    // Acoustic speaker bleed: low fundamental bass (bins 1-2 = 10), high mid speech (bins 6-24 = 55), high formant peak
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      arr[1] = 10;
+      arr[2] = 10;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 48 + ((i * 3 + frame * 5) % 18);
+      }
+      arr[14] = 95; // Formant peak energy
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-acoustic-speaker-bleed',
+        stream: fakeStream,
+        systemAudioStream: null, // No system audio stream (e.g. Linux Entire Screen share)
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousSystemVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 620 frames at ~16.66ms = ~10,329ms (over 10s requirement)
+    for (let f = 0; f < 620; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Device voice detected. Voice is playing from within the computer.',
+        durationMs: expect.any(Number),
+      })
+    );
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background voice detected',
+      })
+    );
+  });
+
+  it('does NOT trigger device voice warning for acoustic speaker bleed if heard for less than 10 seconds', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      arr[1] = 10;
+      arr[2] = 10;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 48 + ((i * 3 + frame * 5) % 18);
+      }
+      arr[14] = 95;
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-acoustic-speaker-bleed-under-10s',
+        stream: fakeStream,
+        systemAudioStream: null,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousSystemVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 400 frames at ~16.66ms = ~6,664ms (under 10s requirement)
+    for (let f = 0; f < 400; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalled();
+  });
+
+  it('triggers device voice warning for acoustic speaker bleed with chassis resonance (fundamentalBassEnergy = 35) without false background voice', () => {
+    const onUnauthorizedVoiceDetected = vi.fn();
+
+    let frame = 0;
+    // Real laptop speaker bleed: chassis conduction causes bass bins 1-2 to reach ~35, while mid-speech formants are ~50
+    mockGetByteFrequencyData = vi.fn((arr: Uint8Array) => {
+      frame++;
+      arr[1] = 35;
+      arr[2] = 35;
+      for (let i = 3; i < 36; i++) {
+        arr[i] = 48 + ((i * 3 + frame * 5) % 18);
+      }
+      arr[14] = 95; // Formant peak energy
+    });
+
+    let currentTime = 1700000000000;
+    vi.spyOn(Date, 'now').mockImplementation(() => currentTime);
+
+    renderHook(() =>
+      useAudioVoiceGuard({
+        interviewId: 'test-acoustic-chassis-resonance',
+        stream: fakeStream,
+        systemAudioStream: null,
+        isAiSpeaking: false,
+        isCandidateTurn: true,
+        isCandidateMouthMoving: false,
+        continuousSystemVoiceMs: 10000,
+        continuousVoiceMs: 10000,
+        onUnauthorizedVoiceDetected,
+      })
+    );
+
+    // 620 frames at ~16.66ms = ~10,329ms
+    for (let f = 0; f < 620; f++) {
+      currentTime += 16.66;
+      if (rafCallback) {
+        const cb = rafCallback;
+        rafCallback = null;
+        cb(currentTime);
+      }
+    }
+
+    expect(onUnauthorizedVoiceDetected).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Device voice detected. Voice is playing from within the computer.',
+      })
+    );
+    expect(onUnauthorizedVoiceDetected).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Background voice detected',
+      })
+    );
   });
 });
 

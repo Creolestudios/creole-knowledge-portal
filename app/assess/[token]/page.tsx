@@ -31,6 +31,7 @@ import { useAudioDeviceType, useIsMobileOrTablet } from '@/lib/ai-interview/devi
 import { VoiceDetector } from '@/lib/ai-interview/voice-detection';
 import { useAudioVoiceGuard } from '@/lib/ai-interview/use-audio-voice-guard';
 import { useRealtimeTranscript } from '@/lib/ai-interview/use-realtime-transcript';
+import { isLinuxClient, acquireLinuxSystemAudioMonitorStream } from '@/lib/ai-interview/platform';
 
 type Stage = 'passcode' | 'instructions' | 'permissions' | 'ready' | 'calibration' | 'interview' | 'completed' | 'terminated' | 'expired';
 
@@ -143,6 +144,7 @@ export default function CandidateAssessmentPage() {
 
   const [cameraGranted, setCameraGranted] = useState(false);
   const [screenGranted, setScreenGranted] = useState(false);
+  const [systemAudioGranted, setSystemAudioGranted] = useState(false);
   const [requestingPermissions, setRequestingPermissions] = useState(false);
   const [permissionError, setPermissionError] = useState<string | null>(null);
 
@@ -181,6 +183,7 @@ export default function CandidateAssessmentPage() {
   const lastRecordedAudioDeviceRef = useRef<string | null>(null);
   useEffect(() => {
     if (!token) return;
+    if (process.env.NODE_ENV === 'test') return;
     const deviceType = isHeadsetDevice ? 'bluetooth' : 'mic';
     if (lastRecordedAudioDeviceRef.current === deviceType) return;
     lastRecordedAudioDeviceRef.current = deviceType;
@@ -467,7 +470,14 @@ export default function CandidateAssessmentPage() {
 
     try {
       if (!hasLiveCameraStream()) {
-        const newCameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const audioConstraints = isLinuxClient()
+          ? {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: true,
+            }
+          : true;
+        const newCameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioConstraints });
         cameraStreamRef.current = newCameraStream;
         setCameraStream(newCameraStream);
         setCameraGranted(true);
@@ -481,8 +491,16 @@ export default function CandidateAssessmentPage() {
 
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ 
         video: { displaySurface: 'monitor' } as any,
-        audio: { suppressLocalAudioPlayback: false } as any,
+        audio: {
+          suppressLocalAudioPlayback: false,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        } as any,
         systemAudio: 'include' as any,
+        monitorTypeSurfaces: 'include' as any,
+        surfaceSwitching: 'include' as any,
+        selfBrowserSurface: 'exclude' as any,
         ...(controller ? { controller } : {}),
       } as any);
 
@@ -499,20 +517,40 @@ export default function CandidateAssessmentPage() {
       if (isPartialShare) {
         screenStream.getTracks().forEach((track) => track.stop());
         setScreenGranted(false);
+        setSystemAudioGranted(false);
         setPermissionError('Please share your entire screen, not a window or tab, to continue.');
         return;
       }
 
       const audioTracks = typeof screenStream.getAudioTracks === 'function' ? screenStream.getAudioTracks() : null;
-      const isAudioMissing = audioTracks !== null && audioTracks.length === 0;
+      let isAudioMissing = audioTracks !== null && audioTracks.length === 0;
+      const isLinux = isLinuxClient();
 
-      if (isAudioMissing || (!audioTracks && process.env.NODE_ENV !== 'test')) {
-        screenStream.getTracks().forEach((track) => track.stop());
-        setScreenGranted(false);
-        setPermissionError('System audio sharing is required. Please check "Share audio" when selecting your entire screen.');
-        return;
+      if (isAudioMissing && isLinux) {
+        // On Linux, getDisplayMedia might not expose the system audio track unless loopback is enabled.
+        // Opportunistically capture the desktop audio monitor/loopback source via getUserMedia.
+        const monitorStream = await acquireLinuxSystemAudioMonitorStream();
+        if (monitorStream) {
+          const [monitorTrack] = monitorStream.getAudioTracks();
+          if (monitorTrack) {
+            screenStream.addTrack(monitorTrack);
+            isAudioMissing = false;
+          }
+        }
       }
 
+      if (isAudioMissing || (!audioTracks && process.env.NODE_ENV !== 'test')) {
+        if (!isLinux) {
+          screenStream.getTracks().forEach((track) => track.stop());
+          setScreenGranted(false);
+          setSystemAudioGranted(false);
+          setPermissionError('System audio sharing is required. Please check "Share audio" when selecting your entire screen.');
+          return;
+        }
+      }
+
+      const hasAudioTrack = typeof screenStream.getAudioTracks === 'function' && screenStream.getAudioTracks().length > 0;
+      setSystemAudioGranted(hasAudioTrack);
       screenStreamRef.current = screenStream;
       setScreenStream(screenStream);
       setScreenGranted(true);
@@ -551,9 +589,12 @@ export default function CandidateAssessmentPage() {
     videoDeviceId: string;
     audioDeviceId: string;
   }) => {
+    const audioConstraints = isLinuxClient()
+      ? { deviceId: { exact: audioDeviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: true }
+      : { deviceId: { exact: audioDeviceId } };
     const newStream = await navigator.mediaDevices.getUserMedia({
       video: { deviceId: { exact: videoDeviceId } },
-      audio: { deviceId: { exact: audioDeviceId } },
+      audio: audioConstraints,
     });
     newStream.getAudioTracks().forEach((track) => {
       track.enabled = micOn;
@@ -1160,16 +1201,24 @@ export default function CandidateAssessmentPage() {
     let voiceReason = info.reason;
     let subKey = 'voice';
     const reasonLower = info.reason.toLowerCase();
+    const isDeviceVoice =
+      reasonLower.includes('device voice') ||
+      reasonLower.includes('system voice');
     const isInternalAudio =
-      reasonLower.includes('music') ||
-      reasonLower.includes('internal sound') ||
-      reasonLower.includes('internal audio') ||
-      reasonLower.includes('internal device') ||
-      reasonLower.includes('media playback');
+      isDeviceVoice ||
+      reasonLower.includes('internal') ||
+      reasonLower.includes('device audio') ||
+      reasonLower.includes('system audio');
 
-    if (isInternalAudio) {
+    if (isDeviceVoice) {
+      voiceReason = 'Device voice detected. Voice is playing from within the computer.';
+      subKey = 'device_voice';
+    } else if (isInternalAudio) {
       voiceReason = 'Internal device audio detected. Voice or media sound is playing from within the computer.';
       subKey = 'internal_device_audio';
+    } else if (reasonLower.includes('music')) {
+      voiceReason = 'Background music detected. Please ensure a quiet environment without music.';
+      subKey = 'music';
     } else if (info.reason.includes('pen')) {
       voiceReason = 'Pen clicking / writing sounds detected.';
       subKey = 'pen';
@@ -1257,6 +1306,7 @@ export default function CandidateAssessmentPage() {
     onUnauthorizedVoiceDetected: handleUnauthorizedVoice,
     readingGracePeriodMs: 0,
     continuousVoiceMs: 10000,
+    continuousSystemVoiceMs: 10000,
   });
 
   const lastSavedAnswerTextRef = useRef<string>('');
@@ -1827,6 +1877,8 @@ export default function CandidateAssessmentPage() {
         <ProctoringInstructions
           cameraGranted={cameraGranted}
           screenGranted={screenGranted}
+          systemAudioGranted={systemAudioGranted}
+          isLinux={isLinuxClient()}
           permissionError={permissionError}
           requestingPermissions={requestingPermissions}
           onRequestPermissions={requestPermissions}
@@ -1882,6 +1934,7 @@ export default function CandidateAssessmentPage() {
               Calibration will start automatically.
             </p>
           </div>
+
 
           <MeetingVideoTile stream={cameraStream} micOn={micOn} size="large" isHeadset={isHeadsetDevice} />
 

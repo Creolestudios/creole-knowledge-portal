@@ -53,6 +53,8 @@ const DETECTION_RULES = [
 export interface ProctoringInstructionsProps {
   cameraGranted: boolean;
   screenGranted: boolean;
+  systemAudioGranted?: boolean;
+  isLinux?: boolean;
   permissionError: string | null;
   requestingPermissions: boolean;
   onRequestPermissions: () => void;
@@ -65,6 +67,8 @@ export interface ProctoringInstructionsProps {
 export function ProctoringInstructions({
   cameraGranted,
   screenGranted,
+  systemAudioGranted = false,
+  isLinux = false,
   permissionError,
   requestingPermissions,
   onRequestPermissions,
@@ -183,14 +187,39 @@ export function ProctoringInstructions({
                 <span className="font-medium">Entire screen share (with system audio)</span>
               </span>
               {screenGranted ? (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-bold">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Granted
-                </span>
+                systemAudioGranted ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Granted (Screen & Audio)
+                  </span>
+                ) : isLinux ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 text-xs font-bold" title="Entire screen granted. System audio will be monitored acoustically via microphone.">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Granted (Acoustic Audio Mode)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Granted
+                  </span>
+                )
               ) : (
                 <span className="text-xs font-medium text-zinc-400 dark:text-[#9f9f9f]">Not granted</span>
               )}
             </div>
           </div>
+
+          {/* Linux System Audio Adaptive Info */}
+          {screenGranted && !systemAudioGranted && isLinux && (
+            <div className="flex items-start space-x-2.5 p-3.5 text-xs text-sky-800 dark:text-sky-200 bg-sky-50 dark:bg-sky-950/30 rounded-xl border border-sky-200 dark:border-sky-900/40">
+              <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0 text-sky-600 dark:text-sky-400" />
+              <div>
+                <p className="font-semibold">Linux Audio Option</p>
+                <p className="mt-0.5 text-zinc-600 dark:text-zinc-300 leading-relaxed">
+                  Your entire screen is active and proctored. Direct system audio was not provided by your browser dialog, so proctoring is using acoustic room monitoring.
+                  To share direct system audio, you can enable &quot;Also share system audio&quot; in Chrome or run with <code className="px-1 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded font-mono text-[11px]">--enable-features=PulseaudioLoopbackForScreenShare</code>.
+                </p>
+              </div>
+            </div>
+          )}
+
 
           {/* Errors (if any) */}
           {permissionError && (
