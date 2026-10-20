@@ -24,6 +24,9 @@ export function ResumeJDUploader({
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [jdFile, setJdFile] = useState<File | null>(null);
 
+  const [isDraggingResume, setIsDraggingResume] = useState(false);
+  const [isDraggingJd, setIsDraggingJd] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -40,6 +43,61 @@ export function ResumeJDUploader({
       setError(null);
     }
   };
+
+  const handleResumeDragOver = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingResume(true);
+  };
+
+  const handleResumeDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingResume(false);
+  };
+
+  const handleResumeDrop = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingResume(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      if (file.size > 10 * 1024 * 1024) {
+        setError('Resume file exceeds maximum allowed size of 10MB.');
+        return;
+      }
+      setResumeFile(file);
+      setError(null);
+    }
+  };
+
+  const handleJdDragOver = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingJd(true);
+  };
+
+  const handleJdDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingJd(false);
+  };
+
+  const handleJdDrop = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingJd(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      if (file.size > 10 * 1024 * 1024) {
+        setError('Job description file exceeds maximum allowed size of 10MB.');
+        return;
+      }
+      setJdFile(file);
+      setError(null);
+    }
+  };
+
 
   const handleExtractKeywords = async () => {
     setError(null);
@@ -169,10 +227,20 @@ export function ResumeJDUploader({
                     </button>
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] hover:border-[#34c4f2] rounded-xl cursor-pointer bg-zinc-50 dark:bg-[#1f1f1f] hover:bg-[#34c4f2]/5 transition-all text-center">
-                    <Upload className="w-8 h-8 text-[#34c4f2] mb-2" />
+                  <label
+                    onDragOver={handleResumeDragOver}
+                    onDragEnter={handleResumeDragOver}
+                    onDragLeave={handleResumeDragLeave}
+                    onDrop={handleResumeDrop}
+                    className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl cursor-pointer transition-all text-center ${
+                      isDraggingResume
+                        ? 'border-[#34c4f2] bg-[#34c4f2]/10 ring-2 ring-[#34c4f2]/40 scale-[1.01]'
+                        : 'border-[#d9d9d9] dark:border-[#4a4a4a] hover:border-[#34c4f2] bg-zinc-50 dark:bg-[#1f1f1f] hover:bg-[#34c4f2]/5'
+                    }`}
+                  >
+                    <Upload className={`w-8 h-8 mb-2 transition-transform ${isDraggingResume ? 'text-[#34c4f2] scale-110' : 'text-[#34c4f2]'}`} />
                     <span className="text-sm font-semibold text-[#1f1f1f] dark:text-white">
-                      Upload Resume (PDF, DOCX, TXT)
+                      {isDraggingResume ? 'Drop Resume here' : 'Upload or Drag & Drop Resume (PDF, DOCX, TXT)'}
                     </span>
                     <span className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] mt-1">Maximum file size 10MB</span>
                     <input
@@ -252,10 +320,20 @@ export function ResumeJDUploader({
                     </button>
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] hover:border-[#34c4f2] rounded-xl cursor-pointer bg-zinc-50 dark:bg-[#1f1f1f] hover:bg-[#34c4f2]/5 transition-all text-center">
-                    <Upload className="w-8 h-8 text-[#34c4f2] mb-2" />
+                  <label
+                    onDragOver={handleJdDragOver}
+                    onDragEnter={handleJdDragOver}
+                    onDragLeave={handleJdDragLeave}
+                    onDrop={handleJdDrop}
+                    className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-xl cursor-pointer transition-all text-center ${
+                      isDraggingJd
+                        ? 'border-[#34c4f2] bg-[#34c4f2]/10 ring-2 ring-[#34c4f2]/40 scale-[1.01]'
+                        : 'border-[#d9d9d9] dark:border-[#4a4a4a] hover:border-[#34c4f2] bg-zinc-50 dark:bg-[#1f1f1f] hover:bg-[#34c4f2]/5'
+                    }`}
+                  >
+                    <Upload className={`w-8 h-8 mb-2 transition-transform ${isDraggingJd ? 'text-[#34c4f2] scale-110' : 'text-[#34c4f2]'}`} />
                     <span className="text-sm font-semibold text-[#1f1f1f] dark:text-white">
-                      Upload Job Description (PDF, DOCX, TXT)
+                      {isDraggingJd ? 'Drop Job Description here' : 'Upload or Drag & Drop Job Description (PDF, DOCX, TXT)'}
                     </span>
                     <span className="text-xs text-[#4a4a4a] dark:text-[#9f9f9f] mt-1">Maximum file size 10MB</span>
                     <input

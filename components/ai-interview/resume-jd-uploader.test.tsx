@@ -137,4 +137,38 @@ describe('ResumeJDUploader — extraction step, hands off to question selection'
     fireEvent.click(uploadButtons[0]);
     fireEvent.click(uploadButtons[1]);
   });
+
+  it('supports dragging and dropping files for Resume and JD', () => {
+    renderUploader();
+
+    const resumeDropzone = screen.getByText(/Upload or Drag & Drop Resume/i).closest('label')!;
+    const jdDropzone = screen.getByText(/Upload or Drag & Drop Job Description/i).closest('label')!;
+
+    // Test dragover / dragenter / dragleave
+    fireEvent.dragOver(resumeDropzone);
+    expect(screen.getByText('Drop Resume here')).toBeInTheDocument();
+
+    fireEvent.dragLeave(resumeDropzone);
+    expect(screen.getByText(/Upload or Drag & Drop Resume/i)).toBeInTheDocument();
+
+    fireEvent.dragOver(jdDropzone);
+    expect(screen.getByText('Drop Job Description here')).toBeInTheDocument();
+
+    fireEvent.dragLeave(jdDropzone);
+    expect(screen.getByText(/Upload or Drag & Drop Job Description/i)).toBeInTheDocument();
+
+    // Test drop event
+    const droppedResume = new File(['candidate resume content'], 'candidate_cv.pdf', { type: 'application/pdf' });
+    const droppedJd = new File(['job description content'], 'backend_jd.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+
+    fireEvent.drop(resumeDropzone, {
+      dataTransfer: { files: [droppedResume] },
+    });
+    fireEvent.drop(jdDropzone, {
+      dataTransfer: { files: [droppedJd] },
+    });
+
+    expect(screen.getByText('candidate_cv.pdf')).toBeInTheDocument();
+    expect(screen.getByText('backend_jd.docx')).toBeInTheDocument();
+  });
 });

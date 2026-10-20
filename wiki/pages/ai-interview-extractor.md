@@ -18,8 +18,8 @@ The **AI Interview Module** allows administrators and technical recruiters to up
 
 ## Key Features
 
-1. **Dual Input Support**:
-   - Accepts PDF, DOCX, TXT file uploads up to 10MB.
+1. **Dual Input & Drag-and-Drop Support**:
+   - Accepts PDF, DOCX, TXT file uploads up to 10MB with native interactive drag-and-drop dropzones.
    - Accepts direct plain text copy-paste.
 2. **AI Keyword & Skill Taxonomy Extraction**:
    - Extracts candidate profile (name, experience level, extracted skills, project highlights).

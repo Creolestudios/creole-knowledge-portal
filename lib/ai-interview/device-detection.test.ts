@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   isHeadsetOrBluetoothDevice,
   useAudioDeviceType,
@@ -68,6 +68,70 @@ describe('device-detection module', () => {
     vi.unstubAllGlobals();
   });
 
+  it('does NOT falsely trigger isHeadsetDevice for built-in laptop soundcards like Realtek Speakers/Headphones', async () => {
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        enumerateDevices: vi.fn().mockResolvedValue([
+          { kind: 'audioinput', deviceId: 'int-mic', label: 'Microphone Array (Realtek(R) Audio)' },
+          { kind: 'audiooutput', deviceId: 'int-spk', label: 'Speakers / Headphones (Realtek(R) Audio)' },
+          { kind: 'audioinput', deviceId: 'int-mic-intel', label: 'Microphone Array (Intel Smart Sound Technology)' },
+        ]),
+      },
+    });
+
+    const internalMicStream = {
+      getAudioTracks: () => [
+        {
+          readyState: 'live',
+          label: 'Microphone Array (Realtek(R) Audio)',
+          getSettings: () => ({ deviceId: 'int-mic' }),
+        },
+      ],
+    } as unknown as MediaStream;
+
+    const { result } = renderHook(() => useAudioDeviceType(internalMicStream));
+
+    expect(result.current.isHeadsetDevice).toBe(false);
+    expect(result.current.deviceLabel).toBe('Microphone Array (Realtek(R) Audio)');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('correctly detects generic connected Bluetooth headsets even when mic track is on internal mic', async () => {
+    vi.stubGlobal('navigator', {
+      mediaDevices: {
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        enumerateDevices: vi.fn().mockResolvedValue([
+          { kind: 'audioinput', deviceId: 'int-mic', label: 'Microphone Array (Realtek(R) Audio)' },
+          { kind: 'audiooutput', deviceId: 'bt-headset', label: 'Headphones (AirPods Pro)' },
+        ]),
+      },
+    });
+
+    const internalMicStream = {
+      getAudioTracks: () => [
+        {
+          readyState: 'live',
+          label: 'Microphone Array (Realtek(R) Audio)',
+          getSettings: () => ({ deviceId: 'int-mic' }),
+        },
+      ],
+    } as unknown as MediaStream;
+
+    const { result } = renderHook(() => useAudioDeviceType(internalMicStream));
+
+    await waitFor(() => {
+      expect(result.current.isHeadsetDevice).toBe(true);
+      expect(result.current.deviceLabel).toBe('Headphones (AirPods Pro)');
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+
   describe('isMobileOrTabletDevice & useIsMobileOrTablet', () => {
     it('detects Android, iPhone, iPad, and tablet User-Agents', () => {
       const androidUa = 'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36';
@@ -112,6 +176,18 @@ describe('device-detection module', () => {
         value: originalNavigator,
         configurable: true,
       });
+    });
+
+    it('detects in-app WebViews and mobile app user agents', () => {
+      const fbWebView = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/20B82 [FBAN/FBIOS;FBDV/iPhone14,2;FBMD/iPhone;FBSN/iOS;FBSV/16.1;FBSS/3;FBID/phone;FBLC/en_US;FBOP/5]';
+      const instagramWebView = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 280.0.0.17.112';
+      const androidWv = 'Mozilla/5.0 (Linux; U; Android 12; en-us; SM-G998U1 Build/SP1A.210812.016) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/103.0.5060.129 Mobile Safari/537.36 wv';
+      const slackAndroid = 'Mozilla/5.0 (Linux; Android 13; Pixel 6 Build/TQ3A.230705.001) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/114.0.5735.196 Mobile Safari/537.36 Slack_SSB';
+
+      expect(isMobileOrTabletDevice(fbWebView)).toBe(true);
+      expect(isMobileOrTabletDevice(instagramWebView)).toBe(true);
+      expect(isMobileOrTabletDevice(androidWv)).toBe(true);
+      expect(isMobileOrTabletDevice(slackAndroid)).toBe(true);
     });
 
     it('useIsMobileOrTablet returns boolean status and updates on resize', () => {

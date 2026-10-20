@@ -50,12 +50,72 @@ export default function AIInterviewManager() {
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
+  const [isDraggingResume, setIsDraggingResume] = useState(false);
+  const [isDraggingJd, setIsDraggingJd] = useState(false);
+
+  const handleResumeDragOver = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!submitting) setIsDraggingResume(true);
+  };
+
+  const handleResumeDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingResume(false);
+  };
+
+  const handleResumeDrop = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingResume(false);
+    if (submitting) return;
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      if (file.size > 10 * 1024 * 1024) {
+        setError('Resume file exceeds maximum allowed size of 10MB.');
+        return;
+      }
+      setResume(file);
+      clearSuccessState();
+    }
+  };
+
+  const handleJdDragOver = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!submitting) setIsDraggingJd(true);
+  };
+
+  const handleJdDragLeave = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingJd(false);
+  };
+
+  const handleJdDrop = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingJd(false);
+    if (submitting) return;
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      if (file.size > 10 * 1024 * 1024) {
+        setError('Job description file exceeds maximum allowed size of 10MB.');
+        return;
+      }
+      setJd(file);
+      clearSuccessState();
+    }
+  };
+
   const [bypassProctoring, setBypassProctoring] = useState(false);
   const [showBypassConfirm, setShowBypassConfirm] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [extractionResult, setExtractionResult] = useState<ExtractionResult | null>(null);
   const [sessionResult, setSessionResult] = useState<SessionGenerationResult | null>(null);
+
 
   const [interviews, setInterviews] = useState<IInterviewSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -405,13 +465,21 @@ export default function AIInterviewManager() {
 
         <label
           htmlFor="resume-upload"
-          className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl ${
-            submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5'
-          } bg-zinc-50 dark:bg-[#1f1f1f] transition-all`}
+          onDragOver={handleResumeDragOver}
+          onDragEnter={handleResumeDragOver}
+          onDragLeave={handleResumeDragLeave}
+          onDrop={handleResumeDrop}
+          className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-2xl transition-all ${
+            submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+          } ${
+            isDraggingResume
+              ? 'border-[#34c4f2] bg-[#34c4f2]/10 ring-2 ring-[#34c4f2]/40 scale-[1.01]'
+              : 'border-[#d9d9d9] dark:border-[#4a4a4a] hover:border-[#34c4f2] hover:bg-[#34c4f2]/5 bg-zinc-50 dark:bg-[#1f1f1f]'
+          }`}
         >
-          <FileText className="w-6 h-6 text-[#34c4f2]" />
+          <FileText className={`w-6 h-6 transition-transform ${isDraggingResume ? 'text-[#34c4f2] scale-110' : 'text-[#34c4f2]'}`} />
           <span className="text-sm font-bold text-[#1f1f1f] dark:text-white">
-            {resume ? resume.name : 'Upload Resume'}
+            {isDraggingResume ? 'Drop Resume here' : resume ? resume.name : 'Upload or Drag & Drop Resume'}
           </span>
           <span className="text-[10px] uppercase tracking-widest text-[#4a4a4a] dark:text-[#9f9f9f]">
             PDF, DOC, DOCX, TXT — max 10 MB
@@ -483,13 +551,21 @@ export default function AIInterviewManager() {
           ) : (
             <label
               htmlFor="jd-upload"
-              className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed border-[#d9d9d9] dark:border-[#4a4a4a] rounded-2xl ${
-                submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#34c4f2] hover:bg-[#34c4f2]/5'
-              } bg-zinc-50 dark:bg-[#1f1f1f] transition-all`}
+              onDragOver={handleJdDragOver}
+              onDragEnter={handleJdDragOver}
+              onDragLeave={handleJdDragLeave}
+              onDrop={handleJdDrop}
+              className={`flex flex-col items-center justify-center gap-2 p-6 border-2 border-dashed rounded-2xl transition-all ${
+                submitting ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+              } ${
+                isDraggingJd
+                  ? 'border-[#34c4f2] bg-[#34c4f2]/10 ring-2 ring-[#34c4f2]/40 scale-[1.01]'
+                  : 'border-[#d9d9d9] dark:border-[#4a4a4a] hover:border-[#34c4f2] hover:bg-[#34c4f2]/5 bg-zinc-50 dark:bg-[#1f1f1f]'
+              }`}
             >
-              <FileText className="w-6 h-6 text-[#34c4f2]" />
+              <FileText className={`w-6 h-6 transition-transform ${isDraggingJd ? 'text-[#34c4f2] scale-110' : 'text-[#34c4f2]'}`} />
               <span className="text-sm font-bold text-[#1f1f1f] dark:text-white">
-                {jd ? jd.name : 'Upload Job Description'}
+                {isDraggingJd ? 'Drop Job Description here' : jd ? jd.name : 'Upload or Drag & Drop Job Description'}
               </span>
               <span className="text-[10px] uppercase tracking-widest text-[#4a4a4a] dark:text-[#9f9f9f]">
                 PDF, DOC, DOCX, TXT — max 10 MB

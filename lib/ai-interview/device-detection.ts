@@ -60,10 +60,28 @@ const HEADSET_KEYWORDS = [
 
 /**
  * Checks if a given device label corresponds to Bluetooth or headphone/earphone hardware.
+ * Strictly ignores internal laptop soundcards and built-in mic/speakers (Realtek, Intel Smart Sound, etc.)
+ * to avoid false positives when Bluetooth is on but no device is connected.
  */
 export function isHeadsetOrBluetoothDevice(deviceLabel?: string | null): boolean {
   if (!deviceLabel) return false;
   const lower = deviceLabel.toLowerCase().trim();
+
+  // Exclude built-in laptop motherboards and internal sound chipsets
+  const isInternalChipset =
+    lower.includes('realtek') ||
+    lower.includes('intel smart sound') ||
+    lower.includes('intel(r) smart sound') ||
+    lower.includes('internal microphone') ||
+    lower.includes('microphone array') ||
+    lower.includes('conexant') ||
+    lower.includes('synaptics') ||
+    lower.includes('cirrus');
+
+  if (isInternalChipset) {
+    return false;
+  }
+
   return HEADSET_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
@@ -75,30 +93,55 @@ export function useAudioDeviceType(stream: MediaStream | null): {
   isHeadsetDevice: boolean;
   deviceLabel: string;
 } {
-  const [deviceLabel, setDeviceLabel] = useState<string>('');
-  const [isHeadsetDevice, setIsHeadsetDevice] = useState<boolean>(false);
+  const [deviceLabel, setDeviceLabel] = useState<string>(() => {
+    const audioTracks = stream?.getAudioTracks() || [];
+    const audioTrack = audioTracks.find((t) => t.readyState !== 'ended') || audioTracks[0];
+    return audioTrack?.label || '';
+  });
+  const [isHeadsetDevice, setIsHeadsetDevice] = useState<boolean>(() => {
+    const audioTracks = stream?.getAudioTracks() || [];
+    const audioTrack = audioTracks.find((t) => t.readyState !== 'ended') || audioTracks[0];
+    return isHeadsetOrBluetoothDevice(audioTrack?.label);
+  });
 
   useEffect(() => {
     let isCancelled = false;
 
     const updateDeviceInfo = async () => {
-      const audioTrack = stream?.getAudioTracks()[0];
+      const audioTracks = stream?.getAudioTracks() || [];
+      const audioTrack = audioTracks.find((t) => t.readyState !== 'ended') || audioTracks[0];
+
       const trackLabel = audioTrack?.label || '';
       let isBluetooth = isHeadsetOrBluetoothDevice(trackLabel);
       let resolvedLabel = trackLabel;
 
-      // If active track label is missing or generic (e.g. "Default - Microphone Array" on Windows),
-      // inspect enumerated audio devices to check if any Bluetooth or headset device is active.
-      if (!isBluetooth && typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+      // If the active audio track is not explicitly identified as a Bluetooth device
+      // (e.g. Windows routed mic to internal laptop mic while headset is used for listening),
+      // inspect enumerated audio devices to check if any genuine Bluetooth headset/earphones are connected.
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
-          const headsetDevice = devices.find(
-            (d) => (d.kind === 'audioinput' || d.kind === 'audiooutput') && isHeadsetOrBluetoothDevice(d.label),
-          );
-          if (headsetDevice) {
-            isBluetooth = true;
-            if (!resolvedLabel || resolvedLabel.toLowerCase().includes('default')) {
-              resolvedLabel = headsetDevice.label;
+
+          // 1. If active track has a generic label like "Default", check its specific device
+          if (!isBluetooth && (trackLabel.toLowerCase().startsWith('default') || !trackLabel)) {
+            const activeDeviceId = typeof audioTrack?.getSettings === 'function' ? audioTrack.getSettings().deviceId : undefined;
+            const activeInput = devices.find(
+              (d) => d.kind === 'audioinput' && activeDeviceId && d.deviceId === activeDeviceId
+            );
+            if (activeInput && isHeadsetOrBluetoothDevice(activeInput.label)) {
+              isBluetooth = true;
+              resolvedLabel = activeInput.label;
+            }
+          }
+
+          // 2. If still not identified, check if a genuine external Bluetooth headset is connected to the system
+          if (!isBluetooth) {
+            const connectedHeadset = devices.find(
+              (d) => (d.kind === 'audioinput' || d.kind === 'audiooutput') && isHeadsetOrBluetoothDevice(d.label)
+            );
+            if (connectedHeadset) {
+              isBluetooth = true;
+              resolvedLabel = connectedHeadset.label;
             }
           }
         } catch {
@@ -132,7 +175,8 @@ export function useAudioDeviceType(stream: MediaStream | null): {
 
 /**
  * Detects whether the current client device is a mobile phone, tablet, or non-desktop device.
- * Considers User-Agent patterns, iPadOS touch points, and small touch viewport fallbacks.
+ * Considers User-Agent patterns (including in-app webviews), Client Hints, iPadOS touch points,
+ * media pointer queries, and physical screen dimensions.
  */
 export function isMobileOrTabletDevice(customUserAgent?: string): boolean {
   if (typeof window === 'undefined') return false;
@@ -148,31 +192,46 @@ export function isMobileOrTabletDevice(customUserAgent?: string): boolean {
   const ua = customUserAgent || (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '';
   const lowerUa = ua.toLowerCase();
 
-  // Standard mobile and tablet platforms in user agent
+  // 1. Standard mobile and tablet platforms + In-App WebViews (Slack, WhatsApp, Gmail, FB, Instagram, etc.)
   const isMobileUa =
-    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|silk|kindle|tablet/i.test(ua);
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|silk|kindle|tablet|cfnetwork|wv|fban|fbav|instagram|linkedinapp|micromessenger|snapchat|line\/|gsa\//i.test(ua);
 
   if (isMobileUa) {
     return true;
   }
 
-  // iPadOS 13+ reports as Macintosh in user agent but has multi-touch support
+  // 2. User-Agent Client Hints (Modern Chrome / Edge on Android / Mobile)
   if (typeof navigator !== 'undefined') {
-    const isIPadOS =
-      (navigator.maxTouchPoints ?? 0) > 1 &&
-      (lowerUa.includes('macintosh') || lowerUa.includes('mac os'));
-    if (isIPadOS) {
+    const nav = navigator as { userAgentData?: { mobile?: boolean } };
+    if (nav.userAgentData?.mobile === true) {
       return true;
     }
   }
 
-  // Viewport & touch fallback: small touchscreens (e.g. phones / mini tablets under 768px width)
-  if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
-    const isSmallTouchDevice =
-      (navigator.maxTouchPoints ?? 0) > 0 &&
-      window.innerWidth > 0 &&
-      window.innerWidth < 768;
-    if (isSmallTouchDevice) {
+  // 3. iPadOS 13+ reports as Macintosh in user agent but has multi-touch support
+  const maxTouchPoints = typeof navigator !== 'undefined' ? (navigator.maxTouchPoints ?? 0) : 0;
+  if (maxTouchPoints > 1 && (lowerUa.includes('macintosh') || lowerUa.includes('mac os'))) {
+    return true;
+  }
+
+  // 4. Media query: Touch-only devices with coarse pointer and no hover (smartphones & tablets)
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    try {
+      const isCoarseNoHover = window.matchMedia('(pointer: coarse) and (hover: none)').matches;
+      if (isCoarseNoHover) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 5. Screen & Viewport dimensions check (phones & mini tablets under 768px width)
+  if (typeof window !== 'undefined') {
+    const screenWidth = typeof window.screen !== 'undefined' ? Math.min(window.screen.width, window.screen.height) : 0;
+    const innerDim = Math.min(window.innerWidth || screenWidth, window.innerHeight || screenWidth);
+    const hasTouch = maxTouchPoints > 0;
+    if (hasTouch && ((screenWidth > 0 && screenWidth < 768) || (innerDim > 0 && innerDim < 768))) {
       return true;
     }
   }
@@ -190,14 +249,24 @@ export function useIsMobileOrTablet(): boolean {
 
   useEffect(() => {
     const checkDevice = () => {
-      setIsMobileOrTablet(isMobileOrTabletDevice());
+      setIsMobileOrTablet((prev) => {
+        const next = isMobileOrTabletDevice();
+        return prev === next ? prev : next;
+      });
     };
 
-    checkDevice();
+    const rafId = requestAnimationFrame(checkDevice);
     window.addEventListener('resize', checkDevice);
-    return () => window.removeEventListener('resize', checkDevice);
+    window.addEventListener('orientationchange', checkDevice);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', checkDevice);
+      window.removeEventListener('orientationchange', checkDevice);
+    };
   }, []);
 
   return isMobileOrTablet;
 }
+
 
