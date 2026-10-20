@@ -34,7 +34,7 @@ There are two ways to apply all migrations to your new Supabase project:
 
 #### Option A: Supabase CLI (Recommended & Automated)
 
-The repository contains 24 sequential migrations in `supabase/migrations/`.
+The repository contains 25 sequential migrations in `supabase/migrations/`.
 
 1. **Install or use Supabase CLI via `npx`**:
    ```bash
@@ -88,6 +88,7 @@ If you do not have CLI access, run the scripts directly in the Supabase Web Dash
    22. `20260923000000_fix_interview_events_and_warnings.sql` (Fixes interview warning and event triggers)
    23. `20260923230000_create_interview_reports.sql` (Creates `interview_reports`)
    24. `20260924000000_interview_transcript_and_scoring.sql` (Creates transcripts, turn metrics, scoring columns)
+   25. `20261020120000_seed_hr_question_bank.sql` (Seeds HR Question Bank with categorized questions)
 
 ---
 
