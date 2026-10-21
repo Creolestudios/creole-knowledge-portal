@@ -110,6 +110,15 @@ export function useWebRTC(
 
         try {
           if (payload.type === 'admin-joined' && role === 'candidate') {
+            if (pcRef.current) {
+              try {
+                pcRef.current.close();
+              } catch {
+                // ignore
+              }
+              pcRef.current = null;
+            }
+            pendingCandidatesRef.current = [];
             const pc = createPeerConnection();
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);

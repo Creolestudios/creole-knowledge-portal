@@ -207,6 +207,18 @@ export function useRealtimeTranscript({
       recognition.onerror = (e: any) => {
         if (e?.error === 'not-allowed') {
           setIsListening(false);
+          return;
+        }
+        if (e?.error === 'audio-capture' || e?.error === 'network') {
+          // Bluetooth device profile or network lag: schedule an auto-recovery reconnect
+          if (isCandidateTurnRef.current) {
+            if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+            restartTimerRef.current = setTimeout(() => {
+              if (isCandidateTurnRef.current) {
+                createAndStartRecognition();
+              }
+            }, 300);
+          }
         }
         // 'no-speech' or 'aborted' happens during natural pauses or filler word hesitations.
         // We do not terminate listening; onend will automatically reconnect with a fresh session.
@@ -356,6 +368,25 @@ export function useRealtimeTranscript({
       }
     };
   }, [isCandidateTurn, createAndStartRecognition]);
+
+  // Re-bind recognition session whenever a Bluetooth headset connects or disconnects
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.addEventListener) return;
+    const handleDeviceChange = () => {
+      if (isCandidateTurnRef.current) {
+        if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = setTimeout(() => {
+          if (isCandidateTurnRef.current) {
+            createAndStartRecognition();
+          }
+        }, 300);
+      }
+    };
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, [createAndStartRecognition]);
 
   return {
     isSupported,

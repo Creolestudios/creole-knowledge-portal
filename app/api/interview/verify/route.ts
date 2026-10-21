@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { supabaseAdmin } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 import {
   hashPasscode,
   isInviteExpired,
@@ -50,6 +51,26 @@ export async function GET(req: Request) {
     return false;
   };
 
+  // Authenticate whether the visitor is an administrator
+  let isRequesterAdmin = false;
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const emailFilter = user.email ? `,email.eq.${user.email}` : '';
+      const { data: profile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('role')
+        .or(`user_id.eq.${user.id}${emailFilter}`)
+        .maybeSingle();
+      if (profile?.role === 'admin') {
+        isRequesterAdmin = true;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   // 1. ai_interviews
   try {
     const { data: interview } = await supabaseAdmin
@@ -59,6 +80,18 @@ export async function GET(req: Request) {
       .single();
 
     if (interview) {
+      // If ongoing and requester is an administrator, allow live joining/rejoining without block
+      if (interview.status === 'in_progress' && isRequesterAdmin) {
+        return NextResponse.json({
+          active: true,
+          status: 'in_progress',
+          inProgress: true,
+          isAdmin: true,
+          requiresAccessCode: false,
+          bypassProctoring: true,
+        });
+      }
+
       if (new Date(interview.expires_at) < new Date()) {
         return NextResponse.json({
           error: 'This interview link has expired',
@@ -69,6 +102,20 @@ export async function GET(req: Request) {
           reasonDetail: 'The scheduled invitation window to access and take this interview has elapsed.',
         }, { status: 410 });
       }
+
+      // If ongoing and another user/device without matching session cookie attempts to join, show 409 conflict
+      if (interview.status === 'in_progress' && !matchesCookie(interview.id)) {
+        return NextResponse.json({
+          error: 'This interview is currently in progress on another device.',
+          note: 'Note: This interview is currently in progress on another device.',
+          conflict: true,
+          concurrent: true,
+          status: 'in_progress',
+          reasonTitle: 'Interview In Progress on Another Device',
+          reasonDetail: 'An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited.',
+        }, { status: 409 });
+      }
+
       if (interview.status === 'terminated' || interview.status === 'completed' || interview.used_at) {
         const isCompleted = interview.status === 'completed';
         const isTerminated = interview.status === 'terminated';
@@ -103,6 +150,67 @@ export async function GET(req: Request) {
   // 2. interview_invites
   const invite = await resolveInviteByToken(interviewId);
   if (invite) {
+    let isOngoing = invite.status === 'in_progress';
+    let isCompleted = invite.status === 'completed';
+    let isRevoked = invite.status === 'revoked' || invite.status === 'expired';
+    let violationReason: string | undefined;
+    let warningCount: number | undefined;
+
+    if (invite.session_id) {
+      try {
+        const { data: linkedSession } = await supabaseAdmin
+          .from('interview_sessions')
+          .select('status, voice_warning_count, face_warning_count, object_warning_count')
+          .eq('id', invite.session_id)
+          .maybeSingle();
+
+        if (linkedSession) {
+          if (linkedSession.status === 'cancelled' || linkedSession.status === 'terminated') {
+            isRevoked = true;
+            isOngoing = false;
+          } else if (linkedSession.status === 'completed') {
+            isCompleted = true;
+            isOngoing = false;
+          } else if (linkedSession.status === 'in_progress') {
+            isOngoing = true;
+          }
+          const total = (linkedSession.face_warning_count || 0) + (linkedSession.object_warning_count || 0) + (linkedSession.voice_warning_count || 0);
+          if (total > 0) warningCount = total;
+        }
+      } catch {}
+
+      try {
+        const { data: violationEvt } = await supabaseAdmin
+          .from('interview_events')
+          .select('meta, metadata')
+          .eq('session_id', invite.session_id)
+          .in('event_type', ['proctoring_violation', 'terminated'])
+          .order('ts_ms', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const meta = (violationEvt?.meta || violationEvt?.metadata) as Record<string, any> | undefined;
+        if (meta?.reason) {
+          violationReason = String(meta.reason);
+          isRevoked = true;
+          isOngoing = false;
+        }
+      } catch {}
+    }
+
+    // 1. If ongoing and requester is an administrator, allow live joining/rejoining without block
+    if (isOngoing && isRequesterAdmin) {
+      return NextResponse.json({
+        active: true,
+        status: 'in_progress',
+        inProgress: true,
+        isAdmin: true,
+        requiresAccessCode: false,
+        bypassProctoring: true,
+      });
+    }
+
+    // 2. For non-admins, verify scheduled window expiration
     if (isInviteExpired(invite)) {
       return NextResponse.json({
         error: 'This interview link has expired',
@@ -113,54 +221,22 @@ export async function GET(req: Request) {
         reasonDetail: 'The scheduled invitation window to access and take this interview has elapsed.',
       }, { status: 410 });
     }
-    if (
-      invite.status === 'revoked' ||
-      invite.status === 'expired' ||
-      invite.status === 'completed' ||
-      invite.consumed_at
-    ) {
-      let isCompleted = invite.status === 'completed';
-      let isRevoked = invite.status === 'revoked';
-      let violationReason: string | undefined;
-      let warningCount: number | undefined;
 
-      if (invite.session_id) {
-        try {
-          const { data: linkedSession } = await supabaseAdmin
-            .from('interview_sessions')
-            .select('status, voice_warning_count, face_warning_count, object_warning_count')
-            .eq('id', invite.session_id)
-            .maybeSingle();
+    // 2. If ongoing and another user/device without matching session cookie attempts to join, show 409 conflict
+    if (isOngoing && !matchesCookie(invite.session_id)) {
+      return NextResponse.json({
+        error: 'This interview is currently in progress on another device.',
+        note: 'Note: This interview is currently in progress on another device.',
+        conflict: true,
+        concurrent: true,
+        status: 'in_progress',
+        reasonTitle: 'Interview In Progress on Another Device',
+        reasonDetail: 'An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited.',
+      }, { status: 409 });
+    }
 
-          if (linkedSession) {
-            if (linkedSession.status === 'cancelled' || linkedSession.status === 'terminated') {
-              isRevoked = true;
-            } else if (linkedSession.status === 'completed') {
-              isCompleted = true;
-            }
-            const total = (linkedSession.face_warning_count || 0) + (linkedSession.object_warning_count || 0) + (linkedSession.voice_warning_count || 0);
-            if (total > 0) warningCount = total;
-          }
-        } catch {}
-
-        try {
-          const { data: violationEvt } = await supabaseAdmin
-            .from('interview_events')
-            .select('meta, metadata')
-            .eq('session_id', invite.session_id)
-            .in('event_type', ['proctoring_violation', 'terminated'])
-            .order('ts_ms', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          const meta = (violationEvt?.meta || violationEvt?.metadata) as Record<string, any> | undefined;
-          if (meta?.reason) {
-            violationReason = String(meta.reason);
-            isRevoked = true;
-          }
-        } catch {}
-      }
-
+    // 3. If finished, revoked, or completed
+    if (isCompleted || isRevoked || (invite.consumed_at && !isOngoing)) {
       return NextResponse.json({
         error: isCompleted ? 'This interview has already been completed' : 'This interview link has already been used and is expired',
         note: 'Note: This interview link has already been used and is expired.',
@@ -253,6 +329,30 @@ export async function GET(req: Request) {
       .maybeSingle();
 
     if (session) {
+      // 1. If ongoing and requester is an administrator, allow live joining without block
+      if (session.status === 'in_progress' && isRequesterAdmin) {
+        return NextResponse.json({
+          active: true,
+          status: 'in_progress',
+          inProgress: true,
+          isAdmin: true,
+          requiresAccessCode: false,
+          bypassProctoring: true,
+        });
+      }
+
+      // 2. If ongoing and another user/device without matching session cookie attempts to join, show 409 conflict
+      if (session.status === 'in_progress' && !matchesCookie(session.id)) {
+        return NextResponse.json({
+          error: 'This interview is currently in progress on another device.',
+          note: 'Note: This interview is currently in progress on another device.',
+          conflict: true,
+          concurrent: true,
+          status: 'in_progress',
+          reasonTitle: 'Interview In Progress on Another Device',
+          reasonDetail: 'An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited.',
+        }, { status: 409 });
+      }
       if (
         session.status === 'cancelled' ||
         session.status === 'terminated' ||

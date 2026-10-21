@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Clock,
   Video,
+  Radio,
 } from 'lucide-react';
 
 function getPageNumbers(current: number, total: number): (number | string)[] {
@@ -280,6 +281,26 @@ export default function InterviewReportsPage() {
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
                         {new Date(r.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </p>
+
+                      {/* Join / Rejoin Live Interview (only shown for ongoing in_progress interviews) */}
+                      {r.status === 'in_progress' && (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              window.open(`/interview/${r.id}`, '_blank', 'noopener,noreferrer');
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 text-xs font-bold rounded-lg transition-colors shadow-2xs cursor-pointer"
+                            title="Join / Rejoin ongoing live interview as administrator"
+                          >
+                            <Radio className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+                            <span>Join / Rejoin Live</span>
+                            <span className="text-[10px]">↗</span>
+                          </button>
+                        </div>
+                      )}
 
                       {/* Full Interview Video Recording Link (only shown once interview has concluded) */}
                       {r.recordingLink && (isCompleted || isTerminated) && (

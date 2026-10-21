@@ -382,6 +382,18 @@ export default function InterviewEntryPage() {
         if (!isMounted) return;
         const json = await res.json().catch(() => ({}));
 
+        if (res.status === 409) {
+          // Another user or device is attempting to join an active in-progress session
+          setExpirationTitle(json.reasonTitle || 'Interview In Progress on Another Device');
+          setExpirationDetail(
+            json.reasonDetail ||
+            'An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited.'
+          );
+          setExpiredNote(json.note || 'Note: This interview is currently in progress on another device.');
+          setStageWithRef('expired');
+          return;
+        }
+
         if (res.status === 410) {
           try {
             localStorage.setItem(`interview_used_${interviewId}`, 'true');
@@ -467,6 +479,12 @@ export default function InterviewEntryPage() {
 
           if (json.isAdmin) {
             setIsAdmin(true);
+            try {
+              localStorage.removeItem(`interview_used_${interviewId}`);
+              sessionStorage.removeItem(`interview_used_${interviewId}`);
+            } catch {
+              // ignore
+            }
             if (json.bypassProctoring) {
               setBypassProctoring(true);
             }
@@ -1282,8 +1300,18 @@ export default function InterviewEntryPage() {
       // Ignore broadcast errors during leave
     }
     stopAllMedia();
+    try {
+      if (interviewId) {
+        localStorage.removeItem(`interview_used_${interviewId}`);
+        sessionStorage.removeItem(`interview_used_${interviewId}`);
+        sessionStorage.removeItem(`interview_live_active_${interviewId}`);
+        sessionStorage.removeItem(`interview_refresh_terminated_${interviewId}`);
+      }
+    } catch {
+      // ignore
+    }
     router.push('/admin/dashboard');
-  }, [stopAllMedia, router, leaveWebRTC]);
+  }, [stopAllMedia, router, leaveWebRTC, interviewId]);
 
   // If admin closes browser window or tab, broadcast admin-left so admin window vanishes from candidate screen
   useEffect(() => {
@@ -3585,23 +3613,36 @@ export default function InterviewEntryPage() {
               </div>
             )}
 
-            {Boolean(currentSpokenText || interimText) && (
+            {(!isAdmin && stage === 'interview') && (
               <div className="mt-5 p-4 rounded-xl bg-zinc-900/60 dark:bg-[#1a1f26]/80 border border-[#34c4f2]/30 space-y-2 transition-all">
                 <div className="flex items-center justify-between gap-2 border-b border-zinc-800/80 pb-2">
                   <span className="flex items-center gap-2 text-xs font-semibold text-[#34c4f2]">
-                    <span className={`h-2 w-2 rounded-full ${interimText ? 'bg-[#34c4f2] animate-ping' : 'bg-emerald-400'}`} />
-                    {interimText ? 'Listening & Transcribing...' : 'Your Answer (Recorded in real time)'}
+                    <span className={`h-2 w-2 rounded-full ${interimText ? 'bg-[#34c4f2] animate-ping' : (currentSpokenText ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse')}`} />
+                    {interimText
+                      ? 'Listening & Transcribing...'
+                      : (currentSpokenText
+                        ? 'Your Answer (Recorded in real time)'
+                        : (isHeadsetDevice ? '🎧 Headset connected — Speak your answer...' : '🎙️ Microphone active — Speak your answer...'))}
                   </span>
                   <span className="text-[10px] text-zinc-400 font-medium">
-                    {interimText ? 'Speaking active' : 'Answer retained across pauses'}
+                    {interimText ? 'Speaking active' : (currentSpokenText ? 'Answer retained across pauses' : 'Listening...')}
                   </span>
                 </div>
 
-                <div className="text-sm sm:text-base text-zinc-100 leading-relaxed font-normal whitespace-pre-wrap">
-                  {currentSpokenText}
-                  {interimText && (
-                    <span className="italic text-[#34c4f2]/90 ml-1.5 inline-block">
-                      {interimText}
+                <div className="text-sm sm:text-base text-zinc-100 leading-relaxed font-normal whitespace-pre-wrap min-h-[2.5rem]">
+                  {currentSpokenText || interimText ? (
+                    <>
+                      {currentSpokenText}
+                      {interimText && (
+                        <span className="italic text-[#34c4f2]/90 ml-1.5 inline-block">
+                          {interimText}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500 italic flex items-center gap-2 py-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#34c4f2] animate-ping" />
+                      Words spoken will appear here in real time as you answer...
                     </span>
                   )}
                 </div>
