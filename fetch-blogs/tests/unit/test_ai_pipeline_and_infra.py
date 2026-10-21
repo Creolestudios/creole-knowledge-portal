@@ -111,7 +111,7 @@ class TestEmbeddings:
 
         monkeypatch.setattr(embeddings_mod.genai, "embed_content", _capture)
         embeddings_mod.get_text_embedding("x" * 20000)
-        assert len(seen["contents"]) == 15000
+        assert len(seen.get("content") or seen.get("contents") or "") == 15000
 
     @pytest.mark.parametrize(
         ("a", "b", "expected"),
@@ -206,6 +206,38 @@ class TestExtractorEmbedText:
         monkeypatch.setattr(genai, "configure", lambda **_: None)
         monkeypatch.setattr(genai, "embed_content", _boom)
         assert extractor_embed.embed_text("hello") == []
+
+    def test_passes_gemini_embedding_2_and_output_dimensionality(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        captured: dict[str, Any] = {}
+        monkeypatch.setattr(
+            extractor_embed,
+            "get_llm_settings",
+            lambda: type(
+                "S",
+                (),
+                {
+                    "GEMINI_API_KEY": "test-key",
+                    "GEMINI_EMBED_MODEL": "models/gemini-embedding-2",
+                    "GEMINI_EMBED_DIMENSION": 768,
+                },
+            )(),
+        )
+        import google.generativeai as genai
+
+        def _fake_embed(**kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {"embedding": [0.42] * 768}
+
+        monkeypatch.setattr(genai, "configure", lambda **_: None)
+        monkeypatch.setattr(genai, "embed_content", _fake_embed)
+
+        vec = extractor_embed.embed_text("sample tech blog article")
+        assert len(vec) == 768
+        assert captured.get("model") == "models/gemini-embedding-2"
+        assert captured.get("output_dimensionality") == 768
+
 
 
 # ── reranker ──────────────────────────────────────────────────────────────────

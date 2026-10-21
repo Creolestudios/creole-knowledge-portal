@@ -23,11 +23,16 @@ def embed_text(text: str, *, task_type: str = "retrieval_document") -> list[floa
         import google.generativeai as genai
 
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        response = genai.embed_content(
-            model=settings.GEMINI_EMBED_MODEL,
-            content=trimmed,
-            task_type=task_type,
-        )
+        embed_kwargs = {
+            "model": getattr(settings, "GEMINI_EMBED_MODEL", "models/gemini-embedding-2"),
+            "content": trimmed,
+            "task_type": task_type,
+        }
+        dim = getattr(settings, "GEMINI_EMBED_DIMENSION", 768)
+        if dim:
+            embed_kwargs["output_dimensionality"] = dim
+
+        response = genai.embed_content(**embed_kwargs)
         embedding = response.get("embedding") if isinstance(response, dict) else None
         if isinstance(embedding, list):
             return [float(value) for value in embedding]

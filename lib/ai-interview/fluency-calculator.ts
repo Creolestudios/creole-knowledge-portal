@@ -314,15 +314,18 @@ export function calculateCognitiveComposite(
   reasoningSubscore100: number,
   claritySubscore100: number
 ): number {
-  const safeAvg = Number.isFinite(competencyAvg1to5) ? Math.min(5, Math.max(1, competencyAvg1to5)) : 3;
+  if (!Number.isFinite(competencyAvg1to5) || competencyAvg1to5 <= 1.0) {
+    return 0;
+  }
+  const safeAvg = Math.min(5, Math.max(1, competencyAvg1to5));
   const competencyPts = ((safeAvg - 1) / 4) * 100;
 
-  const safeReasoning = Number.isFinite(reasoningSubscore100) ? Math.min(100, Math.max(0, reasoningSubscore100)) : 50;
-  const safeClarity = Number.isFinite(claritySubscore100) ? Math.min(100, Math.max(0, claritySubscore100)) : 50;
+  const safeReasoning = Number.isFinite(reasoningSubscore100) ? Math.min(100, Math.max(0, reasoningSubscore100)) : 0;
+  const safeClarity = Number.isFinite(claritySubscore100) ? Math.min(100, Math.max(0, claritySubscore100)) : 0;
 
   const composite = Math.round(
-    0.60 * competencyPts +
-    0.30 * safeReasoning +
+    0.70 * competencyPts +
+    0.20 * safeReasoning +
     0.10 * safeClarity
   );
 

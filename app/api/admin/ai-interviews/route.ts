@@ -163,13 +163,20 @@ export async function GET() {
 
     const sessionIds = (data || []).map((row: any) => row.id);
     const recordingsMap: Record<string, string> = {};
+    const reportsMap: Record<string, boolean> = {};
     if (sessionIds.length > 0) {
       try {
-        const { data: recEvents } = await supabaseAdmin
-          .from('interview_events')
-          .select('session_id, meta, metadata')
-          .in('session_id', sessionIds)
-          .or('category.eq.full_recording,event_type.eq.full_recording');
+        const [{ data: recEvents }, { data: reportRows }] = await Promise.all([
+          supabaseAdmin
+            .from('interview_events')
+            .select('session_id, meta, metadata')
+            .in('session_id', sessionIds)
+            .or('category.eq.full_recording,event_type.eq.full_recording'),
+          supabaseAdmin
+            .from('interview_reports')
+            .select('session_id, recommendation')
+            .in('session_id', sessionIds),
+        ]);
 
         if (recEvents) {
           for (const evt of recEvents) {
@@ -180,17 +187,27 @@ export async function GET() {
             }
           }
         }
+
+        const validReportRows = Array.isArray(reportRows) ? reportRows : ((reportRows as any)?.data ?? []);
+        if (Array.isArray(validReportRows)) {
+          for (const r of validReportRows) {
+            if (r && r.session_id && r.recommendation) {
+              reportsMap[r.session_id] = true;
+            }
+          }
+        }
       } catch (recErr) {
-        console.warn('[ai-interviews] Failed to load recording links:', recErr);
+        console.warn('[ai-interviews] Failed to load recording links or reports:', recErr);
       }
     }
 
     const interviews = (data || []).slice(0, 10).map((row: any) => {
       const invite = row.interview_invites?.[0] ?? null;
+      const hasCompletedReport = Boolean(reportsMap[row.id]);
       let status = invite?.status ?? row.status;
       if (row.status === 'cancelled' || row.status === 'terminated' || invite?.status === 'revoked') {
         status = 'terminated';
-      } else if (row.status === 'completed' || invite?.status === 'completed') {
+      } else if (row.status === 'completed' || invite?.status === 'completed' || hasCompletedReport) {
         status = 'completed';
       } else if (row.status === 'in_progress' || invite?.status === 'in_progress') {
         status = 'in_progress';

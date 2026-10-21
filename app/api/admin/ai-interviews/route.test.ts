@@ -32,9 +32,18 @@ vi.mock('@/lib/supabase/admin', () => ({
         remove: (...args: any[]) => mockRemove(...args),
       }),
     },
-    from: vi.fn().mockReturnValue({
-      insert: (...args: any[]) => (mockInsert as any)(...args),
-      select: () => listQuery,
+    from: vi.fn((table?: string) => {
+      if (table === 'interview_reports') {
+        return {
+          select: () => ({
+            in: vi.fn(() => Promise.resolve({ data: [] })),
+          }),
+        };
+      }
+      return {
+        insert: (...args: any[]) => (mockInsert as any)(...args),
+        select: () => listQuery,
+      };
     }),
   },
 }));

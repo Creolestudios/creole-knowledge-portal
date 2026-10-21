@@ -95,9 +95,15 @@ describe('fluency-calculator', () => {
     });
 
     it('calculates cognitive composite from competency avg, reasoning, and clarity', () => {
-      // Competency 4/5 -> 75 pts. 60% of 75 = 45. 30% of 80 = 24. 10% of 90 = 9. Total = 78.
+      // Competency 4/5 -> 75 pts. 70% of 75 = 52.5. 20% of 80 = 16. 10% of 90 = 9. Total = 77.5 -> 78.
       const composite = calculateCognitiveComposite(4, 80, 90);
       expect(composite).toBe(78);
+    });
+
+    it('returns strictly 0 when competency average is 1.0 or below (zero correct answers)', () => {
+      expect(calculateCognitiveComposite(1.0, 80, 90)).toBe(0);
+      expect(calculateCognitiveComposite(0, 80, 90)).toBe(0);
+      expect(calculateCognitiveComposite(0.5, 50, 70)).toBe(0);
     });
   });
 });

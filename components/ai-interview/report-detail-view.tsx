@@ -549,9 +549,12 @@ export function ReportDetailView({
       ? 0
       : null;
 
-  // 3. Smartness: clarity (confidence & crisp delivery) + reasoning subscore
+  // 3. Smartness: reasoning subscore (70%) + delivery presence/clarity (30%)
+  // Grounded in candidate's demonstrated reasoning with zero artificial default fallback
+  const safeReasoning = report?.reasoning_subscore ?? (report?.cognitive_composite ?? 0);
+  const safeClarity = report?.clarity_subscore ?? (report?.fluency_score ?? 0);
   const smartnessRaw = Math.round(
-    0.5 * (report?.clarity_subscore ?? 70) + 0.5 * (report?.reasoning_subscore ?? 70)
+    0.70 * safeReasoning + 0.30 * safeClarity
   );
   const smartnessScore =
     report?.cognitive_composite !== null && report?.cognitive_composite !== undefined

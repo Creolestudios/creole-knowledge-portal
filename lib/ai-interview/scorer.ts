@@ -397,6 +397,14 @@ IMPORTANT:
    - Set "language_switch_detected": true
    - Estimate "non_english_percentage": 0-100
    - Significantly penalize the fluency band, vocabulary, and CEFR rating accordingly.
+4. QUESTION RESPONSIVENESS & CONTEXTUAL RELEVANCE:
+   Check whether the candidate used English to actually answer/address the interview questions, OR if their utterances consist of evasive non-answers, repetitive greetings (e.g., repeatedly saying "hello", "hi", "good morning"), apologetic refusals, or off-topic phrases.
+   - If candidate failed to engage with the questions and only gave repetitive greetings or off-topic evasions:
+     Set "relevance_factor": 0.25
+   - If candidate attempted to answer but drifted significantly off-topic:
+     Set "relevance_factor": 0.60
+   - If candidate genuinely communicated answers to the questions:
+     Set "relevance_factor": 1.0
 
 CANDIDATE UTTERANCES:
 """
@@ -408,6 +416,7 @@ Return JSON ONLY:
   "cefr": "A2" | "B1" | "B2" | "C1" | "C2",
   "language_switch_detected": boolean,
   "non_english_percentage": number,
+  "relevance_factor": number,
   "sub": {
     "grammar": { "band": 0-100, "notes": "concise note" },
     "vocabulary": { "band": 0-100, "notes": "concise note" },
@@ -428,12 +437,18 @@ Return JSON ONLY:
         const v = sub?.vocabulary?.band || 70;
         const c = sub?.coherence?.band || 70;
         const f = sub?.fluency?.band || 70;
-        fluencyModelScore = Math.round((g + v + c + f) / 4);
+        const answeredScores = questionScores.filter((qs) => qs.score > 0);
+        const hasCorrectAnswer = questionScores.some((qs) => qs.score > 1);
+        const relFactor = typeof parsedFluency.relevance_factor === 'number'
+          ? Math.min(1.0, Math.max(0.2, parsedFluency.relevance_factor))
+          : (hasCorrectAnswer ? 1.0 : 0.25);
+
+        fluencyModelScore = Math.round(((g + v + c + f) / 4) * relFactor);
 
         // Apply penalty if candidate switched to non-English language
         if (parsedFluency.language_switch_detected) {
           const penalty = Math.min(40, Math.round((parsedFluency.non_english_percentage || 25) * 0.4));
-          fluencyModelScore = Math.max(20, fluencyModelScore - penalty);
+          fluencyModelScore = Math.max(10, fluencyModelScore - penalty);
         }
       } else {
         fluencyCefr = 'B2';
@@ -461,11 +476,12 @@ Return JSON ONLY:
     );
 
     const answeredQuestionScores = questionScores.filter((qs) => qs.score > 0);
-    const competencyAvg = answeredQuestionScores.length > 0
+    const hasAnyCorrectAnswer = questionScores.some((qs) => qs.score > 1);
+    const competencyAvg = answeredQuestionScores.length > 0 && hasAnyCorrectAnswer
       ? answeredQuestionScores.reduce((acc, curr) => acc + curr.score, 0) / answeredQuestionScores.length
       : 0;
 
-    reasoningSubscore = Math.min(100, Math.round(competencyAvg * 20));
+    reasoningSubscore = hasAnyCorrectAnswer ? Math.min(100, Math.round(competencyAvg * 20)) : 0;
     claritySubscore = localFluencyResult.localFluencyScore;
     cognitiveComposite = calculateCognitiveComposite(competencyAvg, reasoningSubscore, claritySubscore);
   } else {
@@ -681,6 +697,20 @@ Return JSON ONLY:
   };
 
   await saveInterviewReport(reportPayload);
+
+  // Synchronize database session and invite status to completed if not terminated/cancelled
+  if (session.status !== 'cancelled' && session.status !== 'terminated') {
+    await Promise.allSettled([
+      supabaseAdmin
+        .from('interview_sessions')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', sessionId),
+      supabaseAdmin
+        .from('interview_invites')
+        .update({ status: 'completed', completed_at: new Date().toISOString() })
+        .eq('session_id', sessionId),
+    ]);
+  }
 
   return {
     cognitiveComposite,

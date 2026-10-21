@@ -129,7 +129,14 @@ class LLMSettings(BaseSettings):
         default="gemini-3.6-flash",
         validation_alias=AliasChoices("LLM_GEMINI_MODEL", "GEMINI_MODEL"),
     )
-    GEMINI_EMBED_MODEL: str = "models/text-embedding-004"
+    GEMINI_EMBED_MODEL: str = Field(
+        default="models/gemini-embedding-2",
+        validation_alias=AliasChoices("LLM_GEMINI_EMBED_MODEL", "GEMINI_EMBED_MODEL"),
+    )
+    GEMINI_EMBED_DIMENSION: int = Field(
+        default=768,
+        validation_alias=AliasChoices("LLM_GEMINI_EMBED_DIMENSION", "GEMINI_EMBED_DIMENSION"),
+    )
 
 
 class ScrapingSettings(BaseSettings):
