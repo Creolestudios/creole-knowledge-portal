@@ -183,6 +183,14 @@ Continuous acoustic frequency analysis using Web Audio API across the speech ban
    - **Immediate In-Flight Answer Persistence**: When any proctoring violation pauses or terminates the interview, any uncommitted candidate speech is flushed immediately to the answer storage API with `keepalive: true` to prevent data loss.
    - **Empty-Transcript Overwrite Protection**: Backend endpoints (`/api/interview/[id]/answers` and `/api/assess/[token]/answer`) protect existing candidate responses, ensuring that transient empty speech payloads never overwrite already-recorded answers.
 
+6. **Multi-Platform & Multi-Device Audio Architecture (Windows, macOS, Linux)**:
+   - **Candidate Voice Immunity on System Audio**: On Windows, macOS, and Linux, whether wearing a Bluetooth headset, wired earphones, or using a desktop external microphone, the candidate's active spoken voice (`isCandidateMouthMoving` or spoken within the last 1500ms) is strictly excluded from `systemAudioStream` voice counting. This eliminates false internal voice alarms caused by OS-level loopbacks (e.g. Windows Bluetooth Hands-Free telephony loopback or soundcard echo).
+   - **Headset Acoustic Isolation**: When any headset (Bluetooth, wireless, USB, or wired) is connected (`isHeadset === true`), acoustic speaker-bleed checks on the microphone are disabled because audio output is enclosed in the candidate's ears. Actual internal media (YouTube, Spotify, voice notes, calls) remains strictly captured via digital `systemAudioStream`.
+   - **Real-Time Speech Transcription Resilience**:
+     - Exponential backoff (600ms – 2500ms) prevents `webkitSpeechRecognition` from crashing into a 50ms restart loop when Bluetooth headsets switch between A2DP (Stereo) and HFP (Hands-Free).
+     - Dynamic language fallback: Automatically falls back to `en-US` if regional dialect packages (e.g. `en-IN`) are not installed on the client operating system.
+     - Device change listener: Re-binds speech recognition seamlessly whenever audio devices connect or disconnect during the interview.
+
 ### D. System Watchdog (`useProctoringWatchdog`)
 - Checks hardware and media integrity every 1.5 seconds.
 - Automatically terminates the session if:

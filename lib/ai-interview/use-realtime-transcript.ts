@@ -91,6 +91,9 @@ export function useRealtimeTranscript({
   const accumulatedTextRef = useRef('');
   const interimTextRef = useRef('');
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const errorRetryCountRef = useRef<number>(0);
+  const isErrorRestartRef = useRef<boolean>(false);
+  const activeLangRef = useRef<string>(getBestLanguage());
 
   useEffect(() => {
     isCandidateTurnRef.current = isCandidateTurn;
@@ -161,12 +164,14 @@ export function useRealtimeTranscript({
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 1;
-      recognition.lang = getBestLanguage();
+      recognition.lang = activeLangRef.current;
 
       recognition.onresult = (event: SpeechRecognitionEventLike) => {
         if (!isCandidateTurnRef.current) return;
 
         const now = Date.now();
+        errorRetryCountRef.current = 0;
+        isErrorRestartRef.current = false;
         if (speechStartRef.current === 0) {
           speechStartRef.current = now;
         }
@@ -209,15 +214,36 @@ export function useRealtimeTranscript({
           setIsListening(false);
           return;
         }
-        if (e?.error === 'audio-capture' || e?.error === 'network') {
-          // Bluetooth device profile or network lag: schedule an auto-recovery reconnect
+        if (e?.error === 'service-not-allowed') {
+          setIsListening(false);
+          return;
+        }
+        if (e?.error === 'language-not-supported') {
+          // If regional language (e.g. en-IN) is not supported on this OS/browser, fallback to en-US
+          activeLangRef.current = 'en-US';
           if (isCandidateTurnRef.current) {
             if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
             restartTimerRef.current = setTimeout(() => {
               if (isCandidateTurnRef.current) {
                 createAndStartRecognition();
               }
-            }, 300);
+            }, 100);
+          }
+          return;
+        }
+        if (e?.error === 'audio-capture' || e?.error === 'network') {
+          // Bluetooth device profile or network lag: exponential backoff to allow audio stack to settle
+          errorRetryCountRef.current = Math.min(errorRetryCountRef.current + 1, 5);
+          isErrorRestartRef.current = true;
+          const delay = Math.min(2500, 600 * errorRetryCountRef.current);
+          if (isCandidateTurnRef.current) {
+            if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+            restartTimerRef.current = setTimeout(() => {
+              isErrorRestartRef.current = false;
+              if (isCandidateTurnRef.current) {
+                createAndStartRecognition();
+              }
+            }, delay);
           }
         }
         // 'no-speech' or 'aborted' happens during natural pauses or filler word hesitations.
@@ -240,12 +266,14 @@ export function useRealtimeTranscript({
 
         // Cleanly restart listener if candidate turn is still active
         if (isCandidateTurnRef.current) {
+          // If an error backoff restart is already pending, do not clobber it with an immediate restart
+          if (isErrorRestartRef.current) return;
           if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
           restartTimerRef.current = setTimeout(() => {
             if (isCandidateTurnRef.current) {
               createAndStartRecognition();
             }
-          }, 50);
+          }, 100);
         } else {
           setIsListening(false);
         }

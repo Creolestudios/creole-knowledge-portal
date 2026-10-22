@@ -56,6 +56,16 @@ const HEADSET_KEYWORDS = [
   'bt ',
   ' bt',
   '(bt)',
+  'bluez',
+  'hyperx',
+  'steelseries',
+  'razer',
+  'corsair',
+  'astro',
+  'edifier',
+  'marshall',
+  'audio-technica',
+  'logitech g',
 ];
 
 /**

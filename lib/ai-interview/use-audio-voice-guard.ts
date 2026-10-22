@@ -66,6 +66,7 @@ export function useAudioVoiceGuard({
   const isSystemAudioActiveRef = useRef<boolean>(false);
   const lastSystemVoiceTimeRef = useRef<number>(0);
   const lastSystemAudioTimeRef = useRef<number>(0);
+  const lastCandidateSpeechTimeRef = useRef<number>(0);
 
   useEffect(() => {
     systemAudioStreamRef.current = systemAudioStream ?? null;
@@ -295,6 +296,7 @@ export function useAudioVoiceGuard({
           // Track candidate's own speech level when mouth is moving
           if (isCandidateMouthMovingRef.current && avgSpeechEnergy > 20) {
             lastCandidateSpeechTime = nowMs;
+            lastCandidateSpeechTimeRef.current = nowMs;
             actualSpeakerEnergyRef.current = actualSpeakerEnergyRef.current * 0.92 + avgSpeechEnergy * 0.08;
             if (actualSpeakerEnergyRef.current < 35) {
               actualSpeakerEnergyRef.current = 35;
@@ -475,9 +477,9 @@ export function useAudioVoiceGuard({
           const speakerAcousticRatio = avgMidSpeechEnergy / (fundamentalBassEnergy + 1);
 
           const isAcousticSpeakerBleedVoice =
+            !isHeadsetRef.current &&
             isClearSpeech &&
             isSilent &&
-            !isSpeakingOnBluetooth &&
             fundamentalBassEnergy >= 2 &&
             avgMidSpeechEnergy >= 24 &&
             speakerAcousticRatio >= 0.5;
@@ -775,25 +777,35 @@ export function useAudioVoiceGuard({
           sysVoiceStartAt = 0;
         } else if (isCandidateTurnRef.current) {
           if (isSysVoiceActive) {
-            // Track continuous system/device voice (10-second requirement)
-            lastSysVoiceFrameTime = nowMs;
-            consecutiveSysVoiceFrames++;
-            if (sysVoiceStartAt === 0) {
-              sysVoiceStartAt = nowMs;
-            }
-            const continuousDurationMs = nowMs - sysVoiceStartAt;
-            const targetMs = continuousSystemVoiceMsRef.current ?? 10000;
-            const requiredFrames = Math.max(40, Math.round(targetMs / 40));
+            // Check if candidate is actively speaking into their headset/microphone
+            // (prevents loopback/echo across all system types from falsely flagging candidate's own spoken answer)
+            const isCandidateOwnSpokenVoice =
+              isCandidateMouthMovingRef.current ||
+              (lastCandidateSpeechTimeRef.current > 0 && nowMs - lastCandidateSpeechTimeRef.current < 1500);
 
-            if (continuousDurationMs >= targetMs && consecutiveSysVoiceFrames >= requiredFrames) {
-              sysVoiceStartAt = 0;
-              consecutiveSysVoiceFrames = 0;
-              const confidence = Math.min(0.98, 0.85 + (avgSysSpeechEnergy / 255) * 0.15);
-              triggerVoiceWarning(
-                'Device voice detected. Voice is playing from within the computer.',
-                confidence,
-                continuousDurationMs
-              );
+            if (isCandidateOwnSpokenVoice) {
+              consecutiveSysVoiceFrames = Math.max(0, consecutiveSysVoiceFrames - 1);
+            } else {
+              // Candidate is silent or mouth not moving, but voice is playing through the system! (Audio note, YouTube, incoming call)
+              lastSysVoiceFrameTime = nowMs;
+              consecutiveSysVoiceFrames++;
+              if (sysVoiceStartAt === 0) {
+                sysVoiceStartAt = nowMs;
+              }
+              const continuousDurationMs = nowMs - sysVoiceStartAt;
+              const targetMs = continuousSystemVoiceMsRef.current ?? 10000;
+              const requiredFrames = Math.max(40, Math.round(targetMs / 40));
+
+              if (continuousDurationMs >= targetMs && consecutiveSysVoiceFrames >= requiredFrames) {
+                sysVoiceStartAt = 0;
+                consecutiveSysVoiceFrames = 0;
+                const confidence = Math.min(0.98, 0.85 + (avgSysSpeechEnergy / 255) * 0.15);
+                triggerVoiceWarning(
+                  'Device voice detected. Voice is playing from within the computer.',
+                  confidence,
+                  continuousDurationMs
+                );
+              }
             }
           } else {
             // If silence or non-speech exceeds 1000ms, reset streak
