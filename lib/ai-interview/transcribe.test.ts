@@ -8,7 +8,7 @@ vi.mock('@google/genai', () => ({
   },
 }));
 
-import { transcribeAnswer } from './transcribe';
+import { transcribeAnswer, transcribeAudioChunk } from './transcribe';
 
 describe('transcribeAnswer', () => {
   const originalKey = process.env.GEMINI_API_KEY;
@@ -74,5 +74,41 @@ describe('transcribeAnswer timeout', () => {
     await assertion;
 
     vi.useRealTimers();
+  });
+});
+
+describe('transcribeAudioChunk', () => {
+  const originalKey = process.env.GEMINI_API_KEY;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.GEMINI_API_KEY = 'test-key';
+  });
+
+  afterEach(() => {
+    process.env.GEMINI_API_KEY = originalKey;
+  });
+
+  it('transcribes an audio chunk verbatim using Gemini Flash', async () => {
+    mockGenerateContent.mockResolvedValue({ text: 'I specialize in TypeScript and React' });
+
+    const audio = Buffer.from('chunk-audio-bytes');
+    const result = await transcribeAudioChunk(audio, 'audio/webm');
+
+    expect(result).toBe('I specialize in TypeScript and React');
+  });
+
+  it('returns null when no audio speech or empty response is returned', async () => {
+    mockGenerateContent.mockResolvedValue({ text: '   ' });
+
+    const result = await transcribeAudioChunk(Buffer.from('silent'), 'audio/webm');
+    expect(result).toBeNull();
+  });
+
+  it('returns null gracefully on error without throwing', async () => {
+    mockGenerateContent.mockRejectedValue(new Error('temporary network blip'));
+
+    const result = await transcribeAudioChunk(Buffer.from('corrupt'), 'audio/webm');
+    expect(result).toBeNull();
   });
 });

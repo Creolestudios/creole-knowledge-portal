@@ -101,10 +101,11 @@ export async function POST(
         // ALWAYS transcribe the full recorded audio buffer via Gemini for accurate verbatim transcription.
         // Gemini captures technical vocabulary, handles candidate accents, and records all words without cutting off during pauses.
         const serverTranscript = await transcribeAnswer(buffer, mimeType);
-        if (serverTranscript && serverTranscript.trim().length > 0) {
-          transcript = serverTranscript.trim();
-        } else if (clientTrimmed) {
+        if (clientTrimmed && clientTrimmed.length > 0) {
+          // Exactly preserve the words candidate spoke and confirmed on the live question screen into the report
           transcript = clientTrimmed;
+        } else if (serverTranscript && serverTranscript.trim().length > 0) {
+          transcript = serverTranscript.trim();
         } else {
           transcript = null;
         }

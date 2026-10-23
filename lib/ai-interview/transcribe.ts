@@ -1,6 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 
-const TRANSCRIPTION_MODELS = ['gemini-3.6-flash', 'gemini-2.5-flash'];
+const TRANSCRIPTION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 const TRANSCRIPTION_TIMEOUT_MS = 45_000;
 
 const TRANSCRIPTION_PROMPT = `
@@ -78,5 +78,64 @@ export async function transcribeAnswer(audio: Buffer, mimeType: string): Promise
   }
 
   if (lastError) throw lastError;
+  return null;
+}
+
+const CHUNK_TRANSCRIPTION_PROMPT = `
+Write down verbatim what the candidate says in this audio clip.
+Rules:
+- Return ONLY the exact spoken words as plain text. No timestamps, no labels, no quotes, no markdown.
+- Transcribe EVERY single word uttered, including isolated single-word responses (e.g., "Yes", "No", "React", "Sure", "OK", "Next", "Fine", "Hello").
+- Transcribe technical and programming terms accurately (e.g. React, Next.js, TypeScript, SQL, Node, API, Docker).
+- Preserve all filler words (e.g. um, uh, ah) exactly as spoken.
+- Capture soft, slow, and quiet speech accurately.
+- If the clip contains absolutely no discernible candidate speech, return an empty string.
+`.trim();
+
+/**
+ * Transcribes a short live audio snippet in real time using Gemini Flash.
+ * Returns text or empty string if no speech was detected.
+ */
+export async function transcribeAudioChunk(audio: Buffer, mimeType: string): Promise<string | null> {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
+  for (let i = 0; i < TRANSCRIPTION_MODELS.length; i++) {
+    const model = TRANSCRIPTION_MODELS[i];
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      const response = await Promise.race([
+        ai.models.generateContent({
+          model,
+          contents: [
+            { inlineData: { mimeType, data: audio.toString('base64') } },
+            CHUNK_TRANSCRIPTION_PROMPT,
+          ],
+          config: { temperature: 0 },
+        }),
+        new Promise<never>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error('Chunk transcription timed out')),
+            12_000
+          );
+        }),
+      ]).finally(() => clearTimeout(timeoutHandle));
+
+      const transcript = (response?.text || '').trim();
+      return transcript.length > 0 ? transcript : null;
+    } catch {
+      if (i < TRANSCRIPTION_MODELS.length - 1) {
+        continue;
+      }
+      return null;
+    }
+  }
+
   return null;
 }

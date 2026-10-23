@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET, POST } from './route';
 
-const { mockSingleProfile, mockSingleInterview, mockUpdateEq, mockUpdate, mockAtomicMaybeSingle, chain } = vi.hoisted(() => {
+const { mockSingleProfile, mockSingleInterview, mockUpdateEq, mockUpdate, mockAtomicMaybeSingle, chain, mockCookiesGet } = vi.hoisted(() => {
   const mockAtomicMaybeSingle = vi.fn();
   const mockUpdateEq: any = vi.fn();
+  const mockCookiesGet: any = vi.fn().mockReturnValue(undefined);
   const chain: any = {
     eq: mockUpdateEq,
     neq: mockUpdateEq,
@@ -21,14 +22,16 @@ const { mockSingleProfile, mockSingleInterview, mockUpdateEq, mockUpdate, mockAt
     mockAtomicMaybeSingle,
     mockUpdate: vi.fn(() => chain),
     chain,
+    mockCookiesGet,
   };
 });
 
 vi.mock('next/headers', () => ({
-  cookies: vi.fn().mockResolvedValue({
-    get: vi.fn().mockReturnValue(undefined),
+  cookies: vi.fn(() => Promise.resolve({
+    get: mockCookiesGet,
+    getAll: () => [],
     set: vi.fn(),
-  }),
+  })),
 }));
 
 vi.mock('@/lib/supabase/admin', () => ({
@@ -360,7 +363,11 @@ describe('GET /api/interview/verify', () => {
     }
   });
 
-  it('returns 200 with active: true and inProgress: true when interview is in_progress', async () => {
+  it('returns 200 with active: true and inProgress: true when interview is in_progress and candidate has matching session cookie', async () => {
+    mockCookiesGet.mockImplementation((name: string) =>
+      name === 'interview_verified_id' ? { value: 'i1' } : undefined
+    );
+
     mockSingleInterview.mockResolvedValue({
       data: {
         id: 'i1',

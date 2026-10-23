@@ -133,4 +133,22 @@ describe('useAnswerRecorder', () => {
     expect(FakeMediaRecorder.instances).toHaveLength(0);
     expect(result.current.status).toBe('idle');
   });
+
+  it('provides getCurrentAudioBlob containing accumulated audio while recording', () => {
+    const { result } = renderHook(() => useAnswerRecorder('sess-1', streamWithAudio));
+
+    expect(result.current.getCurrentAudioBlob()).toBeNull();
+
+    act(() => result.current.startRecording('q1'));
+    const recorder = FakeMediaRecorder.instances[0];
+
+    // Simulate an audio slice emitted by recorder.start(1000)
+    act(() => {
+      recorder.ondataavailable?.({ data: new Blob(['chunk-1'], { type: 'audio/webm' }) });
+    });
+
+    const blob = result.current.getCurrentAudioBlob();
+    expect(blob).not.toBeNull();
+    expect(blob?.size).toBeGreaterThan(0);
+  });
 });

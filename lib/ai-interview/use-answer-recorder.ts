@@ -95,7 +95,8 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) chunksRef.current.push(event.data);
       };
-      recorder.start();
+      // Timeslice 500ms ensures audio chunks are continuously accumulated for fast real-time transcription
+      recorder.start(500);
 
       recorderRef.current = recorder;
       questionIdRef.current = questionId;
@@ -195,5 +196,11 @@ export function useAnswerRecorder(interviewId: string, stream: MediaStream | nul
     setStatus((current) => (current === 'unsupported' ? current : 'idle'));
   }, []);
 
-  return { status, startRecording, stopAndUpload, cancelRecording };
+  const getCurrentAudioBlob = useCallback((): Blob | null => {
+    const recorder = recorderRef.current;
+    if (!recorder || chunksRef.current.length === 0) return null;
+    return new Blob(chunksRef.current, { type: recorder.mimeType });
+  }, []);
+
+  return { status, startRecording, stopAndUpload, cancelRecording, getCurrentAudioBlob };
 }
