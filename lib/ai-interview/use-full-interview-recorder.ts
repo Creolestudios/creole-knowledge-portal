@@ -100,15 +100,23 @@ export async function flushAndUploadCachedRecording(
           onProgress?.(40, 'Finalizing assessment submission...');
           const directResult = await new Promise<{ fileId?: string }>((resolveUpload, rejectUpload) => {
             const xhr = new XMLHttpRequest();
-            const timer = setTimeout(() => {
+            const uploadTimeoutMs = Math.max(300_000, Math.ceil(fullVideoBlob.size / 30_000) * 1000);
+            let timer = setTimeout(() => {
               try { xhr.abort(); } catch {}
               rejectUpload(new Error('Direct Drive upload timed out'));
-            }, 5000);
+            }, uploadTimeoutMs);
 
             xhr.open('PUT', sessionJson.uploadUrl, true);
             xhr.setRequestHeader('Content-Type', mimeType);
 
             xhr.upload.onprogress = (event) => {
+              // Refresh timeout on active progress so uploads are never cancelled while data is transferring
+              clearTimeout(timer);
+              timer = setTimeout(() => {
+                try { xhr.abort(); } catch {}
+                rejectUpload(new Error('Direct Drive upload stalled'));
+              }, 60_000);
+
               if (event.lengthComputable && event.total > 0) {
                 const percent = Math.min(95, Math.round(40 + (event.loaded / event.total) * 50));
                 onProgress?.(percent, `Finalizing assessment submission... ${percent}%`);
@@ -787,15 +795,23 @@ export function useFullInterviewRecorder({
               // 2. Direct upload WHOLE video Blob to Google Drive with real-time progress
               const directResult = await new Promise<{ fileId?: string }>((uploadResolve, uploadReject) => {
                 const xhr = new XMLHttpRequest();
-                const timer = setTimeout(() => {
+                const uploadTimeoutMs = Math.max(300_000, Math.ceil(fullVideoBlob.size / 30_000) * 1000);
+                let timer = setTimeout(() => {
                   try { xhr.abort(); } catch {}
                   uploadReject(new Error('Direct Drive upload timed out'));
-                }, 5000);
+                }, uploadTimeoutMs);
 
                 xhr.open('PUT', uploadUrl, true);
                 xhr.setRequestHeader('Content-Type', mimeType);
 
                 xhr.upload.onprogress = (event) => {
+                  // Keepalive: Refresh timeout on active progress so long uploads are never cancelled
+                  clearTimeout(timer);
+                  timer = setTimeout(() => {
+                    try { xhr.abort(); } catch {}
+                    uploadReject(new Error('Direct Drive upload stalled'));
+                  }, 60_000);
+
                   if (event.lengthComputable && event.total > 0) {
                     const percent = Math.round(10 + (event.loaded / event.total) * 80);
                     setUploadProgress(percent);

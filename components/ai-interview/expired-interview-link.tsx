@@ -1,6 +1,6 @@
 import { ClockAlert, CheckCircle2, ShieldAlert, Lock, AlertTriangle, Loader2 } from 'lucide-react';
 
-export type ExpirationReason = 'completed' | 'violation' | 'time_expired' | 'already_used';
+export type ExpirationReason = 'completed' | 'violation' | 'time_expired' | 'already_used' | 'concurrent';
 
 interface ExpiredInterviewLinkProps {
   note?: string;
@@ -49,6 +49,15 @@ export function ExpiredInterviewLink({
     lowerDetail.includes('completed')
   );
 
+  const isConcurrent = Boolean(
+    lowerReason === 'concurrent' ||
+    lowerReason.includes('in_progress') ||
+    lowerReason.includes('another device') ||
+    lowerTitle.includes('another device') ||
+    lowerNote.includes('another device') ||
+    lowerDetail.includes('another device')
+  );
+
   const isTerminated = Boolean(
     lowerReason === 'violation' ||
     lowerReason === 'terminated' ||
@@ -67,6 +76,8 @@ export function ExpiredInterviewLink({
   let resolvedReason: ExpirationReason = 'already_used';
   if (isCompleted) {
     resolvedReason = 'completed';
+  } else if (isConcurrent) {
+    resolvedReason = 'concurrent';
   } else if (isTerminated) {
     resolvedReason = 'violation';
   } else if (
@@ -126,6 +137,21 @@ export function ExpiredInterviewLink({
         'This link is expired it is one time use , your interview is completed we will get back to you soon',
       helper:
         'Your responses have been securely submitted and delivered to the recruitment team. No further action or re-submission is required.',
+    },
+    concurrent: {
+      icon: AlertTriangle,
+      iconContainer: 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400',
+      title: reasonTitle || 'Interview In Progress on Another Device',
+      badge: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800',
+      badgeLabel: '⚠️ Session Active on Another Device',
+      box: 'bg-amber-50/80 border-amber-200/60 dark:bg-amber-950/30 dark:border-amber-800/60',
+      titleColor: 'text-amber-950 dark:text-amber-200',
+      textColor: 'text-amber-800/90 dark:text-amber-300',
+      primaryMessage:
+        'This interview is currently in progress on another device',
+      helper:
+        reasonDetail ||
+        'An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited.',
     },
     violation: {
       icon: AlertTriangle,

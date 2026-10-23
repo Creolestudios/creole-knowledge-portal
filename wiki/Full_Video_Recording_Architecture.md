@@ -143,5 +143,23 @@ Recording 30-60 minutes of video natively in a browser introduces severe hardwar
 - **Tab Switch & Refresh Termination**: Tab switching, minimizing the browser, and page refreshing **remain strictly active and terminate the interview** regardless of bypass mode, ensuring session integrity.
 - **Video Storage**: In all cases (bypass or non-bypass), the full interview video is 100% saved into Google Drive.
 
+---
 
+## 7. Large Desktop Video Direct Upload Resilience (Dynamic Timeout & Progress Keepalive)
 
+### The Issue on Desktops
+Full desktop interviews (5–15 minutes) generate 30 MB–80 MB WebM files (higher bitrate due to full HD screens). When uploaded directly to Google Drive via client-side `XMLHttpRequest`:
+1. A hardcoded `5000ms` (5-second) upload timer previously aborted the transfer after 5 seconds before completion.
+2. The failure triggered a fallback to `POST /api/interview/recording/upload`, which immediately crashed with `413 Payload Too Large` because serverless and proxy tiers restrict single request payloads to 4.5 MB.
+3. If an interview was terminated (e.g., candidate switched tabs), closing the tab aborted in-flight transfers.
+
+### The Universal Solution
+1. **Dynamic Timeout Scaling**:
+   ```typescript
+   const uploadTimeoutMs = Math.max(300_000, Math.ceil(fullVideoBlob.size / 30_000) * 1000);
+   ```
+   - Allots at least 5 minutes (300 seconds), scaling proportionally with blob size to accommodate slower network connections.
+2. **Active Progress Keepalive**:
+   - In `xhr.upload.onprogress`, every chunk of bytes successfully transferred resets the stall timer to 60 seconds. As long as data is actively flowing, the upload will never be cancelled.
+3. **Resilient Blob Caching**:
+   - Unuploaded recordings are safely indexed and flushed upon session restart or graceful completion.

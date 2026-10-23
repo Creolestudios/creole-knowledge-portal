@@ -384,6 +384,7 @@ export default function InterviewEntryPage() {
 
         if (res.status === 409) {
           // Another user or device is attempting to join an active in-progress session
+          setExpirationReason('concurrent');
           setExpirationTitle(json.reasonTitle || 'Interview In Progress on Another Device');
           setExpirationDetail(
             json.reasonDetail ||
@@ -477,23 +478,9 @@ export default function InterviewEntryPage() {
             // ignore
           }
 
-          if (json.isAdmin) {
-            setIsAdmin(true);
-            try {
-              localStorage.removeItem(`interview_used_${interviewId}`);
-              sessionStorage.removeItem(`interview_used_${interviewId}`);
-            } catch {
-              // ignore
-            }
-            if (json.bypassProctoring) {
-              setBypassProctoring(true);
-            }
-            if (json.inProgress === false || (json.status && json.status !== 'in_progress')) {
-              setStageWithRef('not_started');
-            } else {
-              void requestPermissionsRef.current?.(true);
-            }
-            return;
+          // Do not auto-join admin on page mount or link access; always require email entry
+          if (json.bypassProctoring) {
+            setBypassProctoring(true);
           }
 
           try {
@@ -527,12 +514,8 @@ export default function InterviewEntryPage() {
                     setAccessCode(authData.accessCode || '');
                     setEmail(authData.email || '');
                     if (verifyJson.isAdmin) {
-                      setIsAdmin(true);
-                      if (verifyJson.inProgress === false || (verifyJson.status && verifyJson.status !== 'in_progress')) {
-                        setStageWithRef('not_started');
-                      } else {
-                        void requestPermissionsRef.current?.(true);
-                      }
+                      // Do not auto-join admin from cached sessionStorage to ensure email prompt
+                      setIsAdmin(false);
                     } else {
                       if (typeof window !== 'undefined' && sessionStorage.getItem(`interview_ack_${interviewId}`) === 'true') {
                         setIsReconnecting(true);
@@ -1856,9 +1839,7 @@ export default function InterviewEntryPage() {
           try {
             localStorage.removeItem(`interview_used_${interviewId}`);
             sessionStorage.removeItem(`interview_used_${interviewId}`);
-            sessionStorage.setItem(`interview_auth_${interviewId}`, JSON.stringify({
-              email: cleanEmail,
-            }));
+            sessionStorage.removeItem(`interview_auth_${interviewId}`);
           } catch {
             // ignore
           }
@@ -3096,11 +3077,19 @@ export default function InterviewEntryPage() {
             localStorage.getItem(`interview_expiration_reason_${interviewId}`) === 'violation')))
     );
 
+    const isConcurrentSession = Boolean(
+      expirationReason === 'concurrent' ||
+      (expirationTitle && expirationTitle.toLowerCase().includes('another device')) ||
+      (expiredNote && expiredNote.toLowerCase().includes('another device'))
+    );
+
     const resolvedReasonProp = isCompletedSession
       ? 'completed'
-      : isTerminatedSession
-        ? 'violation'
-        : (expirationReason || 'already_used');
+      : isConcurrentSession
+        ? 'concurrent'
+        : isTerminatedSession
+          ? 'violation'
+          : (expirationReason || 'already_used');
 
     const resolvedTitleProp =
       expirationTitle && expirationTitle !== 'Interview Terminated'
@@ -3109,7 +3098,9 @@ export default function InterviewEntryPage() {
 
     const resolvedDetailProp = isCompletedSession
       ? (expirationDetail || 'This link is expired it is one time use , your interview is completed we will get back to you soon')
-      : (expirationDetail || 'This link is expired it is one time use');
+      : isConcurrentSession
+        ? (expirationDetail || 'An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited.')
+        : (expirationDetail || 'This link is expired it is one time use');
 
     const effectiveViolationProp = isTerminatedSession
       ? (activeViolationReason || 'The candidate refreshed or closed the page during the live interview.')

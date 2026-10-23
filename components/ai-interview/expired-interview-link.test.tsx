@@ -83,4 +83,23 @@ describe('ExpiredInterviewLink component', () => {
     expect(screen.getByText('This link is expired it is one time use')).toBeInTheDocument();
     expect(screen.getByText('Screen sharing was stopped or disabled.')).toBeInTheDocument();
   });
+
+  it('displays session active on another device screen when interview is currently ongoing', () => {
+    render(
+      <ExpiredInterviewLink
+        reason="concurrent"
+        reasonTitle="Interview In Progress on Another Device"
+        reasonDetail="An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited."
+      />
+    );
+
+    expect(screen.getByText(/⚠️ Session Active on Another Device/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /Interview In Progress on Another Device/i })).toBeInTheDocument();
+    expect(screen.getByText('This interview is currently in progress on another device')).toBeInTheDocument();
+    expect(
+      screen.getByText('An active interview session is already running for this candidate on another device. Simultaneous access from a second device or tab is prohibited.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('This link is expired it is one time use')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Single-Use Consumed/i)).not.toBeInTheDocument();
+  });
 });

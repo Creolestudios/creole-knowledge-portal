@@ -69,7 +69,10 @@ vi.mock('@/lib/supabase/admin', () => ({
         };
       }
       return {
-        select: vi.fn(() => ({ eq: vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue({ data: null }) })) })),
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue({ data: null }) })),
+          in: vi.fn().mockResolvedValue({ data: [], error: null }),
+        })),
         insert: mockInsert,
       };
     }),
