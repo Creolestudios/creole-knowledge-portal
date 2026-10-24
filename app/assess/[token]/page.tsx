@@ -1313,6 +1313,9 @@ export default function CandidateAssessmentPage() {
   const autoSaveAnswerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
+    // Suppress speech ingestion while the interview is paused (warning banner active)
+    // so background chatter or people talking during the pause do NOT pollute candidate's answer
+    if (isInterviewPausedRef.current) return;
     if (line.text.trim().length > 0) {
       if (firstSpeechAtRef.current === null) {
         firstSpeechAtRef.current = Date.now();

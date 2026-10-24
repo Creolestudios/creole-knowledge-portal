@@ -50,21 +50,16 @@ export interface UseRealtimeTranscriptOptions {
 
 function getBestLanguage(): string {
   if (typeof navigator === 'undefined') return 'en-US';
-  const isMac = typeof navigator.userAgent === 'string' && /Mac|iPhone|iPad/i.test(navigator.userAgent);
-  // On macOS, Web Speech API frequently fails or drops when set to regional en-IN unless the offline pack is downloaded.
-  // Using en-US on Mac ensures reliable speech engine initialization across Chrome and Safari.
-  if (!isMac && navigator.languages?.some((l) => l.toLowerCase() === 'en-in')) {
+  if (navigator.languages?.some((l) => l.toLowerCase() === 'en-in')) {
     return 'en-IN';
   }
-  if (!isMac) {
-    try {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (tz && (tz.includes('Calcutta') || tz.includes('Kolkata') || tz.includes('Asia/Colombo'))) {
-        return 'en-IN';
-      }
-    } catch {
-      // ignore
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz && (tz.includes('Calcutta') || tz.includes('Kolkata') || tz.includes('Asia/Colombo'))) {
+      return 'en-IN';
     }
+  } catch {
+    // ignore
   }
   return navigator.languages?.[0] || navigator.language || 'en-US';
 }
@@ -96,7 +91,6 @@ export function useRealtimeTranscript({
   const accumulatedTextRef = useRef('');
   const interimTextRef = useRef('');
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const interimCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const errorRetryCountRef = useRef<number>(0);
   const isErrorRestartRef = useRef<boolean>(false);
   const activeLangRef = useRef<string>(getBestLanguage());
@@ -212,23 +206,6 @@ export function useRealtimeTranscript({
         setInterimText(currentInterim);
         if (currentInterim) {
           onTranscriptLineRef.current?.({ text: currentInterim, isFinal: false });
-
-          if (interimCommitTimerRef.current) clearTimeout(interimCommitTimerRef.current);
-          interimCommitTimerRef.current = setTimeout(() => {
-            if (interimTextRef.current && interimTextRef.current.trim()) {
-              const pending = interimTextRef.current.trim();
-              const next = accumulatedTextRef.current
-                ? `${accumulatedTextRef.current} ${pending}`
-                : pending;
-              accumulatedTextRef.current = next;
-              setAccumulatedText(next);
-              onTranscriptLineRef.current?.({ text: pending, isFinal: true });
-              interimTextRef.current = '';
-              setInterimText('');
-            }
-          }, 350);
-        } else {
-          if (interimCommitTimerRef.current) clearTimeout(interimCommitTimerRef.current);
         }
       };
 
@@ -274,10 +251,6 @@ export function useRealtimeTranscript({
       };
 
       recognition.onend = () => {
-        if (interimCommitTimerRef.current) {
-          clearTimeout(interimCommitTimerRef.current);
-          interimCommitTimerRef.current = null;
-        }
         // If an interim phrase was in-flight when candidate paused, commit it immediately
         if (interimTextRef.current && interimTextRef.current.trim()) {
           const remainingInterim = interimTextRef.current.trim();
@@ -443,13 +416,6 @@ export function useRealtimeTranscript({
     };
   }, [createAndStartRecognition]);
 
-  const setConsolidatedText = useCallback((text: string) => {
-    const trimmed = (text || '').trim();
-    if (!trimmed) return;
-    accumulatedTextRef.current = trimmed;
-    setAccumulatedText(trimmed);
-  }, []);
-
   return {
     isSupported,
     isListening,
@@ -458,6 +424,5 @@ export function useRealtimeTranscript({
     startTurn,
     startListening,
     completeTurn,
-    setConsolidatedText,
   };
 }

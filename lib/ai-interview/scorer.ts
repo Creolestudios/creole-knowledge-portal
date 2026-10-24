@@ -388,14 +388,6 @@ Return JSON ONLY:
   const hasCandidateSpeech = Boolean(combinedCandidateText.trim());
 
   if (hasCandidateSpeech) {
-    const questionsAndAnswersFormatted = questionList
-      .map((q, idx) => {
-        const qText = q.question_text || q.text || `Question ${idx + 1}`;
-        const ansText = (answersMap.get(q.id) || '').trim() || '(No answer provided)';
-        return `Question ${idx + 1}: ${qText}\nCandidate Answer: ${ansText}`;
-      })
-      .join('\n\n');
-
     const fluencyPrompt = `
 Assess the candidate's spoken English from their interview transcript.
 IMPORTANT:
@@ -405,22 +397,16 @@ IMPORTANT:
    - Set "language_switch_detected": true
    - Estimate "non_english_percentage": 0-100
    - Significantly penalize the fluency band, vocabulary, and CEFR rating accordingly.
-4. QUESTION RESPONSIVENESS, VOCABULARY APPROPRIATENESS & CORRECTNESS:
-   Evaluate whether the candidate's vocabulary, terminology, and utterances actually respond to and align with the questions asked:
-   - If candidate uttered random, nonsensical, or completely unrelated words (e.g. talking about unrelated topics or gibberish):
-     Set "relevance_factor": 0.15 - 0.25
-     Significantly penalize the "vocabulary" and "coherence" bands (<= 25).
-   - If candidate gave evasive non-answers, repetitive greetings, or drifted significantly off-topic:
-     Set "relevance_factor": 0.40 - 0.60
-   - If candidate genuinely used appropriate domain vocabulary and attempted to answer the questions:
+4. QUESTION RESPONSIVENESS & CONTEXTUAL RELEVANCE:
+   Check whether the candidate used English to actually answer/address the interview questions, OR if their utterances consist of evasive non-answers, repetitive greetings (e.g., repeatedly saying "hello", "hi", "good morning"), apologetic refusals, or off-topic phrases.
+   - If candidate failed to engage with the questions and only gave repetitive greetings or off-topic evasions:
+     Set "relevance_factor": 0.25
+   - If candidate attempted to answer but drifted significantly off-topic:
+     Set "relevance_factor": 0.60
+   - If candidate genuinely communicated answers to the questions:
      Set "relevance_factor": 1.0
 
-INTERVIEW QUESTIONS & CANDIDATE SPOKEN ANSWERS:
-"""
-${questionsAndAnswersFormatted}
-"""
-
-FULL TRANSCRIPT UTTERANCES:
+CANDIDATE UTTERANCES:
 """
 ${combinedCandidateText}
 """
@@ -437,11 +423,10 @@ Return JSON ONLY:
     "coherence": { "band": 0-100, "notes": "concise note" },
     "fluency": { "band": 0-100, "notes": "concise note" }
   },
-  "summary": "<= 50 words summarizing English capability, vocabulary appropriateness, and language adherence"
+  "summary": "<= 50 words summarizing English capability and language adherence"
 }
 `.trim();
 
-    let relFactor = 1.0;
     try {
       const fluencyText = await generateWithFallback(ai, fluencyPrompt);
       const parsedFluency = JSON.parse(cleanJson(fluencyText));
@@ -452,9 +437,10 @@ Return JSON ONLY:
         const v = sub?.vocabulary?.band || 70;
         const c = sub?.coherence?.band || 70;
         const f = sub?.fluency?.band || 70;
+        const answeredScores = questionScores.filter((qs) => qs.score > 0);
         const hasCorrectAnswer = questionScores.some((qs) => qs.score > 1);
-        relFactor = typeof parsedFluency.relevance_factor === 'number'
-          ? Math.min(1.0, Math.max(0.15, parsedFluency.relevance_factor))
+        const relFactor = typeof parsedFluency.relevance_factor === 'number'
+          ? Math.min(1.0, Math.max(0.2, parsedFluency.relevance_factor))
           : (hasCorrectAnswer ? 1.0 : 0.25);
 
         fluencyModelScore = Math.round(((g + v + c + f) / 4) * relFactor);
@@ -465,18 +451,14 @@ Return JSON ONLY:
           fluencyModelScore = Math.max(10, fluencyModelScore - penalty);
         }
       } else {
-        const hasCorrectAnswer = questionScores.some((qs) => qs.score > 1);
-        relFactor = hasCorrectAnswer ? 1.0 : 0.25;
-        fluencyCefr = hasCorrectAnswer ? 'B2' : 'A2';
-        fluencyModelScore = Math.round(mapCefrToScore(fluencyCefr) * relFactor);
+        fluencyCefr = 'B2';
+        fluencyModelScore = mapCefrToScore(fluencyCefr);
       }
       fluencyBreakdown = parsedFluency as unknown as Record<string, unknown>;
     } catch (err) {
       console.warn('[scorer] Fluency evaluation error, using local fallback:', err);
-      const hasCorrectAnswer = questionScores.some((qs) => qs.score > 1);
-      relFactor = hasCorrectAnswer ? 1.0 : 0.25;
-      fluencyModelScore = Math.round(localFluencyResult.localFluencyScore * relFactor);
-      fluencyCefr = hasCorrectAnswer ? 'B2' : 'A2';
+      fluencyModelScore = localFluencyResult.localFluencyScore;
+      fluencyCefr = 'B2';
       fluencyBreakdown = {
         summary: 'Fluency estimated via candidate speech cadence and structure metrics.',
         sub: {
@@ -488,14 +470,10 @@ Return JSON ONLY:
       };
     }
 
-    const combinedScore = combineFluencyScores(
+    finalFluencyScore = combineFluencyScores(
       localFluencyResult.localFluencyScore,
       fluencyModelScore
     );
-    // If the candidate's answers were random or off-topic, scale the overall fluency score
-    finalFluencyScore = relFactor < 1.0
-      ? Math.round(combinedScore * relFactor)
-      : combinedScore;
 
     const answeredQuestionScores = questionScores.filter((qs) => qs.score > 0);
     const hasAnyCorrectAnswer = questionScores.some((qs) => qs.score > 1);

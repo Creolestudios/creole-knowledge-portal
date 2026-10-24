@@ -353,7 +353,7 @@ export function useAudioVoiceGuard({
           // Loud music exhibits sustained harmonic tonality (>= 2.5) with music energy (>= 36),
           // active music frames, or high continuous broadband sound pressure across low-mids (>= 40)
           // and speech bands (>= 45).
-          const isCandidateSpeaking = isCandidateMouthMovingRef.current && avgSpeechEnergy >= 20;
+          const isCandidateSpeaking = isCandidateMouthMovingRef.current && avgSpeechEnergy >= 36;
           const isLoudMusicPlaying =
             (isMusic && consecutiveMusicFrames >= 3) ||
             (avgMusicEnergy >= 36 && musicTonality >= 2.5) ||

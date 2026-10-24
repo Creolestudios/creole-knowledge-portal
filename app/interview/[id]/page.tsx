@@ -959,13 +959,8 @@ export default function InterviewEntryPage() {
     }
   }, [remoteStream, stage, isAdmin, isAdminPresent]);
 
-  const {
-    status: answerRecorderStatus,
-    startRecording,
-    stopAndUpload,
-    cancelRecording,
-    getCurrentAudioBlob,
-  } = useAnswerRecorder(interviewId, cameraStream || cameraPreview);
+  const { status: answerRecorderStatus, startRecording, stopAndUpload, cancelRecording } =
+    useAnswerRecorder(interviewId, cameraStream);
   const [finalAnswerSubmitted, setFinalAnswerSubmitted] = useState(false);
 
   // Full-session video recorder (Screen + Camera PiP + Audio) uploading whole video to Google Drive
@@ -1023,12 +1018,15 @@ export default function InterviewEntryPage() {
   }, [currentSpokenText]);
 
   const handleTranscriptLine = useCallback((line: { text: string; isFinal: boolean }) => {
+    // Suppress speech ingestion while the interview is paused (e.g. warning banner active)
+    // so that background chatter or interruptions do not pollute the candidate's answer
+    if (isInterviewPausedRef.current) return;
     if (line.isFinal) {
       setCurrentSpokenText((prev) => (prev ? `${prev} ${line.text}` : line.text));
     }
   }, []);
 
-  const { interimText, startTurn, completeTurn, setConsolidatedText } = useRealtimeTranscript({
+  const { interimText, startTurn, completeTurn } = useRealtimeTranscript({
     interviewId,
     currentQuestionOrd: currentQuestion + 1,
     isCandidateTurn: stage === 'interview' && !isAdmin,
@@ -1038,56 +1036,6 @@ export default function InterviewEntryPage() {
   useEffect(() => {
     interimTextRef.current = interimText;
   }, [interimText]);
-
-  const isChunkTranscribingRef = useRef(false);
-  const lastChunkBlobSizeRef = useRef(0);
-
-  // Cross-platform real-time audio chunk transcription from the candidate's active mic or Bluetooth stream.
-  // Sends live audio snapshots every 3.5s to Gemini Flash, guaranteeing accurate technical words
-  // and full reliability on Windows, Mac, Linux, and mobile without relying on Chrome-only Web Speech APIs.
-  useEffect(() => {
-    if (stage !== 'interview' || isAdmin || answerRecorderStatus !== 'recording') return;
-
-    lastChunkBlobSizeRef.current = 0;
-    isChunkTranscribingRef.current = false;
-
-    const interval = setInterval(async () => {
-      if (isChunkTranscribingRef.current) return;
-      const blob = getCurrentAudioBlob();
-      if (!blob || blob.size === 0) return;
-
-      // Send as soon as candidate audio has accumulated at least ~200 bytes (e.g. any single spoken word)
-      if (blob.size <= lastChunkBlobSizeRef.current + 200) return;
-
-      try {
-        isChunkTranscribingRef.current = true;
-        const formData = new FormData();
-        formData.append('file', blob, 'candidate-audio.webm');
-
-        const res = await fetch(`/api/interview/${interviewId}/transcribe-chunk`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          if (data?.ok && typeof data.text === 'string' && data.text.trim().length > 0) {
-            const freshText = data.text.trim();
-            setCurrentSpokenText(freshText);
-            setConsolidatedText(freshText);
-            interimTextRef.current = '';
-            lastChunkBlobSizeRef.current = blob.size;
-          }
-        }
-      } catch (err) {
-        console.warn('[interview] Real-time chunk transcription warning:', err);
-      } finally {
-        isChunkTranscribingRef.current = false;
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [stage, isAdmin, answerRecorderStatus, getCurrentAudioBlob, interviewId, setConsolidatedText]);
 
   // Debounced real-time answer persistence to DB while candidate is speaking
   useEffect(() => {
@@ -1191,7 +1139,6 @@ export default function InterviewEntryPage() {
     setFinalAnswerSubmitted(false);
     setCurrentSpokenText('');
     lastSavedSpokenTextRef.current = '';
-    lastChunkBlobSizeRef.current = 0;
     setHasSavedRealtime(false);
     setIsSavingRealtime(false);
     setCurrentQuestion(nextIndex);
@@ -3417,8 +3364,7 @@ export default function InterviewEntryPage() {
     const hasGivenAnswer =
       process.env.NODE_ENV === 'test' ||
       currentSpokenText.trim().length > 0 ||
-      Boolean(interimText && interimText.trim().length > 0) ||
-      lastChunkBlobSizeRef.current > 500;
+      Boolean(interimText && interimText.trim().length > 0);
     const question = questions[currentQuestion];
 
     return (
