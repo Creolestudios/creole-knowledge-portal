@@ -213,6 +213,7 @@ export default function CandidateAssessmentPage() {
   const [isInterviewPaused, setIsInterviewPaused] = useState(false);
   const isInterviewPausedRef = useRef(false);
   const resumeCooldownUntilRef = useRef<number>(0);
+  const [bypassProctoring, setBypassProctoring] = useState(false);
 
   const [durationSeconds, setDurationSeconds] = useState(15 * 60);
   const durationSecondsRef = useRef(15 * 60);
@@ -238,6 +239,9 @@ export default function CandidateAssessmentPage() {
   const lastSpeechAtRef = useRef<number>(0);
   const [silenceCountdown, setSilenceCountdown] = useState<number | null>(null);
   const currentIndexRef = useRef(currentIndex);
+  useEffect(() => {
+    proctorTrackerRef.current.bypassLimit = bypassProctoring;
+  }, [bypassProctoring]);
   useEffect(() => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
@@ -361,6 +365,10 @@ export default function CandidateAssessmentPage() {
             setStageWithRef('expired');
           }
         } else if (res.ok) {
+          const json = await res.json().catch(() => ({}));
+          if (json.bypassProctoring) {
+            setBypassProctoring(true);
+          }
           try {
             localStorage.removeItem(`assess_used_${token}`);
             sessionStorage.removeItem(`assess_used_${token}`);
@@ -434,6 +442,9 @@ export default function CandidateAssessmentPage() {
         return;
       }
 
+      if (json.bypassProctoring) {
+        setBypassProctoring(true);
+      }
       if (json.session_id) {
         setSessionId(json.session_id);
       }
@@ -1882,6 +1893,7 @@ export default function CandidateAssessmentPage() {
           permissionError={permissionError}
           requestingPermissions={requestingPermissions}
           onRequestPermissions={requestPermissions}
+          isBypass={bypassProctoring}
         />
         {showAckPopup && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">

@@ -3996,6 +3996,7 @@ export default function InterviewEntryPage() {
               : 'Please read the instructions below, then grant the required permissions.'
           }
           buttonText={isReconnecting ? 'Reconnect Devices & Continue' : 'Allow & Start Interview'}
+          isBypass={bypassProctoring}
         />
         {showAckPopup && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">

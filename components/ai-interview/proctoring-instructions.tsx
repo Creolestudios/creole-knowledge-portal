@@ -23,6 +23,16 @@ const INSTRUCTIONS = [
   'After submitting your final answer, do NOT close or refresh this tab. It will take a few moments to finalize and process your assessment — a progress indicator will appear, and the page will automatically confirm once complete.',
 ];
 
+const BYPASS_INSTRUCTIONS = [
+  'Find a quiet, well-lit room and sit facing your camera directly for the full duration of the interview.',
+  'Keep your webcam, microphone, and entire screen-share (with system audio enabled) on at all times — the session cannot continue if any is turned off.',
+  'Do not switch tabs, minimize the window, or open other applications during the assessment.',
+  'Ensure a stable internet connection before you begin; the session cannot be paused once started.',
+  'Answer every question yourself in your own voice — external help, notes, or additional devices are strictly prohibited.',
+  'When you finish speaking your answer, click "Next Question" to proceed to the next question. If the question time limit expires before you click, the session will automatically advance.',
+  'After submitting your final answer, do NOT close or refresh this tab. It will take a few moments to finalize and process your assessment — a progress indicator will appear, and the page will automatically confirm once complete.',
+];
+
 const DETECTION_RULES = [
   {
     icon: 'Eye',
@@ -50,6 +60,27 @@ const DETECTION_RULES = [
   },
 ];
 
+const BYPASS_DETECTION_RULES = [
+  {
+    icon: 'Eye',
+    title: 'Face & Gaze Tracking',
+    description:
+      'Keep your eyes on the screen and face centered. Turning away, repeatedly looking away, or multiple people in camera frame will trigger warnings.',
+  },
+  {
+    icon: 'Smartphone',
+    title: 'Object Detection',
+    description:
+      'Phones, books, handwritten notes, headphones, earbuds, and secondary screens are actively detected and strictly prohibited.',
+  },
+  {
+    icon: 'Mic',
+    title: 'Voice Guard & Audio Analysis',
+    description:
+      'Background voices, second persons speaking, music, or external AI voice assistants will trigger proctoring flags.',
+  },
+];
+
 export interface ProctoringInstructionsProps {
   cameraGranted: boolean;
   screenGranted: boolean;
@@ -62,6 +93,7 @@ export interface ProctoringInstructionsProps {
   subtitle?: string;
   customError?: string | null;
   buttonText?: string;
+  isBypass?: boolean;
 }
 
 export function ProctoringInstructions({
@@ -76,7 +108,10 @@ export function ProctoringInstructions({
   subtitle = 'Please read the instructions below, then grant the required permissions.',
   customError,
   buttonText = 'Allow Camera, Mic & Screen Share',
+  isBypass = false,
 }: ProctoringInstructionsProps) {
+  const instructionsList = isBypass ? BYPASS_INSTRUCTIONS : INSTRUCTIONS;
+  const detectionRules = isBypass ? BYPASS_DETECTION_RULES : DETECTION_RULES;
   return (
     <div className="w-full max-w-5xl xl:max-w-6xl bg-white dark:bg-[#2b2b2b] rounded-3xl shadow-xl border border-zinc-200 dark:border-[#4a4a4a] p-6 sm:p-8 lg:p-10 space-y-8 transition-colors">
       {/* ── Top Header ── */}
@@ -94,15 +129,22 @@ export function ProctoringInstructions({
             </p>
           </div>
         </div>
-        <div className="inline-flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-xs font-bold uppercase tracking-wider">
-          <ShieldAlert className="w-3.5 h-3.5" />
-          <span>Active AI Proctoring</span>
-        </div>
+        {isBypass ? (
+          <div className="inline-flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 text-xs font-bold uppercase tracking-wider">
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Warning Bypass Enabled</span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-2 self-start sm:self-auto px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 text-xs font-bold uppercase tracking-wider">
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Active AI Proctoring</span>
+          </div>
+        )}
       </div>
 
       {/* ── Responsive Two-Column Layout ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: 8 Guidelines (lg:col-span-7) */}
+        {/* Left Column: Guidelines (lg:col-span-7) */}
         <div className="lg:col-span-7 space-y-4">
           <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-zinc-500 dark:text-[#9f9f9f]">
             <CheckCircle2 className="w-4 h-4 text-[#34c4f2]" />
@@ -110,7 +152,7 @@ export function ProctoringInstructions({
           </div>
 
           <ul className="space-y-2.5">
-            {INSTRUCTIONS.map((instruction, idx) => (
+            {instructionsList.map((instruction, idx) => (
               <li
                 key={instruction}
                 className="flex items-start gap-3 p-3 sm:p-3.5 rounded-xl bg-zinc-50/80 dark:bg-[#1f1f1f]/80 border border-zinc-100 dark:border-zinc-800 text-xs sm:text-sm text-zinc-700 dark:text-[#d9d9d9] leading-relaxed transition-colors hover:border-[#34c4f2]/40"
@@ -131,11 +173,11 @@ export function ProctoringInstructions({
             <div className="flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-sky-700 dark:text-sky-400 shrink-0" />
               <p className="text-xs font-bold uppercase tracking-[0.15em] text-sky-900 dark:text-sky-200">
-                Active Proctoring & AI Detections
+                {isBypass ? 'AI Detections (Warning Bypass Mode)' : 'Active Proctoring & AI Detections'}
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5 text-xs">
-              {DETECTION_RULES.map((rule) => {
+              {detectionRules.map((rule) => {
                 const IconComponent =
                   rule.icon === 'Eye'
                     ? Eye

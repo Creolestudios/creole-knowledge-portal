@@ -122,7 +122,8 @@ export async function GET(
     }, { status: 410 });
   }
 
-  return NextResponse.json({ active: true, status: invite.status });
+  const isBypass = (invite.max_alerts ?? 0) > 1000 || Boolean((session as any)?.parsed_jd?.bypassProctoring);
+  return NextResponse.json({ active: true, status: invite.status, bypassProctoring: isBypass });
 }
 
 /**
@@ -257,7 +258,7 @@ export async function POST(
 
   const { data: session, error: sessionErr } = await supabaseAdmin
     .from('interview_sessions')
-    .select('id, candidate_name, status, duration_minutes')
+    .select('id, candidate_name, status, duration_minutes, parsed_jd')
     .eq('id', invite.session_id)
     .single();
 
@@ -328,12 +329,15 @@ export async function POST(
     registerActiveSession(invite.session_id, deviceId);
   }
 
+  const isBypass = (invite.max_alerts ?? 0) > 1000 || Boolean((session as any)?.parsed_jd?.bypassProctoring);
+
   const response = NextResponse.json({
     verified: true,
     session_id: invite.session_id,
     candidate_name: session.candidate_name,
     duration_minutes: session.duration_minutes || 15,
     questions,
+    bypassProctoring: isBypass,
   });
 
   response.cookies.set('assess_verified_token', token, {
