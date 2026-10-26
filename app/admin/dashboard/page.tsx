@@ -15,7 +15,6 @@ import {
   CheckCircle2,
   Loader2,
   ExternalLink,
-  Home,
   ShieldAlert,
   UploadCloud,
   FileText,
@@ -288,16 +287,6 @@ export default function AdminDashboard() {
           >
             <FileText className="w-5 h-5" />
             <span>Interview Reports</span>
-          </button>
-
-          <div className="h-px bg-zinc-200 dark:bg-zinc-800 my-4" />
-
-          <button
-            onClick={() => router.push('/dashboard')}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800"
-          >
-            <Home className="w-5 h-5" />
-            <span>User Dashboard</span>
           </button>
         </nav>
 

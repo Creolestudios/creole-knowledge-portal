@@ -207,4 +207,16 @@ describe('AdminDashboard', () => {
       expect(mockPush).toHaveBeenCalledWith('/');
     });
   });
+
+  it('does not display the option for user dashboard in the admin navigation', async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
+    });
+    queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
+
+    render(<AdminDashboard />);
+    await waitFor(() => screen.getByText('Blog Sources'));
+
+    expect(screen.queryByText('User Dashboard')).not.toBeInTheDocument();
+  });
 });
