@@ -345,10 +345,9 @@ export default function AIInterviewManager() {
   const copyModalValue = (value: string, kind: 'link' | 'code') => copyValue(value, kind, setModalCopied);
 
   /**
-   * The invite passcode is hashed at rest (see /api/interviews/[id]/invite) and
-   * can't be recovered once shown — so reopening a candidate's link mints a
-   * brand new invite (fresh token + passcode) rather than trying to redisplay
-   * one that no longer exists in plaintext.
+   * Retrieves the original one-time generated interview link and passcode
+   * for this candidate session so the admin can view or re-share it without
+   * creating a new link.
    */
   const openInterview = async (interview: IInterviewSummary) => {
     if (interview.status === 'in_progress') {
@@ -363,15 +362,13 @@ export default function AIInterviewManager() {
     setInviteLoading(true);
     try {
       const res = await fetch(`/api/interviews/${interview.id}/invite`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        method: 'GET',
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to generate an interview link.');
+      if (!res.ok) throw new Error(json.error || 'Failed to retrieve the interview link.');
       setSelectedInvite({ link: json.invite_url, passcode: json.passcode });
     } catch (err) {
-      setInviteError(err instanceof Error ? err.message : 'Failed to generate an interview link.');
+      setInviteError(err instanceof Error ? err.message : 'Failed to retrieve the interview link.');
     } finally {
       setInviteLoading(false);
     }

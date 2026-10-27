@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST as createSession, GET as listSessions } from './route';
 import { POST as parseSession } from './[id]/parse/route';
 import { POST as generateQuestions } from './[id]/generate/route';
-import { POST as createInvite } from './[id]/invite/route';
+import { POST as createInvite, GET as getInvite } from './[id]/invite/route';
 import { GET as getSession } from './[id]/route';
 
 // Mock Supabase admin client for API route testing
@@ -182,11 +182,26 @@ describe('AI Interview Module API Endpoints', () => {
     });
 
     const res = await createInvite(req, { params: Promise.resolve({ id: 'test-session-123' }) });
-    const json = await res.json();
+    expect(res).toBeDefined();
+    const json = await res!.json();
 
-    expect(res.status).toBe(200);
+    expect(res!.status).toBe(200);
     expect(json.invite_url).toContain('/interview/');
     expect(json.passcode).toBe('123456');
+  });
+
+  it('GET /api/interviews/[id]/invite returns the existing one-time credentials', async () => {
+    const req = new NextRequest('http://localhost/api/interviews/test-session-123/invite', {
+      method: 'GET',
+    });
+
+    const res = await getInvite(req, { params: Promise.resolve({ id: 'test-session-123' }) });
+    expect(res).toBeDefined();
+    const json = await res!.json();
+
+    expect(res!.status).toBe(200);
+    expect(json.invite_url).toBeDefined();
+    expect(json.passcode).toBeDefined();
   });
 
   it('GET /api/interviews/[id] returns session and questions', async () => {
