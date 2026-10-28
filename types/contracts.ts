@@ -28,6 +28,7 @@ export interface UserProfileSchema {
   primary_tech_stack: string[];
   secondary_tech_stack: string[];
   future_interests: string;
+  ai_subscriptions?: string[];
   updated_at: string;
 }
 

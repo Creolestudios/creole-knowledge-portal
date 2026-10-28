@@ -17,7 +17,10 @@ import {
   Code,
   Target,
   ArrowLeft,
-  ShieldCheck
+  ShieldCheck,
+  Trash2,
+  Sparkles,
+  Bot
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -31,8 +34,18 @@ interface UserProfile {
   primary_tech_stack: string[];
   secondary_tech_stack: string[];
   future_interests: string;
+  ai_subscriptions?: string[];
   updated_at: string;
 }
+
+const PRESET_AI_SUBSCRIPTIONS = [
+  'GitHub Copilot',
+  'ChatGPT Plus',
+  'Cursor AI',
+  'Claude Pro',
+  'Gemini Advanced',
+  'v0 by Vercel',
+];
 
 export default function UserManagement() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -40,6 +53,8 @@ export default function UserManagement() {
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   // Form State
@@ -49,10 +64,12 @@ export default function UserManagement() {
     years_of_experience: 0,
     primary_tech_stack: [] as string[],
     secondary_tech_stack: [] as string[],
-    future_interests: ''
+    future_interests: '',
+    ai_subscriptions: [] as string[]
   });
   const [primaryTechInput, setPrimaryTechInput] = useState('');
   const [secondaryTechInput, setSecondaryTechInput] = useState('');
+  const [aiSubscriptionInput, setAiSubscriptionInput] = useState('');
 
   const supabase = createClient();
   
@@ -84,10 +101,12 @@ export default function UserManagement() {
       years_of_experience: user.years_of_experience || 0,
       primary_tech_stack: user.primary_tech_stack || [],
       secondary_tech_stack: user.secondary_tech_stack || [],
-      future_interests: user.future_interests || ''
+      future_interests: user.future_interests || '',
+      ai_subscriptions: user.ai_subscriptions || []
     });
     setPrimaryTechInput('');
     setSecondaryTechInput('');
+    setAiSubscriptionInput('');
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -110,6 +129,7 @@ export default function UserManagement() {
           primary_tech_stack: formData.primary_tech_stack,
           secondary_tech_stack: formData.secondary_tech_stack,
           future_interests: formData.future_interests,
+          ai_subscriptions: formData.ai_subscriptions,
         }),
       });
 
@@ -125,6 +145,33 @@ export default function UserManagement() {
       setToast({ message: err.message, type: 'error' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!deletingUser) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/users?userId=${deletingUser.user_id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to delete user');
+      }
+
+      setToast({ message: 'User deleted successfully', type: 'success' });
+      setUsers((prev) => prev.filter((u) => u.user_id !== deletingUser.user_id));
+      if (selectedUser?.user_id === deletingUser.user_id) {
+        setSelectedUser(null);
+      }
+      setDeletingUser(null);
+      setTimeout(() => setToast(null), 3000);
+    } catch (err: any) {
+      setToast({ message: err.message, type: 'error' });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -167,6 +214,41 @@ export default function UserManagement() {
     setFormData({
       ...formData,
       secondary_tech_stack: formData.secondary_tech_stack.filter(tag => tag !== tagToRemove)
+    });
+  };
+
+  const togglePresetAiSubscription = (name: string) => {
+    if (formData.ai_subscriptions.includes(name)) {
+      setFormData({
+        ...formData,
+        ai_subscriptions: formData.ai_subscriptions.filter(s => s !== name)
+      });
+    } else {
+      setFormData({
+        ...formData,
+        ai_subscriptions: [...formData.ai_subscriptions, name]
+      });
+    }
+  };
+
+  const addAiSubscriptionTag = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const tag = aiSubscriptionInput.trim().replace(/,$/, '');
+      if (tag && !formData.ai_subscriptions.includes(tag)) {
+        setFormData({
+          ...formData,
+          ai_subscriptions: [...formData.ai_subscriptions, tag]
+        });
+      }
+      setAiSubscriptionInput('');
+    }
+  };
+
+  const removeAiSubscriptionTag = (tagToRemove: string) => {
+    setFormData({
+      ...formData,
+      ai_subscriptions: formData.ai_subscriptions.filter(tag => tag !== tagToRemove)
     });
   };
 
@@ -226,9 +308,14 @@ export default function UserManagement() {
                 filteredUsers.map((user) => {
                   const complete = isProfileComplete(user);
                   return (
-                    <button
+                    <div
                       key={user.user_id}
                       onClick={() => handleUserClick(user)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') handleUserClick(user);
+                      }}
+                      tabIndex={0}
+                      role="button"
                       className="flex items-center justify-between p-5 bg-white dark:bg-[#1e1e1e] border border-zinc-150 dark:border-zinc-800 rounded-2xl hover:border-[#34c4f2]/30 hover:shadow-card transition-all text-left group cursor-pointer"
                     >
                       <div className="flex items-center gap-4">
@@ -259,10 +346,46 @@ export default function UserManagement() {
                               {new Date(user.updated_at).toLocaleDateString()}
                             </span>
                           </div>
+
+                          {user.ai_subscriptions && user.ai_subscriptions.length > 0 ? (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                <Sparkles size={11} className="text-[#34c4f2]" />
+                                AI:
+                              </span>
+                              {user.ai_subscriptions.map((sub) => (
+                                <span
+                                  key={sub}
+                                  className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#34c4f2]/10 text-[#1b7393] dark:text-[#34c4f2] border border-[#34c4f2]/20"
+                                >
+                                  {sub}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500 font-medium mt-1.5">
+                              <Bot size={11} />
+                              <span>No AI subscription assigned</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                      <ChevronRight className="text-zinc-300 dark:text-zinc-600 group-hover:text-[#34c4f2] group-hover:translate-x-1 transition-all" size={20} />
-                    </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeletingUser(user);
+                          }}
+                          title="Delete User"
+                          aria-label={`Delete ${user.email}`}
+                          className="p-2.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition-all cursor-pointer opacity-70 group-hover:opacity-100"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                        <ChevronRight className="text-zinc-300 dark:text-zinc-600 group-hover:text-[#34c4f2] group-hover:translate-x-1 transition-all" size={20} />
+                      </div>
+                    </div>
                   );
                 })
               )}
@@ -363,6 +486,84 @@ export default function UserManagement() {
                         onChange={(e) => setFormData({ ...formData, years_of_experience: Number.parseInt(e.target.value) || 0 })}
                         className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all font-mono"
                       />
+                    </div>
+                  </div>
+
+                  {/* Current AI Subscriptions */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
+                        <Sparkles size={14} className="text-[#34c4f2]" />
+                        Current AI Subscriptions
+                      </label>
+                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium">Used for Zoho task evaluation</span>
+                    </div>
+
+                    {/* Quick Preset Buttons */}
+                    <div className="space-y-1.5">
+                      <p className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 ml-1">Quick Select Tools:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {PRESET_AI_SUBSCRIPTIONS.map((preset) => {
+                          const isSelected = formData.ai_subscriptions.includes(preset);
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() => togglePresetAiSubscription(preset)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                isSelected
+                                  ? 'bg-[#34c4f2] text-zinc-950 border-[#34c4f2] shadow-sm font-black'
+                                  : 'bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-[#34c4f2]/50'
+                              }`}
+                            >
+                              <Sparkles size={12} className={isSelected ? 'text-zinc-950' : 'text-[#34c4f2]'} />
+                              <span>{preset}</span>
+                              {isSelected && <span className="text-[10px] font-black">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Custom Input & Tag List */}
+                    <div className="space-y-3 pt-1">
+                      <input 
+                        type="text"
+                        value={aiSubscriptionInput}
+                        onChange={(e) => setAiSubscriptionInput(e.target.value)}
+                        onKeyDown={addAiSubscriptionTag}
+                        placeholder="Add custom AI subscription (e.g. Claude Max, Midjourney) and press Enter"
+                        className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all text-sm"
+                      />
+                      <div className="flex flex-wrap gap-2">
+                        <AnimatePresence>
+                          {formData.ai_subscriptions.map((sub) => (
+                            <motion.span
+                              key={sub}
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#34c4f2]/15 text-[#1b7393] dark:text-[#52d3fb] border border-[#34c4f2]/30 text-xs font-bold rounded-lg shadow-xs"
+                            >
+                              <Sparkles size={12} className="text-[#34c4f2]" />
+                              <span>{sub}</span>
+                              <button 
+                                type="button" 
+                                onClick={() => removeAiSubscriptionTag(sub)}
+                                className="hover:scale-120 transition-transform cursor-pointer ml-0.5 text-zinc-500 hover:text-red-500"
+                                aria-label={`Remove ${sub}`}
+                              >
+                                <X size={12} />
+                              </button>
+                            </motion.span>
+                          ))}
+                        </AnimatePresence>
+                        {formData.ai_subscriptions.length === 0 && (
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium uppercase tracking-widest py-1">
+                            No AI subscriptions configured
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -487,7 +688,15 @@ export default function UserManagement() {
                     </AnimatePresence>
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setDeletingUser(selectedUser)}
+                      className="flex items-center gap-2 px-5 py-3.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all cursor-pointer"
+                    >
+                      <Trash2 size={16} />
+                      <span>Delete User</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setSelectedUser(null)}
@@ -514,6 +723,55 @@ export default function UserManagement() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Delete User Confirmation Modal */}
+      {deletingUser && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => !deleting && setDeletingUser(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 cursor-default"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-zinc-900 dark:text-white">Delete User Account</h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed">
+              Are you sure you want to permanently delete user <strong className="text-zinc-900 dark:text-white">{deletingUser.email}</strong>? Their profile, roles, and associated session records will be removed.
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeletingUser(null)}
+                className="px-4 py-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={confirmDeleteUser}
+                className="flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                <span>{deleting ? 'Deleting...' : 'Delete User'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

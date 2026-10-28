@@ -18,15 +18,15 @@ import {
   ShieldAlert,
   UploadCloud,
   FileText,
+  Sparkles,
 } from 'lucide-react';
 
 import UserManagement from '@/components/user-management';
 import SubmissionsModeration from '@/components/submissions-moderation';
 import AIInterviewManager from '@/components/ai-interview-manager';
+import ZohoEvaluationManager from '@/components/zoho/zoho-evaluation-manager';
 
-
-
-type Tab = 'sources' | 'users' | 'submissions' | 'ai-interviews';
+type Tab = 'sources' | 'users' | 'submissions' | 'ai-interviews' | 'zoho';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('sources');
@@ -282,6 +282,18 @@ export default function AdminDashboard() {
           </button>
 
           <button
+            onClick={() => setActiveTab('zoho')}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
+              activeTab === 'zoho'
+                ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
+                : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <Sparkles className="w-5 h-5" />
+            <span>Zoho Evaluation</span>
+          </button>
+
+          <button
             onClick={() => router.push('/admin/reports')}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
@@ -328,6 +340,9 @@ export default function AdminDashboard() {
             </button>
             <button onClick={() => setActiveTab('ai-interviews')} className={`p-2 rounded-md ${activeTab === 'ai-interviews' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <UploadCloud className="w-4 h-4" />
+            </button>
+            <button onClick={() => setActiveTab('zoho')} className={`p-2 rounded-md ${activeTab === 'zoho' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
+              <Sparkles className="w-4 h-4" />
             </button>
             <button onClick={handleSignOut} className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white ml-2 border-l border-zinc-200 dark:border-zinc-700 pl-4">
               <LogOut className="w-4 h-4" />
@@ -506,6 +521,17 @@ export default function AdminDashboard() {
                 transition={{ duration: 0.2 }}
               >
                 <AIInterviewManager />
+              </motion.div>
+            )}
+            {activeTab === 'zoho' && (
+              <motion.div
+                key="zoho"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <ZohoEvaluationManager />
               </motion.div>
             )}
           </AnimatePresence>
