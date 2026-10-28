@@ -1007,4 +1007,109 @@ Body about tokenization in LLM fine-tuning pipelines and structural masking.
     expect(screen.getByText('Code Snippet')).toBeInTheDocument();
     expect(screen.getByText(/packed_chunks = \[\]/)).toBeInTheDocument();
   });
+
+  it('prunes empty Key Action and Summary canonical headings when no content is present', () => {
+    const md = [
+      '## Daily Overview',
+      '- The morning overview of tech updates.',
+      '',
+      '## Briefing',
+      'Detailed briefing text about microservices architecture and deployment.',
+      '',
+      '## Key Action',
+      '',
+      '## Summary',
+      '',
+      '## Sources & Citations',
+      '- [Next.js Docs](https://nextjs.org/docs)',
+    ].join('\n');
+
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByRole('heading', { level: 2, name: /Daily Overview/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Briefing/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: /^Key Action$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: /^Summary$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Sources & Citations/i })).toBeInTheDocument();
+  });
+
+  it('renders Summary and Key Action when content is present', () => {
+    const md = [
+      '## Daily Overview',
+      '- Python performance updates.',
+      '',
+      '## Briefing',
+      'Briefing technical python content.',
+      '',
+      '## Key Action',
+      '- Always sanitize python inputs.',
+      '',
+      '## Summary',
+      'In summary, following these clean python steps ensures reliable systems.',
+      '',
+      '## Sources & Citations',
+      '- [Official Guide](https://example.com/guide)',
+    ].join('\n');
+
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByRole('heading', { level: 2, name: /^Key Action$/i })).toBeInTheDocument();
+    expect(screen.getByText(/Always sanitize python inputs/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /^Summary$/i })).toBeInTheDocument();
+    expect(screen.getByText(/In summary, following these clean python steps/i)).toBeInTheDocument();
+  });
+
+  it('does not box plain instructional steps like Step 2 into an ASCII art diagram', () => {
+    const md = [
+      '## Daily Overview',
+      '- Python extraction pipeline overview.',
+      '',
+      '## Briefing',
+      'Here are the python steps to follow:',
+      '',
+      'Step 2: tables first, then everything else in python',
+      '',
+      'page.find_tables() finds tables from ruling lines.',
+      '- Reject boxes.',
+      '- Merge split columns.',
+      '',
+      'Step 3: reading order on two-column pages in python',
+      '',
+      'Step 4: remove what repeats in python',
+    ].join('\n');
+
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.queryByTestId('digest-diagram')).not.toBeInTheDocument();
+    expect(screen.getByText(/Step 2: tables first, then everything else in python/i)).toBeInTheDocument();
+    expect(screen.getByText(/Step 3: reading order on two-column pages in python/i)).toBeInTheDocument();
+    expect(screen.getByText(/Step 4: remove what repeats in python/i)).toBeInTheDocument();
+  });
+
+  it('fences and renders vertical execution pipeline diagrams with branch arrows and unicode down arrows', () => {
+    const md = [
+      '## Briefing',
+      "Below is a simplified conceptual representation of how CPython's execution pipeline transitions from source code down to interpreter dispatch versus JIT code generation.",
+      '',
+      'Python Source Code (.py)',
+      '   |',
+      '   v',
+      'Bytecode Compilation (.pyc)',
+      '   |',
+      '   v',
+      'CPython Evaluation Loop',
+      '   |',
+      '',
+      '+-- > Standard Interpreter Dispatch',
+      '   |',
+      '',
+      'Micro-op (Uop) Optimization / Tracing',
+      '   ↓',
+      'Generated Machine Code / Native Templates',
+      '',
+      'The interpreter then executes the native templates cleanly in python.',
+    ].join('\n');
+
+    render(<PremiumMarkdownRenderer content={md} />);
+    expect(screen.getByTestId('digest-diagram')).toBeInTheDocument();
+    expect(screen.getByText('Python Source Code (.py)')).toBeInTheDocument();
+    expect(screen.getByText('Generated Machine Code / Native Templates')).toBeInTheDocument();
+  });
 });

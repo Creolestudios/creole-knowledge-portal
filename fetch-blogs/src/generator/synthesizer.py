@@ -6,13 +6,15 @@ import json
 import re
 import time
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from src.core.config import get_llm_settings, get_scraping_settings
 from src.extractors.topic_filter import is_non_learning
-from src.models.article import Article
+
+if TYPE_CHECKING:
+    from src.models.article import Article
 from src.models.digest import (
     DailyDigest,
     DigestContent,
@@ -31,11 +33,11 @@ from src.models.profile import (
 
 log = structlog.get_logger(__name__)
 
-# Fewer words, same 18–20 min estimate (3200/180≈18, 3600/180=20).
+# Liberal word target band: ~3000 to 3200+ words (~17-20 min estimate).
 _WPM = 180
-_MIN_READ_MINUTES = 18
+_MIN_READ_MINUTES = 17
 _MAX_READ_MINUTES = 20
-_WORD_FLOOR = 3200
+_WORD_FLOOR = 3000
 _WORD_CEILING = 3600
 _ARTICLE_LIMIT = 10
 _TEACHING_ARTICLE_LIMIT = 1
@@ -50,12 +52,12 @@ _INTEREST_SCRAPE_EXCERPT_WORDS = 220
 
 
 def _min_words() -> int:
-    """Lower bound: config target, floored at 3200 (~18 min at _WPM)."""
+    """Lower bound: config target, floored at 3000 (~17 min at _WPM)."""
     return max(get_scraping_settings().DIGEST_WORD_TARGET, _WORD_FLOOR)
 
 
 def _max_words() -> int:
-    """Upper bound: keep digests in the 3200–3600 band."""
+    """Upper bound: keep digests in the 3200-3600 band."""
     return _WORD_CEILING
 
 
@@ -167,9 +169,6 @@ _TITLE_STOP = frozenset(
         "code",
         "file",
         "type",
-        "into",
-        "that",
-        "this",
     }
 )
 _FENCE_RE = re.compile(r"```[\w+-]*\n.*?```", flags=re.DOTALL)
@@ -1002,9 +1001,7 @@ def _has_previous_briefing(profile: UserProfile) -> bool:
     """True only when a real prior digest exists — not just stack/interests."""
     path = profile.learning_path
     headline = (path.last_digest_headline or "").strip()
-    if not headline or _is_junk_title(headline):
-        return False
-    return True
+    return bool(headline and not _is_junk_title(headline))
 
 
 def _previous_briefing_block(
@@ -1304,8 +1301,8 @@ Last part already written:
 """.strip()
 
 
-# Live models only — dead 2.x IDs 404 and flash-latest often hangs for minutes.
-_GEMINI_MODEL_FALLBACKS = ("gemini-3.6-flash",)
+# Live models only — fallback to high-quota flash-lite / flash models
+_GEMINI_MODEL_FALLBACKS = ("gemini-3.5-flash-lite", "gemini-3.7-flash", "gemini-flash-lite-latest")
 _GEMINI_REQUEST_TIMEOUT_SEC = 90
 # One full 3k-word briefing needs headroom; keep a hard cap to avoid runaway bills.
 _GEMINI_MAX_OUTPUT_TOKENS = 8192
@@ -1427,7 +1424,7 @@ def _call_gemini(
                     error=str(exc),
                 )
                 if _is_gemini_timeout_error(exc):
-                    break
+                    raise RuntimeError(str(exc)) from exc
                 continue
 
     if last_error and _is_gemini_quota_error(last_error):
@@ -1497,7 +1494,7 @@ def _generate_teaching_sections(
     sections: list[dict[str, Any]] = []
     tokens = 0
     floor = _min_words()
-    # One lead article only — multi-chapter loops burned 3–8 Gemini calls.
+    # One lead article only - multi-chapter loops burned 3-8 Gemini calls.
     chosen = articles[:1]
     if not chosen:
         return sections, tokens
@@ -1543,7 +1540,7 @@ def _generate_teaching_sections(
         return sections, tokens
     sections.append(_section("Briefing", content, [1]))
 
-    # At most one top-up if still under the 18–20 minute floor.
+    # At most one top-up if still under the 18-20 minute floor.
     if gemini_calls < _MAX_DIGEST_GEMINI_CALLS and _words_in(sections) < floor:
         needed = min(_max_words() - _words_in(sections), floor - _words_in(sections))
         if needed >= 200:
@@ -1700,7 +1697,7 @@ def _enforce_min_length(
     *,
     scraped_only: bool,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Reach the 18–20 minute floor without extra Gemini calls.
+    """Reach the 18-20 minute floor without extra Gemini calls.
 
     Length after the digest write(+optional top-up) is filled from scraped
     source bodies only — keeps total Gemini usage at most `_MAX_DIGEST_GEMINI_CALLS`.
@@ -1945,10 +1942,12 @@ def synthesize_digest(
     word_count = len(" ".join(section.content for section in sections).split())
     reading = round(max(1.0, word_count / _WPM), 1)
     floor = _min_words()
-    if articles and word_count < floor:
+    # Liberal floor: allow a 5% margin so close digests (e.g. 2850+ words) are accepted smoothly
+    effective_floor = int(floor * 0.95) if floor >= 1000 else floor
+    if articles and word_count < effective_floor:
         raise RuntimeError(
             f"Digest too short for the {_MIN_READ_MINUTES}-{_MAX_READ_MINUTES} minute target "
-            f"({word_count} words; need at least {floor})."
+            f"({word_count} words; need at least {effective_floor})."
         )
     further = payload.get("further_reading") or []
     further_reading = [

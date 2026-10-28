@@ -473,8 +473,9 @@ export function salvageDiagramLabels(text: string): string[] {
       if (label && !labels.includes(label)) labels.push(label);
     }
 
-    if (/^[A-Za-z(]/.test(t) && !/^\|/.test(t) && !/^\+/.test(t)) {
-      const label = cleanDiagramLabel(t);
+    const stripped = t.replace(/^[\+└├][\-=\─\━\s>]+/, '').trim();
+    if (/^[A-Za-z(]/.test(stripped) && !/^\|/.test(stripped)) {
+      const label = cleanDiagramLabel(stripped);
       if (label && !labels.includes(label)) labels.push(label);
     }
   }
@@ -529,7 +530,7 @@ export function salvageBracketFlowSteps(text: string): string[] {
 
   for (const line of String(text || '').split('\n')) {
     const t = line.trim();
-    if (!t || /^\+[-=+]/.test(t)) continue;
+    if (!t || /^\+[-=─━+]+\+$/.test(t)) continue;
     if (looksLikeMarkdownTableRow(t)) continue;
 
     for (const m of t.matchAll(/\[([^\]]{2,58})\]|\(([^(][^)]{2,58})\)/g)) {
@@ -541,11 +542,12 @@ export function salvageBracketFlowSteps(text: string): string[] {
       continue;
     }
 
-    if (/^[|v↓\s]+$/.test(t)) continue;
+    if (/^[|v↓▲▼^│\s]+$/.test(t)) continue;
     if (/^\[/.test(t) || /^\(/.test(t)) continue;
     if (t.split(/\s+/).length >= 12 && /[.!?]/.test(t)) continue;
-    if (/^[A-Za-z(]/.test(t) && t.length >= 4 && t.length <= 58) {
-      push(t);
+    const stripped = t.replace(/^[\+└├][\-=\─\━\s>]+/, '').trim();
+    if (/^[A-Za-z(]/.test(stripped) && stripped.length >= 4 && stripped.length <= 58) {
+      push(stripped);
     }
   }
   return steps.slice(0, 12);
@@ -669,8 +671,8 @@ export function looksLikeSimpleArrowFlow(text: string): boolean {
     .map((l) => l.trim())
     .filter(Boolean);
   if (lines.length < 3) return false;
-  const arrows = lines.filter((l) => /^v$|^\|$|^↓$/.test(l) || /^\s+[|v↓]\s*$/.test(l)).length;
-  return arrows >= 2 && !/^\+[-=]/m.test(raw);
+  const arrows = lines.filter((l) => /^v$|^\|$|^↓$/.test(l) || /^\s+[|v↓▲▼^│]\s*$/.test(l)).length;
+  return arrows >= 2 && !/\+[-=─━]{2,}\+/.test(raw);
 }
 
 /** Prompt + Codebase + Docs = Context style stacks. */
@@ -1057,14 +1059,16 @@ export function looksLikeAsciiArtLine(line: string): boolean {
   // ASCII or Unicode box borders: +---+  +───+
   if (/^\+[-=─━+]+\+?$/.test(t)) return true;
   if (/\+[-=─━]{2,}\+/.test(t)) return true;
+  // Branch / tree connector lines: +-- >, +--> , +-> , +-- , \-- , |--
+  if (/^\+[-=─━~]{1,4}(?:>|\s*>|\s+[A-Za-z0-9])/.test(t)) return true;
+  if (/^[|\s]*[└├][─━]+/.test(t)) return true;
   // Single-cell ASCII boxes only (not multi-column markdown tables)
   if (/^\|[^|]+\|?$/.test(t) && (t.match(/\|/g) || []).length <= 2) return true;
-  if (/^[|]+$/.test(t)) return true;
-  if (/^v$/i.test(t)) return true;
+  if (/^[|│]+$/.test(t)) return true;
+  if (/^[v↓▲▼^]+$/i.test(t)) return true;
   if (/^[+=]$/.test(t)) return true;
-  if (/^\|\s*v\s*$/i.test(t)) return true;
-  if (/^(?:-->|==>|←|→|⇒)\s*$/.test(t)) return true;
-  if (/^STEP\s+\d+/i.test(t)) return true;
+  if (/^[|│]?\s*[v↓]\s*$/i.test(t)) return true;
+  if (/^STEP\s+\d+[:\s].*(\||-->|==>|->|←|→|⇒)/i.test(t)) return true;
   // [--- Slice 1 ---][--- Slice 2 ---] chunking diagrams
   if (looksLikeFlowLine(t)) return true;
   return false;
@@ -1332,22 +1336,41 @@ export function fenceLooseAsciiDiagrams(content: string): string {
       isShortDiagramLabel(trimmed) &&
       i + 1 < lines.length &&
       /^[+=]$/.test(lines[i + 1].trim());
+    const arrowFlowStart =
+      buf.length === 0 &&
+      isShortDiagramLabel(trimmed) &&
+      i + 1 < lines.length &&
+      /^[|│v↓▲▼^]/.test(lines[i + 1].trim());
     const plusStackContinue =
       buf.length > 0 &&
       ((/^[+=]$/.test(lastBuf) && isShortDiagramLabel(trimmed)) ||
         (isShortDiagramLabel(lastBuf) && /^[+=]$/.test(trimmed)));
+
+    // Lookahead across empty line to ensure diagram continues
+    let nextNonEmptyLine = '';
+    if (trimmed === '' && buf.length > 0) {
+      for (let k = i + 1; k < Math.min(lines.length, i + 4); k++) {
+        if (lines[k].trim()) {
+          nextNonEmptyLine = lines[k].trim();
+          break;
+        }
+      }
+    }
+    const emptyContinuesDiagram =
+      trimmed === '' &&
+      buf.length > 0 &&
+      (looksLikeAsciiArtLine(nextNonEmptyLine) ||
+        (isShortDiagramLabel(nextNonEmptyLine) && !isProseFollowOn));
+
     const continuing =
       buf.length > 0 &&
       !isProseFollowOn &&
       (art ||
+        emptyContinuesDiagram ||
         plusStackContinue ||
-        trimmed === '' ||
-        /^\s*[-*]\s+/.test(line) ||
-        /^STEP\s+\d+/i.test(trimmed) ||
-        looksLikeAsciiDiagram(`${buf.join('\n')}\n${line}`) ||
-        looksLikePlusEqualsStack(`${buf.join('\n')}\n${line}`));
+        (isShortDiagramLabel(trimmed) && (looksLikeAsciiArtLine(lastBuf) || lastBuf === '')));
 
-    if (plusStackStart || art || continuing) {
+    if (plusStackStart || arrowFlowStart || art || continuing) {
       buf.push(line);
       continue;
     }
@@ -1380,7 +1403,7 @@ export function stripOffTopicBodyContent(content: string): string {
     if (!part.trim()) continue;
     const lines = part.split('\n');
     const heading = (lines[0] || '').trim();
-    const isMetaSection = /^##\s+(Daily Overview|Briefing|Brief|Key Action)/i.test(heading);
+    const isMetaSection = /^##\s+(Daily Overview|Briefing|Brief|Key Action|Summary)/i.test(heading);
     const isSourcesSection = /^##\s+(Sources\s*&\s*Citations|Source and Citation)/i.test(heading);
     const isCodeSection = /^##\s+Code Snippet/i.test(heading);
     const isCanonical =
@@ -2552,6 +2575,35 @@ export function collapseConsecutiveEmptyBlocks(blocks: MdBlock[]): MdBlock[] {
   return out;
 }
 
+/**
+ * Prunes canonical digest headings (e.g. 'Key Action', 'Summary') that have no body content under them.
+ * Prevents empty sections from rendering bare divider bars.
+ */
+export function pruneOrphanHeadings(blocks: MdBlock[], isDigest: boolean = true): MdBlock[] {
+  if (!isDigest) return blocks;
+  const out: MdBlock[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (block.type === 'h2' && isCanonicalDigestHeading(block.content)) {
+      let hasContent = false;
+      for (let j = i + 1; j < blocks.length; j++) {
+        const next = blocks[j];
+        if (next.type === 'empty') continue;
+        if (next.type === 'h1' || (next.type === 'h2' && isCanonicalDigestHeading(next.content))) {
+          break;
+        }
+        hasContent = true;
+        break;
+      }
+      if (!hasContent) {
+        continue;
+      }
+    }
+    out.push(block);
+  }
+  return out;
+}
+
 /** Apply digest section context and normalize blocks before React render. */
 function prepareRenderableBlocks(rawBlocks: MdBlock[], isDigest: boolean): MdBlock[] {
   let renderSection: RenderSection = 'body';
@@ -2760,8 +2812,11 @@ export function PremiumMarkdownRenderer({ content }: { content: string }) {
     ),
   );
   const blocks = collapseConsecutiveEmptyBlocks(
-    prepareRenderableBlocks(
-      parseMarkdownBlocks(restoreArticleMarkdown(prepared).split('\n')),
+    pruneOrphanHeadings(
+      prepareRenderableBlocks(
+        parseMarkdownBlocks(restoreArticleMarkdown(prepared).split('\n')),
+        isDigest,
+      ),
       isDigest,
     ),
   );

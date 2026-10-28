@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import json
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import google.generativeai as genai
 import structlog
 from pydantic import BaseModel, Field, ValidationError
 
 from src.core.config import get_llm_settings
-from src.models.article import Article
-from src.models.profile import UserProfile
 from src.ranker.scorer import clamp_score
+
+if TYPE_CHECKING:
+    from src.models.article import Article
+    from src.models.profile import UserProfile
 
 log = structlog.get_logger(__name__)
 
@@ -32,7 +34,7 @@ class RerankCandidate(BaseModel):
     @classmethod
     def from_article(
         cls, article: Article, composite_score: float, vector_similarity: float
-    ) -> "RerankCandidate":
+    ) -> RerankCandidate:
         """Create a candidate from an Article without sending full content bodies."""
         return cls(
             article_id=str(article.id),
@@ -228,11 +230,17 @@ def rerank_with_gemini(
             return fallback_rerank(bounded_candidates, limit)
 
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    primary = (settings.GEMINI_MODEL or "").strip() or "gemini-2.5-flash-lite"
-    dead = {"gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"}
+    primary = (settings.GEMINI_MODEL or "").strip() or "gemini-3.5-flash-lite"
+    dead = {
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-2.5-flash-lite",
+    }
     models = [
         name
-        for name in dict.fromkeys([primary, "gemini-3.6-flash"])
+        for name in dict.fromkeys([primary, "gemini-3.5-flash-lite", "gemini-3.7-flash"])
         if name and name not in dead
     ]
     last_error: Exception | None = None
