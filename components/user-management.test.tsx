@@ -71,6 +71,16 @@ describe('UserManagement', () => {
     expect(screen.getByText('incomplete@creolestudios.com')).toBeInTheDocument();
   });
 
+  it('displays total users, total admins, and regular users count cards', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    expect(screen.getByTestId('total-users-count')).toHaveTextContent('3');
+    expect(screen.getByTestId('total-admins-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('regular-users-count')).toHaveTextContent('2');
+  });
+
   it('shows an error toast when the initial fetch fails', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false });
     render(<UserManagement />);

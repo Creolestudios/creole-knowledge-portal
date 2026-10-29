@@ -52,7 +52,6 @@ export default function LoginPage() {
         provider,
         options: {
           redirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
-          ...(provider === 'google' ? { queryParams: { hd: 'creolestudios.com' } } : {}),
         },
       });
       if (error) throw error;
@@ -68,8 +67,9 @@ export default function LoginPage() {
     setSuccess(false);
 
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail.endsWith('@creolestudios.com')) {
-      setError('Access restricted. Only @creolestudios.com email addresses are allowed.');
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      setError('Please enter a valid email address.');
       setLoading(false);
       return;
     }
@@ -194,7 +194,7 @@ export default function LoginPage() {
                     id="email"
                     type="email"
                     required
-                    placeholder="name@creole.com"
+                    placeholder="name@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent transition-all text-zinc-900 dark:text-white placeholder:text-zinc-400 dark:placeholder:text-zinc-500"

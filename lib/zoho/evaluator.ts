@@ -158,10 +158,11 @@ function generateHeuristicEvaluation(
 }
 
 /**
- * Evaluates a single Zoho task using heuristics + Gemini 2.5 Flash
+ * Evaluates a single Zoho task using heuristics and optional Gemini AI
  */
 export async function evaluateZohoTask(
-  input: TaskEvaluationInput
+  input: TaskEvaluationInput,
+  options: { useAi?: boolean } = { useAi: true }
 ): Promise<TaskEvaluationResult> {
   const timeAdherence = calculateTimeAdherence(
     input.plannedMinutes,
@@ -175,7 +176,7 @@ export async function evaluateZohoTask(
   );
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
+  if (!options.useAi || !apiKey) {
     return generateHeuristicEvaluation(input, timeAdherence, repetition);
   }
 
