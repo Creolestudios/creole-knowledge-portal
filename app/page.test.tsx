@@ -100,20 +100,37 @@ describe('LoginPage', () => {
     });
   });
 
-  it('blocks non-@creolestudios.com email addresses without calling Supabase', async () => {
+  it('blocks invalid email addresses without calling Supabase', async () => {
     render(<LoginPage />);
     await waitFor(() => screen.getByLabelText('Email Address'));
 
-    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'attacker@gmail.com' } });
-    fireEvent.click(screen.getByText('Send Magic Link'));
+    const input = screen.getByLabelText('Email Address');
+    fireEvent.change(input, { target: { value: 'not-an-email' } });
+    fireEvent.submit(input.closest('form')!);
 
     await waitFor(() => {
-      expect(screen.getByText(/Access restricted/i)).toBeInTheDocument();
+      expect(screen.getByText(/Please enter a valid email address/i)).toBeInTheDocument();
     });
     expect(mockSignInWithOtp).not.toHaveBeenCalled();
   });
 
-  it('passes hd=creolestudios.com query param to Google OAuth to restrict domain picker', async () => {
+  it('allows any valid email address including non-creolestudios domains', async () => {
+    mockSignInWithOtp.mockResolvedValue({ error: null });
+    render(<LoginPage />);
+    await waitFor(() => screen.getByLabelText('Email Address'));
+
+    fireEvent.change(screen.getByLabelText('Email Address'), { target: { value: 'priyadhanani125@gmail.com' } });
+    fireEvent.click(screen.getByText('Send Magic Link'));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Check your inbox/)).toBeInTheDocument();
+    });
+    expect(mockSignInWithOtp).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'priyadhanani125@gmail.com' }),
+    );
+  });
+
+  it('initiates Google OAuth login without restricting hosted domain', async () => {
     mockSignInWithOAuth.mockResolvedValue({ error: null });
     render(<LoginPage />);
     await waitFor(() => screen.getByText('Continue with Google'));
@@ -125,7 +142,7 @@ describe('LoginPage', () => {
         expect.objectContaining({
           provider: 'google',
           options: expect.objectContaining({
-            queryParams: expect.objectContaining({ hd: 'creolestudios.com' }),
+            redirectTo: expect.stringContaining('/auth/callback'),
           }),
         }),
       );

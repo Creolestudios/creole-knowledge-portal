@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { GET } from './route';
 
 const mockListUsers = vi.fn();
+let mockProfiles: any[] = [];
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {
@@ -10,13 +11,20 @@ vi.mock('@/lib/supabase/admin', () => ({
         listUsers: (...args: any[]) => mockListUsers(...args),
       },
     },
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        gte: vi.fn(() => ({
-          lte: vi.fn(() => Promise.resolve({ data: [], error: null })),
+    from: vi.fn((table: string) => {
+      if (table === 'user_profiles') {
+        return {
+          select: vi.fn(() => Promise.resolve({ data: mockProfiles, error: null })),
+        };
+      }
+      return {
+        select: vi.fn(() => ({
+          gte: vi.fn(() => ({
+            lte: vi.fn(() => Promise.resolve({ data: [], error: null })),
+          })),
         })),
-      })),
-    })),
+      };
+    }),
   },
   requireAdminUser: vi.fn(() => Promise.resolve({ userId: 'admin-123' })),
 }));
@@ -24,6 +32,7 @@ vi.mock('@/lib/supabase/admin', () => ({
 describe('Admin Zoho Users API (/api/admin/zoho/users)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockProfiles = [];
     mockListUsers.mockResolvedValue({ data: { users: [] }, error: null });
   });
 
@@ -86,5 +95,50 @@ describe('Admin Zoho Users API (/api/admin/zoho/users)', () => {
     expect(json.users).toHaveLength(1);
     expect(json.users[0].name).toBe('Arjun Latiwala');
     expect(json.users[0].email).toBe('arjun.latiwala@creolestudios.com');
+  });
+
+  it('excludes admin users from the user list based on profile role', async () => {
+    mockProfiles = [
+      { user_id: 'u-admin-1', email: 'admin@creolestudios.com', role: 'admin' },
+      { user_id: 'u-user-1', email: 'priya.dhanani@creolestudios.com', role: 'user' },
+      { user_id: 'u-user-2', email: 'dev@creolestudios.com', role: 'user' },
+    ];
+
+    mockListUsers.mockResolvedValue({
+      data: {
+        users: [
+          {
+            id: 'u-admin-1',
+            email: 'admin@creolestudios.com',
+            last_sign_in_at: '2026-09-01T07:24:47.077502Z',
+            user_metadata: { full_name: 'Admin User' },
+          },
+          {
+            id: 'u-user-1',
+            email: 'priya.dhanani@creolestudios.com',
+            last_sign_in_at: '2026-09-01T07:24:47.077502Z',
+            user_metadata: { full_name: 'Priya Dhanani' },
+          },
+          {
+            id: 'u-user-2',
+            email: 'dev@creolestudios.com',
+            last_sign_in_at: '2026-09-01T07:24:47.077502Z',
+            user_metadata: { full_name: 'Regular Dev' },
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const req = new Request('http://localhost:3000/api/admin/zoho/users?type=week');
+    const response = await GET(req);
+    expect(response.status).toBe(200);
+
+    const json = await response.json();
+    expect(json.users).toHaveLength(2);
+    expect(json.users.map((u: any) => u.email)).toEqual([
+      'dev@creolestudios.com',
+      'priya.dhanani@creolestudios.com',
+    ]);
   });
 });

@@ -20,7 +20,8 @@ import {
   ShieldCheck,
   Trash2,
   Sparkles,
-  Bot
+  Bot,
+  Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -257,6 +258,10 @@ export default function UserManagement() {
     u.future_interests?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const totalUsersCount = users.length;
+  const totalAdminsCount = users.filter((u) => u.role === 'admin').length;
+  const regularUsersCount = users.filter((u) => u.role !== 'admin').length;
+
   const isProfileComplete = (user: UserProfile) => {
     return user.years_of_experience !== null && user.primary_tech_stack?.length > 0;
   };
@@ -295,6 +300,51 @@ export default function UserManagement() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-sm text-zinc-900 dark:text-white transition-all"
                 />
+              </div>
+            </div>
+
+            {/* User Statistics Overview */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center gap-4 transition-colors">
+                <div className="w-12 h-12 rounded-xl bg-[#34c4f2]/10 text-[#1b7393] dark:text-[#34c4f2] flex items-center justify-center flex-shrink-0">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="total-users-count">
+                    {totalUsersCount}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
+                    Total Users
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center gap-4 transition-colors">
+                <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300 flex items-center justify-center flex-shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="total-admins-count">
+                    {totalAdminsCount}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
+                    Total Admins
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center gap-4 transition-colors">
+                <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 flex items-center justify-center flex-shrink-0">
+                  <User className="w-6 h-6" />
+                </div>
+                <div>
+                  <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="regular-users-count">
+                    {regularUsersCount}
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
+                    Regular Users
+                  </p>
+                </div>
               </div>
             </div>
 

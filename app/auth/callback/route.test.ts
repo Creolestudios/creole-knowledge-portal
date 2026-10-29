@@ -63,12 +63,28 @@ describe('GET /auth/callback', () => {
     expect(location).toContain('Login%20session%20expired');
   });
 
-  it('blocks non-creolestudios accounts and redirects with an error', async () => {
+  it('permits non-creolestudios accounts and redirects to /dashboard', async () => {
     mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u1', email: 'user@gmail.com' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: { role: 'user' } });
 
     const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
     const location = res.headers.get('location');
-    expect(location).toContain('Only%20%40creolestudios.com%20accounts%20are%20allowed');
+    expect(location).toContain('/dashboard');
+  });
+
+  it('creates a default admin profile for Priya personal Gmail if none exists and redirects to /admin/dashboard', async () => {
+    mockExchangeCodeForSession.mockResolvedValue({ data: { user: { id: 'u789', email: 'priyadhanani125@gmail.com' } }, error: null });
+    mockProfileSingle.mockResolvedValue({ data: null, error: { message: 'Profile not found' } });
+
+    const res = await GET(mockRequest('http://localhost/auth/callback?code=abc123'));
+    const location = res.headers.get('location');
+    expect(location).toContain('/admin/dashboard');
+    expect(mockAdminInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'priyadhanani125@gmail.com',
+        role: 'admin',
+      })
+    );
   });
 
   it('redirects to /dashboard for a regular authenticated user', async () => {

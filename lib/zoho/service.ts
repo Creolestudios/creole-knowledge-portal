@@ -50,10 +50,41 @@ export interface DateFilterOptions {
   monthOffset?: number; // 0 = this month, -1 = last month
 }
 
+export function getISOWeekNumber(d: Date): number {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
+export function formatDateDDMMYYYY(dateInput: Date | string): string {
+  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (Number.isNaN(d.getTime())) return '';
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
+export function formatDateYYYYMMDD(d: Date): string {
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${year}-${month}-${day}`;
+}
+
 /**
  * Generates ISO date boundaries for week, month, and custom range filters
  */
 export function resolveDateFilterRange(filter: DateFilterOptions): { start: string; end: string } {
+  if (filter.startDate && filter.endDate) {
+    return {
+      start: filter.startDate,
+      end: filter.endDate,
+    };
+  }
+
   const now = new Date();
 
   if (filter.type === 'week') {
@@ -69,8 +100,8 @@ export function resolveDateFilterRange(filter: DateFilterOptions): { start: stri
     sunday.setHours(23, 59, 59, 999);
 
     return {
-      start: monday.toISOString().split('T')[0],
-      end: sunday.toISOString().split('T')[0],
+      start: formatDateYYYYMMDD(monday),
+      end: formatDateYYYYMMDD(sunday),
     };
   }
 
@@ -82,8 +113,8 @@ export function resolveDateFilterRange(filter: DateFilterOptions): { start: stri
     const lastDay = new Date(year, month + 1, 0);
 
     return {
-      start: firstDay.toISOString().split('T')[0],
-      end: lastDay.toISOString().split('T')[0],
+      start: formatDateYYYYMMDD(firstDay),
+      end: formatDateYYYYMMDD(lastDay),
     };
   }
 
