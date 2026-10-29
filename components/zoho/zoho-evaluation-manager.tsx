@@ -144,49 +144,6 @@ export default function ZohoEvaluationManager() {
     }
   };
 
-  const getTimeStatusPill = (task: ZohoTaskItem) => {
-    const evalData = task.evaluation;
-    if (!evalData) {
-      return (
-        <span className="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-          {task.actualHours}h spent / {task.plannedHours}h est
-        </span>
-      );
-    }
-    if (evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME') {
-      return (
-        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-          <Clock className="w-3 h-3" />
-          <span>{task.actualHours}h spent / {task.plannedHours}h est</span>
-          {evalData.timeVarianceMinutes > 0 && (
-            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded font-medium">
-              +5m buffer (Tolerated)
-            </span>
-          )}
-        </span>
-      );
-    }
-    if (evalData.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
-      return (
-        <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
-          <Clock className="w-3 h-3" />
-          <span>{task.actualHours}h spent / {task.plannedHours}h est</span>
-          <span className="text-[10px] bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 rounded font-medium">
-            Early finish (Gap flagged)
-          </span>
-        </span>
-      );
-    }
-    return (
-      <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
-        <Clock className="w-3 h-3" />
-        <span>{task.actualHours}h spent / {task.plannedHours}h est</span>
-        <span className="text-[10px] bg-rose-100 dark:bg-rose-950/60 px-1.5 py-0.5 rounded font-medium">
-          Overdue
-        </span>
-      </span>
-    );
-  };
 
   return (
     <div className="space-y-6">
@@ -457,88 +414,46 @@ export default function ZohoEvaluationManager() {
                   key={day.date}
                   className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-xs space-y-4"
                 >
-                  {/* Day Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
-                        <Calendar className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
-                          {day.date}
-                        </h3>
-                        <p className="text-[11px] text-zinc-400">
-                          {day.tasks.length} task{day.tasks.length === 1 ? '' : 's'} recorded
-                        </p>
-                      </div>
+                  {/* Day Header - Task Date only */}
+                  <div className="flex items-center gap-2 pb-2.5 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="w-6 h-6 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
+                      <Calendar className="w-3.5 h-3.5" />
                     </div>
-
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-xs font-bold border border-purple-200 dark:border-purple-800">
-                        <Bot className="w-3.5 h-3.5" />
-                        <span>Day Score: {day.dayScore}/100</span>
-                      </div>
-                    </div>
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                      {day.date}
+                    </h3>
                   </div>
 
-                  {/* Day AI Evaluation Summary */}
-                  {day.summary && (
-                    <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/60 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed flex items-start gap-2.5">
-                      <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
-                      <span>{day.summary}</span>
-                    </div>
-                  )}
-
-                  {/* Tasks for this day */}
+                  {/* Tasks for this day - Only Project Name and Task Title */}
                   <div className="space-y-2">
                     {day.tasks.map((task) => (
                       <div
                         key={task.id}
-                        className="p-3.5 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-100 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        className="p-3 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-100 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all flex items-center justify-between gap-3"
                       >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-zinc-400">
-                              [{task.projectName}]
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setActiveTask(task)}
-                              className="text-xs font-bold text-zinc-900 dark:text-white hover:text-[#34c4f2] text-left truncate cursor-pointer transition-colors"
-                            >
-                              {task.taskName}
-                            </button>
-                          </div>
-                          {task.evaluation?.summaryFeedback && (
-                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-1">
-                              {task.evaluation.summaryFeedback}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-3 shrink-0">
-                          {getTimeStatusPill(task)}
-
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-                            {task.zohoStatus}
+                        <div className="flex-1 min-w-0 flex items-center gap-2.5">
+                          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-md bg-zinc-200/60 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 shrink-0">
+                            {task.projectName}
                           </span>
-
-                          {task.evaluation && (
-                            <span className="text-xs font-black text-purple-600 dark:text-purple-400">
-                              {task.evaluation.overallScore}/100
-                            </span>
-                          )}
-
-                          <a
-                            href={task.zohoLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-[#34c4f2] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                            title="Open in Zoho Projects"
+                          <button
+                            type="button"
+                            onClick={() => setActiveTask(task)}
+                            className="text-xs font-bold text-zinc-900 dark:text-white hover:text-[#34c4f2] text-left truncate cursor-pointer transition-colors"
+                            title={task.taskName}
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
+                            {task.taskName}
+                          </button>
                         </div>
+
+                        <a
+                          href={task.zohoLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-1 rounded-lg text-zinc-400 hover:text-[#34c4f2] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
+                          title="Open in Zoho Projects"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
                       </div>
                     ))}
                   </div>

@@ -3,6 +3,7 @@ import {
   getZohoAccessToken,
   fetchZohoPortalUsers,
   fetchZohoUserTasks,
+  fetchZohoTaskComments,
   stripHtml,
   buildZohoTaskDeepLink,
   parseDurationToMinutes,
@@ -85,6 +86,20 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
       };
     }
 
+    // Calculate current week bounds (Monday to Sunday)
+    const now = new Date();
+    const currentDay = now.getDay(); // 0 is Sunday
+    const distanceToMonday = (currentDay === 0 ? -6 : 1) - currentDay;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + distanceToMonday);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    const weekStartStr = formatDateYYYYMMDD(monday);
+    const weekEndStr = formatDateYYYYMMDD(sunday);
+
     // 1. Fetch Zoho Portal users
     const zohoUsers = await fetchZohoPortalUsers(token, portalId);
 
@@ -130,8 +145,26 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
       );
 
       if (matchedZohoUser) {
-        // Fetch real-time tasks from Zoho
-        const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 50);
+        // Upsert user mapping
+        try {
+          await supabaseAdmin.from('zoho_user_mappings').upsert(
+            {
+              user_id: authUser.id,
+              zoho_user_id: String(matchedZohoUser.id),
+              zoho_user_email: email,
+              ai_subscriptions: aiSubscriptions,
+              seniority_level: seniorityLevel,
+              is_active: true,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: 'zoho_user_id' }
+          );
+        } catch (mErr) {
+          console.warn('[ZohoSync] zoho_user_mappings upsert warning:', mErr);
+        }
+
+        // Fetch real-time active open tasks from Zoho
+        const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100);
 
         const taskItems: ZohoTaskItem[] = [];
         let doneTasks = 0;
@@ -141,10 +174,65 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
         let scoreSum = 0;
 
         for (const raw of rawTasks) {
+          // Determine date in YYYY-MM-DD
+          let taskDateStr = '';
+          if (raw.start_date) {
+            const parts = raw.start_date.split('-');
+            if (parts.length === 3) {
+              taskDateStr = parts[0].length === 4
+                ? `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+                : `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            }
+          } else if (raw.end_date) {
+            const parts = raw.end_date.split('-');
+            if (parts.length === 3) {
+              taskDateStr = parts[0].length === 4
+                ? `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+                : `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            }
+          }
+
+          if (!taskDateStr && raw.created_time_long) {
+            taskDateStr = formatDateYYYYMMDD(new Date(raw.created_time_long));
+          } else if (!taskDateStr && raw.created_time) {
+            const parts = raw.created_time.split('-');
+            if (parts.length === 3) {
+              taskDateStr = parts[0].length === 4
+                ? `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+                : `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            }
+          }
+
+          if (!taskDateStr && raw.name) {
+            const nameMatch = raw.name.match(/\b(\d{1,2})-(\d{1,2})(?:-(\d{4}))?\b/);
+            if (nameMatch) {
+              const dDay = nameMatch[1].padStart(2, '0');
+              const dMonth = nameMatch[2].padStart(2, '0');
+              const dYear = nameMatch[3] || String(now.getFullYear());
+              taskDateStr = `${dYear}-${dMonth}-${dDay}`;
+            }
+          }
+
+          // Strictly filter: only include tasks for this active week
+          if (!taskDateStr || taskDateStr < weekStartStr || taskDateStr > weekEndStr) {
+            continue;
+          }
+
           const plannedMins = parseDurationToMinutes(raw.duration || raw.work || '4:00');
-          const actualMins = parseDurationToMinutes(raw.work || raw.duration || '4:00');
-          const plannedHours = Math.round((plannedMins / 60) * 100) / 100;
+          let actualMins = 0;
+          if (raw.log_hours) {
+            const billable = parseFloat(raw.log_hours.billable_hours || '0');
+            const nonBillable = parseFloat(raw.log_hours.non_billable_hours || '0');
+            const totalH = billable + nonBillable;
+            if (totalH > 0) {
+              actualMins = Math.round(totalH * 60);
+            }
+          }
+          if (actualMins === 0) {
+            actualMins = parseDurationToMinutes(raw.work || raw.duration || '4:00');
+          }
           const actualHours = Math.round((actualMins / 60) * 100) / 100;
+          const plannedHours = Math.round((plannedMins / 60) * 100) / 100;
           totalHoursLogged += actualHours;
 
           const statusName = raw.status?.name || 'In Progress';
@@ -167,33 +255,72 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             statusLower.includes('review') ||
             (raw.name && raw.name.toLowerCase().includes('qa'));
 
-          // Determine date in YYYY-MM-DD
-          let taskDateStr = '';
-          if (raw.created_time_long) {
-            taskDateStr = formatDateYYYYMMDD(new Date(raw.created_time_long));
-          } else if (raw.created_time) {
-            // Zoho format often MM-DD-YYYY or DD-MM-YYYY
-            const parts = raw.created_time.split('-');
-            if (parts.length === 3) {
-              // Assume MM-DD-YYYY or YYYY-MM-DD
-              if (parts[0].length === 4) {
-                taskDateStr = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-              } else {
-                taskDateStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-              }
-            }
-          }
-          if (!taskDateStr) {
-            taskDateStr = formatDateYYYYMMDD(new Date());
-          }
-
           const taskName = cleanText(raw.name);
           const taskDescription = cleanText(raw.description || raw.name);
           const projectName = cleanText(raw.project?.name || 'General Project');
           const projectId = String(raw.project?.id_string || raw.project?.id || '0');
           const taskId = String(raw.id_string || raw.id || '0');
+          const zohoLink = buildZohoTaskDeepLink(portalId, projectId, taskId);
 
-          // Run evaluation heuristics on live task (fast, deterministic heuristic mode for batch sync)
+          // Persist task to live Supabase zoho_tasks table FIRST (satisfies foreign key)
+          try {
+            await supabaseAdmin.from('zoho_tasks').upsert(
+              {
+                zoho_task_id: taskId,
+                zoho_project_id: projectId,
+                project_name: projectName,
+                user_id: authUser.id,
+                task_name: taskName,
+                task_description: taskDescription,
+                zoho_status: statusName,
+                is_qa_review: isQAReview,
+                planned_hours: plannedHours,
+                actual_hours: actualHours,
+                task_date: taskDateStr,
+                zoho_link: zohoLink,
+                created_time: raw.created_time_long ? new Date(raw.created_time_long).toISOString() : new Date().toISOString(),
+                last_modified_time: raw.last_updated_time_long ? new Date(raw.last_updated_time_long).toISOString() : new Date().toISOString(),
+                synced_at: new Date().toISOString(),
+              },
+              { onConflict: 'zoho_task_id' }
+            );
+          } catch (dbErr) {
+            console.warn(`[ZohoSync] zoho_tasks upsert error for ${taskId}:`, dbErr);
+          }
+
+          // Fetch and persist comments for this task
+          let taskComments: Array<{ author: string; content: string; time: string }> = [];
+
+          try {
+            const apiComments = await fetchZohoTaskComments(token, portalId, projectId, taskId);
+            if (apiComments.length > 0) {
+              console.log(`[ZohoSync] Task "${taskName}" (${taskDateStr}) has ${apiComments.length} comment(s):`, apiComments.map(c => c.author_name));
+              taskComments = apiComments.map((c) => ({
+                author: c.author_name,
+                content: c.content,
+                time: c.added_time,
+              }));
+
+              for (const c of apiComments) {
+                if (c.id) {
+                  await supabaseAdmin.from('zoho_task_comments').upsert(
+                    {
+                      zoho_comment_id: c.id,
+                      zoho_task_id: taskId,
+                      author_name: c.author_name,
+                      comment_content: c.content,
+                      comment_added_time: c.added_time,
+                    },
+                    { onConflict: 'zoho_comment_id' }
+                  );
+                }
+              }
+            }
+          } catch (commErr) {
+            console.warn(`[ZohoSync] Comments fetch error for ${taskId}:`, commErr);
+          }
+
+          // Run evaluation heuristics on live task
           const evalResult = await evaluateZohoTask({
             taskName,
             taskDescription,
@@ -202,10 +329,7 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             actualMinutes: actualMins || 240,
             zohoStatus: statusName,
             isQAReview,
-            comments: [
-              `Task status: ${statusName}`,
-              `Duration: ${raw.duration || 'N/A'}, Work hours: ${raw.work || 'N/A'}`,
-            ],
+            comments: taskComments.map((c) => `${c.author}: ${c.content}`),
             userExperienceYears: yearsOfExp,
             seniorityLevel,
             aiSubscriptions,
@@ -225,14 +349,8 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             plannedHours,
             actualHours,
             taskDate: taskDateStr,
-            zohoLink: buildZohoTaskDeepLink(portalId, projectId, taskId),
-            comments: [
-              {
-                author: raw.created_person || fullName,
-                content: `Logged: ${raw.work || raw.duration || 'hours'} | Status: ${statusName}`,
-                time: raw.created_time_format || taskDateStr,
-              },
-            ],
+            zohoLink,
+            comments: taskComments,
             evaluation: evalResult,
           });
         }
@@ -364,7 +482,6 @@ export async function getLiveZohoSummariesWithFilter(
       };
     }
 
-    // If no tasks fall in this range, return dailyEvaluations empty or latest
     return {
       ...u,
       dailyEvaluations: [],

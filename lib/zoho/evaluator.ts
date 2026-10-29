@@ -3,8 +3,11 @@ import {
   calculateTimeAdherence,
   detectRepetitiveTask,
   computeCompositeTaskScore,
+  evaluateWorkAndCommentMatch,
+  generateDynamicPerformanceSummary,
   TimeAdherenceResult,
   RepetitionCheckResult,
+  WorkMatchResult,
   HistoricalTask,
 } from './heuristics';
 
@@ -24,17 +27,22 @@ export interface TaskEvaluationInput {
 }
 
 export interface TaskEvaluationResult {
-  overallScore: number;
-  timeScore: number;
-  commentQualityScore: number;
-  complexityScore: number;
-  repetitionScore: number;
+  overallScore: number; // 0 - 10
+  timeScore: number; // 0 - 10
+  workMatchScore: number; // 0 - 10
+  commentQualityScore: number; // 0 - 10
+  complexityScore: number; // 0 - 10
+  repetitionScore: number; // 0 - 10
   timeVarianceMinutes: number;
   timeAssessmentLabel: string;
   isRepetitive: boolean;
   repetitionSimilarityPct: number;
   matchedTaskId: string | null;
+  workMatchFeedback: string;
   summaryFeedback: string;
+  whereLacked?: string;
+  whereToImprove?: string;
+  improvementItems?: string[];
   strengths: string[];
   improvements: string[];
   aiModelUsed: string;
@@ -55,17 +63,33 @@ export interface DayEvaluationSummary {
 const aiEvaluationSchema: Schema = {
   type: Type.OBJECT,
   properties: {
+    workMatchScore: {
+      type: Type.NUMBER,
+      description: 'Score out of 10 evaluating if comments match the task description and substantiate the work completed (0.0 - 10.0)',
+    },
     commentQualityScore: {
-      type: Type.INTEGER,
-      description: 'Score for comments, PR notes, and QA clarity (0-100)',
+      type: Type.NUMBER,
+      description: 'Score out of 10 for technical depth, PR notes, and QA verification in comments (0.0 - 10.0)',
     },
     complexityScore: {
-      type: Type.INTEGER,
-      description: 'Task complexity assessment based on scope and role (0-100)',
+      type: Type.NUMBER,
+      description: 'Task complexity assessment based on scope and role (0.0 - 10.0)',
+    },
+    workMatchFeedback: {
+      type: Type.STRING,
+      description: 'Detailed explanation comparing the task description against the comments to confirm if work was done as requested',
     },
     summaryFeedback: {
       type: Type.STRING,
-      description: '2-3 sentence performance summary for this specific task',
+      description: '2-3 sentence evaluative performance summary of execution without repeating numerical hours or metrics',
+    },
+    whereLacked: {
+      type: Type.STRING,
+      description: 'Concise explanation of where the user lacked or fell short in execution/comments',
+    },
+    whereToImprove: {
+      type: Type.STRING,
+      description: 'Concise actionable advice on where and how to improve next time',
     },
     strengths: {
       type: Type.ARRAY,
@@ -79,9 +103,13 @@ const aiEvaluationSchema: Schema = {
     },
   },
   required: [
+    'workMatchScore',
     'commentQualityScore',
     'complexityScore',
+    'workMatchFeedback',
     'summaryFeedback',
+    'whereLacked',
+    'whereToImprove',
     'strengths',
     'improvements',
   ],
@@ -93,20 +121,15 @@ const aiEvaluationSchema: Schema = {
 function generateHeuristicEvaluation(
   input: TaskEvaluationInput,
   timeAdherence: TimeAdherenceResult,
-  repetition: RepetitionCheckResult
+  repetition: RepetitionCheckResult,
+  workMatch: WorkMatchResult
 ): TaskEvaluationResult {
-  const hasComments = input.comments && input.comments.length > 0;
-  const commentQualityScore = hasComments
-    ? input.isQAReview ? 90 : 75
-    : 45;
-
-  // Estimate complexity from description length and seniority
   const descLength = (input.taskDescription || '').trim().length;
-  const complexityScore = descLength > 100 ? 85 : descLength > 30 ? 75 : 60;
+  const complexityScore = descLength > 100 ? 8.5 : descLength > 30 ? 7.5 : 6.0;
 
   const overallScore = computeCompositeTaskScore({
     timeScore: timeAdherence.timeScore,
-    commentQualityScore,
+    commentQualityScore: workMatch.workMatchScore,
     complexityScore,
     repetitionScore: repetition.repetitionScore,
     isQAReview: input.isQAReview,
@@ -116,17 +139,25 @@ function generateHeuristicEvaluation(
   const improvements: string[] = [];
 
   if (timeAdherence.assessmentLabel === 'UNEXPECTED_EARLY') {
-    improvements.push('Early completion gap noted; refine estimation and ensure comprehensive QA testing.');
+    improvements.push('Early completion gap noted (>10m early); refine estimation accuracy and verify complete QA testing.');
   } else if (timeAdherence.assessmentLabel === 'OVERDUE') {
-    improvements.push('Task exceeded planned hours; flag blockers earlier in Zoho comments.');
+    improvements.push('Task exceeded planned hours (>10m overtime); escalate blockers earlier in Zoho comments.');
   } else {
-    strengths.push('Excellent time adherence within the allowed tolerance window.');
+    strengths.push('Excellent time adherence within the permitted ±10m tolerance buffer.');
+  }
+
+  if (workMatch.alignmentLabel === 'STRONG_ALIGNMENT') {
+    strengths.push('Logged comments clearly match the task description and confirm the completed work.');
+  } else if (workMatch.alignmentLabel === 'NO_COMMENTS') {
+    improvements.push('Always log progress comments in Zoho Projects describing the implementation steps and test status.');
+  } else {
+    improvements.push('Ensure comments provide specific technical details aligned with the task description.');
   }
 
   if (input.isQAReview) {
     strengths.push('Properly transitioned status to QA Review upon completion.');
   } else {
-    improvements.push('Ensure task is formally moved to QA Review with verification steps.');
+    improvements.push('Ensure task is formally moved to QA Review with verification notes.');
   }
 
   if (repetition.isRepetitive) {
@@ -137,12 +168,22 @@ function generateHeuristicEvaluation(
     strengths.push(`Effective AI tool utilization (${input.aiSubscriptions.join(', ')}).`);
   }
 
-  const summaryFeedback = `Task completed in ${Math.round((input.actualMinutes / 60) * 10) / 10}h (planned ${Math.round((input.plannedMinutes / 60) * 10) / 10}h). ${timeAdherence.explanation} ${repetition.isRepetitive ? repetition.explanation : 'Original scope with verified status.'}`;
+  const dynamicSummary = generateDynamicPerformanceSummary({
+    taskDescription: input.taskDescription || '',
+    comments: input.comments || [],
+    timeAssessmentLabel: timeAdherence.assessmentLabel,
+    workMatchScore: workMatch.workMatchScore,
+    seniorityLevel: input.seniorityLevel,
+    userExperienceYears: input.userExperienceYears,
+    aiSubscriptions: input.aiSubscriptions,
+    isQAReview: input.isQAReview,
+  });
 
   return {
     overallScore,
     timeScore: timeAdherence.timeScore,
-    commentQualityScore,
+    workMatchScore: workMatch.workMatchScore,
+    commentQualityScore: workMatch.workMatchScore,
     complexityScore,
     repetitionScore: repetition.repetitionScore,
     timeVarianceMinutes: timeAdherence.timeVarianceMinutes,
@@ -150,7 +191,11 @@ function generateHeuristicEvaluation(
     isRepetitive: repetition.isRepetitive,
     repetitionSimilarityPct: repetition.similarityPct,
     matchedTaskId: repetition.matchedTaskId,
-    summaryFeedback,
+    workMatchFeedback: workMatch.explanation,
+    summaryFeedback: dynamicSummary.performanceSummary,
+    whereLacked: dynamicSummary.whereLacked,
+    whereToImprove: dynamicSummary.whereToImprove,
+    improvementItems: dynamicSummary.improvementItems,
     strengths,
     improvements,
     aiModelUsed: 'rule-engine-fallback',
@@ -174,33 +219,50 @@ export async function evaluateZohoTask(
     input.taskDescription,
     input.historicalTasks || []
   );
+  const workMatch = evaluateWorkAndCommentMatch(
+    input.taskDescription,
+    input.comments || [],
+    {
+      userExperienceYears: input.userExperienceYears,
+      seniorityLevel: input.seniorityLevel,
+      aiSubscriptions: input.aiSubscriptions,
+      plannedMinutes: input.plannedMinutes,
+      actualMinutes: input.actualMinutes,
+    }
+  );
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!options.useAi || !apiKey) {
-    return generateHeuristicEvaluation(input, timeAdherence, repetition);
+    return generateHeuristicEvaluation(input, timeAdherence, repetition, workMatch);
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     const prompt = `
 You are the Chief Engineering Evaluator for the Creole Knowledge Portal.
-Evaluate the following completed software development task based on our engineering evaluation rules:
+Evaluate the following completed software development task. ALL SCORES MUST BE ON A SCALE OF 0.0 TO 10.0 (e.g. 8.5, 9.2, 10.0).
 
-ENGINEERING RULES:
-1. Time Tolerance:
+EVALUATION CRITERIA:
+1. Work Justification & Comment Alignment (Score 0.0 - 10.0):
+   - Compare the Task Description with the Comments logged.
+   - Do the comments justify the description and the time given for this task?
+   - Factor in the developer's seniority (${input.seniorityLevel}, ${input.userExperienceYears} yrs experience) and active AI subscriptions (${input.aiSubscriptions.length > 0 ? input.aiSubscriptions.join(', ') : 'None'}).
+   - Is the time given for the task and description justifiable with the work that got done?
+   - If comments clearly substantiate the work completed, award a high score (8.5 - 10.0).
+   - If comments are missing or superficial (e.g. just "done" or unrelated), penalize significantly (3.0 - 6.0).
+2. Time Tolerance (Buffer: +5 mins overtime, -15 mins early):
    - Planned: ${input.plannedMinutes} mins. Actual: ${input.actualMinutes} mins.
    - Variance: ${timeAdherence.timeVarianceMinutes} mins (${timeAdherence.assessmentLabel}).
-   - Rule applied: ${timeAdherence.explanation}
-2. Repetitive Task Check:
-   - Repetition Flag: ${repetition.isRepetitive} (${repetition.similarityPct}% similarity to prior project task).
-   - Rule: Repetitive or duplicate tasks in the same project indicate scope-padding or lack of distinct planning.
-3. Seniority & AI Tools:
-   - Experience: ${input.seniorityLevel} (${input.userExperienceYears} years exp).
-   - Active AI Subscriptions: ${input.aiSubscriptions.length > 0 ? input.aiSubscriptions.join(', ') : 'None'}.
-   - Expected standard: Senior developers or users with AI tools should provide clear documentation, test evidence, and accurate estimations.
-4. QA Review Status:
-   - Current Status: ${input.zohoStatus}
-   - Moved to QA Review: ${input.isQAReview ? 'YES' : 'NO'}.
+   - Rule:
+     * If actual time is within +5 mins overtime or down to -15 mins early (e.g. 4h planned: 3h 45m to 4h 05m), score is 10/10.
+     * Overrun beyond +5 mins or early completion gap beyond -15 mins negatively affects score.
+     * Rule engine time score: ${timeAdherence.timeScore} / 10.
+3. Work Status:
+   - Current Status: ${input.zohoStatus} (QA Review: ${input.isQAReview ? 'YES' : 'NO'}).
+4. Dynamic Performance Summary (DO NOT repeat numerical planned/actual hours, overtime minutes, or criteria scores):
+   - Provide a 2-3 sentence performance summary evaluating user performance based on task description, comment depth, engineer seniority (${input.seniorityLevel}, ${input.userExperienceYears} yrs experience), and active AI subscriptions (${input.aiSubscriptions.length > 0 ? input.aiSubscriptions.join(', ') : 'None'}).
+   - Clearly state where the user lacked in execution, documentation, or time discipline.
+   - Clearly state actionable guidance on where and how to improve.
 
 TASK CONTEXT:
 - Project: "${input.projectName}"
@@ -223,16 +285,19 @@ Return your evaluation strictly conforming to the requested JSON schema.
     });
 
     const parsed = JSON.parse(response.text?.trim() || '{}');
-    const commentQualityScore = Number.isFinite(parsed.commentQualityScore)
-      ? Math.max(0, Math.min(100, parsed.commentQualityScore))
-      : 75;
-    const complexityScore = Number.isFinite(parsed.complexityScore)
-      ? Math.max(0, Math.min(100, parsed.complexityScore))
-      : 75;
+    const hasComments = input.comments && input.comments.length > 0;
+    const rawWorkMatch = hasComments && Number.isFinite(parsed.workMatchScore) ? parsed.workMatchScore : (hasComments ? workMatch.workMatchScore : 0);
+    const workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : 0;
+
+    const rawCommentQuality = Number.isFinite(parsed.commentQualityScore) ? parsed.commentQualityScore : workMatchScore;
+    const commentQualityScore = hasComments ? Math.max(0, Math.min(10, rawCommentQuality > 10 ? rawCommentQuality / 10 : rawCommentQuality)) : 0;
+
+    const rawComplexity = Number.isFinite(parsed.complexityScore) ? parsed.complexityScore : 7.5;
+    const complexityScore = Math.max(0, Math.min(10, rawComplexity > 10 ? rawComplexity / 10 : rawComplexity));
 
     const overallScore = computeCompositeTaskScore({
       timeScore: timeAdherence.timeScore,
-      commentQualityScore,
+      commentQualityScore: workMatchScore,
       complexityScore,
       repetitionScore: repetition.repetitionScore,
       isQAReview: input.isQAReview,
@@ -243,15 +308,30 @@ Return your evaluation strictly conforming to the requested JSON schema.
 
     // Ensure critical engineering heuristics are always surfaced in feedback
     if (timeAdherence.assessmentLabel === 'UNEXPECTED_EARLY' && !rawImprovements.some((i: string) => i.toLowerCase().includes('early'))) {
-      rawImprovements.unshift('Early completion gap noted; refine estimation accuracy and verify thorough testing.');
+      rawImprovements.unshift('Early completion gap noted (>10m early); refine estimation accuracy and verify thorough testing.');
+    }
+    if (timeAdherence.assessmentLabel === 'OVERDUE' && !rawImprovements.some((i: string) => i.toLowerCase().includes('overdue') || i.toLowerCase().includes('exceeded'))) {
+      rawImprovements.unshift('Task ran past the allowed 10-minute buffer; escalate blockers earlier.');
     }
     if (repetition.isRepetitive && !rawImprovements.some((i: string) => i.toLowerCase().includes('repeat') || i.toLowerCase().includes('similar'))) {
       rawImprovements.unshift(`Similar task scope repeated in project (${repetition.similarityPct}% match). Keep task definitions distinct.`);
     }
 
+    const fallbackSummary = generateDynamicPerformanceSummary({
+      taskDescription: input.taskDescription || '',
+      comments: input.comments || [],
+      timeAssessmentLabel: timeAdherence.assessmentLabel,
+      workMatchScore,
+      seniorityLevel: input.seniorityLevel,
+      userExperienceYears: input.userExperienceYears,
+      aiSubscriptions: input.aiSubscriptions,
+      isQAReview: input.isQAReview,
+    });
+
     return {
       overallScore,
       timeScore: timeAdherence.timeScore,
+      workMatchScore,
       commentQualityScore,
       complexityScore,
       repetitionScore: repetition.repetitionScore,
@@ -260,14 +340,18 @@ Return your evaluation strictly conforming to the requested JSON schema.
       isRepetitive: repetition.isRepetitive,
       repetitionSimilarityPct: repetition.similarityPct,
       matchedTaskId: repetition.matchedTaskId,
-      summaryFeedback: parsed.summaryFeedback || timeAdherence.explanation,
+      workMatchFeedback: parsed.workMatchFeedback || workMatch.explanation,
+      summaryFeedback: parsed.summaryFeedback || fallbackSummary.performanceSummary,
+      whereLacked: parsed.whereLacked || fallbackSummary.whereLacked,
+      whereToImprove: parsed.whereToImprove || fallbackSummary.whereToImprove,
+      improvementItems: fallbackSummary.improvementItems,
       strengths: rawStrengths,
       improvements: rawImprovements,
       aiModelUsed: 'gemini-2.5-flash',
     };
   } catch (error) {
     console.warn('[evaluateZohoTask] Gemini API failed, falling back to rule engine:', error);
-    return generateHeuristicEvaluation(input, timeAdherence, repetition);
+    return generateHeuristicEvaluation(input, timeAdherence, repetition, workMatch);
   }
 }
 
@@ -323,12 +407,13 @@ export function evaluateFullDay(
     }
   }
 
-  const avgScore = Math.round(totalScoreSum / tasks.length);
+  const rawAvg = totalScoreSum / tasks.length;
+  const avgScore = Math.round((rawAvg > 10 ? rawAvg / 10 : rawAvg) * 10) / 10;
   const totalPlannedHours = Math.round((totalPlannedMinutes / 60) * 100) / 100;
   const totalActualHours = Math.round((totalActualMinutes / 60) * 100) / 100;
 
   let summary = `Completed ${tasks.length} task(s) on ${evaluationDate}. Total logged hours: ${totalActualHours}h vs ${totalPlannedHours}h planned. `;
-  if (delayedCount === 0 && avgScore >= 85) {
+  if (delayedCount === 0 && avgScore >= 8.5) {
     summary += 'Outstanding daily performance with high punctuality and smooth QA handoffs.';
   } else if (delayedCount > 0) {
     summary += `${delayedCount} task(s) ran past the tolerance window; focus on blocker escalation in daily standups.`;

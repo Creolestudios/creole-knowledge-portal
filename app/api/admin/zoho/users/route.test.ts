@@ -19,6 +19,7 @@ vi.mock('@/lib/supabase/admin', () => ({
       }
       return {
         select: vi.fn(() => ({
+          order: vi.fn(() => Promise.resolve({ data: [], error: null })),
           gte: vi.fn(() => ({
             lte: vi.fn(() => Promise.resolve({ data: [], error: null })),
           })),

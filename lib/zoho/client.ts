@@ -241,12 +241,14 @@ export async function fetchZohoUserTasks(
   token: string,
   portalId: string,
   zohoUserId: string,
+  status: string = 'open',
   range = 100
 ): Promise<any[]> {
   try {
     const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const statusParam = status ? `&status=${encodeURIComponent(status)}` : '';
     const res = await fetch(
-      `${apiBase}/portal/${portalId}/mytasks/?owner=${encodeURIComponent(zohoUserId)}&range=${range}`,
+      `${apiBase}/portal/${portalId}/mytasks/?owner=${encodeURIComponent(zohoUserId)}${statusParam}&range=${range}`,
       {
         headers: { Authorization: `Zoho-oauthtoken ${token}` },
       }
@@ -291,3 +293,50 @@ export async function fetchZohoTaskDetails(
     return null;
   }
 }
+
+/**
+ * Fetches comments for a specific Zoho task
+ */
+export async function fetchZohoTaskComments(
+  token: string,
+  portalId: string,
+  projectId: string,
+  taskId: string
+): Promise<Array<{ id: string; content: string; author_name: string; added_time: string }>> {
+  try {
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const res = await fetch(
+      `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${taskId}/comments/`,
+      {
+        headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      }
+    );
+    if (!res.ok) return [];
+    const text = await res.text();
+    if (!text || !text.trim().startsWith('{')) return [];
+    const data = JSON.parse(text);
+    const comments = data.comments || [];
+    return comments.map((c: any) => {
+      let isoTime = new Date().toISOString();
+      if (c.created_time_long) {
+        isoTime = new Date(c.created_time_long).toISOString();
+      } else if (c.created_time) {
+        const parts = c.created_time.split('-');
+        if (parts.length === 3) {
+          const dateStr = parts[0].length === 4 ? `${parts[0]}-${parts[1]}-${parts[2]}` : `${parts[2]}-${parts[0]}-${parts[1]}`;
+          isoTime = new Date(dateStr).toISOString();
+        }
+      }
+      return {
+        id: String(c.id_string || c.id || ''),
+        content: stripHtml(c.content || ''),
+        author_name: c.added_person || c.added_by || c.created_person || 'Team Member',
+        added_time: isoTime,
+      };
+    });
+  } catch (err) {
+    console.warn(`[ZohoClient] fetchZohoTaskComments error for ${taskId}:`, err);
+    return [];
+  }
+}
+

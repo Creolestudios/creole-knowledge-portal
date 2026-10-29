@@ -301,11 +301,12 @@ describe('Zoho Frontend Components', () => {
       expect(screen.getByText('Task Description')).toBeDefined();
       expect(screen.getByText('Detailed description of task scope and RLS rules')).toBeDefined();
       expect(screen.getByText('Planned Time')).toBeDefined();
-      expect(screen.getByText('4 hrs')).toBeDefined();
+      expect(screen.getAllByText('4 hrs').length).toBeGreaterThan(0);
       expect(screen.getByText('Related Comments (1)')).toBeDefined();
-      expect(screen.getByText('Completed test run and verified RLS')).toBeDefined();
-      expect(screen.getByText('AI Evaluation Summary')).toBeDefined();
-      expect(screen.getByText('5-minute buffer respected with 100% time adherence.')).toBeDefined();
+      expect(screen.getByText('Performance Evaluation')).toBeDefined();
+      expect(screen.getByText('Time Adherence')).toBeDefined();
+      expect(screen.getByText('Work Justification')).toBeDefined();
+      expect(screen.getByText('Work Status')).toBeDefined();
 
       const closeBtn = screen.getByText('Close');
       fireEvent.click(closeBtn);

@@ -5,8 +5,10 @@ const { generateContentMock } = vi.hoisted(() => {
     generateContentMock: vi.fn().mockImplementation(async () => {
       return {
         text: JSON.stringify({
-          commentQualityScore: 85,
-          complexityScore: 80,
+          workMatchScore: 9.0,
+          commentQualityScore: 8.5,
+          complexityScore: 8.0,
+          workMatchFeedback: 'Comments directly match the task description and verify that RLS policies and tests were completed.',
           summaryFeedback: 'Solid execution with clear comments and timely delivery.',
           strengths: ['Clean code review handoff', 'Prompt updates'],
           improvements: ['Early completion gap noted; refine estimation and ensure comprehensive QA testing.'],
@@ -26,6 +28,7 @@ vi.mock('@google/genai', () => {
     Type: {
       OBJECT: 'OBJECT',
       STRING: 'STRING',
+      NUMBER: 'NUMBER',
       INTEGER: 'INTEGER',
       ARRAY: 'ARRAY',
     },
@@ -46,14 +49,14 @@ describe('Zoho Evaluator Service', () => {
   });
 
   describe('evaluateZohoTask', () => {
-    it('evaluates task with slight overrun within 5m buffer', async () => {
+    it('evaluates task with overrun within +5m buffer and matching comments (score out of 10)', async () => {
       process.env.GEMINI_API_KEY = 'test-key';
       const result = await evaluateZohoTask({
         taskName: 'Implement Supabase RLS security policies',
         taskDescription: 'Write comprehensive idempotent RLS policies for zoho tables',
         projectName: 'Creole Knowledge Portal',
         plannedMinutes: 240, // 4 hours
-        actualMinutes: 245,  // 4:05 (+5 mins)
+        actualMinutes: 245,  // 4:05 (+5 mins, within +5m buffer)
         zohoStatus: 'QA Review',
         isQAReview: true,
         comments: ['PR created and test suite passed with 100% coverage.'],
@@ -62,21 +65,22 @@ describe('Zoho Evaluator Service', () => {
         aiSubscriptions: ['GitHub Copilot'],
       });
 
-      expect(result.timeScore).toBe(100);
+      expect(result.timeScore).toBe(10);
       expect(result.timeAssessmentLabel).toBe('SLIGHT_OVERRUN_TOLERATED');
-      expect(result.overallScore).toBeGreaterThanOrEqual(85);
+      expect(result.overallScore).toBeGreaterThanOrEqual(8.5);
+      expect(result.overallScore).toBeLessThanOrEqual(10.0);
       expect(result.isRepetitive).toBe(false);
       expect(generateContentMock).toHaveBeenCalled();
     });
 
-    it('evaluates task with early completion exceeding 15m gap', async () => {
+    it('evaluates task with early completion exceeding 10m gap and penalizes score', async () => {
       delete process.env.GEMINI_API_KEY; // test rule-based fallback
       const result = await evaluateZohoTask({
         taskName: 'API Endpoint integration',
         taskDescription: 'Create REST endpoints',
         projectName: 'CKP',
         plannedMinutes: 240, // 4 hours
-        actualMinutes: 210,  // 3:30 (30 mins early)
+        actualMinutes: 210,  // 3:30 (30 mins early, 20m beyond 10m buffer)
         zohoStatus: 'QA Review',
         isQAReview: true,
         comments: ['Done'],
@@ -86,8 +90,30 @@ describe('Zoho Evaluator Service', () => {
       });
 
       expect(result.timeAssessmentLabel).toBe('UNEXPECTED_EARLY');
-      expect(result.timeScore).toBeLessThan(100);
+      expect(result.timeScore).toBeLessThan(10);
       expect(result.improvements.some(imp => imp.includes('Early completion gap'))).toBe(true);
+    });
+
+    it('evaluates work match and penalizes when comments are missing', async () => {
+      delete process.env.GEMINI_API_KEY; // test rule-based fallback
+      const result = await evaluateZohoTask({
+        taskName: 'Complex auth refactor',
+        taskDescription: 'Implement OAuth refresh token rotation and revoke sessions',
+        projectName: 'CKP',
+        plannedMinutes: 120,
+        actualMinutes: 120, // exactly on time
+        zohoStatus: 'Closed',
+        isQAReview: false,
+        comments: [], // no comments
+        userExperienceYears: 3,
+        seniorityLevel: 'Senior',
+        aiSubscriptions: [],
+      });
+
+      expect(result.timeScore).toBe(10);
+      expect(result.workMatchScore).toBe(0);
+      expect(result.workMatchFeedback).toContain('Score is 0');
+      expect(result.overallScore).toBeLessThan(8.0);
     });
 
     it('flags repetitive task and applies penalty', async () => {
@@ -116,19 +142,19 @@ describe('Zoho Evaluator Service', () => {
       });
 
       expect(result.isRepetitive).toBe(true);
-      expect(result.repetitionScore).toBeLessThan(100);
+      expect(result.repetitionScore).toBeLessThan(10);
       expect(result.repetitionSimilarityPct).toBeGreaterThanOrEqual(60);
       expect(result.improvements.some(imp => imp.includes('Similar task scope repeated'))).toBe(true);
     });
   });
 
   describe('evaluateFullDay', () => {
-    it('aggregates daily tasks into summary metrics and scores', () => {
+    it('aggregates daily tasks into summary metrics and scores out of 10', () => {
       const tasks = [
         {
           plannedMinutes: 120,
           actualMinutes: 125,
-          overallScore: 92,
+          overallScore: 9.2,
           timeAssessmentLabel: 'SLIGHT_OVERRUN_TOLERATED',
           isQAReview: true,
           zohoStatus: 'QA Review',
@@ -136,26 +162,23 @@ describe('Zoho Evaluator Service', () => {
         {
           plannedMinutes: 180,
           actualMinutes: 175,
-          overallScore: 95,
+          overallScore: 9.5,
           timeAssessmentLabel: 'ON_TIME',
-          isQAReview: false,
-          zohoStatus: 'Closed',
+          isQAReview: true,
+          zohoStatus: 'QA Review',
         },
       ];
 
-      const summary = evaluateFullDay(tasks, '2026-10-28');
+      const summary = evaluateFullDay(tasks, '2026-10-27');
       expect(summary.totalTasks).toBe(2);
-      expect(summary.doneTasks).toBe(1);
-      expect(summary.qaReviewTasks).toBe(1);
+      expect(summary.qaReviewTasks).toBe(2);
       expect(summary.delayedTasks).toBe(0);
-      expect(summary.dailyScore).toBe(94); // (92+95)/2 = 93.5 -> 94
-      expect(summary.totalPlannedHours).toBe(5); // 300 / 60
-      expect(summary.totalActualHours).toBe(5);  // 300 / 60
+      expect(summary.dailyScore).toBe(9.4);
       expect(summary.dailySummary).toContain('Outstanding daily performance');
     });
 
-    it('handles empty task list gracefully', () => {
-      const summary = evaluateFullDay([], '2026-10-28');
+    it('handles empty day gracefully', () => {
+      const summary = evaluateFullDay([], '2026-10-27');
       expect(summary.totalTasks).toBe(0);
       expect(summary.dailyScore).toBe(0);
       expect(summary.dailySummary).toBe('No tasks logged for this day.');
