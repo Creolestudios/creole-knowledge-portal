@@ -8,6 +8,7 @@ from typing import Literal
 
 from beanie import Document, Indexed
 from pydantic import BaseModel, Field, HttpUrl
+from pymongo import ASCENDING, IndexModel
 
 
 class ComplexityLevel(StrEnum):
@@ -66,6 +67,11 @@ class Article(Document):
 
         name = "articles"
         indexes = [
+            IndexModel(
+                [("created_at", ASCENDING)],
+                expireAfterSeconds=90 * 24 * 60 * 60,
+                name="article_created_at_ttl_90d",
+            ),
             "source_domain",
             "published_at",
             "quality_score",

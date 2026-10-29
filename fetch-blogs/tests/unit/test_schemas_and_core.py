@@ -338,3 +338,18 @@ class TestRedisModule:
 
         monkeypatch.setattr(redis_mod, "get_redis_client", lambda: ExplodingClient())
         assert await redis_mod.ping_redis() is False
+
+
+def test_article_has_90_day_ttl_index() -> None:
+    from pymongo import IndexModel
+    from src.models.article import Article as BeanieArticle
+
+    indexes = BeanieArticle.Settings.indexes
+    ttl_models = [
+        idx
+        for idx in indexes
+        if isinstance(idx, IndexModel) and getattr(idx, "document", {}).get("expireAfterSeconds") == 90 * 24 * 60 * 60
+    ]
+    assert len(ttl_models) == 1
+    assert ttl_models[0].document.get("name") == "article_created_at_ttl_90d"
+

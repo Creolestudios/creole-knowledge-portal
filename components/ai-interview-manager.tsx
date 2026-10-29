@@ -109,7 +109,7 @@ export default function AIInterviewManager() {
     }
   };
 
-  const [bypassProctoring, setBypassProctoring] = useState(false);
+  const [bypassProctoring, setBypassProctoring] = useState(true);
   const [showBypassConfirm, setShowBypassConfirm] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
@@ -324,7 +324,7 @@ export default function AIInterviewManager() {
     setExtractionResult(null);
     setSessionResult(null);
     setError(null);
-    setBypassProctoring(false);
+    setBypassProctoring(true);
     setShowBypassConfirm(false);
   };
 

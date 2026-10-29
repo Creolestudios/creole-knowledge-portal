@@ -425,9 +425,14 @@ describe('AIInterviewManager', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
 
     const toggleBtn = document.getElementById('bypass-proctoring-toggle') as HTMLButtonElement;
-    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('true');
 
-    // Click toggle to open confirm modal
+    // Clicking toggle when active should toggle it off without modal
+    fireEvent.click(toggleBtn);
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
+
+    // Clicking toggle when off should open confirm modal
     fireEvent.click(toggleBtn);
     expect(await screen.findByText('Confirm Bypass Proctoring')).toBeInTheDocument();
 
@@ -437,11 +442,6 @@ describe('AIInterviewManager', () => {
       expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
       expect(toggleBtn.getAttribute('aria-checked')).toBe('true');
     });
-
-    // Clicking again should toggle it off without modal
-    fireEvent.click(toggleBtn);
-    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
-    expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
   });
 
   it('disables the bypass proctoring toggle during analysis and prevents showing confirmation popup', async () => {
@@ -468,7 +468,7 @@ describe('AIInterviewManager', () => {
 
     expect(toggleBtn).toBeInTheDocument();
     expect(toggleBtn).not.toBeDisabled();
-    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('true');
 
     await attachResumeAndJd();
 
@@ -483,11 +483,11 @@ describe('AIInterviewManager', () => {
     // Clicking the disabled toggle or label while submitting should NOT open confirmation modal
     fireEvent.click(toggleBtn);
     expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
-    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('true');
 
     fireEvent.click(labelSpan);
     expect(screen.queryByText('Confirm Bypass Proctoring')).not.toBeInTheDocument();
-    expect(toggleBtn.getAttribute('aria-checked')).toBe('false');
+    expect(toggleBtn.getAttribute('aria-checked')).toBe('true');
 
     // Resolve the extract call to complete submission
     resolveExtract!({
