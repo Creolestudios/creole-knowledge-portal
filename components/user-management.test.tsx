@@ -18,6 +18,7 @@ const sampleUsers = [
     primary_tech_stack: ['React'],
     secondary_tech_stack: [],
     future_interests: 'AI',
+    ai_subscriptions: ['GitHub Copilot', 'ChatGPT Plus'],
     updated_at: '2026-08-01T00:00:00Z',
   },
   {
@@ -30,6 +31,7 @@ const sampleUsers = [
     primary_tech_stack: [],
     secondary_tech_stack: [],
     future_interests: '',
+    ai_subscriptions: [],
     updated_at: '2026-08-02T00:00:00Z',
   },
   {
@@ -42,6 +44,7 @@ const sampleUsers = [
     primary_tech_stack: ['Go'],
     secondary_tech_stack: [],
     future_interests: '',
+    ai_subscriptions: [],
     updated_at: '2026-08-03T00:00:00Z',
   },
 ];
@@ -279,5 +282,98 @@ describe('UserManagement', () => {
     const roleInput = screen.getByDisplayValue('Frontend Dev');
     fireEvent.change(roleInput, { target: { value: 'Backend Dev' } });
     expect(screen.getByDisplayValue('Backend Dev')).toBeInTheDocument();
+  });
+
+  it('opens delete confirmation modal and cancels deletion', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    const deleteBtn = screen.getByLabelText('Delete complete@creolestudios.com');
+    fireEvent.click(deleteBtn);
+
+    expect(screen.getByText('Delete User Account')).toBeInTheDocument();
+    expect(screen.getByText(/Are you sure you want to permanently delete user/)).toBeInTheDocument();
+
+    const cancelBtn = screen.getByRole('button', { name: /^Cancel$/i });
+    fireEvent.click(cancelBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Delete User Account')).not.toBeInTheDocument();
+    });
+  });
+
+  it('deletes user when confirmed in modal', async () => {
+    global.fetch = vi.fn().mockImplementation(async (url: string, options?: any) => {
+      if (options?.method === 'DELETE') {
+        return { ok: true, json: async () => ({ success: true }) };
+      }
+      return { ok: true, json: async () => sampleUsers };
+    });
+
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    const deleteBtn = screen.getByLabelText('Delete complete@creolestudios.com');
+    fireEvent.click(deleteBtn);
+
+    expect(screen.getByText('Delete User Account')).toBeInTheDocument();
+
+    const confirmBtn = screen.getByRole('button', { name: /^Delete User$/i });
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByText('complete@creolestudios.com')).not.toBeInTheDocument();
+    });
+  });
+
+  it('renders AI subscriptions badges on user cards', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    expect(screen.getByText('GitHub Copilot')).toBeInTheDocument();
+    expect(screen.getByText('ChatGPT Plus')).toBeInTheDocument();
+    expect(screen.getAllByText('No AI subscription assigned')).toHaveLength(2);
+  });
+
+  it('allows toggling preset and custom AI subscriptions in the edit form and saving them', async () => {
+    let putPayload: any = null;
+    global.fetch = vi.fn().mockImplementation(async (url: string, options?: any) => {
+      if (options?.method === 'PUT') {
+        putPayload = JSON.parse(options.body);
+        return { ok: true, json: async () => ({ success: true }) };
+      }
+      return { ok: true, json: async () => sampleUsers };
+    });
+
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    expect(screen.getByText('Current AI Subscriptions')).toBeInTheDocument();
+
+    // Toggle preset "Cursor AI" to add it
+    const cursorBtn = screen.getByRole('button', { name: /Cursor AI/i });
+    fireEvent.click(cursorBtn);
+
+    // Add a custom tool
+    const customInput = screen.getByPlaceholderText(/Add custom AI subscription/i);
+    fireEvent.change(customInput, { target: { value: 'Supermaven' } });
+    fireEvent.keyDown(customInput, { key: 'Enter', code: 'Enter' });
+
+    // Submit form
+    const saveBtn = screen.getByRole('button', { name: /Save Profile/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(putPayload).toBeTruthy();
+    });
+    expect(putPayload.ai_subscriptions).toContain('GitHub Copilot');
+    expect(putPayload.ai_subscriptions).toContain('ChatGPT Plus');
+    expect(putPayload.ai_subscriptions).toContain('Cursor AI');
+    expect(putPayload.ai_subscriptions).toContain('Supermaven');
   });
 });

@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'motion/react';
-import { User, Newspaper, History, BarChart3, Menu, X, Flame, Sparkles, Trophy } from 'lucide-react';
+import { User, Newspaper, History, BarChart3, Menu, X, Flame, Sparkles, Trophy, CheckSquare } from 'lucide-react';
 import type { WeeklyStats, ISODate } from '@/types/contracts';
 import { computeWeeklyStats } from '@/lib/data/activity';
 import DailyBlogTab from './DailyBlogTab';
@@ -13,7 +13,7 @@ import ActivityTab from './ActivityTab';
 import LeaderboardTab from './LeaderboardTab';
 import SidebarActivityWidget from './SidebarActivityWidget';
 
-type TabKey = 'daily' | 'past' | 'activity' | 'leaderboard' | 'roulette';
+type TabKey = 'daily' | 'past' | 'activity' | 'leaderboard' | 'roulette' | 'zoho';
 
 const TAB_HREFS: Record<TabKey, string> = {
   daily: '/dashboard',
@@ -21,12 +21,14 @@ const TAB_HREFS: Record<TabKey, string> = {
   activity: '/dashboard?tab=activity',
   leaderboard: '/dashboard?tab=leaderboard',
   roulette: '/blog-roulette',
+  zoho: '/dashboard/zoho-evaluation',
 };
 
 function tabFromLocation(
   pathname: string | null | undefined,
   tabParam: string | null,
 ): TabKey {
+  if (pathname?.startsWith('/dashboard/zoho-evaluation')) return 'zoho';
   if (pathname?.startsWith('/blog-roulette')) return 'roulette';
   if (tabParam === 'past') return 'past';
   if (tabParam === 'activity') return 'activity';
@@ -40,6 +42,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'activity', label: 'Activity Tracker', icon: <BarChart3 size={18} /> },
   { key: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={18} /> },
   { key: 'roulette', label: 'Blog Roulette', icon: <Sparkles size={18} /> },
+  { key: 'zoho', label: 'Zoho Evaluation', icon: <CheckSquare size={18} /> },
 ];
 
 /**
