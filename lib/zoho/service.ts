@@ -1,6 +1,17 @@
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { evaluateZohoTask, evaluateFullDay, TaskEvaluationResult, DayEvaluationSummary } from './evaluator';
-import { buildZohoTaskDeepLink } from './client';
+
+/**
+ * Builds direct Zoho task URL for one-click navigation from CKP to Zoho Projects
+ */
+export function buildZohoTaskDeepLink(
+  portalId: string,
+  projectId: string,
+  taskId: string
+): string {
+  const safePortal = portalId || 'creolestudiosdotcom1';
+  return `https://projects.zoho.com/portal/${safePortal}#taskdetail/${projectId}/${taskId}`;
+}
 
 export interface ZohoUserSummary {
   userId: string;
@@ -10,6 +21,8 @@ export interface ZohoUserSummary {
   yearsOfExperience: number;
   seniorityLevel: string;
   aiSubscriptions: string[];
+  seniorEmails?: string[];
+  dailyEmailEnabled?: boolean;
   tillDateSummary: {
     doneTasks: number;
     pendingTasks: number;

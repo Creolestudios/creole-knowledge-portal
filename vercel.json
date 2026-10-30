@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/zoho-evaluation",
-      "schedule": "30 16 * * *"
+      "schedule": "30 16 * * 1-5"
     },
     {
       "path": "/api/cron/cleanup-recordings",

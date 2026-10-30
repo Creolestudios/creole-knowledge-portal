@@ -480,13 +480,61 @@ app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in Dashboa
 
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `GET`/`POST` | `/api/cron/zoho-evaluation` | Automated Cron (`CRON_SECRET`) | Daily 10:00 PM IST (`30 16 * * *` UTC) crawl: ingests all daily tasks, timelogs & comments, and executes comprehensive AI/heuristic evaluations. |
+| `GET`/`POST` | `/api/cron/zoho-evaluation` | Automated Cron (`CRON_SECRET`) | Monday to Friday 10:00 PM IST (`30 16 * * 1-5` UTC) crawl (skips weekends): ingests daily tasks, timelogs & comments, and executes comprehensive AI/heuristic evaluations. |
 | `POST` | `/api/admin/zoho/sync` | Admin Session | Triggers on-demand manual mid-day synchronization of tasks, timelogs & comments from Zoho. |
 | `POST` | `/api/admin/zoho/evaluate` | Admin / Worker | Runs Gemini AI evaluation on unevaluated tasks and calculates daily rollups. |
 | `GET` | `/api/admin/zoho/users` | Admin | Fetches user list with their per-day tasks, evaluation scores, and Zoho deep-links. |
+| `PATCH` | `/api/admin/zoho/users/daily-email` | Admin | Toggles automated 10 PM daily evaluation email for an individual user (`daily_email_enabled`). |
+| `POST` | `/api/admin/zoho/send-evaluation-email` | Admin | On-demand manual evaluation email dispatch for selected users and their seniors for a given date. |
 | `GET` | `/api/admin/zoho/summary` | Admin | Fetches the "Till Date Summary" metrics (done, pending, delayed, avg score). |
 | `GET` | `/api/admin/zoho/reports/export` | Admin | Generates full evaluation report for filtered date range in JSON/PDF format. |
-| `GET` | `/api/user/zoho/my-evaluations` | Authenticated User | Read-only endpoint returning personal tasks, daily summaries, and till-date stats. |
+| `GET` | `/api/user/zoho/my-evaluations` | Authenticated User | Read-only endpoint returning personal tasks, daily summaries, comments, and till-date stats. |
+
+### 7.1 User Portal Comments & Data Pipeline Architecture
+
+To guarantee zero latency and prevent hitting Zoho Projects API rolling rate limits (`URL_ROLLING_THROTTLES_LIMIT_EXCEEDED: 100 requests per API in 2 minutes`):
+1. **Direct DB Lookup**: `/api/user/zoho/my-evaluations` reads directly from Supabase PostgreSQL (`zoho_tasks` joined with `zoho_task_comments` and `zoho_task_evaluations`) filtered by `user_id.eq.${targetUserId}`.
+2. **Comment Association**: Comments stored in `zoho_task_comments` (keyed by `zoho_task_id`) are eagerly loaded and mapped with `author_name`, `comment_content`, and `comment_added_time`.
+3. **Modal Rendering**: When an employee opens a task modal in `/dashboard/zoho-evaluation`, `ZohoTaskModal` receives the mapped `task.comments` array, formatting timestamps and displaying complete work justification and evidence.
+4. **Conditional Live Sync**: Live Zoho API sync is only invoked when `forceSync` (`?sync=true` or `?refresh=true`) is explicitly requested.
+
+### 7.2 Monday-to-Friday 10 PM Evaluation Email Reports & Reporting Seniors Notification Pipeline
+
+Following the Monday-to-Friday 10:00 PM IST crawl (`30 16 * * 1-5` UTC, skipping Saturday and Sunday), comprehensive task performance analysis emails are dispatched to each evaluated employee and their configured reporting seniors:
+1. **Reporting Senior Configuration**:
+   - In Admin Portal (`/admin/dashboard` → Users tab), administrators can configure multiple senior email addresses (`senior_emails`) for any employee.
+   - Senior emails are persisted in both `user_profiles.senior_emails` and `auth.users.user_metadata.senior_emails` for schema resilience.
+2. **Email Service Integration**:
+   - **Primary**: Google Workspace / Gmail SMTP via `nodemailer` (zero DNS configuration, 500-2,000 free emails/day).
+   - **Secondary / Fallback**: Resend REST API (`RESEND_API_KEY`).
+   - **Strict Day Filtering**: Only tasks scheduled/assigned strictly on that evaluation target date (`task_date === targetDate`) are processed and emailed.
+3. **Exact Admin Panel Parity in Email Reports**:
+   - **Header**: Employee Name, Date, Daily Score (0-10 scale with color-coded badges).
+   - **Today's Overall Analysis**: Total tasks, Completed, In Progress, Delayed, QA Review, Planned vs. Actual logged hours, and Executive Performance Summary.
+   - **Rich Task-Wise Analysis**:
+     - Task name, Project badge, and Status pill.
+     - Hours planned vs. actual spent (strictly keeping 0.0h if unlogged).
+     - Time Adherence tolerance badge (`Within Buffer`, `Early Gap`, `Buffer Exceeded`, `Not Logged`) and score (/10).
+     - Work Justification & comment alignment score (/10).
+     - Task Score (/10).
+     - Evaluative Performance Summary (2-3 lines of direct analysis).
+     - Actionable Improvement Items (bulleted list matching the Admin Panel task modal).
+   - **Key Strengths & Coaching Areas**: Summarized growth points.
+   - **Direct CTA**: One-click navigation link to review the full evaluation on the Creole Knowledge Portal.
+
+### 7.3 Admin Panel Controls for Daily Evaluation Emails
+
+Administrators have granular, selective control over daily evaluation emails directly within the Admin Panel:
+1. **Per-User 10 PM Notification Toggle**:
+   - In **User Management** (`/admin/dashboard` → Users), each user card displays a badge indicating their 10 PM email status (`Active` or `Disabled`).
+   - The user edit drawer contains a dedicated toggle switch: `Enable 10 PM Daily Evaluation Email Report`.
+   - In **Zoho Evaluation Manager**, each user row features an inline quick toggle button (`10 PM Mail: Active / Off`) communicating directly with `PATCH /api/admin/zoho/users/daily-email`.
+2. **Selective Batch Email Dispatch**:
+   - Administrators can select one, multiple, or all users via checkboxes on the Zoho Evaluation user table.
+   - A sticky toolbar action button displays `Send Email (X)` when users are selected.
+   - Clicking `Send Email (X)` triggers `POST /api/admin/zoho/send-evaluation-email`, instantly evaluating and delivering today's evaluation report directly to the selected employees and their configured reporting seniors.
+3. **Cron Automatic Exclusion**:
+   - The automated 10 PM IST cron job (`/api/cron/zoho-evaluation` via `runDailyZohoEvaluationCron`) strictly filters users where `dailyEmailEnabled !== false`. Users whose toggle is set to `Off` are automatically skipped during daily email distribution.
 
 ---
 

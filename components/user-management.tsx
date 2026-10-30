@@ -36,6 +36,8 @@ interface UserProfile {
   secondary_tech_stack: string[];
   future_interests: string;
   ai_subscriptions?: string[];
+  senior_emails?: string[];
+  daily_email_enabled?: boolean;
   updated_at: string;
 }
 
@@ -66,11 +68,15 @@ export default function UserManagement() {
     primary_tech_stack: [] as string[],
     secondary_tech_stack: [] as string[],
     future_interests: '',
-    ai_subscriptions: [] as string[]
+    ai_subscriptions: [] as string[],
+    senior_emails: [] as string[],
+    daily_email_enabled: true,
   });
   const [primaryTechInput, setPrimaryTechInput] = useState('');
   const [secondaryTechInput, setSecondaryTechInput] = useState('');
   const [aiSubscriptionInput, setAiSubscriptionInput] = useState('');
+  const [seniorEmailInput, setSeniorEmailInput] = useState('');
+  const [seniorEmailError, setSeniorEmailError] = useState('');
 
   const supabase = createClient();
   
@@ -103,11 +109,15 @@ export default function UserManagement() {
       primary_tech_stack: user.primary_tech_stack || [],
       secondary_tech_stack: user.secondary_tech_stack || [],
       future_interests: user.future_interests || '',
-      ai_subscriptions: user.ai_subscriptions || []
+      ai_subscriptions: user.ai_subscriptions || [],
+      senior_emails: user.senior_emails || [],
+      daily_email_enabled: user.daily_email_enabled !== false,
     });
     setPrimaryTechInput('');
     setSecondaryTechInput('');
     setAiSubscriptionInput('');
+    setSeniorEmailInput('');
+    setSeniorEmailError('');
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -131,6 +141,8 @@ export default function UserManagement() {
           secondary_tech_stack: formData.secondary_tech_stack,
           future_interests: formData.future_interests,
           ai_subscriptions: formData.ai_subscriptions,
+          senior_emails: formData.senior_emails,
+          daily_email_enabled: formData.daily_email_enabled,
         }),
       });
 
@@ -250,6 +262,43 @@ export default function UserManagement() {
     setFormData({
       ...formData,
       ai_subscriptions: formData.ai_subscriptions.filter(tag => tag !== tagToRemove)
+    });
+  };
+
+  const addSeniorEmailTag = (e?: React.KeyboardEvent | React.MouseEvent) => {
+    if (e && 'key' in e && e.key !== 'Enter' && e.key !== ',') {
+      return;
+    }
+    if (e && 'preventDefault' in e) {
+      e.preventDefault();
+    }
+    const email = seniorEmailInput.trim().replace(/,$/, '').toLowerCase();
+    if (!email) return;
+
+    // Safe email validation without greedy regex backtracking
+    const atIdx = email.indexOf('@');
+    const dotIdx = email.lastIndexOf('.');
+    const isValidEmail = atIdx > 0 && dotIdx > atIdx + 1 && dotIdx < email.length - 1 && !email.includes(' ');
+    
+    if (!isValidEmail) {
+      setSeniorEmailError('Please enter a valid email address (e.g. lead@creolestudios.com)');
+      return;
+    }
+
+    if (!formData.senior_emails.includes(email)) {
+      setFormData({
+        ...formData,
+        senior_emails: [...formData.senior_emails, email]
+      });
+    }
+    setSeniorEmailInput('');
+    setSeniorEmailError('');
+  };
+
+  const removeSeniorEmailTag = (emailToRemove: string) => {
+    setFormData({
+      ...formData,
+      senior_emails: formData.senior_emails.filter(email => email !== emailToRemove)
     });
   };
 
@@ -418,6 +467,39 @@ export default function UserManagement() {
                               <span>No AI subscription assigned</span>
                             </div>
                           )}
+
+                          {user.senior_emails && user.senior_emails.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1.5" data-testid="user-card-senior-emails">
+                              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                <Mail size={11} className="text-purple-500 dark:text-purple-400" />
+                                Seniors ({user.senior_emails.length}):
+                              </span>
+                              {user.senior_emails.map((sEmail) => (
+                                <span
+                                  key={sEmail}
+                                  className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40"
+                                >
+                                  {sEmail}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                              <Mail size={11} className={user.daily_email_enabled !== false ? 'text-emerald-500' : 'text-zinc-400'} />
+                              10 PM Mail:
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                                user.daily_email_enabled !== false
+                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40'
+                                  : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700'
+                              }`}
+                            >
+                              {user.daily_email_enabled !== false ? 'Active' : 'Disabled'}
+                            </span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -615,6 +697,105 @@ export default function UserManagement() {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  {/* Reporting Senior Emails */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400 ml-1">
+                        <Mail size={14} className="text-purple-500 dark:text-purple-400" />
+                        Reporting Senior Emails
+                      </label>
+                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium">Daily 10 PM evaluation CC</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input
+                          type="email"
+                          value={seniorEmailInput}
+                          onChange={(e) => {
+                            setSeniorEmailInput(e.target.value);
+                            if (seniorEmailError) setSeniorEmailError('');
+                          }}
+                          onKeyDown={addSeniorEmailTag}
+                          placeholder="Type senior email (e.g. pm@creolestudios.com) and press Enter"
+                          className="flex-1 px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-zinc-900 dark:text-white transition-all text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => addSeniorEmailTag(e)}
+                          className="px-5 py-3.5 bg-purple-600 hover:bg-purple-700 text-white rounded-2xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-sm shadow-purple-600/20"
+                        >
+                          Add
+                        </button>
+                      </div>
+
+                      {seniorEmailError && (
+                        <p className="text-xs text-red-500 font-medium ml-1">
+                          {seniorEmailError}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <AnimatePresence>
+                          {formData.senior_emails.map((sEmail) => (
+                            <motion.span
+                              key={sEmail}
+                              initial={{ opacity: 0, scale: 0.8 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.8 }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/40 text-xs font-bold rounded-lg shadow-xs"
+                            >
+                              <Mail size={12} className="text-purple-500 dark:text-purple-400" />
+                              <span>{sEmail}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeSeniorEmailTag(sEmail)}
+                                className="hover:scale-120 transition-transform cursor-pointer ml-0.5 text-zinc-400 hover:text-red-500"
+                                aria-label={`Remove ${sEmail}`}
+                              >
+                                <X size={12} />
+                              </button>
+                            </motion.span>
+                          ))}
+                        </AnimatePresence>
+                        {formData.senior_emails.length === 0 && (
+                          <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-medium uppercase tracking-widest py-1">
+                            No senior emails assigned (analysis will only be sent to employee)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Daily 10 PM Evaluation Email Toggle */}
+                  <div className="p-5 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700/80 rounded-2xl flex items-center justify-between gap-4">
+                    <div>
+                      <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-900 dark:text-white">
+                        <Mail size={14} className="text-[#34c4f2]" />
+                        Daily 10:00 PM Evaluation Email
+                      </label>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                        When enabled, daily performance reports will be automatically emailed to this user and their reporting seniors at 10:00 PM IST.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, daily_email_enabled: !formData.daily_email_enabled })}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                        formData.daily_email_enabled ? 'bg-[#34c4f2]' : 'bg-zinc-300 dark:bg-zinc-700'
+                      }`}
+                      role="switch"
+                      aria-checked={formData.daily_email_enabled}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                          formData.daily_email_enabled ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
                   </div>
 
                   {/* Primary Tech Stack */}

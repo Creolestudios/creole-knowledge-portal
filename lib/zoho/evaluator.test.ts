@@ -53,13 +53,13 @@ describe('Zoho Evaluator Service', () => {
       process.env.GEMINI_API_KEY = 'test-key';
       const result = await evaluateZohoTask({
         taskName: 'Implement Supabase RLS security policies',
-        taskDescription: 'Write comprehensive idempotent RLS policies for zoho tables',
+        taskDescription: 'Write comprehensive idempotent RLS policies for zoho tables including zoho_tasks, zoho_task_comments, and zoho_task_evaluations to enforce strict data isolation between authenticated regular users and administrative portal managers. Ensure all select, update, and insert operations are fully covered with verified row level security.',
         projectName: 'Creole Knowledge Portal',
         plannedMinutes: 240, // 4 hours
         actualMinutes: 245,  // 4:05 (+5 mins, within +5m buffer)
         zohoStatus: 'QA Review',
         isQAReview: true,
-        comments: ['PR created and test suite passed with 100% coverage.'],
+        comments: ['PR created and test suite passed with 100% coverage. Added comprehensive row level security policies for admin and authenticated users across all tables with verified unit tests.'],
         userExperienceYears: 3,
         seniorityLevel: 'Mid',
         aiSubscriptions: ['GitHub Copilot'],

@@ -4,12 +4,15 @@ import {
   fetchZohoPortalUsers,
   fetchZohoUserTasks,
   fetchZohoTaskComments,
+  fetchZohoTaskDetails,
   stripHtml,
   buildZohoTaskDeepLink,
   parseDurationToMinutes,
 } from './client';
 import { evaluateZohoTask } from './evaluator';
 import { formatDateYYYYMMDD, formatUserName } from './service';
+import { sendDailyEvaluationEmail } from '../email/service';
+import type { TaskEmailItem, DailyEvaluationEmailPayload } from '../email/templates/daily-evaluation-email';
 
 export interface UserEvaluationDetail {
   userEmail: string;
@@ -19,6 +22,8 @@ export interface UserEvaluationDetail {
   dailyScore: number;
   totalPlannedHours: number;
   totalActualHours: number;
+  seniorEmails?: string[];
+  emailDelivered?: boolean;
 }
 
 export interface DailyZohoEvaluationCronResult {
@@ -29,9 +34,20 @@ export interface DailyZohoEvaluationCronResult {
   tasksEvaluated: number;
   commentsIngested: number;
   evaluationsCreated: number;
+  emailsSent: number;
+  emailsFailed: number;
   durationMs: number;
   error?: string;
   details: UserEvaluationDetail[];
+  skipped?: boolean;
+  skipReason?: string;
+}
+
+export interface DailyZohoEvaluationCronOptions {
+  targetDate?: string;
+  dryRun?: boolean;
+  allowWeekend?: boolean;
+  skipWeekend?: boolean;
 }
 
 /**
@@ -44,26 +60,56 @@ function cleanText(str: string | null | undefined): string {
 
 /**
  * Runs the dedicated daily 10 PM Zoho Evaluation Cron.
+ * Monday to Friday only (skips Saturday and Sunday unless allowWeekend is true).
  *
  * Steps:
- * 1. Fetches all registered Zoho Portal users and maps them to CKP user profiles.
- * 2. For every user, gathers tasks active or logged for the specified date.
- * 3. For every task, fetches all comments and logged hours (strictly keeping 0 if unlogged).
- * 4. Runs the heuristic + AI task evaluation engine.
- * 5. Persists task records, comments, task evaluations, and daily summary rollups to Supabase.
+ * 1. Checks if current day is weekend (skips if Saturday/Sunday).
+ * 2. Fetches all registered Zoho Portal users and maps them to CKP user profiles.
+ * 3. For every user, gathers tasks active or logged for the specified date.
+ * 4. For every task, fetches all comments and logged hours (strictly keeping 0 if unlogged).
+ * 5. Runs the heuristic + AI task evaluation engine.
+ * 6. Persists task records, comments, task evaluations, and daily summary rollups to Supabase.
+ * 7. Dispatches evaluation email reports to users and seniors (if daily email is enabled).
  */
-export async function runDailyZohoEvaluationCron(options?: {
-  targetDate?: string;
-  dryRun?: boolean;
-}): Promise<DailyZohoEvaluationCronResult> {
+export async function runDailyZohoEvaluationCron(
+  options?: DailyZohoEvaluationCronOptions
+): Promise<DailyZohoEvaluationCronResult> {
   const startTime = Date.now();
   const dryRun = options?.dryRun ?? false;
   const targetDate = options?.targetDate || formatDateYYYYMMDD(new Date());
+
+  // Skip weekends (Saturday and Sunday) by default
+  if (!options?.allowWeekend) {
+    const [y, m, d] = targetDate.split('-').map(Number);
+    const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    const dayOfWeek = dateObj.getUTCDay(); // 0 is Sunday, 6 is Saturday
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      const dayName = dayOfWeek === 0 ? 'Sunday' : 'Saturday';
+      console.log(`[ZohoCron] Skipping daily evaluation: ${targetDate} is ${dayName} (weekend). Automated evaluations and emails run Monday to Friday only.`);
+      return {
+        success: true,
+        date: targetDate,
+        dryRun,
+        usersEvaluated: 0,
+        tasksEvaluated: 0,
+        commentsIngested: 0,
+        evaluationsCreated: 0,
+        emailsSent: 0,
+        emailsFailed: 0,
+        durationMs: Date.now() - startTime,
+        details: [],
+        skipped: true,
+        skipReason: `Weekend (${dayName}) - automated evaluations and emails only run Monday to Friday.`,
+      };
+    }
+  }
 
   const details: UserEvaluationDetail[] = [];
   let totalTasksEvaluated = 0;
   let totalCommentsIngested = 0;
   let totalEvaluationsCreated = 0;
+  let totalEmailsSent = 0;
+  let totalEmailsFailed = 0;
 
   try {
     const portalId = process.env.ZOHO_PORTAL_ID || 'creolestudios';
@@ -79,6 +125,8 @@ export async function runDailyZohoEvaluationCron(options?: {
         tasksEvaluated: 0,
         commentsIngested: 0,
         evaluationsCreated: 0,
+        emailsSent: 0,
+        emailsFailed: 0,
         durationMs: Date.now() - startTime,
         error: 'Unable to acquire Zoho access token. Check credentials in .env.local.',
         details: [],
@@ -118,6 +166,17 @@ export async function runDailyZohoEvaluationCron(options?: {
       const aiSubscriptions =
         (profile?.ai_subscriptions as string[]) ||
         (Array.isArray(metaSubs) ? metaSubs : ['GitHub Copilot']);
+      const metaSenior = meta.senior_emails as string[] | undefined;
+      const seniorEmails: string[] =
+        (profile?.senior_emails as string[]) ||
+        (Array.isArray(metaSenior) ? metaSenior : []);
+      const metaDailyEmail = meta.daily_email_enabled as boolean | undefined;
+      const dailyEmailEnabled =
+        profile?.daily_email_enabled !== undefined
+          ? Boolean(profile.daily_email_enabled)
+          : metaDailyEmail !== undefined
+          ? Boolean(metaDailyEmail)
+          : true;
 
       // Find matching Zoho user
       const matchedZohoUser = zohoUsers.find(
@@ -148,8 +207,8 @@ export async function runDailyZohoEvaluationCron(options?: {
         }
       }
 
-      // Fetch user's active & completed tasks from Zoho
-      const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, '', 100);
+      // Fetch user's active & open tasks from Zoho
+      const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100);
 
       let userDoneTasks = 0;
       let userDelayedTasks = 0;
@@ -159,6 +218,9 @@ export async function runDailyZohoEvaluationCron(options?: {
       let userScoreSum = 0;
       let userCommentsCount = 0;
       let userTaskCount = 0;
+      const userEmailTasks: TaskEmailItem[] = [];
+      const userStrengths: string[] = [];
+      const userImprovements: string[] = [];
 
       for (const raw of rawTasks) {
         // Resolve task date
@@ -224,11 +286,22 @@ export async function runDailyZohoEvaluationCron(options?: {
         if (isQAReview) userQATasks++;
 
         const taskName = cleanText(raw.name);
-        const taskDescription = cleanText(raw.description || raw.name);
         const projectName = cleanText(raw.project?.name || 'General Project');
         const projectId = String(raw.project?.id_string || raw.project?.id || '0');
         const taskId = String(raw.id_string || raw.id || '0');
         const zohoLink = buildZohoTaskDeepLink(portalId, projectId, taskId);
+
+        let taskDescription = cleanText(raw.description || raw.name);
+        if (taskDescription.length < 50) {
+          try {
+            const details = await fetchZohoTaskDetails(token, portalId, projectId, taskId);
+            if (details?.description) {
+              taskDescription = cleanText(details.description);
+            }
+          } catch {
+            // Keep existing description
+          }
+        }
 
         // Fetch all task comments
         let apiComments: Array<{ author_name: string; content: string; added_time: string }> = [];
@@ -312,6 +385,29 @@ export async function runDailyZohoEvaluationCron(options?: {
         userTaskCount++;
         totalTasksEvaluated++;
 
+        userEmailTasks.push({
+          taskName,
+          projectName,
+          plannedHours,
+          actualHours,
+          status: statusName,
+          timeAssessmentLabel: evalResult.timeAssessmentLabel,
+          score: Math.round(evalResult.overallScore * 10),
+          timeScore: Math.round(evalResult.timeScore * 10),
+          workMatchScore: Math.round((evalResult.workMatchScore || evalResult.commentQualityScore || 0) * 10),
+          feedback: evalResult.summaryFeedback,
+          whereLacked: evalResult.whereLacked,
+          whereToImprove: evalResult.whereToImprove,
+          improvementItems: evalResult.improvementItems,
+        });
+
+        if (Array.isArray(evalResult.strengths)) {
+          userStrengths.push(...evalResult.strengths);
+        }
+        if (Array.isArray(evalResult.improvements)) {
+          userImprovements.push(...evalResult.improvements);
+        }
+
         // Persist task evaluation record if not dryRun and task ID exists
         if (!dryRun && dbTaskUuid) {
           try {
@@ -369,6 +465,48 @@ export async function runDailyZohoEvaluationCron(options?: {
         }
       }
 
+      // Dispatch daily evaluation email to user and senior CC emails (if enabled)
+      let emailDelivered = false;
+      if (userTaskCount > 0 && dailyEmailEnabled) {
+        try {
+          const emailPayload: DailyEvaluationEmailPayload = {
+            userName: fullName,
+            userEmail: email,
+            date: targetDate,
+            dailyScore,
+            totalPlannedHours: Math.round(userPlannedHours * 100) / 100,
+            totalActualHours: Math.round(userActualHours * 100) / 100,
+            taskCount: userTaskCount,
+            doneTasks: userDoneTasks,
+            delayedTasks: userDelayedTasks,
+            qaTasks: userQATasks,
+            dailySummary,
+            strengths: Array.from(new Set(userStrengths)).slice(0, 4),
+            improvements: Array.from(new Set(userImprovements)).slice(0, 4),
+            tasks: userEmailTasks,
+          };
+
+          const emailResult = await sendDailyEvaluationEmail({
+            to: email,
+            cc: seniorEmails,
+            payload: emailPayload,
+            dryRun,
+          });
+
+          if (emailResult.success) {
+            totalEmailsSent++;
+            emailDelivered = true;
+          } else {
+            totalEmailsFailed++;
+          }
+        } catch (emailErr) {
+          totalEmailsFailed++;
+          console.warn(`[ZohoCron] Daily evaluation email dispatch failed for ${email}:`, emailErr);
+        }
+      } else if (userTaskCount > 0 && !dailyEmailEnabled) {
+        console.log(`[ZohoCron] Daily evaluation email is disabled for ${email}. Skipping dispatch.`);
+      }
+
       details.push({
         userEmail: email,
         userName: fullName,
@@ -377,6 +515,8 @@ export async function runDailyZohoEvaluationCron(options?: {
         dailyScore,
         totalPlannedHours: Math.round(userPlannedHours * 100) / 100,
         totalActualHours: Math.round(userActualHours * 100) / 100,
+        seniorEmails,
+        emailDelivered,
       });
     }
 
@@ -388,6 +528,8 @@ export async function runDailyZohoEvaluationCron(options?: {
       tasksEvaluated: totalTasksEvaluated,
       commentsIngested: totalCommentsIngested,
       evaluationsCreated: totalEvaluationsCreated,
+      emailsSent: totalEmailsSent,
+      emailsFailed: totalEmailsFailed,
       durationMs: Date.now() - startTime,
       details,
     };
@@ -402,6 +544,8 @@ export async function runDailyZohoEvaluationCron(options?: {
       tasksEvaluated: totalTasksEvaluated,
       commentsIngested: totalCommentsIngested,
       evaluationsCreated: totalEvaluationsCreated,
+      emailsSent: totalEmailsSent,
+      emailsFailed: totalEmailsFailed,
       durationMs: Date.now() - startTime,
       error: errorMsg,
       details,

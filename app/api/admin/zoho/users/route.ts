@@ -127,6 +127,15 @@ export async function GET(request: Request) {
           const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
           const metaSubs = meta.ai_subscriptions as string[] | undefined;
           const aiSubscriptions = (profile?.ai_subscriptions as string[]) || (Array.isArray(metaSubs) ? metaSubs : ['GitHub Copilot']);
+          const metaSenior = meta.senior_emails as string[] | undefined;
+          const seniorEmails = (profile?.senior_emails as string[]) || (Array.isArray(metaSenior) ? metaSenior : []);
+          const metaDailyEmail = meta.daily_email_enabled as boolean | undefined;
+          const dailyEmailEnabled =
+            profile?.daily_email_enabled !== undefined
+              ? Boolean(profile.daily_email_enabled)
+              : metaDailyEmail !== undefined
+              ? Boolean(metaDailyEmail)
+              : true;
 
           const userDbTasks = dbTasks.filter((t) => t.user_id === authUser.id || t.user_email === authUser.email);
 
@@ -392,6 +401,8 @@ export async function GET(request: Request) {
               yearsOfExperience: yearsOfExp,
               seniorityLevel,
               aiSubscriptions,
+              seniorEmails,
+              dailyEmailEnabled,
               tillDateSummary: {
                 doneTasks: done,
                 pendingTasks: pending,
@@ -411,6 +422,8 @@ export async function GET(request: Request) {
             yearsOfExperience: yearsOfExp,
             seniorityLevel,
             aiSubscriptions,
+            seniorEmails,
+            dailyEmailEnabled,
             tillDateSummary: {
               doneTasks: 0,
               pendingTasks: 0,

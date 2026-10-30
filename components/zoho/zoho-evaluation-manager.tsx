@@ -43,6 +43,8 @@ export default function ZohoEvaluationManager() {
   const [isLiveZoho, setIsLiveZoho] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailNotification, setEmailNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Zoho-style Date Selection (Week, Month, Range, Day)
   const [dateSelection, setDateSelection] = useState<DateRangeSelection>(getDefaultWeekSelection);
@@ -129,6 +131,63 @@ export default function ZohoEvaluationManager() {
     }
   };
 
+  const handleSendEvaluationEmail = async () => {
+    if (selectedUserIds.length === 0 || isSendingEmail) return;
+    setIsSendingEmail(true);
+    try {
+      const res = await fetch('/api/admin/zoho/send-evaluation-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: selectedUserIds }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEmailNotification({
+          message: `Successfully dispatched evaluation emails to ${data.sentCount} user(s) and their reporting seniors!`,
+          type: 'success',
+        });
+      } else {
+        setEmailNotification({
+          message: data.error || 'Failed to dispatch evaluation emails',
+          type: 'error',
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setEmailNotification({ message: msg, type: 'error' });
+    } finally {
+      setIsSendingEmail(false);
+      setTimeout(() => setEmailNotification(null), 5000);
+    }
+  };
+
+  const handleToggleDailyEmail = async (userId: string, currentEnabled: boolean) => {
+    const newEnabled = !currentEnabled;
+    // Optimistic update
+    setUsers((prev) =>
+      prev.map((u) => (u.userId === userId ? { ...u, dailyEmailEnabled: newEnabled } : u))
+    );
+
+    try {
+      const res = await fetch('/api/admin/zoho/users/daily-email', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, enabled: newEnabled }),
+      });
+      if (!res.ok) {
+        // Rollback
+        setUsers((prev) =>
+          prev.map((u) => (u.userId === userId ? { ...u, dailyEmailEnabled: currentEnabled } : u))
+        );
+      }
+    } catch {
+      // Rollback
+      setUsers((prev) =>
+        prev.map((u) => (u.userId === userId ? { ...u, dailyEmailEnabled: currentEnabled } : u))
+      );
+    }
+  };
+
 
   return (
     <div className="space-y-6">
@@ -207,7 +266,29 @@ export default function ZohoEvaluationManager() {
                   </span>
                 </button>
 
-                {/* 4. Sync Live Tasks from Zoho Button */}
+                {/* 4. Send Evaluation Email to Selected Users */}
+                <button
+                  type="button"
+                  onClick={handleSendEvaluationEmail}
+                  disabled={selectedUserIds.length === 0 || isSendingEmail}
+                  className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all ${
+                    selectedUserIds.length > 0 && !isSendingEmail
+                      ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-600/20 active:scale-95 cursor-pointer font-bold'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700/60 cursor-not-allowed opacity-60'
+                  }`}
+                  title={
+                    selectedUserIds.length > 0
+                      ? `Send daily evaluation email to ${selectedUserIds.length} selected user(s) and their seniors`
+                      : 'Select at least one user to send email'
+                  }
+                >
+                  <Mail className={`w-4 h-4 ${isSendingEmail ? 'animate-bounce' : ''}`} />
+                  <span>
+                    {isSendingEmail ? 'Sending...' : `Send Email ${selectedUserIds.length > 0 ? `(${selectedUserIds.length})` : ''}`}
+                  </span>
+                </button>
+
+                {/* 5. Sync Live Tasks from Zoho Button */}
                 <button
                   type="button"
                   onClick={handleSyncFromZoho}
@@ -240,6 +321,24 @@ export default function ZohoEvaluationManager() {
               </div>
             </div>
           </div>
+
+          {/* Email Notification Alert Banner */}
+          {emailNotification && (
+            <div
+              className={`p-4 rounded-2xl border text-xs font-bold flex items-center gap-2.5 transition-all shadow-xs ${
+                emailNotification.type === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+              }`}
+            >
+              {emailNotification.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+              )}
+              <span>{emailNotification.message}</span>
+            </div>
+          )}
 
           {/* User Email List */}
           {loading && users.length === 0 ? (
@@ -287,14 +386,34 @@ export default function ZohoEvaluationManager() {
                       </button>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setSelectedUser(u)}
-                      className="flex items-center gap-2 text-xs font-semibold text-zinc-400 group-hover:text-[#34c4f2] transition-colors cursor-pointer"
-                    >
-                      <span>View Task Data</span>
-                      <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {/* 10 PM Daily Mail Toggle Switch */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleDailyEmail(u.userId, u.dailyEmailEnabled !== false);
+                        }}
+                        className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1.5 cursor-pointer ${
+                          u.dailyEmailEnabled !== false
+                            ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100'
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
+                        }`}
+                        title={`Click to ${u.dailyEmailEnabled !== false ? 'disable' : 'enable'} daily 10 PM evaluation emails for ${u.email}`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${u.dailyEmailEnabled !== false ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
+                        <span>{u.dailyEmailEnabled !== false ? '10 PM Mail: Active' : '10 PM Mail: Off'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedUser(u)}
+                        className="flex items-center gap-2 text-xs font-semibold text-zinc-400 group-hover:text-[#34c4f2] transition-colors cursor-pointer"
+                      >
+                        <span>View Task Data</span>
+                        <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}

@@ -9,7 +9,7 @@ import {
   ZohoUserSummary,
 } from '@/lib/zoho/service';
 import { getLiveZohoSummariesWithFilter } from '@/lib/zoho/sync';
-import { generateDynamicPerformanceSummary } from '@/lib/zoho/heuristics';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch } from '@/lib/zoho/heuristics';
 
 export async function GET(request: Request) {
   try {
@@ -24,6 +24,7 @@ export async function GET(request: Request) {
     const monthOffset = parseInt(searchParams.get('monthOffset') || '0', 10);
     const startDate = searchParams.get('startDate') || undefined;
     const endDate = searchParams.get('endDate') || undefined;
+    const forceSync = searchParams.get('refresh') === 'true' || searchParams.get('sync') === 'true';
 
     const dateRange = resolveDateFilterRange({
       type: filterType,
@@ -36,48 +37,81 @@ export async function GET(request: Request) {
     let myData: ZohoUserSummary | undefined;
 
     const userEmail = user?.email?.toLowerCase().trim();
-    const userId = user?.id;
+    let targetUserId = user?.id;
 
-    // 1. Try Live Zoho cache/fetch with date filter
-    try {
-      const liveResult = await getLiveZohoSummariesWithFilter({
-        type: filterType,
-        weekOffset,
-        monthOffset,
-        startDate,
-        endDate,
-      });
+    // 1. If explicit sync is requested, attempt live Zoho sync
+    if (forceSync) {
+      try {
+        const liveResult = await getLiveZohoSummariesWithFilter(
+          {
+            type: filterType,
+            weekOffset,
+            monthOffset,
+            startDate,
+            endDate,
+          },
+          true
+        );
 
-      if (liveResult && liveResult.users && liveResult.users.length > 0) {
-        if (userEmail) {
-          myData = liveResult.users.find(
-            (u) =>
-              (u.email && u.email.toLowerCase().trim() === userEmail) ||
-              (userId && u.userId === userId)
-          );
-        } else {
-          // Dev / fallback if unauthenticated
-          myData = liveResult.users[0];
+        if (liveResult && liveResult.users && liveResult.users.length > 0) {
+          if (userEmail) {
+            myData = liveResult.users.find(
+              (u) =>
+                (u.email && u.email.toLowerCase().trim() === userEmail) ||
+                (targetUserId && u.userId === targetUserId)
+            );
+          } else {
+            myData = liveResult.users[0];
+          }
         }
+      } catch (liveErr) {
+        console.warn('[User Zoho Evaluations API] Live fetch error:', liveErr);
       }
-    } catch (liveErr) {
-      console.warn('[User Zoho Evaluations API] Live fetch error:', liveErr);
     }
 
-    // 2. Try Supabase Database if not found in live cache
-    if (!myData && (userEmail || userId)) {
+    // 2. Primary source: Fetch from Supabase Database (zoho_tasks, comments, evaluations)
+    if (!myData) {
       try {
         let profile: any = null;
-        if (userId) {
+        if (targetUserId) {
           const { data: profData } = await supabaseAdmin
             .from('user_profiles')
             .select('*')
-            .eq('user_id', userId)
+            .eq('user_id', targetUserId)
             .single();
           profile = profData;
+        } else if (userEmail) {
+          const { data: profData } = await supabaseAdmin
+            .from('user_profiles')
+            .select('*')
+            .eq('email', userEmail)
+            .single();
+          profile = profData;
+          if (profile?.user_id) {
+            targetUserId = profile.user_id;
+          }
         }
 
-        const query = supabaseAdmin
+        // In dev environment with unauthenticated test session, pick first user profile with tasks
+        if (!targetUserId && !userEmail && process.env.NODE_ENV === 'development') {
+          const { data: firstTask } = await supabaseAdmin
+            .from('zoho_tasks')
+            .select('user_id')
+            .not('user_id', 'is', null)
+            .limit(1)
+            .single();
+          if (firstTask?.user_id) {
+            targetUserId = firstTask.user_id;
+            const { data: profData } = await supabaseAdmin
+              .from('user_profiles')
+              .select('*')
+              .eq('user_id', targetUserId)
+              .single();
+            profile = profData;
+          }
+        }
+
+        let query = supabaseAdmin
           .from('zoho_tasks')
           .select(`
             *,
@@ -86,10 +120,8 @@ export async function GET(request: Request) {
           `)
           .order('task_date', { ascending: false });
 
-        if (userId) {
-          query.or(`user_id.eq.${userId},user_email.eq.${userEmail}`);
-        } else if (userEmail) {
-          query.eq('user_email', userEmail);
+        if (targetUserId) {
+          query = query.eq('user_id', targetUserId);
         }
 
         const { data: dbTasks, error: taskErr } = await query;
@@ -97,7 +129,7 @@ export async function GET(request: Request) {
         if (!taskErr && dbTasks && dbTasks.length > 0) {
           const meta = (user?.user_metadata as Record<string, unknown> | undefined) || {};
           const fullName = formatUserName(
-            userEmail || '',
+            userEmail || profile?.email || '',
             (meta.full_name as string) || (meta.name as string) || (profile?.name as string)
           );
           const role = (profile?.current_role as string) || 'Developer';
@@ -122,102 +154,47 @@ export async function GET(request: Request) {
             daysMap.get(date)!.push(task);
 
             totalHours += Number(task.actual_hours) || 0;
-            const taskEval = (() => {
-              const raw = task.zoho_task_evaluations?.[0];
-              if (raw) {
-                return {
-                  overallScore: raw.overall_score > 10 ? raw.overall_score / 10 : raw.overall_score,
-                  timeScore: raw.time_score > 10 ? raw.time_score / 10 : raw.time_score,
-                  workMatchScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
-                  commentQualityScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
-                  complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
-                  repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
-                  timeVarianceMinutes: raw.time_variance_minutes,
-                  timeAssessmentLabel: raw.time_variance_minutes > 5 ? 'OVERDUE' : (raw.time_variance_minutes < -15 ? 'UNEXPECTED_EARLY' : 'ON_TIME'),
-                  isRepetitive: raw.is_repetitive || false,
-                  repetitionSimilarityPct: raw.repetition_similarity_pct || 0,
-                  matchedTaskId: raw.matched_task_id,
-                  summaryFeedback: raw.feedback_summary || '',
-                  strengths: [],
-                  improvements: [],
-                  aiModelUsed: 'gemini-2.5-flash',
-                };
-              }
 
-              const plannedHoursNum = Number(task.planned_hours);
-              const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
-              const actualHoursNum = Number(task.actual_hours);
-              const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
-              const variance = actualMins - plannedMins;
+            const plannedHoursNum = Number(task.planned_hours);
+            const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
+            const actualHoursNum = Number(task.actual_hours);
+            const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
+            const variance = actualMins - plannedMins;
 
-              let timeScore = 10;
-              let timeAssessmentLabel = 'ON_TIME';
+            let timeScore = 10;
+            let timeAssessmentLabel = 'ON_TIME';
 
-              if (actualMins === 0) {
-                timeScore = 0;
-                timeAssessmentLabel = 'NOT_LOGGED';
-              } else if (variance > 0 && variance <= 5) {
-                timeScore = 10;
-                timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
-              } else if (variance <= 0 && variance >= -15) {
-                timeScore = 10;
-                timeAssessmentLabel = 'ON_TIME';
-              } else if (variance < -15) {
-                const earlyGap = Math.abs(variance) - 15;
-                const penalty = Math.min(5.0, Number(((earlyGap / (plannedMins || 60)) * 8).toFixed(1)));
-                timeScore = Math.max(3.0, Number((10 - penalty).toFixed(1)));
-                timeAssessmentLabel = 'UNEXPECTED_EARLY';
-              } else {
-                const excess = variance - 5;
-                const penalty = Math.min(7.0, Number(((excess / (plannedMins || 60)) * 7).toFixed(1)));
-                timeScore = Math.max(2.0, Number((10 - penalty).toFixed(1)));
-                timeAssessmentLabel = 'OVERDUE';
-              }
+            if (actualMins === 0) {
+              timeScore = 0;
+              timeAssessmentLabel = 'NOT_LOGGED';
+            } else if (variance > 0 && variance <= 5) {
+              timeScore = 10;
+              timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
+            } else if (variance <= 0 && variance >= -15) {
+              timeScore = 10;
+              timeAssessmentLabel = 'ON_TIME';
+            } else if (variance < -15) {
+              const earlyGap = Math.abs(variance) - 15;
+              const penalty = Math.min(5.0, Number(((earlyGap / (plannedMins || 60)) * 8).toFixed(1)));
+              timeScore = Math.max(3.0, Number((10 - penalty).toFixed(1)));
+              timeAssessmentLabel = 'UNEXPECTED_EARLY';
+            } else {
+              const excess = variance - 5;
+              const penalty = Math.min(7.0, Number(((excess / (plannedMins || 60)) * 7).toFixed(1)));
+              timeScore = Math.max(2.0, Number((10 - penalty).toFixed(1)));
+              timeAssessmentLabel = 'OVERDUE';
+            }
 
-              const hasComments = task.zoho_task_comments && task.zoho_task_comments.length > 0;
-              const workMatchScore = hasComments ? 9.2 : 0;
-              const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40).toFixed(1));
-
-              const dyn = generateDynamicPerformanceSummary({
-                taskDescription: task.task_description || '',
-                comments: (task.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || ''),
-                timeAssessmentLabel,
-                workMatchScore,
-                seniorityLevel,
-                userExperienceYears: yearsOfExp,
-                aiSubscriptions,
-                isQAReview: (task.zoho_status || '').toLowerCase().includes('qa'),
-              });
-
-              return {
-                overallScore: Math.min(10.0, overallScore),
-                timeScore,
-                workMatchScore,
-                commentQualityScore: workMatchScore,
-                complexityScore: 8.0,
-                repetitionScore: 10.0,
-                timeVarianceMinutes: variance,
-                timeAssessmentLabel,
-                isRepetitive: false,
-                repetitionSimilarityPct: 0,
-                matchedTaskId: null,
-                summaryFeedback: dyn.performanceSummary,
-                whereLacked: dyn.whereLacked,
-                whereToImprove: dyn.whereToImprove,
-                improvementItems: dyn.improvementItems,
-                strengths: [],
-                improvements: [],
-                aiModelUsed: 'engineering-rule-engine',
-              };
-            })();
-
-            const taskScore = (taskEval.overallScore || 8.5) * 10;
+            const rawEval = task.zoho_task_evaluations?.[0];
+            const taskScore = rawEval
+              ? (rawEval.overall_score > 10 ? rawEval.overall_score : rawEval.overall_score * 10)
+              : 85;
             scoreSum += taskScore;
 
             const status = (task.zoho_status || '').toLowerCase();
             if (status.includes('closed') || status.includes('complete') || status.includes('done')) {
               done++;
-            } else if (taskEval.timeAssessmentLabel === 'OVERDUE') {
+            } else if (timeAssessmentLabel === 'OVERDUE') {
               delayed++;
             } else {
               pending++;
@@ -232,35 +209,141 @@ export async function GET(request: Request) {
                 const score = raw ? (raw.overall_score > 10 ? raw.overall_score : raw.overall_score * 10) : 85;
                 return acc + score;
               }, 0);
+
               return {
                 date,
                 dayScore: tList.length > 0 ? Math.round(dayScoreSum / tList.length) : 85,
                 summary: `Completed ${tList.length} task(s) on ${date}.`,
-                tasks: tList.map((t: any) => ({
-                  id: t.id,
-                  zohoTaskId: t.zoho_task_id,
-                  projectId: t.zoho_project_id,
-                  projectName: t.project_name || 'Creole Knowledge Portal',
-                  taskName: t.task_name,
-                  taskDescription: t.task_description,
-                  zohoStatus: t.zoho_status,
-                  isQAReview: (t.zoho_status || '').toLowerCase().includes('qa'),
-                  plannedHours: Number(t.planned_hours) || 4,
-                  actualHours: Number.isFinite(Number(t.actual_hours)) ? Number(t.actual_hours) : 0,
-                  taskDate: t.task_date,
-                  zohoLink: t.zoho_link,
-                  comments: (t.zoho_task_comments || []).map((c: any) => ({
-                    author: c.author_name || 'Team Member',
-                    content: c.comment_content || c.content || '',
-                    time: c.created_at ? new Date(c.created_at).toLocaleTimeString() : '12:00 PM',
-                  })),
-                })),
+                tasks: tList.map((t: any) => {
+                  const evalItem = (() => {
+                    const raw = t.zoho_task_evaluations?.[0];
+                    if (raw) {
+                      return {
+                        overallScore: raw.overall_score > 10 ? raw.overall_score / 10 : raw.overall_score,
+                        timeScore: raw.time_score > 10 ? raw.time_score / 10 : raw.time_score,
+                        workMatchScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
+                        commentQualityScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
+                        complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
+                        repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
+                        timeVarianceMinutes: raw.time_variance_minutes,
+                        timeAssessmentLabel: raw.time_assessment_label || 'ON_TIME',
+                        isRepetitive: raw.is_repetitive || false,
+                        repetitionSimilarityPct: raw.repetition_similarity_pct || 0,
+                        matchedTaskId: raw.matched_repetitive_task_id || raw.matched_task_id,
+                        workMatchFeedback: raw.summary_feedback,
+                        summaryFeedback: raw.summary_feedback || raw.feedback_summary || '',
+                        strengths: raw.strengths || [],
+                        improvements: raw.improvements || [],
+                        aiModelUsed: raw.ai_model_used || 'gemini-2.5-flash',
+                      };
+                    }
+
+                    const plannedHoursNum = Number(t.planned_hours);
+                    const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
+                    const actualHoursNum = Number(t.actual_hours);
+                    const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
+                    const variance = actualMins - plannedMins;
+
+                    let timeScore = 10;
+                    let timeAssessmentLabel = 'ON_TIME';
+
+                    if (actualMins === 0) {
+                      timeScore = 0;
+                      timeAssessmentLabel = 'NOT_LOGGED';
+                    } else if (variance > 0 && variance <= 5) {
+                      timeScore = 10;
+                      timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
+                    } else if (variance <= 0 && variance >= -15) {
+                      timeScore = 10;
+                      timeAssessmentLabel = 'ON_TIME';
+                    } else if (variance < -15) {
+                      const earlyGap = Math.abs(variance) - 15;
+                      const penalty = Math.min(5.0, Number(((earlyGap / (plannedMins || 60)) * 8).toFixed(1)));
+                      timeScore = Math.max(3.0, Number((10 - penalty).toFixed(1)));
+                      timeAssessmentLabel = 'UNEXPECTED_EARLY';
+                    } else {
+                      const excess = variance - 5;
+                      const penalty = Math.min(7.0, Number(((excess / (plannedMins || 60)) * 7).toFixed(1)));
+                      timeScore = Math.max(2.0, Number((10 - penalty).toFixed(1)));
+                      timeAssessmentLabel = 'OVERDUE';
+                    }
+
+                    const tCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
+                    const hasComments = tCommentsList.length > 0;
+                    const workMatchResult = evaluateWorkAndCommentMatch(t.task_description, tCommentsList, {
+                      userExperienceYears: yearsOfExp,
+                      seniorityLevel,
+                      aiSubscriptions,
+                    });
+                    const workMatchScore = workMatchResult.workMatchScore;
+                    const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
+
+                    const dynItem = generateDynamicPerformanceSummary({
+                      taskDescription: t.task_description || '',
+                      comments: tCommentsList,
+                      timeAssessmentLabel,
+                      workMatchScore,
+                      seniorityLevel,
+                      userExperienceYears: yearsOfExp,
+                      aiSubscriptions,
+                      isQAReview: Boolean(t.is_qa_review || (t.zoho_status || '').toLowerCase().includes('qa')),
+                    });
+
+                    return {
+                      overallScore: Math.min(10.0, overallScore),
+                      timeScore,
+                      workMatchScore,
+                      commentQualityScore: workMatchScore,
+                      complexityScore: 8.0,
+                      repetitionScore: 10.0,
+                      timeVarianceMinutes: variance,
+                      timeAssessmentLabel,
+                      isRepetitive: false,
+                      repetitionSimilarityPct: 0,
+                      matchedTaskId: null,
+                      workMatchFeedback: hasComments
+                        ? 'Comments directly substantiate the implementation and verification of the tasks described.'
+                        : 'No progress comments were logged in Zoho Projects to verify completion.',
+                      summaryFeedback: dynItem.performanceSummary,
+                      whereLacked: dynItem.whereLacked,
+                      whereToImprove: dynItem.whereToImprove,
+                      improvementItems: dynItem.improvementItems,
+                      strengths: [
+                        workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
+                        timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
+                      ],
+                      improvements: dynItem.improvementItems,
+                      aiModelUsed: 'engineering-rule-engine',
+                    };
+                  })();
+
+                  return {
+                    id: t.id,
+                    zohoTaskId: t.zoho_task_id,
+                    projectId: t.zoho_project_id,
+                    projectName: t.project_name || 'Creole Knowledge Portal',
+                    taskName: t.task_name,
+                    taskDescription: t.task_description,
+                    zohoStatus: t.zoho_status,
+                    isQAReview: Boolean(t.is_qa_review || (t.zoho_status || '').toLowerCase().includes('qa')),
+                    plannedHours: Number(t.planned_hours) || 4,
+                    actualHours: Number.isFinite(Number(t.actual_hours)) ? Number(t.actual_hours) : 0,
+                    taskDate: t.task_date,
+                    zohoLink: t.zoho_link,
+                    comments: (t.zoho_task_comments || []).map((c: any) => ({
+                      author: c.author_name || 'Team Member',
+                      content: c.comment_content || c.content || '',
+                      time: c.comment_added_time || (c.created_at ? new Date(c.created_at).toLocaleTimeString() : '12:00 PM'),
+                    })),
+                    evaluation: evalItem,
+                  };
+                }),
               };
             });
 
           myData = {
-            userId: userId || 'user-db',
-            email: userEmail || '',
+            userId: targetUserId || 'user-db',
+            email: userEmail || profile?.email || '',
             name: fullName,
             role,
             yearsOfExperience: yearsOfExp,

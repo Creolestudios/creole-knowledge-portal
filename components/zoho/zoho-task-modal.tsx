@@ -20,6 +20,21 @@ interface ZohoTaskModalProps {
   hideZohoLink?: boolean;
 }
 
+function formatCommentTime(timeStr?: string): string {
+  if (!timeStr) return '';
+  if (timeStr.includes('T')) {
+    try {
+      const d = new Date(timeStr);
+      if (!Number.isNaN(d.getTime())) {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+    } catch {
+      // Fallback
+    }
+  }
+  return timeStr;
+}
+
 export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskModalProps) {
   React.useEffect(() => {
     if (!task) return;
@@ -258,7 +273,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                     >
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-bold text-zinc-900 dark:text-white">{comment.author}</span>
-                        <span className="text-zinc-400">{comment.time}</span>
+                        <span className="text-zinc-400">{formatCommentTime(comment.time)}</span>
                       </div>
                       <p className="text-zinc-600 dark:text-zinc-300 leading-relaxed whitespace-pre-line">
                         {comment.content}

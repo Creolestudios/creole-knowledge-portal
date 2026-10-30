@@ -48,11 +48,24 @@ async function handleCronExecution(req: Request) {
     const dateParam = searchParams.get('date') || undefined;
     const dryRunParam = searchParams.get('dryRun');
     const dryRun = dryRunParam === 'true' || dryRunParam === '1';
+    const allowWeekendParam = searchParams.get('allowWeekend');
+    const allowWeekend = allowWeekendParam === 'true' || allowWeekendParam === '1';
 
     const result = await runDailyZohoEvaluationCron({
       targetDate: dateParam,
       dryRun,
+      allowWeekend,
     });
+
+    if (result.skipped) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        message: result.skipReason || 'Skipped: evaluations and emails run Monday to Friday only.',
+        date: result.date,
+        dryRun: result.dryRun,
+      });
+    }
 
     if (!result.success && result.error) {
       return NextResponse.json(
@@ -68,13 +81,15 @@ async function handleCronExecution(req: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Daily Zoho evaluation completed successfully for ${result.date}. Evaluated ${result.tasksEvaluated} tasks across ${result.usersEvaluated} users.`,
+      message: `Daily Zoho evaluation completed successfully for ${result.date}. Evaluated ${result.tasksEvaluated} tasks across ${result.usersEvaluated} users. Sent ${result.emailsSent} evaluation emails.`,
       date: result.date,
       dryRun: result.dryRun,
       usersEvaluated: result.usersEvaluated,
       tasksEvaluated: result.tasksEvaluated,
       commentsIngested: result.commentsIngested,
       evaluationsCreated: result.evaluationsCreated,
+      emailsSent: result.emailsSent,
+      emailsFailed: result.emailsFailed,
       durationMs: result.durationMs,
       details: result.details,
     });

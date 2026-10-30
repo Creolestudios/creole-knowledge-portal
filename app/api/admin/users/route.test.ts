@@ -85,7 +85,68 @@ describe('PUT /api/admin/users', () => {
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ success: true, data: { user_id: 'u1', role: 'admin', ai_subscriptions: ['GitHub Copilot'] } });
+    expect(body).toEqual({
+      success: true,
+      data: {
+        user_id: 'u1',
+        role: 'admin',
+        ai_subscriptions: ['GitHub Copilot'],
+        senior_emails: [],
+        daily_email_enabled: true,
+      },
+    });
+  });
+
+  it('upserts daily_email_enabled and returns it on success', async () => {
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
+    mockUpsertSingle.mockResolvedValue({
+      data: {
+        user_id: 'u1',
+        role: 'user',
+        daily_email_enabled: false,
+      },
+      error: null,
+    });
+
+    const res = await PUT(
+      new Request('http://x', {
+        method: 'PUT',
+        body: JSON.stringify({
+          user_id: 'u1',
+          role: 'user',
+          daily_email_enabled: false,
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.daily_email_enabled).toBe(false);
+  });
+
+  it('upserts senior_emails and returns them on success', async () => {
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-1' });
+    mockUpsertSingle.mockResolvedValue({
+      data: {
+        user_id: 'u1',
+        role: 'user',
+        senior_emails: ['lead@creolestudios.com'],
+      },
+      error: null,
+    });
+
+    const res = await PUT(
+      new Request('http://x', {
+        method: 'PUT',
+        body: JSON.stringify({
+          user_id: 'u1',
+          role: 'user',
+          senior_emails: ['lead@creolestudios.com'],
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.senior_emails).toEqual(['lead@creolestudios.com']);
   });
 
   it('falls back to upserting without ai_subscriptions if column is missing from schema cache', async () => {

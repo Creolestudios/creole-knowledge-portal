@@ -22,6 +22,14 @@ export async function GET() {
       .map((authUser) => {
         const profile = profiles?.find((p) => p.user_id === authUser.id) || {};
         const metaSubscriptions = (authUser.user_metadata as Record<string, unknown> | undefined)?.ai_subscriptions;
+        const metaSeniorEmails = (authUser.user_metadata as Record<string, unknown> | undefined)?.senior_emails;
+        const metaDailyEmail = (authUser.user_metadata as Record<string, unknown> | undefined)?.daily_email_enabled;
+        const dailyEmailEnabled =
+          profile.daily_email_enabled !== undefined
+            ? Boolean(profile.daily_email_enabled)
+            : metaDailyEmail !== undefined
+            ? Boolean(metaDailyEmail)
+            : true;
         return {
           user_id: authUser.id,
           email: authUser.email,
@@ -33,6 +41,8 @@ export async function GET() {
           secondary_tech_stack: profile.secondary_tech_stack || [],
           future_interests: profile.future_interests || '',
           ai_subscriptions: profile.ai_subscriptions || (Array.isArray(metaSubscriptions) ? metaSubscriptions : []),
+          senior_emails: profile.senior_emails || (Array.isArray(metaSeniorEmails) ? metaSeniorEmails : []),
+          daily_email_enabled: dailyEmailEnabled,
           updated_at: profile.updated_at || authUser.updated_at,
         };
       });
@@ -64,6 +74,8 @@ export async function PUT(request: Request) {
       secondary_tech_stack,
       future_interests,
       ai_subscriptions,
+      senior_emails,
+      daily_email_enabled,
     } = body;
 
     if (!user_id) {
@@ -71,6 +83,12 @@ export async function PUT(request: Request) {
     }
 
     const subscriptionsList = Array.isArray(ai_subscriptions) ? ai_subscriptions : [];
+    const seniorEmailsList = Array.isArray(senior_emails)
+      ? senior_emails
+          .map((item: unknown) => (typeof item === 'string' ? item.trim() : ''))
+          .filter((item: string) => Boolean(item))
+      : [];
+    const isDailyEmailEnabled = daily_email_enabled !== undefined ? Boolean(daily_email_enabled) : true;
 
     // 1. Persist in Supabase Auth user_metadata (schema-free, resilient to database migrations)
     try {
@@ -80,6 +98,8 @@ export async function PUT(request: Request) {
         user_metadata: {
           ...existingMeta,
           ai_subscriptions: subscriptionsList,
+          senior_emails: seniorEmailsList,
+          daily_email_enabled: isDailyEmailEnabled,
         },
       });
     } catch (authErr) {
@@ -99,21 +119,28 @@ export async function PUT(request: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    // 3. Try upserting with ai_subscriptions first
+    // 3. Try upserting with ai_subscriptions, senior_emails, and daily_email_enabled first
     let result = await supabaseAdmin
       .from('user_profiles')
       .upsert({
         ...basePayload,
         ai_subscriptions: subscriptionsList,
+        senior_emails: seniorEmailsList,
+        daily_email_enabled: isDailyEmailEnabled,
       }, {
         onConflict: 'user_id',
       })
       .select('*')
       .single();
 
-    // 4. Fallback if the 'ai_subscriptions' column has not been added to user_profiles table yet
-    if (result.error && (result.error.message?.includes('ai_subscriptions') || result.error.code === 'PGRST204')) {
-      console.warn('ai_subscriptions column not found in user_profiles table, retrying upsert without it');
+    // 4. Fallback if new columns have not been added to user_profiles table yet
+    if (result.error && (
+      result.error.message?.includes('ai_subscriptions') ||
+      result.error.message?.includes('senior_emails') ||
+      result.error.message?.includes('daily_email_enabled') ||
+      result.error.code === 'PGRST204'
+    )) {
+      console.warn('ai_subscriptions, senior_emails, or daily_email_enabled column not found in user_profiles table, retrying upsert with fallback');
       result = await supabaseAdmin
         .from('user_profiles')
         .upsert(basePayload, {
@@ -131,6 +158,8 @@ export async function PUT(request: Request) {
     const responseData = {
       ...result.data,
       ai_subscriptions: result.data?.ai_subscriptions || subscriptionsList,
+      senior_emails: result.data?.senior_emails || seniorEmailsList,
+      daily_email_enabled: result.data?.daily_email_enabled !== undefined ? result.data.daily_email_enabled : isDailyEmailEnabled,
     };
 
     return NextResponse.json({ success: true, data: responseData });

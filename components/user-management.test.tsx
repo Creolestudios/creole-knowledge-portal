@@ -19,6 +19,7 @@ const sampleUsers = [
     secondary_tech_stack: [],
     future_interests: 'AI',
     ai_subscriptions: ['GitHub Copilot', 'ChatGPT Plus'],
+    senior_emails: ['lead@creolestudios.com'],
     updated_at: '2026-08-01T00:00:00Z',
   },
   {
@@ -385,5 +386,69 @@ describe('UserManagement', () => {
     expect(putPayload.ai_subscriptions).toContain('ChatGPT Plus');
     expect(putPayload.ai_subscriptions).toContain('Cursor AI');
     expect(putPayload.ai_subscriptions).toContain('Supermaven');
+  });
+
+  it('renders senior emails badge on user card when configured', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    expect(screen.getByText('Seniors (1):')).toBeInTheDocument();
+    expect(screen.getByText('lead@creolestudios.com')).toBeInTheDocument();
+  });
+
+  it('allows adding and removing reporting senior emails with validation and saving them', async () => {
+    let putPayload: any = null;
+    global.fetch = vi.fn().mockImplementation(async (url: string, options?: any) => {
+      if (options?.method === 'PUT') {
+        putPayload = JSON.parse(options.body);
+        return { ok: true, json: async () => ({ success: true }) };
+      }
+      return { ok: true, json: async () => sampleUsers };
+    });
+
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    expect(screen.getByText('Reporting Senior Emails')).toBeInTheDocument();
+
+    const seniorEmailInput = screen.getByPlaceholderText(/Type senior email/i);
+
+    // 1. Invalid email triggers error
+    fireEvent.change(seniorEmailInput, { target: { value: 'not-an-email' } });
+    fireEvent.keyDown(seniorEmailInput, { key: 'Enter', code: 'Enter' });
+    expect(screen.getByText(/Please enter a valid email address/i)).toBeInTheDocument();
+
+    // 2. Add valid senior email via Enter key
+    fireEvent.change(seniorEmailInput, { target: { value: 'pm@creolestudios.com' } });
+    fireEvent.keyDown(seniorEmailInput, { key: 'Enter', code: 'Enter' });
+
+    expect(screen.queryByText(/Please enter a valid email address/i)).not.toBeInTheDocument();
+    expect(screen.getByText('pm@creolestudios.com')).toBeInTheDocument();
+
+    // 3. Add second senior email via Add button
+    fireEvent.change(seniorEmailInput, { target: { value: 'cto@creolestudios.com' } });
+    const addBtn = screen.getByRole('button', { name: /^Add$/i });
+    fireEvent.click(addBtn);
+    expect(screen.getByText('cto@creolestudios.com')).toBeInTheDocument();
+
+    // 4. Remove existing senior email tag
+    const removeLeadBtn = screen.getByRole('button', { name: /Remove lead@creolestudios.com/i });
+    fireEvent.click(removeLeadBtn);
+    await waitFor(() => {
+      expect(screen.queryByText('lead@creolestudios.com')).not.toBeInTheDocument();
+    });
+
+    // 5. Submit form and verify payload
+    const saveBtn = screen.getByRole('button', { name: /Save Profile/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(putPayload).toBeTruthy();
+    });
+    expect(putPayload.senior_emails).toEqual(['pm@creolestudios.com', 'cto@creolestudios.com']);
   });
 });
