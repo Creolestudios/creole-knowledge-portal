@@ -17,9 +17,10 @@ import { generateDynamicPerformanceSummary } from '@/lib/zoho/heuristics';
 interface ZohoTaskModalProps {
   task: ZohoTaskItem | null;
   onClose: () => void;
+  hideZohoLink?: boolean;
 }
 
-export default function ZohoTaskModal({ task, onClose }: ZohoTaskModalProps) {
+export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskModalProps) {
   React.useEffect(() => {
     if (!task) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -151,16 +152,18 @@ export default function ZohoTaskModal({ task, onClose }: ZohoTaskModalProps) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Direct Zoho Deep-Link Button */}
-            <a
-              href={task.zohoLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:text-[#34c4f2] dark:hover:text-[#34c4f2] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <span>Open in Zoho</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+            {/* Direct Zoho Deep-Link Button (Hidden for regular users in user portal) */}
+            {!hideZohoLink && task.zohoLink && (
+              <a
+                href={task.zohoLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:text-[#34c4f2] dark:hover:text-[#34c4f2] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+              >
+                <span>Open in Zoho</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
 
             <button
               type="button"

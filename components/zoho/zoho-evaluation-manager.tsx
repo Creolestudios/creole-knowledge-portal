@@ -29,29 +29,8 @@ import {
   getISOWeekNumber,
   formatDateDDMMYYYY,
   formatDateYYYYMMDD,
+  getDefaultWeekSelection,
 } from '@/lib/zoho/service';
-
-function getDefaultWeekSelection(): DateRangeSelection {
-  const now = new Date();
-  const day = now.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + diffToMonday);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-
-  const startIso = formatDateYYYYMMDD(monday);
-  const endIso = formatDateYYYYMMDD(sunday);
-  const weekNum = getISOWeekNumber(monday);
-
-  return {
-    type: 'week',
-    startDate: startIso,
-    endDate: endIso,
-    weekNumber: weekNum,
-    label: `${formatDateDDMMYYYY(monday)} to ${formatDateDDMMYYYY(sunday)} (WEEK - ${weekNum})`,
-  };
-}
 
 export default function ZohoEvaluationManager() {
   const [users, setUsers] = useState<ZohoUserSummary[]>([]);

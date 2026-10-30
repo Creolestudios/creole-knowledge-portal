@@ -312,6 +312,17 @@ describe('Zoho Frontend Components', () => {
       fireEvent.click(closeBtn);
       expect(onClose).toHaveBeenCalled();
     });
+
+    it('renders the "Open in Zoho" link by default for admin users', () => {
+      render(<ZohoTaskModal task={mockTask} onClose={vi.fn()} />);
+      const zohoLink = screen.getByText('Open in Zoho');
+      expect(zohoLink).toBeDefined();
+    });
+
+    it('removes the task link for Zoho when hideZohoLink is true for user portal', () => {
+      render(<ZohoTaskModal task={mockTask} onClose={vi.fn()} hideZohoLink={true} />);
+      expect(screen.queryByText('Open in Zoho')).toBeNull();
+    });
   });
 
   describe('ZohoReportModal', () => {

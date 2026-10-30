@@ -75,6 +75,37 @@ export function formatDateYYYYMMDD(d: Date): string {
 }
 
 /**
+ * Returns default week selection starting from current week Monday to Sunday
+ */
+export function getDefaultWeekSelection(): {
+  type: 'week';
+  startDate: string;
+  endDate: string;
+  weekNumber: number;
+  label: string;
+} {
+  const now = new Date();
+  const day = now.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  const startIso = formatDateYYYYMMDD(monday);
+  const endIso = formatDateYYYYMMDD(sunday);
+  const weekNum = getISOWeekNumber(monday);
+
+  return {
+    type: 'week',
+    startDate: startIso,
+    endDate: endIso,
+    weekNumber: weekNum,
+    label: `${formatDateDDMMYYYY(monday)} to ${formatDateDDMMYYYY(sunday)} (WEEK - ${weekNum})`,
+  };
+}
+
+/**
  * Generates ISO date boundaries for week, month, and custom range filters
  */
 export function resolveDateFilterRange(filter: DateFilterOptions): { start: string; end: string } {
@@ -134,6 +165,7 @@ export function getMockZohoData(): ZohoUserSummary[] {
   const task1Eval: TaskEvaluationResult = {
     overallScore: 94,
     timeScore: 100,
+    workMatchScore: 92,
     commentQualityScore: 92,
     complexityScore: 88,
     repetitionScore: 100,
@@ -142,6 +174,7 @@ export function getMockZohoData(): ZohoUserSummary[] {
     isRepetitive: false,
     repetitionSimilarityPct: 0,
     matchedTaskId: null,
+    workMatchFeedback: 'Comments substantiate the completed scope and justify the time given for this task.',
     summaryFeedback: '4-hour task completed in 4:05. The 5-minute overrun is within the permitted tolerance buffer with zero penalty. Clean QA handoff.',
     strengths: ['Punctual delivery within buffer', 'Moved status to QA Review with thorough checklist'],
     improvements: ['Include unit test coverage screenshot in comments'],
@@ -151,6 +184,7 @@ export function getMockZohoData(): ZohoUserSummary[] {
   const task2Eval: TaskEvaluationResult = {
     overallScore: 78,
     timeScore: 82,
+    workMatchScore: 75,
     commentQualityScore: 75,
     complexityScore: 70,
     repetitionScore: 100,
@@ -159,6 +193,7 @@ export function getMockZohoData(): ZohoUserSummary[] {
     isRepetitive: false,
     repetitionSimilarityPct: 0,
     matchedTaskId: null,
+    workMatchFeedback: 'Brief comments logged upon completion.',
     summaryFeedback: 'Task estimated at 4 hours completed in 3:30 (30m early, exceeding 15m allowance). Early completion flags potential over-estimation or rushed QA verification.',
     strengths: ['Swift turnaround', 'Moved to QA Review'],
     improvements: ['Refine estimation buffer; 15-minute gap policy flagged unexpected early finish', 'Attach automated test verification link'],
@@ -168,6 +203,7 @@ export function getMockZohoData(): ZohoUserSummary[] {
   const task3Eval: TaskEvaluationResult = {
     overallScore: 71,
     timeScore: 100,
+    workMatchScore: 70,
     commentQualityScore: 70,
     complexityScore: 65,
     repetitionScore: 40,
@@ -176,6 +212,7 @@ export function getMockZohoData(): ZohoUserSummary[] {
     isRepetitive: true,
     repetitionSimilarityPct: 75,
     matchedTaskId: 'zoho-t-101',
+    workMatchFeedback: 'Minimal progress updates logged.',
     summaryFeedback: 'Repetitive task detected in project "CKP Core" (75% scope similarity to prior bugfix). Repetitive generic logs reduce task evaluation score.',
     strengths: ['Completed strictly on time'],
     improvements: ['Avoid logging repetitive generic tasks under the same project', 'Differentiate acceptance criteria'],
@@ -346,6 +383,7 @@ export function buildSampleUserSummary(
   const task1Eval: TaskEvaluationResult = {
     overallScore: 94,
     timeScore: 100,
+    workMatchScore: 92,
     commentQualityScore: 92,
     complexityScore: 88,
     repetitionScore: 100,
@@ -354,6 +392,7 @@ export function buildSampleUserSummary(
     isRepetitive: false,
     repetitionSimilarityPct: 0,
     matchedTaskId: null,
+    workMatchFeedback: 'Comments substantiate the completed scope and justify the time given for this task.',
     summaryFeedback: '4-hour task completed in 4:05. The 5-minute overrun is within the permitted tolerance buffer with zero penalty. Clean QA handoff.',
     strengths: ['Punctual delivery within buffer', 'Moved status to QA Review with thorough checklist'],
     improvements: ['Include unit test coverage screenshot in comments'],
@@ -363,6 +402,7 @@ export function buildSampleUserSummary(
   const task2Eval: TaskEvaluationResult = {
     overallScore: 78,
     timeScore: 82,
+    workMatchScore: 75,
     commentQualityScore: 75,
     complexityScore: 70,
     repetitionScore: 100,
@@ -371,6 +411,7 @@ export function buildSampleUserSummary(
     isRepetitive: false,
     repetitionSimilarityPct: 0,
     matchedTaskId: null,
+    workMatchFeedback: 'Brief comments logged upon completion.',
     summaryFeedback: 'Task estimated at 4 hours completed in 3:30 (30m early, exceeding 15m allowance). Early completion flags potential over-estimation or rushed QA verification.',
     strengths: ['Swift turnaround', 'Moved to QA Review'],
     improvements: ['Refine estimation buffer; 15-minute gap policy flagged unexpected early finish', 'Attach automated test verification link'],

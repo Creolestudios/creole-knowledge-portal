@@ -30,6 +30,7 @@ function tabFromLocation(
 ): TabKey {
   if (pathname?.startsWith('/dashboard/zoho-evaluation')) return 'zoho';
   if (pathname?.startsWith('/blog-roulette')) return 'roulette';
+  if (tabParam === 'zoho') return 'zoho';
   if (tabParam === 'past') return 'past';
   if (tabParam === 'activity') return 'activity';
   if (tabParam === 'leaderboard') return 'leaderboard';
@@ -284,7 +285,7 @@ export default function DashboardShell({
             )}
             {active === 'activity' && <ActivityTab user={activeUser} />}
             {active === 'leaderboard' && <LeaderboardTab />}
-            {active === 'roulette' && children}
+            {(active === 'roulette' || active === 'zoho') && children}
           </div>
         </div>
       </main>

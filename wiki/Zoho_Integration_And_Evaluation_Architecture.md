@@ -421,33 +421,44 @@ Return your evaluation strictly in the defined JSON schema.
 
 ### 6.1 Component Hierarchy
 ```
-app/admin/zoho-evaluation/page.tsx (Admin Controller)
- ├── ZohoFilterBar.tsx (Week, Month, Custom Range, Search)
- ├── ZohoTillDateSummaryCard.tsx (Done, Pending, Delayed, Score Avg)
- ├── ZohoUserTaskAccordion.tsx (User per-day groupings)
- │    ├── ZohoTaskCard.tsx (Task title, badges, direct Zoho link, hours pill)
- │    └── ZohoTaskDetailModal.tsx (Deep analysis, comments, AI scorecard)
- └── ZohoReportExportModal.tsx (PDF / CSV evaluation summary export)
+app/admin/dashboard/page.tsx (Admin Dashboard with Zoho Tab)
+ ├── ZohoEvaluationManager.tsx (Admin Controller & User Explorer)
+ │    ├── ZohoDateFilterPicker.tsx (Week, Month, Range Date Picker with boundaries)
+ │    ├── ZohoUserSelectDropdown.tsx (Multi-user checkbox selection for reports)
+ │    ├── ZohoTillDateSummary.tsx (Done, In Progress, Delayed, Weekly Score, AI Subscriptions)
+ │    ├── Date-Wise Task Breakdown Cards (Project badge, Task name, external link)
+ │    ├── ZohoTaskModal.tsx (Hours tolerance, comments thread, 3 square score boxes, dynamic summary)
+ │    └── ZohoReportModal.tsx (Employee / Team evaluation reports)
 
-app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal)
- ├── ZohoTillDateSummaryCard.tsx (Personal Read-Only metrics)
- ├── UserPersonalTaskFeed.tsx (Day-by-day task evaluations)
- └── ZohoAISuggestionPill.tsx (Weekly growth tips from Gemini)
+app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in DashboardShell)
+ ├── DashboardShell.tsx (User portal layout, sidebar navigation, activity tracking)
+ ├── ZohoTillDateSummary.tsx (Personal Read-Only metrics: Done, In Progress, Delayed, Hours, Score)
+ ├── ZohoDateFilterPicker.tsx (Period filter with Week, Month, Custom Range - matches admin screen)
+ ├── Date-Wise Task Breakdown Cards (Date header, Project badge, clickable task name, read-only)
+ └── ZohoTaskModal.tsx (Task evaluation details with hideZohoLink={true} removing Zoho deep-link)
 ```
 
 ### 6.2 Key UI Features
-1. **Zoho-Style Filter Bar**:
-   - Fast presets: "This Week", "Last Week", "This Month", "Last Month", and "Custom Range (DatePicker)".
+1. **Zoho-Style Filter Bar (`ZohoDateFilterPicker`)**:
+   - Presets for Week (Monday-Sunday with ISO week number), Month (12-month calendar grid), and Custom Range.
+   - Restricts selection of future periods to ensure integrity of evaluated work.
 2. **Till Date Summary Header (Admin & User Screen)**:
    - Displays 4 real-time stat cards:
      - 🟢 **Done Tasks**: Count of tasks closed or marked complete.
-     - 🟡 **In QA Review / Pending**: Current work awaiting verification.
+     - 🟡 **In Progress**: Current work underway or awaiting QA.
      - 🔴 **Delayed Tasks**: Tasks with actual hours exceeding planned + buffer or past deadline.
-     - 🟣 **Rolling Performance Index**: Average evaluation score with weekly comparison (+/- %).
-3. **Direct Zoho Task Link**:
-   - An external icon button rendering `https://projects.zoho.com/portal/{portal_id}#taskdetail/{project_id}/{task_id}` opening in a new tab with `target="_blank" rel="noopener noreferrer"`.
-4. **Task Hours Pill with Color Coding**:
+     - 🟣 **Weekly Avg Score**: Composite performance score out of 100 with total logged hours.
+3. **Date-Grouped Task Cards**:
+   - Grouped cleanly by date (e.g. `2026-10-30`).
+   - Project name pill (e.g. `CKP Portal (Creole Knowledge Portal)`).
+   - Clickable task title opening the task evaluation modal.
+4. **Read-Only Enforced User Experience**:
+   - Regular users cannot edit evaluation criteria or trigger administrative bulk reports.
+   - In `ZohoTaskModal`, the Zoho direct deep-link ("Open in Zoho") is completely removed for users via `hideZohoLink={true}`.
+5. **Task Hours Tolerance with Buffer**:
    - Green: `actual <= planned + 5m` and `actual >= planned - 15m`.
+   - Orange: `actual < planned - 15m` (Early completion gap warning).
+   - Red: `actual > planned + 5m` (Buffer exceeded / Overdue).
    - Orange: `actual < planned - 15m` (Early completion gap warning).
    - Red: `actual > planned + 5m` (Overdue / Overtime).
 
