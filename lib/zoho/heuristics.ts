@@ -11,7 +11,7 @@
 export interface TimeAdherenceResult {
   timeScore: number; // 0 - 10 (e.g. 10.0, 8.5)
   timeVarianceMinutes: number; // actual - planned
-  assessmentLabel: 'ON_TIME' | 'SLIGHT_OVERRUN_TOLERATED' | 'UNEXPECTED_EARLY' | 'OVERDUE';
+  assessmentLabel: 'ON_TIME' | 'SLIGHT_OVERRUN_TOLERATED' | 'UNEXPECTED_EARLY' | 'OVERDUE' | 'NOT_LOGGED';
   explanation: string;
 }
 
@@ -33,6 +33,9 @@ export interface WorkMatchResult {
   workMatchScore: number; // 0 - 10
   alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED';
   explanation: string;
+  isBriefDescription?: boolean;
+  isChecklistComment?: boolean;
+  isBriefComment?: boolean;
 }
 
 /**
@@ -40,6 +43,7 @@ export interface WorkMatchResult {
  * - Buffer: up to 5 mins more (+5m overtime) and up to 15 mins less (-15m early).
  * - E.g. for 4h planned (240m), 3h 45m to 4h 05m is full score (10/10).
  * - Beyond +5m or before -15m negatively affects score.
+ * - If 0 hours logged, returns 0 score with NOT_LOGGED label.
  */
 export function calculateTimeAdherence(
   plannedMinutes: number,
@@ -47,6 +51,16 @@ export function calculateTimeAdherence(
 ): TimeAdherenceResult {
   const safePlanned = Number.isFinite(plannedMinutes) && plannedMinutes > 0 ? plannedMinutes : 60;
   const safeActual = Number.isFinite(actualMinutes) && actualMinutes >= 0 ? actualMinutes : 0;
+
+  if (safeActual === 0) {
+    return {
+      timeScore: 0,
+      timeVarianceMinutes: -safePlanned,
+      assessmentLabel: 'NOT_LOGGED',
+      explanation: 'No hours were logged for this task in Zoho Projects.'
+    };
+  }
+
   const variance = safeActual - safePlanned;
 
   // Case 1: Overtime with <= 5 minutes buffer (e.g. 4h planned, up to 4:05)
@@ -103,6 +117,12 @@ export function calculateTimeAdherence(
 /**
  * Evaluates whether comments match the task description and substantiate the work completed,
  * accounting for user seniority, AI tools, and planned time reasonableness.
+ *
+ * Appended checks:
+ * 1. Description depth check: flags brief/vague descriptions (< ~35-40 words).
+ * 2. Comment depth check: flags brief comments (< ~35-40 words).
+ * 3. Checklist comment detection: flags comments that merely copy-paste the description and append "- Done" / "Done".
+ * Decreases Work Justification score specifically while preserving Time Adherence.
  */
 export function evaluateWorkAndCommentMatch(
   taskDescription: string | null | undefined,
@@ -135,6 +155,15 @@ export function evaluateWorkAndCommentMatch(
 
   const combinedComments = cleanComments.join(' ').toLowerCase();
 
+  // Word counts (substance benchmarks)
+  const descWords = cleanDesc.split(/\s+/).filter(Boolean);
+  const descWordCount = descWords.length;
+  const isBriefDescription = descWordCount < 40;
+
+  const commentWords = cleanComments.join(' ').split(/\s+/).filter(Boolean);
+  const commentWordCount = commentWords.length;
+  const isBriefComment = commentWordCount < 40;
+
   // Check for superficial / single-word comments
   const isSuperficial =
     cleanComments.length === 1 &&
@@ -142,11 +171,30 @@ export function evaluateWorkAndCommentMatch(
 
   if (isSuperficial) {
     return {
-      workMatchScore: 5.0,
+      workMatchScore: 4.0,
       alignmentLabel: 'WEAK_ALIGNMENT',
-      explanation: 'Logged comment is superficial (e.g. "done") and does not justify the time taken or technical scope.'
+      explanation: 'Logged comment is superficial (e.g. "done") and does not justify the time taken or technical scope.',
+      isBriefDescription,
+      isChecklistComment: true,
+      isBriefComment: true,
     };
   }
+
+  // Detect checklist comments that copy-paste the description with "- Done", "Done", "pending"
+  const checklistMarkers = [
+    /\b(done|not done|pending|completed)\b/i,
+    /-\s*(done|pending|not done)/i,
+  ];
+  const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
+
+  const descWordSet = new Set(descWords.map(w => w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const nonDescWords = commentWords.filter(w => {
+    const cleanW = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return cleanW.length > 0 && !descWordSet.has(cleanW);
+  });
+  const statusStopWords = new Set(['done', 'pending', 'not', 'is', 'are', 'which', 'by', 'client', 'key', 'for', 'and', 'the', 'on', 'to', '1', '2', '3', 'ok', 'yes', 'no', 'of', 'in', 'at']);
+  const technicalExplanationWords = nonDescWords.filter(w => !statusStopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const isChecklistComment = hasChecklistMarkers && (technicalExplanationWords.length < 15);
 
   // Check action words
   const actionTerms = [
@@ -169,26 +217,50 @@ export function evaluateWorkAndCommentMatch(
   const isSenior = (context?.userExperienceYears || 2) >= 5;
 
   let baseScore = 7.5;
-  if (similarity >= 0.2 || (actionHits >= 2 && similarity >= 0.08) || actionHits >= 3) {
+
+  const hasStrongTechnicalEvidence = (actionHits >= 2) || (actionHits >= 1 && !isBriefComment && similarity >= 0.15) || (!isBriefComment && similarity >= 0.35);
+
+  if (isChecklistComment && isBriefDescription) {
+    baseScore = 4.8;
+  } else if (isChecklistComment) {
+    baseScore = 5.2;
+  } else if (hasStrongTechnicalEvidence) {
     baseScore = 9.0 + Math.min(1.0, actionHits * 0.3);
+  } else if (isBriefDescription && isBriefComment) {
+    baseScore = 5.5;
+  } else if (isBriefDescription || isBriefComment) {
+    baseScore = 6.2;
   } else if (similarity >= 0.06 || actionHits >= 1) {
     baseScore = 8.0;
   } else {
-    baseScore = 6.2;
+    baseScore = 6.8;
   }
 
-  if (hasAi) baseScore = Math.min(10.0, baseScore + 0.2);
+  if (hasAi && !isChecklistComment && !isBriefDescription) {
+    baseScore = Math.min(10.0, baseScore + 0.2);
+  }
 
   const finalScore = Number(Math.min(10.0, Math.max(1.0, baseScore)).toFixed(1));
-  const aiTag = hasAi ? ` with ${context?.aiSubscriptions?.join(', ')}` : '';
   const expTag = context?.seniorityLevel ? ` for a ${context.seniorityLevel} developer (${context.userExperienceYears || 2} yrs)` : '';
+
+  let explanation = '';
+  if (isChecklistComment) {
+    explanation = `Comments primarily mirror the task checklist with status indicators rather than explaining technical implementation steps${expTag}.`;
+  } else if (finalScore >= 8.5) {
+    explanation = `Comments strongly justify the description and confirm work completed${expTag}.`;
+  } else if (isBriefDescription && isBriefComment) {
+    explanation = `Task description and progress updates are brief and lack substantive implementation context${expTag}.`;
+  } else {
+    explanation = `Comments partially explain the task description${expTag}.`;
+  }
 
   return {
     workMatchScore: finalScore,
     alignmentLabel: finalScore >= 8.5 ? 'STRONG_ALIGNMENT' : finalScore >= 7.0 ? 'MODERATE_ALIGNMENT' : 'WEAK_ALIGNMENT',
-    explanation: finalScore >= 8.5
-      ? `Comments strongly justify the description and confirm work completed${expTag}${aiTag}.`
-      : `Comments partially explain the task description${expTag}.`
+    explanation,
+    isBriefDescription,
+    isChecklistComment,
+    isBriefComment,
   };
 }
 
@@ -340,7 +412,30 @@ export function generateDynamicPerformanceSummary(params: {
   const isSenior = (params.userExperienceYears || 0) >= 3 || (params.seniorityLevel || '').toLowerCase().includes('senior') || (params.seniorityLevel || '').toLowerCase().includes('lead');
   const aiTools = params.aiSubscriptions && params.aiSubscriptions.length > 0 ? params.aiSubscriptions.join(', ') : '';
 
-  // 1. Performance Summary (At least 2-3 lines written separately without repeating raw hours/overrun)
+  // Analyze description and comment depth
+  const descWords = (params.taskDescription || '').trim().split(/\s+/).filter(Boolean);
+  const isBriefDescription = descWords.length > 0 && descWords.length < 35;
+
+  const combinedComments = (params.comments || []).join(' ').trim();
+  const commentWords = combinedComments.split(/\s+/).filter(Boolean);
+  const isBriefComment = commentWords.length > 0 && commentWords.length < 35;
+
+  const checklistMarkers = [
+    /\b(done|not done|pending|completed)\b/i,
+    /-\s*(done|pending|not done)/i,
+  ];
+  const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
+
+  const descWordSet = new Set(descWords.map(w => w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const nonDescWords = commentWords.filter(w => {
+    const cleanW = w.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return cleanW.length > 0 && !descWordSet.has(cleanW);
+  });
+  const statusStopWords = new Set(['done', 'pending', 'not', 'is', 'are', 'which', 'by', 'client', 'key', 'for', 'and', 'the', 'on', 'to', '1', '2', '3', 'ok', 'yes', 'no', 'of', 'in', 'at']);
+  const technicalExplanationWords = nonDescWords.filter(w => !statusStopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const isChecklistComment = hasComments && hasChecklistMarkers && (technicalExplanationWords.length < 15);
+
+  // 1. Performance Summary
   const lines: string[] = [];
   if (params.workMatchScore >= 8.5) {
     lines.push(`Task implementation was successfully executed with clear, substantive progress updates validating the completed scope.`);
@@ -354,6 +449,10 @@ export function generateDynamicPerformanceSummary(params: {
     lines.push(`The feature scope was functionally delivered, but logged comments provide only partial technical context on implementation details.`);
     lines.push(`Given ${params.userExperienceYears || 2}+ years of engineering experience, deeper documentation on code changes, APIs, or test coverage is expected.`);
     lines.push(`Ensure future task updates clearly delineate the modules modified and verification steps performed before closing.`);
+  } else if (hasComments) {
+    lines.push(`Task activity was recorded, but the task description and progress comments provide only high-level status statements without substantive implementation depth.`);
+    lines.push(`Without granular technical context or architectural details, there is insufficient evidence to substantiate the development effort against the assigned scope.`);
+    lines.push(`For a ${params.seniorityLevel || 'developer'}, documenting pull requests, unit tests, and QA status is essential for accountability.`);
   } else {
     lines.push(`The task was closed and logged without any progress comments in Zoho Projects to substantiate the work completed.`);
     lines.push(`Without technical verification notes, there is no audit trail to justify the time spent against the assigned description.`);
@@ -363,12 +462,22 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 2. Where User Lacked (Specific gap in execution/commenting/timing)
   let whereLacked = '';
-  if (!hasComments) {
+  if (params.timeAssessmentLabel === 'NOT_LOGGED') {
+    whereLacked = 'No actual hours were logged in Zoho Projects for this task.';
+  } else if (!hasComments) {
     whereLacked = 'Lacked progress comments, PR references, or test verification notes in Zoho to confirm completion of the task description.';
-  } else if (params.workMatchScore < 7.0) {
-    whereLacked = 'Logged comments lacked specific technical specifics (modules tested, code changes, or QA status) relative to task complexity.';
+  } else if (isChecklistComment) {
+    whereLacked = 'Comments primarily mirrored the task checklist with status markers (done/pending) rather than detailing the actual technical work, code changes, or verification outcomes.';
   } else if (params.timeAssessmentLabel === 'OVERDUE') {
     whereLacked = 'Exceeded the scheduled delivery buffer without proactively noting technical roadblocks or blockers in task updates.';
+  } else if (params.workMatchScore < 7.0 && isBriefDescription && isBriefComment) {
+    whereLacked = 'Task description lacked detailed requirements and acceptance criteria, while logged comments provided only brief high-level status updates.';
+  } else if (params.workMatchScore < 7.0 && isBriefDescription) {
+    whereLacked = 'Task description was overly brief and lacked detailed specifications or acceptance criteria.';
+  } else if (params.workMatchScore < 7.0 && isBriefComment) {
+    whereLacked = 'Logged comments were brief and lacked granular technical details on implementation and test verification.';
+  } else if (params.workMatchScore < 7.0) {
+    whereLacked = 'Logged comments lacked specific technical context (modules tested, code changes, or QA status) relative to task complexity.';
   } else if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
     whereLacked = 'Completed well ahead of estimate without documenting comprehensive automated tests or edge-case handling.';
   } else if (!params.isQAReview) {
@@ -379,7 +488,11 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 3. Where to Improve (Primary recommendation)
   let whereToImprove = '';
-  if (!hasComments) {
+  if (isChecklistComment || (params.workMatchScore < 7.0 && isBriefDescription && isBriefComment)) {
+    whereToImprove = 'Document comprehensive technical requirements in task descriptions and detail the specific code changes, configurations, and verification results in task comments.';
+  } else if (params.timeAssessmentLabel === 'NOT_LOGGED') {
+    whereToImprove = 'Accurately log all work hours and timelogs in Zoho Projects alongside technical completion notes.';
+  } else if (!hasComments) {
     whereToImprove = 'Always log a brief technical wrap-up in Zoho detailing what was built, files modified, and test verification outcomes.';
   } else if (aiTools) {
     whereToImprove = `Leverage active AI subscriptions (${aiTools}) to accelerate boilerplate code, draft unit tests, and provide structured commit notes.`;
@@ -391,6 +504,18 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 4. Actionable improvement points list for user to work on
   const improvementItems: string[] = [];
+  if (isChecklistComment) {
+    improvementItems.push('Explain Work Done Beyond Status Updates: In Zoho task comments, substantiate your work with at least 40–50 words detailing specific technical implementation (what code was modified, packages upgraded, issues resolved, and verification findings) instead of repeating the task checklist with status markers like "done" or "pending".');
+  }
+  if (isBriefDescription && (isChecklistComment || params.workMatchScore < 7.0)) {
+    improvementItems.push('Define Comprehensive Task Scope: When creating or assigning tasks, document complete technical specifications, background context, and acceptance criteria (aim for at least 40–50 words of detailed scope rather than short summary bullets).');
+  }
+  if (isBriefComment && !isChecklistComment && params.workMatchScore < 7.0) {
+    improvementItems.push('Substantiate Execution in Comments: Detail specific code modifications, configurations changed, and QA verification outcomes in depth (target 40–50 words explaining the technical implementation corresponding to each task requirement).');
+  }
+  if (params.timeAssessmentLabel === 'NOT_LOGGED') {
+    improvementItems.push('Log Task Hours in Zoho: Make sure to record accurate billable or non-billable timelog entries for completed or ongoing work.');
+  }
   if (!hasComments) {
     improvementItems.push('Log Technical Progress Comments: Always post a concise comment in Zoho detailing files changed, architecture decisions, and verification steps.');
   }

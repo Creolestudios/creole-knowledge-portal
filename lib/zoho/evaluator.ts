@@ -29,7 +29,7 @@ export interface TaskEvaluationInput {
 export interface TaskEvaluationResult {
   overallScore: number; // 0 - 10
   timeScore: number; // 0 - 10
-  workMatchScore: number; // 0 - 10
+  workMatchScore?: number; // 0 - 10
   commentQualityScore: number; // 0 - 10
   complexityScore: number; // 0 - 10
   repetitionScore: number; // 0 - 10
@@ -38,7 +38,7 @@ export interface TaskEvaluationResult {
   isRepetitive: boolean;
   repetitionSimilarityPct: number;
   matchedTaskId: string | null;
-  workMatchFeedback: string;
+  workMatchFeedback?: string;
   summaryFeedback: string;
   whereLacked?: string;
   whereToImprove?: string;
@@ -138,7 +138,9 @@ function generateHeuristicEvaluation(
   const strengths: string[] = [];
   const improvements: string[] = [];
 
-  if (timeAdherence.assessmentLabel === 'UNEXPECTED_EARLY') {
+  if (timeAdherence.assessmentLabel === 'NOT_LOGGED') {
+    improvements.push('No hours were logged in Zoho Projects for this task. Ensure accurate timelogs are entered.');
+  } else if (timeAdherence.assessmentLabel === 'UNEXPECTED_EARLY') {
     improvements.push('Early completion gap noted (>10m early); refine estimation accuracy and verify complete QA testing.');
   } else if (timeAdherence.assessmentLabel === 'OVERDUE') {
     improvements.push('Task exceeded planned hours (>10m overtime); escalate blockers earlier in Zoho comments.');
@@ -245,15 +247,19 @@ Evaluate the following completed software development task. ALL SCORES MUST BE O
 EVALUATION CRITERIA:
 1. Work Justification & Comment Alignment (Score 0.0 - 10.0):
    - Compare the Task Description with the Comments logged.
-   - Do the comments justify the description and the time given for this task?
-   - Factor in the developer's seniority (${input.seniorityLevel}, ${input.userExperienceYears} yrs experience) and active AI subscriptions (${input.aiSubscriptions.length > 0 ? input.aiSubscriptions.join(', ') : 'None'}).
-   - Is the time given for the task and description justifiable with the work that got done?
-   - If comments clearly substantiate the work completed, award a high score (8.5 - 10.0).
-   - If comments are missing or superficial (e.g. just "done" or unrelated), penalize significantly (3.0 - 6.0).
+   - Substance Benchmark: Both task description and comments should provide substantive technical depth (benchmark: 40–50 words each) and both must make sense. Comments must reflect the work done regarding the description in depth (modules modified, packages upgraded, errors resolved, testing done).
+   - Vague Description & Checklist Penalization:
+     * If the user provided a vague, generic description (e.g. 'Continue AI chatbot research. Make home page section changes', or brief bullets without acceptance criteria like 'Do Server (Ubuntu) Upgrade. Do php upgrade Update 3 plugins on live Testing on live.'), OR
+     * If comments merely mirror the description checklist with status flags like 'done', 'not done', '- Done', '1 is done 2 are pending',
+     * THEN heavily penalize the Work Justification score (cap between 4.0 - 5.0 / 10.0).
+   - If comments clearly substantiate the work completed with detailed technical context, award a high score (8.5 - 10.0).
+   - If comments are missing, score is strictly 0.0.
+   - Privacy Rule for "40–50 words": DO NOT mention the word count or '40–50 words' anywhere in the performance summary, whereLacked, or workMatchFeedback. ONLY provide the 40–50 words coaching in the improvements/to-work-on points.
 2. Time Tolerance (Buffer: +5 mins overtime, -15 mins early):
    - Planned: ${input.plannedMinutes} mins. Actual: ${input.actualMinutes} mins.
    - Variance: ${timeAdherence.timeVarianceMinutes} mins (${timeAdherence.assessmentLabel}).
    - Rule:
+     * If actual time is 0 (unlogged in Zoho Projects), Time Adherence score MUST be 0.0 and labeled NOT_LOGGED.
      * If actual time is within +5 mins overtime or down to -15 mins early (e.g. 4h planned: 3h 45m to 4h 05m), score is 10/10.
      * Overrun beyond +5 mins or early completion gap beyond -15 mins negatively affects score.
      * Rule engine time score: ${timeAdherence.timeScore} / 10.
@@ -287,7 +293,10 @@ Return your evaluation strictly conforming to the requested JSON schema.
     const parsed = JSON.parse(response.text?.trim() || '{}');
     const hasComments = input.comments && input.comments.length > 0;
     const rawWorkMatch = hasComments && Number.isFinite(parsed.workMatchScore) ? parsed.workMatchScore : (hasComments ? workMatch.workMatchScore : 0);
-    const workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : 0;
+    let workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : 0;
+    if (workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {
+      workMatchScore = Math.min(workMatchScore, 5.0);
+    }
 
     const rawCommentQuality = Number.isFinite(parsed.commentQualityScore) ? parsed.commentQualityScore : workMatchScore;
     const commentQualityScore = hasComments ? Math.max(0, Math.min(10, rawCommentQuality > 10 ? rawCommentQuality / 10 : rawCommentQuality)) : 0;
@@ -307,6 +316,15 @@ Return your evaluation strictly conforming to the requested JSON schema.
     const rawImprovements = Array.isArray(parsed.improvements) ? parsed.improvements : [];
 
     // Ensure critical engineering heuristics are always surfaced in feedback
+    if (workMatch.isChecklistComment && !rawImprovements.some((i: string) => i.toLowerCase().includes('status updates') || i.toLowerCase().includes('checklist'))) {
+      rawImprovements.unshift('In Zoho task comments, substantiate your work with at least 40–50 words detailing specific technical implementation (what code was modified, packages upgraded, issues resolved, and verification findings) instead of repeating the task checklist with status markers like "done" or "pending".');
+    }
+    if (workMatch.isBriefDescription && !rawImprovements.some((i: string) => i.toLowerCase().includes('comprehensive task scope') || i.toLowerCase().includes('detailed scope'))) {
+      rawImprovements.unshift('When creating or assigning tasks, document complete technical specifications, background context, and acceptance criteria (aim for at least 40–50 words of detailed scope rather than short summary bullets).');
+    }
+    if (timeAdherence.assessmentLabel === 'NOT_LOGGED' && !rawImprovements.some((i: string) => i.toLowerCase().includes('not logged') || i.toLowerCase().includes('no hours'))) {
+      rawImprovements.unshift('No hours were logged in Zoho Projects for this task. Ensure accurate timelogs are entered.');
+    }
     if (timeAdherence.assessmentLabel === 'UNEXPECTED_EARLY' && !rawImprovements.some((i: string) => i.toLowerCase().includes('early'))) {
       rawImprovements.unshift('Early completion gap noted (>10m early); refine estimation accuracy and verify thorough testing.');
     }

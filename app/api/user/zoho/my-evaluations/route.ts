@@ -144,14 +144,19 @@ export async function GET(request: Request) {
                 };
               }
 
-              const plannedMins = Math.round((Number(task.planned_hours) || 4) * 60);
-              const actualMins = Math.round((Number(task.actual_hours) || 4) * 60);
+              const plannedHoursNum = Number(task.planned_hours);
+              const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
+              const actualHoursNum = Number(task.actual_hours);
+              const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
               const variance = actualMins - plannedMins;
 
               let timeScore = 10;
               let timeAssessmentLabel = 'ON_TIME';
 
-              if (variance > 0 && variance <= 5) {
+              if (actualMins === 0) {
+                timeScore = 0;
+                timeAssessmentLabel = 'NOT_LOGGED';
+              } else if (variance > 0 && variance <= 5) {
                 timeScore = 10;
                 timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
               } else if (variance <= 0 && variance >= -15) {
@@ -241,7 +246,7 @@ export async function GET(request: Request) {
                   zohoStatus: t.zoho_status,
                   isQAReview: (t.zoho_status || '').toLowerCase().includes('qa'),
                   plannedHours: Number(t.planned_hours) || 4,
-                  actualHours: Number(t.actual_hours) || 4,
+                  actualHours: Number.isFinite(Number(t.actual_hours)) ? Number(t.actual_hours) : 0,
                   taskDate: t.task_date,
                   zohoLink: t.zoho_link,
                   comments: (t.zoho_task_comments || []).map((c: any) => ({

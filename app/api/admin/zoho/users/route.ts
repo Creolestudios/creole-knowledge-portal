@@ -8,7 +8,7 @@ import {
   buildSampleUserSummary,
 } from '@/lib/zoho/service';
 import { getLiveZohoSummariesWithFilter } from '@/lib/zoho/sync';
-import { generateDynamicPerformanceSummary } from '@/lib/zoho/heuristics';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch } from '@/lib/zoho/heuristics';
 
 export async function GET(request: Request) {
   try {
@@ -170,14 +170,18 @@ export async function GET(request: Request) {
                   };
                 }
 
-                // Compute heuristic evaluation so evaluation is never pending
-                const plannedMins = Math.round((Number(task.planned_hours) || 4) * 60);
-                const actualMins = Math.round((Number(task.actual_hours) || 4) * 60);
+                const plannedHoursNum = Number(task.planned_hours);
+                const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
+                const actualHoursNum = Number(task.actual_hours);
+                const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
                 const variance = actualMins - plannedMins;
                 let timeScore = 10;
                 let timeAssessmentLabel = 'ON_TIME';
 
-                if (variance > 0 && variance <= 5) {
+                if (actualMins === 0) {
+                  timeScore = 0;
+                  timeAssessmentLabel = 'NOT_LOGGED';
+                } else if (variance > 0 && variance <= 5) {
                   timeScore = 10;
                   timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
                 } else if (variance <= 0 && variance >= -15) {
@@ -195,8 +199,14 @@ export async function GET(request: Request) {
                   timeAssessmentLabel = 'OVERDUE';
                 }
 
-                const hasComments = task.zoho_task_comments && task.zoho_task_comments.length > 0;
-                const workMatchScore = hasComments ? 9.2 : 0;
+                const taskCommentsList = (task.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
+                const hasComments = taskCommentsList.length > 0;
+                const workMatchResult = evaluateWorkAndCommentMatch(task.task_description, taskCommentsList, {
+                  userExperienceYears: yearsOfExp,
+                  seniorityLevel,
+                  aiSubscriptions,
+                });
+                const workMatchScore = workMatchResult.workMatchScore;
                 const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (task.is_qa_review ? 0.5 : 0)).toFixed(1));
 
                 const dyn = generateDynamicPerformanceSummary({
@@ -273,13 +283,18 @@ export async function GET(request: Request) {
                       aiModelUsed: raw.ai_model_used || 'gemini-2.5-flash',
                     };
                   }
-                  const plannedMins = Math.round((Number(t.planned_hours) || 4) * 60);
-                  const actualMins = Math.round((Number(t.actual_hours) || 4) * 60);
+                  const plannedHoursNum = Number(t.planned_hours);
+                  const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
+                  const actualHoursNum = Number(t.actual_hours);
+                  const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
                   const variance = actualMins - plannedMins;
                   let timeScore = 10;
                   let timeAssessmentLabel = 'ON_TIME';
 
-                  if (variance > 0 && variance <= 5) {
+                  if (actualMins === 0) {
+                    timeScore = 0;
+                    timeAssessmentLabel = 'NOT_LOGGED';
+                  } else if (variance > 0 && variance <= 5) {
                     timeScore = 10;
                     timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
                   } else if (variance <= 0 && variance >= -15) {
@@ -297,8 +312,14 @@ export async function GET(request: Request) {
                     timeAssessmentLabel = 'OVERDUE';
                   }
 
-                  const hasComments = t.zoho_task_comments && t.zoho_task_comments.length > 0;
-                  const workMatchScore = hasComments ? 9.2 : 0;
+                  const tCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
+                  const hasComments = tCommentsList.length > 0;
+                  const workMatchResult = evaluateWorkAndCommentMatch(t.task_description, tCommentsList, {
+                    userExperienceYears: yearsOfExp,
+                    seniorityLevel,
+                    aiSubscriptions,
+                  });
+                  const workMatchScore = workMatchResult.workMatchScore;
                   const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
 
                   const dynItem = generateDynamicPerformanceSummary({

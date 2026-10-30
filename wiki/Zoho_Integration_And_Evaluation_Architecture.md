@@ -295,11 +295,22 @@ To prevent users from repeatedly logging generic or duplicate tasks (e.g. "Bug f
 
 | Parameter | Source | Weight | Evaluation Criteria |
 | :--- | :--- | :---: | :--- |
-| **Time Adherence** | Zoho Timelogs vs Planned | 30% | +5 min overtime tolerance; 15 min early completion buffer; evaluates overruns or padding. |
-| **Task Description & Scope** | Zoho Task Details | 20% | Clarity, technical depth, clear acceptance criteria vs user seniority. |
-| **Comments & QA Handoff** | Zoho Comments | 20% | Quality of progress updates, PR links, QA steps, and status moved to "QA Review". |
+| **Time Adherence** | Zoho Timelogs vs Planned | 30% | +5 min overtime tolerance; 15 min early completion buffer; strictly 0 hrs with "Not Logged" status if no hours logged. |
+| **Task Description & Scope** | Zoho Task Details | 20% | Substantive scope benchmark (40–50 words), technical depth, acceptance criteria vs user seniority; penalizes vague descriptions (e.g. "Continue AI chatbot research"). |
+| **Comments & QA Handoff** | Zoho Comments | 20% | Substantive execution notes (40–50 words benchmark) reflecting implementation depth; penalizes checklist comments copying description with status tags ("- Done", "pending"). |
 | **Repetitive Task Check** | Project Task History | 15% | Semantic similarity check against recent tasks within the same project. |
 | **AI Tool Utilization** | User Subscriptions | 15% | Expected velocity & quality lift based on configured tools (e.g. Copilot, Cursor). |
+
+### 4.4 Description & Comment Substance Rules (Anti-Vagueness & Anti-Checklist)
+To ensure engineering accountability and genuine audit trails in Zoho Projects:
+1. **Unlogged Timelog Enforcement**:
+   - If a developer has not logged actual hours in Zoho Projects, actual spent hours strictly displays **`0 hrs`** with a neutral **`Not Logged`** badge and Time Adherence score of **`0.0 / 10`**.
+2. **Vague Description & Checklist Comment Penalization**:
+   - If the task description is vague, generic, or brief without detailed requirements (e.g. *"Do Server (Ubuntu) Upgrade. Do php upgrade Update 3 plugins on live Testing on live."*), **Work Justification** score is penalized.
+   - If task comments merely copy-paste the description and append status flags (e.g. *"- Done"*, *"pending"*, *"1 is done 2 are pending"*) without explaining the actual code changes, packages upgraded, or QA outcomes, **Work Justification** score is penalized and capped between **`4.0 – 5.0 / 10`**.
+3. **Substance Benchmark & Privacy Safeguard**:
+   - Both description and comments are expected to meet an engineering benchmark of **40–50 words** to substantiate the task scope.
+   - **Privacy Rule**: The explicit "40–50 words" requirement is never displayed in public evaluation cards, summaries, or database records; it is exclusively provided as actionable guidance in the **"Key Areas to Improve & Work On"** coaching section for the user.
 
 ---
 
@@ -447,20 +458,21 @@ app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in Dashboa
      - 🟢 **Done Tasks**: Count of tasks closed or marked complete.
      - 🟡 **In Progress**: Current work underway or awaiting QA.
      - 🔴 **Delayed Tasks**: Tasks with actual hours exceeding planned + buffer or past deadline.
-     - 🟣 **Weekly Avg Score**: Composite performance score out of 100 with total logged hours.
+     - 🟣 **Rolling Performance Index / Weekly Avg Score**: Composite performance score out of 100 with total logged hours and weekly comparison (+/- %).
 3. **Date-Grouped Task Cards**:
    - Grouped cleanly by date (e.g. `2026-10-30`).
    - Project name pill (e.g. `CKP Portal (Creole Knowledge Portal)`).
    - Clickable task title opening the task evaluation modal.
-4. **Read-Only Enforced User Experience**:
+4. **Direct Zoho Task Link (Admin Screen)**:
+   - An external icon button rendering `https://projects.zoho.com/portal/{portal_id}#taskdetail/{project_id}/{task_id}` opening in a new tab with `target="_blank" rel="noopener noreferrer"`.
+5. **Read-Only Enforced User Experience (User Portal)**:
    - Regular users cannot edit evaluation criteria or trigger administrative bulk reports.
    - In `ZohoTaskModal`, the Zoho direct deep-link ("Open in Zoho") is completely removed for users via `hideZohoLink={true}`.
-5. **Task Hours Tolerance with Buffer**:
-   - Green: `actual <= planned + 5m` and `actual >= planned - 15m`.
+6. **Task Hours Tolerance with Buffer**:
+   - Green: `actual <= planned + 5m` and `actual >= planned - 15m` (Within Buffer).
+   - Gray: `actual == 0` (Not Logged — zero hours logged in Zoho Projects).
    - Orange: `actual < planned - 15m` (Early completion gap warning).
    - Red: `actual > planned + 5m` (Buffer exceeded / Overdue).
-   - Orange: `actual < planned - 15m` (Early completion gap warning).
-   - Red: `actual > planned + 5m` (Overdue / Overtime).
 
 ---
 
@@ -468,7 +480,8 @@ app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in Dashboa
 
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/admin/zoho/sync` | Admin / Cron | Triggers manual or automated sync of tasks, timelogs & comments from Zoho. |
+| `GET`/`POST` | `/api/cron/zoho-evaluation` | Automated Cron (`CRON_SECRET`) | Daily 10:00 PM IST (`30 16 * * *` UTC) crawl: ingests all daily tasks, timelogs & comments, and executes comprehensive AI/heuristic evaluations. |
+| `POST` | `/api/admin/zoho/sync` | Admin Session | Triggers on-demand manual mid-day synchronization of tasks, timelogs & comments from Zoho. |
 | `POST` | `/api/admin/zoho/evaluate` | Admin / Worker | Runs Gemini AI evaluation on unevaluated tasks and calculates daily rollups. |
 | `GET` | `/api/admin/zoho/users` | Admin | Fetches user list with their per-day tasks, evaluation scores, and Zoho deep-links. |
 | `GET` | `/api/admin/zoho/summary` | Admin | Fetches the "Till Date Summary" metrics (done, pending, delayed, avg score). |

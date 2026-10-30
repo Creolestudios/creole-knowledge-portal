@@ -30,6 +30,7 @@ import {
   formatDateDDMMYYYY,
   formatDateYYYYMMDD,
   getDefaultWeekSelection,
+  getMockZohoData,
 } from '@/lib/zoho/service';
 
 export default function ZohoEvaluationManager() {
@@ -62,7 +63,12 @@ export default function ZohoEvaluationManager() {
       }
 
       const res = await fetch(`/api/admin/zoho/users?${params.toString()}`);
-      if (!res.ok) throw new Error('Failed to load Zoho users');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        console.warn('[ZohoEvaluationManager] Could not load users from API, falling back to mock data:', errorData?.error || res.status);
+        setUsers(getMockZohoData());
+        return;
+      }
       const data = await res.json();
       const userList: ZohoUserSummary[] = data.users || [];
       setUsers(userList);

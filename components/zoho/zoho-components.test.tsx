@@ -323,6 +323,44 @@ describe('Zoho Frontend Components', () => {
       render(<ZohoTaskModal task={mockTask} onClose={vi.fn()} hideZohoLink={true} />);
       expect(screen.queryByText('Open in Zoho')).toBeNull();
     });
+
+    it('displays 0 hrs and Not Logged tolerance status when user has not logged hours', () => {
+      const unloggedTask = {
+        ...mockTask,
+        actualHours: 0,
+        plannedHours: 8,
+      };
+      render(<ZohoTaskModal task={unloggedTask} onClose={vi.fn()} />);
+      expect(screen.getByText('0 hrs')).toBeDefined();
+      expect(screen.getByText('8 hrs')).toBeDefined();
+      expect(screen.getAllByText('Not Logged').length).toBeGreaterThan(0);
+    });
+
+    it('displays "Less Accurate" on Work Justification when comment exists but is vague or checklist status', () => {
+      const vagueTask = {
+        ...mockTask,
+        taskDescription: 'Do Server (Ubuntu) Upgrade. Do php upgrade Update 3 plugins on live Testing on live.',
+        comments: [
+          {
+            author: 'Mahek Kalola',
+            content: 'Do Server (Ubuntu) Upgrade. - Done Do php upgrade - Done Update 3 plugins on live - 1 is done 2 are pending which are depnedent on key by client. Testing on live. - Done',
+            time: '12:00 PM',
+          },
+        ],
+      };
+      render(<ZohoTaskModal task={vagueTask} onClose={vi.fn()} />);
+      expect(screen.getByText('Less Accurate')).toBeDefined();
+      expect(screen.queryByText('No Comments')).toBeNull();
+    });
+
+    it('displays "No Comments" on Work Justification when zero comments are logged', () => {
+      const noCommentsTask = {
+        ...mockTask,
+        comments: [],
+      };
+      render(<ZohoTaskModal task={noCommentsTask} onClose={vi.fn()} />);
+      expect(screen.getByText('No Comments')).toBeDefined();
+    });
   });
 
   describe('ZohoReportModal', () => {

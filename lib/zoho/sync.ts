@@ -221,16 +221,18 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           const plannedMins = parseDurationToMinutes(raw.duration || raw.work || '4:00');
           let actualMins = 0;
           if (raw.log_hours) {
-            const billable = parseFloat(raw.log_hours.billable_hours || '0');
-            const nonBillable = parseFloat(raw.log_hours.non_billable_hours || '0');
-            const totalH = billable + nonBillable;
-            if (totalH > 0) {
-              actualMins = Math.round(totalH * 60);
+            const billableMins = typeof raw.log_hours.billable_hours === 'string'
+              ? parseDurationToMinutes(raw.log_hours.billable_hours)
+              : (Number(raw.log_hours.billable_hours) || 0) * 60;
+            const nonBillableMins = typeof raw.log_hours.non_billable_hours === 'string'
+              ? parseDurationToMinutes(raw.log_hours.non_billable_hours)
+              : (Number(raw.log_hours.non_billable_hours) || 0) * 60;
+            const totalMins = billableMins + nonBillableMins;
+            if (totalMins > 0) {
+              actualMins = Math.round(totalMins);
             }
           }
-          if (actualMins === 0) {
-            actualMins = parseDurationToMinutes(raw.work || raw.duration || '4:00');
-          }
+          // Strictly keep actualMins as 0 if user has not logged hours in Zoho Projects
           const actualHours = Math.round((actualMins / 60) * 100) / 100;
           const plannedHours = Math.round((plannedMins / 60) * 100) / 100;
           totalHoursLogged += actualHours;
@@ -326,7 +328,7 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             taskDescription,
             projectName,
             plannedMinutes: plannedMins || 240,
-            actualMinutes: actualMins || 240,
+            actualMinutes: actualMins,
             zohoStatus: statusName,
             isQAReview,
             comments: taskComments.map((c) => `${c.author}: ${c.content}`),

@@ -51,6 +51,13 @@ describe('Zoho Heuristics Engine', () => {
       expect(result.assessmentLabel).toBe('OVERDUE');
       expect(result.explanation).toContain('beyond the +5m buffer');
     });
+
+    it('returns score 0 and NOT_LOGGED label when user has logged 0 minutes', () => {
+      const result = calculateTimeAdherence(480, 0);
+      expect(result.timeScore).toBe(0);
+      expect(result.assessmentLabel).toBe('NOT_LOGGED');
+      expect(result.explanation).toContain('No hours were logged');
+    });
   });
 
   describe('evaluateWorkAndCommentMatch', () => {
@@ -80,6 +87,30 @@ describe('Zoho Heuristics Engine', () => {
       expect(result.workMatchScore).toBeLessThanOrEqual(5.5);
       expect(result.alignmentLabel).toBe('WEAK_ALIGNMENT');
       expect(result.explanation).toContain('superficial');
+    });
+
+    it('penalizes score when comment simply copy-pastes description and appends "- Done" checklist markers', () => {
+      const desc = 'Do Server (Ubuntu) Upgrade. Do php upgrade Update 3 plugins on live Testing on live.';
+      const comments = [
+        'Do Server (Ubuntu) Upgrade. - Done Do php upgrade - Done Update 3 plugins on live - 1 is done 2 are pending which are depnedent on key by client. Testing on live. - Done',
+      ];
+
+      const result = evaluateWorkAndCommentMatch(desc, comments);
+      expect(result.workMatchScore).toBeLessThanOrEqual(5.0);
+      expect(result.isChecklistComment).toBe(true);
+      expect(result.isBriefDescription).toBe(true);
+      expect(result.alignmentLabel).toBe('WEAK_ALIGNMENT');
+      expect(result.explanation).toContain('mirror the task checklist with status indicators');
+    });
+
+    it('penalizes score when task description is vague and brief (e.g. "Continue AI chatbot research")', () => {
+      const desc = 'Continue AI chatbot research. Make home page section changes';
+      const comments = ['Worked on chatbot and updated home page sections'];
+
+      const result = evaluateWorkAndCommentMatch(desc, comments);
+      expect(result.workMatchScore).toBeLessThanOrEqual(5.5);
+      expect(result.isBriefDescription).toBe(true);
+      expect(result.isBriefComment).toBe(true);
     });
   });
 
@@ -180,6 +211,35 @@ describe('Zoho Heuristics Engine', () => {
 
       expect(summary.whereLacked).toContain('Lacked progress comments');
       expect(summary.whereToImprove).toContain('Always log a brief technical wrap-up in Zoho');
+    });
+
+    it('flags checklist comments and vague descriptions with actionable guidance without mentioning word counts', () => {
+      const summary = generateDynamicPerformanceSummary({
+        taskDescription: 'Do Server (Ubuntu) Upgrade. Do php upgrade Update 3 plugins on live Testing on live.',
+        comments: [
+          'Do Server (Ubuntu) Upgrade. - Done Do php upgrade - Done Update 3 plugins on live - 1 is done 2 are pending which are depnedent on key by client. Testing on live. - Done',
+        ],
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: 4.8,
+        seniorityLevel: 'Mid',
+        userExperienceYears: 3,
+      });
+
+      // Does not mention explicit word count numbers
+      expect(summary.performanceSummary).not.toMatch(/\b\d+\s*words\b/i);
+      expect(summary.whereLacked).not.toMatch(/\b\d+\s*words\b/i);
+      expect(summary.whereToImprove).not.toMatch(/\b\d+\s*words\b/i);
+
+      // Flags checklist and brief description specifically
+      expect(summary.whereLacked).toContain('status markers');
+      expect(summary.improvementItems.some((i) => i.includes('Explain Work Done Beyond Status Updates'))).toBe(true);
+      expect(summary.improvementItems.some((i) => i.includes('Define Comprehensive Task Scope'))).toBe(true);
+
+      // Instructs user on 40-50 words benchmark inside improvementItems only
+      expect(summary.improvementItems.some((i) => i.includes('40–50 words') || i.includes('40-50 words'))).toBe(true);
+      expect(summary.performanceSummary).not.toContain('40');
+      expect(summary.whereLacked).not.toContain('40');
+      expect(summary.whereToImprove).not.toContain('40');
     });
   });
 });

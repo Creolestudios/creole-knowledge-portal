@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/zoho-evaluation",
+      "schedule": "30 16 * * *"
+    },
+    {
+      "path": "/api/cron/cleanup-recordings",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

@@ -12,7 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
-import { generateDynamicPerformanceSummary } from '@/lib/zoho/heuristics';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch } from '@/lib/zoho/heuristics';
 
 interface ZohoTaskModalProps {
   task: ZohoTaskItem | null;
@@ -34,15 +34,20 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
 
   // Dynamic evaluation with buffer: up to +5m more and -15m less
   const evalData = React.useMemo(() => {
-    const plannedMins = Math.round((Number(task.plannedHours) || 4) * 60);
-    const actualMins = Math.round((Number(task.actualHours) || 4) * 60);
+    const plannedHoursNum = Number(task.plannedHours);
+    const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
+    const actualHoursNum = Number(task.actualHours);
+    const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
     const variance = actualMins - plannedMins;
 
     // Buffer: up to 5 mins more (+5m overtime) and up to 15 mins less (-15m early)
     let timeScore = 10;
     let timeAssessmentLabel = 'ON_TIME';
 
-    if (variance > 0 && variance <= 5) {
+    if (actualMins === 0) {
+      timeScore = 0;
+      timeAssessmentLabel = 'NOT_LOGGED';
+    } else if (variance > 0 && variance <= 5) {
       timeScore = 10;
       timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
     } else if (variance <= 0 && variance >= -15) {
@@ -60,8 +65,10 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       timeAssessmentLabel = 'OVERDUE';
     }
 
-    const hasComments = task.comments && task.comments.length > 0;
-    const workMatchScore = hasComments ? 9.2 : 0;
+    const hasComments = Boolean(task.comments && task.comments.length > 0);
+    const commentContents = (task.comments || []).map((c) => c.content || '');
+    const workMatchResult = evaluateWorkAndCommentMatch(task.taskDescription, commentContents);
+    const workMatchScore = workMatchResult.workMatchScore;
 
     const overallScore = Number((
       workMatchScore * 0.55 +
@@ -113,6 +120,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
     return val.toFixed(1);
   };
 
+  const hasComments = Boolean(task?.comments && task.comments.length > 0);
   const overallScore10 = evalData ? format10(evalData.overallScore) : null;
   const timeScore10 = evalData ? format10(evalData.timeScore) : null;
   const workMatchScore10 = evalData ? format10(evalData.workMatchScore || evalData.commentQualityScore) : null;
@@ -197,7 +205,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
               </div>
               <div>
                 <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Actual Spent</div>
-                <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">{task.actualHours} hrs</div>
+                <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">{Number(task.actualHours) || 0} hrs</div>
               </div>
               <div>
                 <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tolerance Status</div>
@@ -209,7 +217,10 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                     <span className="text-amber-600 dark:text-amber-400">Early Gap</span>
                   )}
                   {evalData?.timeAssessmentLabel === 'OVERDUE' && (
-                    <span className="text-amber-600 dark:text-amber-400">Buffer Exceeded</span>
+                    <span className="text-rose-600 dark:text-rose-400">Buffer Exceeded</span>
+                  )}
+                  {evalData?.timeAssessmentLabel === 'NOT_LOGGED' && (
+                    <span className="text-zinc-500 dark:text-zinc-400">Not Logged</span>
                   )}
                   {!evalData && <span className="text-zinc-400">Pending</span>}
                 </div>
@@ -297,11 +308,17 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-md truncate ${
                     evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME'
                       ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                      : evalData.timeAssessmentLabel === 'NOT_LOGGED'
+                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+                      : evalData.timeAssessmentLabel === 'UNEXPECTED_EARLY'
+                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
                   }`}
                 >
                   {evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME'
                     ? 'Within Buffer'
+                    : evalData.timeAssessmentLabel === 'NOT_LOGGED'
+                    ? 'Not Logged'
                     : evalData.timeAssessmentLabel === 'UNEXPECTED_EARLY'
                     ? 'Early Gap'
                     : 'Buffer Exceeded'}
@@ -314,25 +331,37 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                   Work Justification
                 </span>
                 <div className="my-auto">
-                  <span className={`text-2xl font-black ${Number(workMatchScore10) === 0 ? 'text-rose-600 dark:text-rose-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                  <span
+                    className={`text-2xl font-black ${
+                      !hasComments || Number(workMatchScore10) === 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : Number(workMatchScore10) < 6.0
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-purple-600 dark:text-purple-400'
+                    }`}
+                  >
                     {workMatchScore10}
                   </span>
                   <span className="text-[10px] font-normal text-zinc-400"> / 10</span>
                 </div>
                 <span
                   className={`text-[10px] font-bold px-2 py-0.5 rounded-md truncate ${
-                    Number(workMatchScore10) >= 8.5
+                    !hasComments || Number(workMatchScore10) === 0
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
+                      : Number(workMatchScore10) >= 8.5
                       ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400'
                       : Number(workMatchScore10) >= 6.0
                       ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400'
-                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
                   }`}
                 >
-                  {Number(workMatchScore10) >= 8.5
+                  {!hasComments || Number(workMatchScore10) === 0
+                    ? 'No Comments'
+                    : Number(workMatchScore10) >= 8.5
                     ? 'Justified'
                     : Number(workMatchScore10) >= 6.0
                     ? 'Partial'
-                    : 'No Comments'}
+                    : 'Less Accurate'}
                 </span>
               </div>
 

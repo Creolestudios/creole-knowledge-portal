@@ -22,6 +22,15 @@ export default function ZohoTaskCard({ task, onClick }: ZohoTaskCardProps) {
       );
     }
 
+    if (evalData.timeAssessmentLabel === 'NOT_LOGGED' || task.actualHours === 0) {
+      return (
+        <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          {task.actualHours}h / {task.plannedHours}h (Not Logged)
+        </span>
+      );
+    }
+
     if (evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME') {
       return (
         <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
