@@ -535,6 +535,10 @@ Administrators have granular, selective control over daily evaluation emails dir
    - Clicking `Send Email (X)` triggers `POST /api/admin/zoho/send-evaluation-email`, instantly evaluating and delivering today's evaluation report directly to the selected employees and their configured reporting seniors.
 3. **Cron Automatic Exclusion**:
    - The automated 10 PM IST cron job (`/api/cron/zoho-evaluation` via `runDailyZohoEvaluationCron`) strictly filters users where `dailyEmailEnabled !== false`. Users whose toggle is set to `Off` are automatically skipped during daily email distribution.
+4. **Tab State & URL Persistence on Refresh**:
+   - In **Admin Dashboard** (`/admin/dashboard`), tab navigation automatically synchronizes with browser URL query parameters (`?tab=zoho`, `?tab=ai-interviews`, `?tab=users`, `?tab=submissions`, `?tab=sources`) and `localStorage`.
+   - Refreshing the browser preserves the active tab (e.g. Zoho Evaluation or AI Interview) instead of reverting to Blog Sources.
+   - Direct friendly routes (`/admin/zoho`, `/admin/zoho-evaluation`, `/admin/ai-interview`) cleanly redirect to `/admin/dashboard?tab=...` via `next.config.ts`.
 
 ---
 

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -28,8 +28,58 @@ import ZohoEvaluationManager from '@/components/zoho/zoho-evaluation-manager';
 
 type Tab = 'sources' | 'users' | 'submissions' | 'ai-interviews' | 'zoho';
 
+function parseTab(tabStr: string | null | undefined): Tab | null {
+  if (!tabStr) return null;
+  const lower = tabStr.toLowerCase().trim();
+  if (lower === 'zoho' || lower === 'zoho-evaluation' || lower === 'zoho_evaluation') return 'zoho';
+  if (lower === 'ai-interviews' || lower === 'ai-interview' || lower === 'ai_interview' || lower === 'ai') return 'ai-interviews';
+  if (lower === 'users' || lower === 'user') return 'users';
+  if (lower === 'submissions' || lower === 'submission') return 'submissions';
+  if (lower === 'sources' || lower === 'blog-sources' || lower === 'blogs' || lower === 'blog') return 'sources';
+  return null;
+}
+
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>('sources');
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[#34c4f2]" />
+        </div>
+      }
+    >
+      <AdminDashboardContent />
+    </Suspense>
+  );
+}
+
+function AdminDashboardContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  const getInitialTab = (): Tab => {
+    let queryTab: Tab | null = null;
+    try {
+      queryTab = parseTab(searchParams?.get?.('tab'));
+    } catch {
+      // Fallback in tests or SSR
+    }
+    if (queryTab) return queryTab;
+
+    if (typeof window !== 'undefined') {
+      try {
+        const urlTab = parseTab(new URLSearchParams(window.location.search).get('tab'));
+        if (urlTab) return urlTab;
+        const storedTab = parseTab(localStorage.getItem('admin_active_tab'));
+        if (storedTab) return storedTab;
+      } catch {
+        // Ignore localStorage restrictions
+      }
+    }
+    return 'sources';
+  };
+
+  const [activeTab, setActiveTab] = useState<Tab>(getInitialTab);
   const [urls, setUrls] = useState<string[]>(['']);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -38,7 +88,33 @@ export default function AdminDashboard() {
   const [user, setUser] = useState<any>(null);
 
   const supabase = createClient();
-  const router = useRouter();
+
+  const handleTabChange = useCallback((newTab: Tab) => {
+    setActiveTab(newTab);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('admin_active_tab', newTab);
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', newTab);
+        window.history.replaceState(null, '', url.pathname + url.search);
+      } catch (err) {
+        console.warn('[AdminDashboard] Failed to update URL/localStorage tab state:', err);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const urlTab = parseTab(new URLSearchParams(window.location.search).get('tab'));
+        if (urlTab) {
+          setActiveTab(urlTab);
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const fetchSources = useCallback(async () => {
     try {
@@ -223,7 +299,7 @@ export default function AdminDashboard() {
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
           <div className="text-xs font-bold uppercase tracking-widest text-zinc-500 mb-4 px-3 mt-2">Menu</div>
           <button
-            onClick={() => setActiveTab('sources')}
+            onClick={() => handleTabChange('sources')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
               activeTab === 'sources'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
@@ -234,7 +310,7 @@ export default function AdminDashboard() {
             <span>Blog Sources</span>
           </button>
           <button
-            onClick={() => setActiveTab('users')}
+            onClick={() => handleTabChange('users')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
               activeTab === 'users'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
@@ -260,7 +336,7 @@ export default function AdminDashboard() {
             <span>Users</span>
           </button>
           <button
-            onClick={() => setActiveTab('submissions')}
+            onClick={() => handleTabChange('submissions')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'submissions'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
                 : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
@@ -270,7 +346,7 @@ export default function AdminDashboard() {
             <span>Submissions</span>
           </button>
           <button
-            onClick={() => setActiveTab('ai-interviews')}
+            onClick={() => handleTabChange('ai-interviews')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
               activeTab === 'ai-interviews'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
@@ -282,7 +358,7 @@ export default function AdminDashboard() {
           </button>
 
           <button
-            onClick={() => setActiveTab('zoho')}
+            onClick={() => handleTabChange('zoho')}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all ${
               activeTab === 'zoho'
                 ? 'bg-[#34c4f2] text-zinc-900 shadow-lg shadow-[#34c4f2]/20'
@@ -329,19 +405,19 @@ export default function AdminDashboard() {
             <h1 className="font-bold text-sm">Admin Console</h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setActiveTab('sources')} className={`p-2 rounded-md ${activeTab === 'sources' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
+            <button onClick={() => handleTabChange('sources')} className={`p-2 rounded-md ${activeTab === 'sources' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <Globe className="w-4 h-4" />
             </button>
-            <button onClick={() => setActiveTab('users')} className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
+            <button onClick={() => handleTabChange('users')} className={`p-2 rounded-md ${activeTab === 'users' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
             </button>
-            <button onClick={() => setActiveTab('submissions')} className={`p-2 rounded-md ${activeTab === 'submissions' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
+            <button onClick={() => handleTabChange('submissions')} className={`p-2 rounded-md ${activeTab === 'submissions' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <ShieldAlert className="w-4 h-4" />
             </button>
-            <button onClick={() => setActiveTab('ai-interviews')} className={`p-2 rounded-md ${activeTab === 'ai-interviews' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
+            <button onClick={() => handleTabChange('ai-interviews')} className={`p-2 rounded-md ${activeTab === 'ai-interviews' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <UploadCloud className="w-4 h-4" />
             </button>
-            <button onClick={() => setActiveTab('zoho')} className={`p-2 rounded-md ${activeTab === 'zoho' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
+            <button onClick={() => handleTabChange('zoho')} className={`p-2 rounded-md ${activeTab === 'zoho' ? 'bg-[#34c4f2] text-zinc-900' : 'text-zinc-500 dark:text-zinc-400'}`}>
               <Sparkles className="w-4 h-4" />
             </button>
             <button onClick={handleSignOut} className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white ml-2 border-l border-zinc-200 dark:border-zinc-700 pl-4">

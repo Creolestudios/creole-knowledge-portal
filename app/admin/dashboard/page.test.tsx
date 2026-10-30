@@ -5,8 +5,11 @@ import AdminDashboard from './page';
 
 const mockPush = vi.fn();
 const mockRouter = { push: mockPush };
+let mockSearchParams = new URLSearchParams();
+
 vi.mock('next/navigation', () => ({
   useRouter: () => mockRouter,
+  useSearchParams: () => mockSearchParams,
 }));
 
 vi.mock('@/components/user-management', () => ({
@@ -14,6 +17,12 @@ vi.mock('@/components/user-management', () => ({
 }));
 vi.mock('@/components/submissions-moderation', () => ({
   default: () => <div data-testid="submissions-moderation" />,
+}));
+vi.mock('@/components/ai-interview-manager', () => ({
+  default: () => <div data-testid="ai-interview-manager" />,
+}));
+vi.mock('@/components/zoho/zoho-evaluation-manager', () => ({
+  default: () => <div data-testid="zoho-evaluation-manager" />,
 }));
 
 const mockGetUser = vi.fn();
@@ -218,5 +227,51 @@ describe('AdminDashboard', () => {
     await waitFor(() => screen.getByText('Blog Sources'));
 
     expect(screen.queryByText('User Dashboard')).not.toBeInTheDocument();
+  });
+
+  it('activates Zoho Evaluation tab directly when URL has ?tab=zoho on page refresh/load', async () => {
+    mockSearchParams = new URLSearchParams('tab=zoho');
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
+    });
+    queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
+
+    render(<AdminDashboard />);
+    await waitFor(() => {
+      expect(screen.getByTestId('zoho-evaluation-manager')).toBeInTheDocument();
+    });
+  });
+
+  it('activates AI Interview tab directly when URL has ?tab=ai-interviews on page refresh/load', async () => {
+    mockSearchParams = new URLSearchParams('tab=ai-interviews');
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
+    });
+    queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
+
+    render(<AdminDashboard />);
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-interview-manager')).toBeInTheDocument();
+    });
+  });
+
+  it('updates the URL and localStorage when switching tabs', async () => {
+    mockSearchParams = new URLSearchParams();
+    const replaceStateSpy = vi.spyOn(window.history, 'replaceState');
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'admin-1', email: 'admin@creolestudios.com' } },
+    });
+    queue = [{ data: { role: 'admin' }, error: null }, { data: [], error: null }];
+
+    render(<AdminDashboard />);
+    await waitFor(() => screen.getByText('Blog Sources'));
+
+    fireEvent.click(screen.getByText('Zoho Evaluation'));
+    await waitFor(() => {
+      expect(screen.getByTestId('zoho-evaluation-manager')).toBeInTheDocument();
+    });
+
+    expect(replaceStateSpy).toHaveBeenCalledWith(null, '', expect.stringContaining('tab=zoho'));
+    expect(localStorage.getItem('admin_active_tab')).toBe('zoho');
   });
 });
