@@ -476,6 +476,9 @@ app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in Dashboa
    - Gray: `actual == 0` (Not Logged — zero hours logged in Zoho Projects).
    - Orange: `actual < planned - 15m` (Early completion gap warning).
    - Red: `actual > planned + 5m` (Buffer exceeded / Overdue).
+7. **URL Query State Persistence & Zero-Scroll Modal**:
+   - In `ZohoEvaluationManager`, navigating into an employee's detailed task view automatically synchronizes `?tab=zoho&user={email}` to browser history. Page reloads and forward/back navigation accurately retain the selected user view.
+   - `ZohoTaskModal` utilizes a compact, zero-scroll responsive layout featuring an executive KPI strip, 2-column actionable improvements checklist grid, and dedicated dismiss controls.
 
 ---
 
