@@ -262,7 +262,7 @@ export default function ZohoEvaluationManager() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      {/* 12:30 PM Daily Mail Toggle Switch */}
+                      {/* 10 PM Daily Mail Toggle Switch */}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -274,10 +274,10 @@ export default function ZohoEvaluationManager() {
                             ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100'
                             : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200'
                         }`}
-                        title={`Click to ${u.dailyEmailEnabled !== false ? 'disable' : 'enable'} daily 12:30 PM evaluation emails for ${u.email}`}
+                        title={`Click to ${u.dailyEmailEnabled !== false ? 'disable' : 'enable'} daily 10 PM evaluation emails for ${u.email}`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${u.dailyEmailEnabled !== false ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-400'}`} />
-                        <span>{u.dailyEmailEnabled !== false ? '12:30 PM Mail: Active' : '12:30 PM Mail: Off'}</span>
+                        <span>{u.dailyEmailEnabled !== false ? '10 PM Mail: Active' : '10 PM Mail: Off'}</span>
                       </button>
 
                       <button
