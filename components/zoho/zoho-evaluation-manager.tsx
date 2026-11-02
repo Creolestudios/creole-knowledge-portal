@@ -34,6 +34,17 @@ import {
   getMockZohoData,
 } from '@/lib/zoho/service';
 
+function getUrlUserEmail(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('tab')) return null;
+    return params.get('user')?.toLowerCase().trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function ZohoEvaluationManager() {
   const [users, setUsers] = useState<ZohoUserSummary[]>([]);
   const [selectedUser, setSelectedUser] = useState<ZohoUserSummary | null>(null);
@@ -69,7 +80,18 @@ export default function ZohoEvaluationManager() {
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         console.warn('[ZohoEvaluationManager] Could not load users from API, falling back to mock data:', errorData?.error || res.status);
-        setUsers(getMockZohoData());
+        const mockList = getMockZohoData();
+        setUsers(mockList);
+        const urlUserEmail = getUrlUserEmail();
+        setSelectedUser((prev) => {
+          if (prev) {
+            return mockList.find((u) => u.userId === prev.userId || u.email.toLowerCase() === prev.email.toLowerCase()) || null;
+          }
+          if (urlUserEmail) {
+            return mockList.find((u) => u.email.toLowerCase() === urlUserEmail) || null;
+          }
+          return null;
+        });
         return;
       }
       const data = await res.json();
@@ -78,10 +100,16 @@ export default function ZohoEvaluationManager() {
       if (data.isLive !== undefined) setIsLiveZoho(Boolean(data.isLive));
       if (data.lastSyncedAt) setLastSyncedAt(data.lastSyncedAt);
 
-      // Update selectedUser reference if one was active
+      // Update selectedUser reference if one was active or specified in URL
+      const urlUserEmail = getUrlUserEmail();
       setSelectedUser((prev) => {
-        if (!prev) return null;
-        return userList.find((u) => u.userId === prev.userId) || null;
+        if (prev) {
+          return userList.find((u) => u.userId === prev.userId || u.email.toLowerCase() === prev.email.toLowerCase()) || null;
+        }
+        if (urlUserEmail) {
+          return userList.find((u) => u.email.toLowerCase() === urlUserEmail) || null;
+        }
+        return null;
       });
     } catch (err) {
       console.error('[ZohoEvaluationManager] Fetch error:', err);
@@ -126,7 +154,38 @@ export default function ZohoEvaluationManager() {
   const handleSelectUser = (u: ZohoUserSummary | null) => {
     setDateSelection(getDefaultWeekSelection());
     setSelectedUser(u);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('tab')) {
+          if (u?.email) {
+            url.searchParams.set('user', u.email);
+          } else {
+            url.searchParams.delete('user');
+          }
+          window.history.replaceState(null, '', url.pathname + url.search);
+        }
+      } catch (err) {
+        console.warn('[ZohoEvaluationManager] Failed to update URL state:', err);
+      }
+    }
   };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const email = getUrlUserEmail();
+      if (!email) {
+        setSelectedUser(null);
+      } else {
+        setSelectedUser((prev) => {
+          if (prev?.email.toLowerCase() === email) return prev;
+          return users.find((u) => u.email.toLowerCase() === email) || null;
+        });
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [users]);
 
   const handleToggleDailyEmail = async (userId: string, currentEnabled: boolean) => {
     const newEnabled = !currentEnabled;
