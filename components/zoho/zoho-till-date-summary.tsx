@@ -11,6 +11,13 @@ interface TillDateSummaryProps {
   seniorityLevel?: string;
   aiSubscriptions?: string[];
   hideProfileHeader?: boolean;
+  filterSummary?: {
+    doneTasks: number;
+    pendingTasks: number;
+    delayedTasks: number;
+    weeklyAvgScore: number;
+    totalHoursLogged: number;
+  };
   summary: {
     doneTasks: number;
     pendingTasks: number;
@@ -30,17 +37,23 @@ export default function ZohoTillDateSummary({
   seniorityLevel,
   aiSubscriptions,
   hideProfileHeader = false,
+  filterSummary,
   summary,
   onOpenWeeklyReport,
   weekLabel,
 }: TillDateSummaryProps) {
-  // Normalize weekly score to 0-100 scale
-  const rawScore = summary.weeklyAvgScore;
-  const normalizedWeeklyScore = typeof rawScore === 'number' && rawScore > 0
-    ? (rawScore <= 10 ? Math.round(rawScore * 10) : Math.round(rawScore))
-    : 88;
+  // Filter summary (for left quick-metric bar representing current filter on screen)
+  const displayFilter = filterSummary || summary;
+  const rawFilterScore = displayFilter.weeklyAvgScore;
+  const normalizedFilterScore = typeof rawFilterScore === 'number' && rawFilterScore > 0
+    ? (rawFilterScore <= 10 ? Math.round(rawFilterScore * 10) : Math.round(rawFilterScore))
+    : 0;
 
-  const totalTasks = (summary.doneTasks || 0) + (summary.pendingTasks || 0) + (summary.delayedTasks || 0);
+  // Till-date score (for purple button representing continuous record up to selected date)
+  const rawTillDateScore = summary.weeklyAvgScore;
+  const normalizedTillDateScore = typeof rawTillDateScore === 'number' && rawTillDateScore > 0
+    ? (rawTillDateScore <= 10 ? Math.round(rawTillDateScore * 10) : Math.round(rawTillDateScore))
+    : 88;
 
   if (hideProfileHeader) {
     return (
@@ -50,23 +63,23 @@ export default function ZohoTillDateSummary({
           <div className="flex items-center gap-3.5 sm:gap-5 flex-wrap text-xs text-zinc-500 dark:text-zinc-400 font-medium">
             <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-              <strong className="text-zinc-900 dark:text-white font-bold">{summary.doneTasks}</strong> Done Tasks
+              <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.doneTasks}</strong> Done Tasks
             </span>
             <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
               <Clock className="w-3.5 h-3.5 text-amber-500" />
-              <strong className="text-zinc-900 dark:text-white font-bold">{summary.pendingTasks}</strong> In Progress
+              <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.pendingTasks}</strong> In Progress
             </span>
             <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
               <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-              <strong className="text-zinc-900 dark:text-white font-bold">{summary.delayedTasks}</strong> Delayed Tasks
+              <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.delayedTasks}</strong> Delayed Tasks
             </span>
             <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
               <Zap className="w-3.5 h-3.5 text-[#34c4f2]" />
-              <strong className="text-zinc-900 dark:text-white font-bold">{summary.totalHoursLogged}h</strong> Logged
+              <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.totalHoursLogged}h</strong> Logged
             </span>
             <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
               <Award className="w-3.5 h-3.5 text-purple-500" />
-              Score: <strong className="text-purple-600 dark:text-purple-400 font-bold">{normalizedWeeklyScore}</strong><span className="text-[11px] text-zinc-400">/100</span>
+              Score: <strong className="text-purple-600 dark:text-purple-400 font-bold">{normalizedFilterScore}</strong><span className="text-[11px] text-zinc-400">/100</span>
             </span>
           </div>
 
@@ -81,14 +94,14 @@ export default function ZohoTillDateSummary({
               <Sparkles className="w-4 h-4 text-purple-200 group-hover:scale-110 transition-transform shrink-0" />
               <div className="flex flex-col text-left">
                 <span className="text-[10px] text-purple-200 font-semibold uppercase tracking-wider leading-none">
-                  {weekLabel || 'Current Sprint Evaluation'}
+                  {weekLabel || 'Till-Date Evaluation'}
                 </span>
                 <span className="text-xs font-black mt-0.5">
-                  Weekly Evaluation Report
+                  Till-Date Evaluation Report (Weekly Additions)
                 </span>
               </div>
               <span className="font-black px-2 py-0.5 rounded-md bg-white/20 text-white border border-white/25 text-xs">
-                {normalizedWeeklyScore}/100
+                {normalizedTillDateScore}/100
               </span>
               <ChevronRight className="w-4 h-4 text-purple-200 group-hover:translate-x-0.5 transition-transform" />
             </button>
@@ -141,14 +154,14 @@ export default function ZohoTillDateSummary({
             <Sparkles className="w-4 h-4 text-purple-200 group-hover:scale-110 transition-transform shrink-0" />
             <div className="flex flex-col text-left">
               <span className="text-[10px] text-purple-200 font-semibold uppercase tracking-wider leading-none">
-                {weekLabel || 'Current Sprint Evaluation'}
+                {weekLabel || 'Till-Date Evaluation'}
               </span>
               <span className="text-xs font-black mt-0.5">
-                Weekly Evaluation Report
+                Till-Date Evaluation Report (Weekly Additions)
               </span>
             </div>
             <span className="font-black px-2 py-0.5 rounded-md bg-white/20 text-white border border-white/25 text-xs">
-              {normalizedWeeklyScore}/100
+              {normalizedTillDateScore}/100
             </span>
             <ChevronRight className="w-4 h-4 text-purple-200 group-hover:translate-x-0.5 transition-transform" />
           </button>
@@ -160,23 +173,23 @@ export default function ZohoTillDateSummary({
         <div className="flex items-center gap-4 flex-wrap font-medium">
           <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-            <strong className="text-zinc-900 dark:text-white font-bold">{summary.doneTasks}</strong> Done Tasks
+            <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.doneTasks}</strong> Done Tasks
           </span>
           <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
             <Clock className="w-3.5 h-3.5 text-amber-500" />
-            <strong className="text-zinc-900 dark:text-white font-bold">{summary.pendingTasks}</strong> In Progress
+            <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.pendingTasks}</strong> In Progress
           </span>
           <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
             <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-            <strong className="text-zinc-900 dark:text-white font-bold">{summary.delayedTasks}</strong> Delayed Tasks
+            <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.delayedTasks}</strong> Delayed Tasks
           </span>
           <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
             <Zap className="w-3.5 h-3.5 text-[#34c4f2]" />
-            <strong className="text-zinc-900 dark:text-white font-bold">{summary.totalHoursLogged}h</strong> Logged
+            <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.totalHoursLogged}h</strong> Logged
           </span>
           <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
             <Award className="w-3.5 h-3.5 text-purple-500" />
-            Score: <strong className="text-purple-600 dark:text-purple-400 font-bold">{normalizedWeeklyScore}</strong><span className="text-[11px] text-zinc-400">/100</span>
+            Score: <strong className="text-purple-600 dark:text-purple-400 font-bold">{normalizedFilterScore}</strong><span className="text-[11px] text-zinc-400">/100</span>
           </span>
         </div>
       </div>

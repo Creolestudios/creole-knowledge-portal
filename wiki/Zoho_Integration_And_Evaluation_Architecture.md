@@ -456,12 +456,10 @@ app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in Dashboa
 1. **Zoho-Style Filter Bar (`ZohoDateFilterPicker`)**:
    - Presets for Week (Monday-Sunday with ISO week number), Month (12-month calendar grid), and Custom Range.
    - Restricts selection of future periods to ensure integrity of evaluated work.
-2. **Till Date Summary Header (Admin & User Screen)**:
-   - Displays 4 real-time stat cards:
-     - 🟢 **Done Tasks**: Count of tasks closed or marked complete.
-     - 🟡 **In Progress**: Current work underway or awaiting QA.
-     - 🔴 **Delayed Tasks**: Tasks with actual hours exceeding planned + buffer or past deadline.
-     - 🟣 **Rolling Performance Index / Weekly Avg Score**: Composite performance score out of 100 with total logged hours and weekly comparison (+/- %).
+2. **Till-Date vs. Filter Metrics Differentiation**:
+   - **Quick-Metric Bar (On-Screen Active Filter)**: Displays the statistics strictly for the selected filter period (`filterSummary`): Done Tasks, In Progress, Delayed Tasks, Logged Hours, and Filter Score for that week or month.
+   - **Purple Button ("Till-Date Evaluation Report (Weekly Additions)")**: Displays continuous cumulative velocity metrics (`tillDateSummary`) from day one all the way up to **Today**, preserving the employee's true cumulative standing on record across all evaluated weeks, unaffected by browsing earlier historical months or date filters.
+   - **Visual Cleanliness**: Multi-segment progress bar replaced with clean verbal metrics (`Cumulative Task Progress: X / Y Tasks Done [Z% Completed]...`); all references to "Dossier" standardized to "Report".
 3. **Date-Grouped Task Cards**:
    - Grouped cleanly by date (e.g. `2026-10-30`).
    - Project name pill (e.g. `CKP Portal (Creole Knowledge Portal)`).

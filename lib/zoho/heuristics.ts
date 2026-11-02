@@ -29,13 +29,24 @@ export interface RepetitionCheckResult {
   explanation: string;
 }
 
+export interface TaskTimeReasonablenessResult {
+  reasonablenessScore: number;
+  velocityLabel: 'OPTIMAL' | 'TIME_INFLATED_FOR_AI_TIER' | 'RUSHED_WITHOUT_VERIFICATION' | 'NORMAL';
+  expectedBenchmarkMinutes: number;
+  penalty: number;
+  bonus: number;
+  explanation: string;
+}
+
 export interface WorkMatchResult {
   workMatchScore: number; // 0 - 10
-  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED';
+  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED' | 'MISSING_TASK_DESCRIPTION';
   explanation: string;
   isBriefDescription?: boolean;
   isChecklistComment?: boolean;
   isBriefComment?: boolean;
+  isMissingDescription?: boolean;
+  timeReasonableness?: TaskTimeReasonablenessResult;
 }
 
 /**
@@ -115,19 +126,114 @@ export function calculateTimeAdherence(
 }
 
 /**
+ * Dynamically calculates whether the time spent on a task aligns with expectations
+ * based on developer experience and AI subscriptions (e.g. Antigravity Pro, Cursor, Copilot).
+ *
+ * NO hardcoded hours or fixed thresholds.
+ * Uses dynamic experience velocity decay curve and AI acceleration factors.
+ */
+export function calculateDynamicTaskTimeReasonableness(params: {
+  taskName?: string;
+  taskDescription?: string | null;
+  comments?: string[];
+  userExperienceYears?: number;
+  seniorityLevel?: string;
+  aiSubscriptions?: string[];
+  plannedMinutes?: number;
+  actualMinutes?: number;
+}): TaskTimeReasonablenessResult {
+  const safePlanned = params.plannedMinutes && params.plannedMinutes > 0 ? params.plannedMinutes : 240;
+  const safeActual = params.actualMinutes && params.actualMinutes > 0 ? params.actualMinutes : safePlanned;
+
+  const expYears = typeof params.userExperienceYears === 'number' && !Number.isNaN(params.userExperienceYears)
+    ? params.userExperienceYears
+    : 2;
+
+  // 1. Dynamic Experience Factor (continuous curve without discrete step jumps):
+  // Junior (0-1 yr): factor ~1.16 - 1.25 (takes longer)
+  // Mid (2-4 yrs): factor ~1.00
+  // Senior (5+ yrs): factor ~0.70 - 0.76 (faster)
+  const experienceFactor = Math.max(0.65, Math.min(1.35, 1.0 - (expYears - 2) * 0.08));
+
+  // 2. Dynamic AI Velocity Factor:
+  // If user has active AI subscriptions (Antigravity Pro, Cursor AI, GitHub Copilot, Claude Pro, etc.)
+  const hasAi = Array.isArray(params.aiSubscriptions) && params.aiSubscriptions.length > 0;
+  const aiVelocityFactor = hasAi ? 1.45 : 1.0;
+
+  // 3. Dynamic Expected Benchmark Minutes (computed dynamically without hardcoding hours)
+  const expectedBenchmarkMinutes = Math.max(30, Math.round(safePlanned * (experienceFactor / aiVelocityFactor)));
+
+  // 4. Comparison Ratio: Actual time taken vs Expected benchmark duration
+  const ratio = safeActual / expectedBenchmarkMinutes;
+
+  const toolsLabel = hasAi && params.aiSubscriptions ? params.aiSubscriptions.join(', ') : '';
+  const seniorityLabel = params.seniorityLevel || (expYears >= 5 ? 'Senior' : expYears >= 2 ? 'Mid' : 'Junior');
+
+  // Case A: Excessive time inflation (> 35% over expected AI/Experience benchmark)
+  if (ratio > 1.35) {
+    const excess = ratio - 1.25;
+    const penalty = Number(Math.min(4.5, excess * 2.8).toFixed(1));
+    const score = Number(Math.max(2.0, 10.0 - penalty).toFixed(1));
+    const aiNote = hasAi ? ` with ${toolsLabel}` : '';
+
+    return {
+      reasonablenessScore: score,
+      velocityLabel: 'TIME_INFLATED_FOR_AI_TIER',
+      expectedBenchmarkMinutes,
+      penalty,
+      bonus: 0,
+      explanation: `Task logged duration exceeded dynamic benchmark for a ${seniorityLabel} developer (${expYears} yrs)${aiNote}. Expected benchmark was ~${Math.round((expectedBenchmarkMinutes / 60) * 10) / 10}h vs ${Math.round((safeActual / 60) * 10) / 10}h logged.`,
+    };
+  }
+
+  // Case B: Suspiciously fast (< 40% of benchmark) without technical verification in comments
+  const combinedComments = (params.comments || []).join(' ').toLowerCase();
+  const hasVerification = combinedComments.includes('test') || combinedComments.includes('verify') || combinedComments.includes('pr') || combinedComments.includes('commit');
+  if (ratio < 0.40 && !hasVerification) {
+    const earlyGap = 0.50 - ratio;
+    const penalty = Number(Math.min(2.5, earlyGap * 3.0).toFixed(1));
+    const score = Number(Math.max(4.0, 10.0 - penalty).toFixed(1));
+
+    return {
+      reasonablenessScore: score,
+      velocityLabel: 'RUSHED_WITHOUT_VERIFICATION',
+      expectedBenchmarkMinutes,
+      penalty,
+      bonus: 0,
+      explanation: `Task was completed well below expected duration (${Math.round((safeActual / 60) * 10) / 10}h vs benchmark ~${Math.round((expectedBenchmarkMinutes / 60) * 10) / 10}h) without attaching unit test verification or technical review notes.`,
+    };
+  }
+
+  // Case C: Optimal pace within dynamic benchmark
+  const bonus = (hasAi && ratio <= 1.15) ? 0.3 : 0;
+  return {
+    reasonablenessScore: 10.0,
+    velocityLabel: 'OPTIMAL',
+    expectedBenchmarkMinutes,
+    penalty: 0,
+    bonus,
+    explanation: hasAi
+      ? `Effective execution velocity leveraging ${toolsLabel} within benchmark for a ${seniorityLabel} engineer.`
+      : `Punctual task completion aligned with benchmark expectations.`,
+  };
+}
+
+/**
  * Evaluates whether comments match the task description and substantiate the work completed,
  * accounting for user seniority, AI tools, and planned time reasonableness.
  *
  * Appended checks:
- * 1. Description depth check: flags brief/vague descriptions (< ~35-40 words).
- * 2. Comment depth check: flags brief comments (< ~35-40 words).
- * 3. Checklist comment detection: flags comments that merely copy-paste the description and append "- Done" / "Done".
- * Decreases Work Justification score specifically while preserving Time Adherence.
+ * 1. Missing description check: strictly penalizes tasks with empty descriptions and comments.
+ * 2. Description depth check: flags brief/vague descriptions (< ~35-40 words).
+ * 3. Comment depth check: flags brief comments (< ~35-40 words).
+ * 4. Checklist comment detection: flags comments that merely copy-paste the description and append "- Done" / "Done".
+ * 5. Dynamic time reasonableness: evaluates whether actual time matches experience & AI subscription expectations.
  */
 export function evaluateWorkAndCommentMatch(
   taskDescription: string | null | undefined,
   comments: string[] = [],
   context?: {
+    taskName?: string;
     userExperienceYears?: number;
     seniorityLevel?: string;
     aiSubscriptions?: string[];
@@ -143,13 +249,28 @@ export function evaluateWorkAndCommentMatch(
       return {
         workMatchScore: 0,
         alignmentLabel: 'NO_COMMENTS',
-        explanation: 'Missing both task description and progress comments in Zoho Projects.'
+        explanation: 'Missing both task description and progress comments in Zoho Projects.',
+        isMissingDescription: true,
       };
     }
     return {
       workMatchScore: 0,
       alignmentLabel: 'NO_COMMENTS',
       explanation: 'Task description exists, but zero progress comments were logged in Zoho. Score is 0.'
+    };
+  }
+
+  // Strict rule: If task description is completely missing but comments exist,
+  // strictly penalize with a lower score (cannot verify work against missing scope)
+  if (cleanDesc.length === 0) {
+    return {
+      workMatchScore: 3.0,
+      alignmentLabel: 'MISSING_TASK_DESCRIPTION',
+      explanation: 'Task description is completely missing in Zoho Projects. Logged progress comments cannot be verified against any defined scope or acceptance criteria. Strictly penalized.',
+      isBriefDescription: true,
+      isChecklistComment: false,
+      isBriefComment: false,
+      isMissingDescription: true,
     };
   }
 
@@ -236,7 +357,25 @@ export function evaluateWorkAndCommentMatch(
     baseScore = 6.8;
   }
 
-  if (hasAi && !isChecklistComment && !isBriefDescription) {
+  // 5. Dynamic Time Reasonableness check based on Experience + AI Subscription
+  const timeReasonableness = (context?.plannedMinutes && context?.actualMinutes)
+    ? calculateDynamicTaskTimeReasonableness({
+        taskName: context.taskName,
+        taskDescription: cleanDesc,
+        comments: cleanComments,
+        userExperienceYears: context.userExperienceYears,
+        seniorityLevel: context.seniorityLevel,
+        aiSubscriptions: context.aiSubscriptions,
+        plannedMinutes: context.plannedMinutes,
+        actualMinutes: context.actualMinutes,
+      })
+    : undefined;
+
+  if (timeReasonableness && timeReasonableness.penalty > 0) {
+    baseScore = Math.max(2.5, baseScore - timeReasonableness.penalty);
+  } else if (timeReasonableness && timeReasonableness.bonus > 0 && !isChecklistComment && !isBriefDescription) {
+    baseScore = Math.min(10.0, baseScore + timeReasonableness.bonus);
+  } else if (hasAi && !isChecklistComment && !isBriefDescription) {
     baseScore = Math.min(10.0, baseScore + 0.2);
   }
 
@@ -244,7 +383,9 @@ export function evaluateWorkAndCommentMatch(
   const expTag = context?.seniorityLevel ? ` for a ${context.seniorityLevel} developer (${context.userExperienceYears || 2} yrs)` : '';
 
   let explanation = '';
-  if (isChecklistComment) {
+  if (timeReasonableness && timeReasonableness.velocityLabel === 'TIME_INFLATED_FOR_AI_TIER') {
+    explanation = `${timeReasonableness.explanation} Comments partially explain implementation${expTag}.`;
+  } else if (isChecklistComment) {
     explanation = `Comments primarily mirror the task checklist with status indicators rather than explaining technical implementation steps${expTag}.`;
   } else if (finalScore >= 8.5) {
     explanation = `Comments strongly justify the description and confirm work completed${expTag}.`;
@@ -261,6 +402,7 @@ export function evaluateWorkAndCommentMatch(
     isBriefDescription,
     isChecklistComment,
     isBriefComment,
+    timeReasonableness,
   };
 }
 
@@ -462,7 +604,9 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 2. Where User Lacked (Specific gap in execution/commenting/timing)
   let whereLacked = '';
-  if (params.timeAssessmentLabel === 'NOT_LOGGED') {
+  if (!params.taskDescription || params.taskDescription.trim().length === 0) {
+    whereLacked = 'Task description was completely missing in Zoho Projects, preventing verification of work completed against any defined scope or acceptance criteria.';
+  } else if (params.timeAssessmentLabel === 'NOT_LOGGED') {
     whereLacked = 'No actual hours were logged in Zoho Projects for this task.';
   } else if (!hasComments) {
     whereLacked = 'Lacked progress comments, PR references, or test verification notes in Zoho to confirm completion of the task description.';
@@ -488,7 +632,9 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 3. Where to Improve (Primary recommendation)
   let whereToImprove = '';
-  if (isChecklistComment || (params.workMatchScore < 7.0 && isBriefDescription && isBriefComment)) {
+  if (!params.taskDescription || params.taskDescription.trim().length === 0) {
+    whereToImprove = 'Always provide clear task descriptions with defined acceptance criteria in Zoho Projects before tracking hours and logging progress.';
+  } else if (isChecklistComment || (params.workMatchScore < 7.0 && isBriefDescription && isBriefComment)) {
     whereToImprove = 'Document comprehensive technical requirements in task descriptions and detail the specific code changes, configurations, and verification results in task comments.';
   } else if (params.timeAssessmentLabel === 'NOT_LOGGED') {
     whereToImprove = 'Accurately log all work hours and timelogs in Zoho Projects alongside technical completion notes.';

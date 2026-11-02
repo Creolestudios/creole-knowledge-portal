@@ -135,10 +135,13 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
       const userRole = (profile?.current_role as string) || 'Developer';
       const yearsOfExp = (profile?.years_of_experience as number) ?? 2;
       const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
-      const metaSubs = meta.ai_subscriptions as string[] | undefined;
-      const aiSubscriptions =
-        (profile?.ai_subscriptions as string[]) ||
-        (Array.isArray(metaSubs) ? metaSubs : ['GitHub Copilot']);
+      const profileSubs = Array.isArray(profile?.ai_subscriptions) && profile.ai_subscriptions.length > 0
+        ? profile.ai_subscriptions
+        : null;
+      const metaSubs = Array.isArray(meta?.ai_subscriptions) && meta.ai_subscriptions.length > 0
+        ? (meta.ai_subscriptions as string[])
+        : null;
+      const aiSubscriptions = profileSubs || metaSubs || [];
 
       // Find matching Zoho user
       const matchedZohoUser = zohoUsers.find(

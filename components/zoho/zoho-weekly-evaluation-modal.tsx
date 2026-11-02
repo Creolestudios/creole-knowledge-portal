@@ -39,11 +39,11 @@ export default function ZohoWeeklyEvaluationModal({
   const appendedPastWeeks = weeklyReports.slice(1);
 
   // Cumulative numbers that "Add On & Change" across weeks
-  const cumulativeDone = weeklyReports.reduce((sum, w) => sum + w.doneTasks, 0);
-  const cumulativePending = weeklyReports.reduce((sum, w) => sum + w.inProgressTasks, 0);
-  const cumulativeDelayed = weeklyReports.reduce((sum, w) => sum + w.delayedTasks, 0);
+  const cumulativeDone = user.tillDateSummary?.doneTasks ?? weeklyReports.reduce((sum, w) => sum + w.doneTasks, 0);
+  const cumulativePending = user.tillDateSummary?.pendingTasks ?? weeklyReports.reduce((sum, w) => sum + w.inProgressTasks, 0);
+  const cumulativeDelayed = user.tillDateSummary?.delayedTasks ?? weeklyReports.reduce((sum, w) => sum + w.delayedTasks, 0);
   const cumulativeTotal = cumulativeDone + cumulativePending + cumulativeDelayed;
-  const cumulativeHours = Math.round(weeklyReports.reduce((sum, w) => sum + w.totalActualHours, 0) * 10) / 10;
+  const cumulativeHours = user.tillDateSummary?.totalHoursLogged ?? Math.round(weeklyReports.reduce((sum, w) => sum + w.totalActualHours, 0) * 10) / 10;
   const cumulativePlannedHours = Math.round(weeklyReports.reduce((sum, w) => sum + w.totalPlannedHours, 0) * 10) / 10;
   const cumulativeDonePct = cumulativeTotal > 0 ? Math.round((cumulativeDone / cumulativeTotal) * 100) : 100;
   const cumulativePendingPct = cumulativeTotal > 0 ? Math.round((cumulativePending / cumulativeTotal) * 100) : 0;
@@ -92,7 +92,7 @@ export default function ZohoWeeklyEvaluationModal({
               Weekly Performance & Evaluation Report (Cumulative)
             </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-              Ongoing performance dossier: completed weeks add on to cumulative velocity metrics and append to this chronological audit.
+              Ongoing performance report: completed weeks add on to cumulative velocity metrics and append to this chronological audit.
             </p>
           </div>
 
@@ -238,31 +238,6 @@ export default function ZohoWeeklyEvaluationModal({
                     {cumulativeRepetitivePct}% Repetitive
                   </span>
                 </div>
-              </div>
-
-              {/* Segmented Progress Bar */}
-              <div className="w-full h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex">
-                {cumulativeDonePct > 0 && (
-                  <div
-                    style={{ width: `${cumulativeDonePct}%` }}
-                    className="bg-emerald-500 h-full transition-all duration-300"
-                    title={`${cumulativeDone} Done (${cumulativeDonePct}%)`}
-                  />
-                )}
-                {cumulativePendingPct > 0 && (
-                  <div
-                    style={{ width: `${cumulativePendingPct}%` }}
-                    className="bg-amber-400 h-full transition-all duration-300"
-                    title={`${cumulativePending} In Progress (${cumulativePendingPct}%)`}
-                  />
-                )}
-                {cumulativeDelayedPct > 0 && (
-                  <div
-                    style={{ width: `${cumulativeDelayedPct}%` }}
-                    className="bg-rose-500 h-full transition-all duration-300"
-                    title={`${cumulativeDelayed} Delayed (${cumulativeDelayedPct}%)`}
-                  />
-                )}
               </div>
             </div>
           </div>

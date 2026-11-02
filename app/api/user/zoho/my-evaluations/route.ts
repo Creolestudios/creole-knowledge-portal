@@ -135,11 +135,48 @@ export async function GET(request: Request) {
           const role = (profile?.current_role as string) || 'Developer';
           const yearsOfExp = (profile?.years_of_experience as number) ?? 2;
           const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
-          const metaSubs = meta.ai_subscriptions as string[] | undefined;
-          const aiSubscriptions = (profile?.ai_subscriptions as string[]) || (Array.isArray(metaSubs) ? metaSubs : ['GitHub Copilot']);
+          const profileSubs = Array.isArray(profile?.ai_subscriptions) && profile.ai_subscriptions.length > 0
+            ? profile.ai_subscriptions
+            : null;
+          const metaSubs = Array.isArray(meta?.ai_subscriptions) && meta.ai_subscriptions.length > 0
+            ? (meta.ai_subscriptions as string[])
+            : null;
+          const aiSubscriptions = profileSubs || metaSubs || [];
 
           // Tasks strictly within date range
           const activeTasks = dbTasks.filter((t: any) => t.task_date >= dateRange.start && t.task_date <= dateRange.end);
+
+          // Cumulative tasks up to today (true cumulative Till-Date)
+          const upToDateTasks = dbTasks;
+          let tillDateDone = 0;
+          let tillDatePending = 0;
+          let tillDateDelayed = 0;
+          let tillDateTotalHours = 0;
+          let tillDateScoreSum = 0;
+
+          for (const task of upToDateTasks) {
+            tillDateTotalHours += Number(task.actual_hours) || 0;
+            const rawEval = task.zoho_task_evaluations?.[0];
+            const taskScore = rawEval
+              ? (rawEval.overall_score > 10 ? rawEval.overall_score : rawEval.overall_score * 10)
+              : 85;
+            tillDateScoreSum += taskScore;
+
+            const plannedHoursNum = Number(task.planned_hours);
+            const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
+            const actualHoursNum = Number(task.actual_hours);
+            const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
+            const variance = actualMins - plannedMins;
+
+            const status = (task.zoho_status || '').toLowerCase();
+            if (status.includes('closed') || status.includes('complete') || status.includes('done')) {
+              tillDateDone++;
+            } else if (variance > 5) {
+              tillDateDelayed++;
+            } else {
+              tillDatePending++;
+            }
+          }
 
           let done = 0;
           let pending = 0;
@@ -349,12 +386,19 @@ export async function GET(request: Request) {
             yearsOfExperience: yearsOfExp,
             seniorityLevel,
             aiSubscriptions,
-            tillDateSummary: {
+            filterSummary: {
               doneTasks: done,
               pendingTasks: pending,
               delayedTasks: delayed,
-              weeklyAvgScore: activeTasks.length > 0 ? Math.round(scoreSum / activeTasks.length) : 88,
+              weeklyAvgScore: activeTasks.length > 0 ? Math.round(scoreSum / activeTasks.length) : 0,
               totalHoursLogged: Math.round(totalHours * 10) / 10,
+            },
+            tillDateSummary: {
+              doneTasks: tillDateDone,
+              pendingTasks: tillDatePending,
+              delayedTasks: tillDateDelayed,
+              weeklyAvgScore: upToDateTasks.length > 0 ? Math.round(tillDateScoreSum / upToDateTasks.length) : 88,
+              totalHoursLogged: Math.round(tillDateTotalHours * 10) / 10,
             },
             dailyEvaluations,
           };

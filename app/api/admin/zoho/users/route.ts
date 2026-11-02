@@ -4,6 +4,7 @@ import {
   resolveDateFilterRange,
   getMockZohoData,
   ZohoUserSummary,
+  ZohoTaskItem,
   formatUserName,
   buildSampleUserSummary,
 } from '@/lib/zoho/service';
@@ -90,6 +91,19 @@ export async function GET(request: Request) {
         console.warn('[Admin Zoho Users API] Could not fetch user_profiles:', profErr);
       }
 
+      // 2b. Fetch user mappings from zoho_user_mappings
+      let userMappings: any[] = [];
+      try {
+        const { data: mappingData, error: mapErr } = await supabaseAdmin
+          .from('zoho_user_mappings')
+          .select('*');
+        if (!mapErr && mappingData) {
+          userMappings = mappingData;
+        }
+      } catch (mErr) {
+        console.warn('[Admin Zoho Users API] Could not fetch zoho_user_mappings:', mErr);
+      }
+
       // 3. Fetch all tasks from zoho_tasks table in Supabase
       let dbTasks: any[] = [];
       try {
@@ -117,7 +131,9 @@ export async function GET(request: Request) {
 
       if (nonAdminAuthUsers.length > 0) {
         userSummaries = nonAdminAuthUsers.map((authUser) => {
-          const profile = profiles.find((p) => p.user_id === authUser.id || p.email === authUser.email);
+          const email = (authUser.email || '').toLowerCase().trim();
+          const profile = profiles.find((p) => p.user_id === authUser.id || (p.email && p.email.toLowerCase().trim() === email));
+          const mapping = userMappings.find((m) => m.user_id === authUser.id || (m.zoho_user_email && m.zoho_user_email.toLowerCase().trim() === email));
           const meta = (authUser.user_metadata as Record<string, unknown> | undefined) || {};
           const fullName = formatUserName(
             authUser.email || '',
@@ -126,8 +142,20 @@ export async function GET(request: Request) {
           const role = (profile?.current_role as string) || 'Developer';
           const yearsOfExp = (profile?.years_of_experience as number) ?? 2;
           const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
-          const metaSubs = meta.ai_subscriptions as string[] | undefined;
-          const aiSubscriptions = (profile?.ai_subscriptions as string[]) || (Array.isArray(metaSubs) ? metaSubs : ['GitHub Copilot']);
+
+          // Robust AI Subscriptions extraction from profile, user_metadata, and mapping
+          const profileSubs = Array.isArray(profile?.ai_subscriptions) && profile.ai_subscriptions.length > 0
+            ? profile.ai_subscriptions
+            : null;
+          const metaSubs = Array.isArray(meta?.ai_subscriptions) && meta.ai_subscriptions.length > 0
+            ? (meta.ai_subscriptions as string[])
+            : null;
+          const mappingSubs = Array.isArray(mapping?.ai_subscriptions) && mapping.ai_subscriptions.length > 0
+            ? (mapping.ai_subscriptions as string[])
+            : null;
+
+          const aiSubscriptions: string[] = profileSubs || metaSubs || mappingSubs || [];
+
           const metaSenior = meta.senior_emails as string[] | undefined;
           const seniorEmails = (profile?.senior_emails as string[]) || (Array.isArray(metaSenior) ? metaSenior : []);
           const metaDailyEmail = meta.daily_email_enabled as boolean | undefined;
@@ -138,255 +166,214 @@ export async function GET(request: Request) {
               ? Boolean(metaDailyEmail)
               : true;
 
-          const userDbTasks = dbTasks.filter((t) => t.user_id === authUser.id || t.user_email === authUser.email);
+          const mappedZohoEmail = (mapping?.zoho_user_email || '').toLowerCase().trim();
+          const userDbTasks = dbTasks.filter((t) => {
+            const taskEmail = (t.user_email || '').toLowerCase().trim();
+            return (t.user_id && t.user_id === authUser.id) ||
+                   (taskEmail && (taskEmail === email || taskEmail === mappedZohoEmail));
+          });
 
-          // Tasks strictly within date range
-          const activeTasks = userDbTasks.filter((t) => t.task_date >= dateRange.start && t.task_date <= dateRange.end);
+          // Helper to build a unified ZohoTaskItem with full evaluation
+          const buildTaskItemWithEvaluation = (t: any): ZohoTaskItem => {
+            const plannedMins = parseDurationToMinutes(t.planned_hours) || 240;
+            const actualMins = parseDurationToMinutes(t.actual_hours);
+            const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins);
 
-          if (activeTasks.length > 0) {
-            let done = 0;
-            let pending = 0;
-            let delayed = 0;
-            let scoreSum = 0;
-            let totalHours = 0;
+            let evalItem: any;
+            const raw = t.zoho_task_evaluations?.[0];
+            if (raw) {
+              const workMatch = raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score;
+              const overall = Number((workMatch * 0.55 + dynamicTimeAdh.timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
 
-            const daysMap = new Map<string, any[]>();
-            for (const task of activeTasks) {
-              const date = task.task_date;
-              if (!daysMap.has(date)) daysMap.set(date, []);
-              daysMap.get(date)!.push(task);
+              evalItem = {
+                overallScore: Math.min(10.0, overall),
+                timeScore: dynamicTimeAdh.timeScore,
+                workMatchScore: workMatch,
+                commentQualityScore: workMatch,
+                complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
+                repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
+                timeVarianceMinutes: dynamicTimeAdh.timeVarianceMinutes,
+                timeAssessmentLabel: dynamicTimeAdh.assessmentLabel,
+                isRepetitive: raw.is_repetitive,
+                repetitionSimilarityPct: raw.repetition_similarity_pct,
+                matchedTaskId: raw.matched_repetitive_task_id,
+                workMatchFeedback: raw.summary_feedback,
+                summaryFeedback: raw.summary_feedback,
+                strengths: raw.strengths || [],
+                improvements: raw.improvements || [],
+                aiModelUsed: raw.ai_model_used || 'gemini-2.5-flash',
+              };
+            } else {
+              const variance = dynamicTimeAdh.timeVarianceMinutes;
+              const timeScore = dynamicTimeAdh.timeScore;
+              const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
 
-              totalHours += Number(task.actual_hours) || 0;
-              const taskEval = (() => {
-                const plannedMins = parseDurationToMinutes(task.planned_hours) || 240;
-                const actualMins = parseDurationToMinutes(task.actual_hours);
-                const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins);
+              const taskCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
+              const hasComments = taskCommentsList.length > 0;
+              const workMatchResult = evaluateWorkAndCommentMatch(t.task_description, taskCommentsList, {
+                userExperienceYears: yearsOfExp,
+                seniorityLevel,
+                aiSubscriptions,
+                plannedMinutes: plannedMins,
+                actualMinutes: actualMins,
+                taskName: t.task_name,
+              });
+              const workMatchScore = workMatchResult.workMatchScore;
+              const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
 
-                const raw = task.zoho_task_evaluations?.[0];
-                if (raw) {
-                  const workMatch = raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score;
-                  const overall = Number((workMatch * 0.55 + dynamicTimeAdh.timeScore * 0.40 + (task.is_qa_review ? 0.5 : 0)).toFixed(1));
-
-                  return {
-                    overallScore: Math.min(10.0, overall),
-                    timeScore: dynamicTimeAdh.timeScore,
-                    workMatchScore: workMatch,
-                    commentQualityScore: workMatch,
-                    complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
-                    repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
-                    timeVarianceMinutes: dynamicTimeAdh.timeVarianceMinutes,
-                    timeAssessmentLabel: dynamicTimeAdh.assessmentLabel,
-                    isRepetitive: raw.is_repetitive,
-                    repetitionSimilarityPct: raw.repetition_similarity_pct,
-                    matchedTaskId: raw.matched_repetitive_task_id,
-                    workMatchFeedback: raw.summary_feedback,
-                    summaryFeedback: raw.summary_feedback,
-                    strengths: raw.strengths || [],
-                    improvements: raw.improvements || [],
-                    aiModelUsed: raw.ai_model_used || 'gemini-2.5-flash',
-                  };
-                }
-
-                const variance = dynamicTimeAdh.timeVarianceMinutes;
-                const timeScore = dynamicTimeAdh.timeScore;
-                const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
-
-                const taskCommentsList = (task.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
-                const hasComments = taskCommentsList.length > 0;
-                const workMatchResult = evaluateWorkAndCommentMatch(task.task_description, taskCommentsList, {
-                  userExperienceYears: yearsOfExp,
-                  seniorityLevel,
-                  aiSubscriptions,
-                });
-                const workMatchScore = workMatchResult.workMatchScore;
-                const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (task.is_qa_review ? 0.5 : 0)).toFixed(1));
-
-                const dyn = generateDynamicPerformanceSummary({
-                  taskDescription: task.task_description || '',
-                  comments: (task.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || ''),
-                  timeAssessmentLabel,
-                  workMatchScore,
-                  seniorityLevel,
-                  userExperienceYears: yearsOfExp,
-                  aiSubscriptions,
-                  isQAReview: task.is_qa_review,
-                });
-
-                return {
-                  overallScore: Math.min(10.0, overallScore),
-                  timeScore,
-                  workMatchScore,
-                  commentQualityScore: workMatchScore,
-                  complexityScore: 8.0,
-                  repetitionScore: 10.0,
-                  timeVarianceMinutes: variance,
-                  timeAssessmentLabel,
-                  isRepetitive: false,
-                  repetitionSimilarityPct: 0,
-                  matchedTaskId: null,
-                  workMatchFeedback: hasComments
-                    ? 'Comments directly substantiate the implementation and verify the work completed.'
-                    : 'No progress comments were logged in Zoho Projects to verify completion.',
-                  summaryFeedback: dyn.performanceSummary,
-                  whereLacked: dyn.whereLacked,
-                  whereToImprove: dyn.whereToImprove,
-                  improvementItems: dyn.improvementItems,
-                  strengths: [
-                    workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
-                    timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
-                  ],
-                  improvements: dyn.improvementItems,
-                  aiModelUsed: 'engineering-rule-engine',
-                };
-              })();
-
-              scoreSum += taskEval.overallScore;
-              if (taskEval.timeAssessmentLabel === 'OVERDUE') delayed++;
-
-              const status = (task.zoho_status || '').toLowerCase();
-              if (status === 'closed' || status === 'done' || status.includes('completed')) done++;
-              else pending++;
-            }
-
-            const dailyEvaluations = Array.from(daysMap.entries()).map(([date, tList]) => {
-              const mappedTasks = tList.map((t) => {
-                const evalItem = (() => {
-                  const plannedMins = parseDurationToMinutes(t.planned_hours) || 240;
-                  const actualMins = parseDurationToMinutes(t.actual_hours);
-                  const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins);
-
-                  const raw = t.zoho_task_evaluations?.[0];
-                  if (raw) {
-                    const workMatch = raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score;
-                    const overall = Number((workMatch * 0.55 + dynamicTimeAdh.timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
-
-                    return {
-                      overallScore: Math.min(10.0, overall),
-                      timeScore: dynamicTimeAdh.timeScore,
-                      workMatchScore: workMatch,
-                      commentQualityScore: workMatch,
-                      complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
-                      repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
-                      timeVarianceMinutes: dynamicTimeAdh.timeVarianceMinutes,
-                      timeAssessmentLabel: dynamicTimeAdh.assessmentLabel,
-                      isRepetitive: raw.is_repetitive,
-                      repetitionSimilarityPct: raw.repetition_similarity_pct,
-                      matchedTaskId: raw.matched_repetitive_task_id,
-                      workMatchFeedback: raw.summary_feedback,
-                      summaryFeedback: raw.summary_feedback,
-                      strengths: raw.strengths || [],
-                      improvements: raw.improvements || [],
-                      aiModelUsed: raw.ai_model_used || 'gemini-2.5-flash',
-                    };
-                  }
-                  const variance = dynamicTimeAdh.timeVarianceMinutes;
-                  const timeScore = dynamicTimeAdh.timeScore;
-                  const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
-
-                  const tCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
-                  const hasComments = tCommentsList.length > 0;
-                  const workMatchResult = evaluateWorkAndCommentMatch(t.task_description, tCommentsList, {
-                    userExperienceYears: yearsOfExp,
-                    seniorityLevel,
-                    aiSubscriptions,
-                  });
-                  const workMatchScore = workMatchResult.workMatchScore;
-                  const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
-
-                  const dynItem = generateDynamicPerformanceSummary({
-                    taskDescription: t.task_description || '',
-                    comments: (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || ''),
-                    timeAssessmentLabel,
-                    workMatchScore,
-                    seniorityLevel,
-                    userExperienceYears: yearsOfExp,
-                    aiSubscriptions,
-                    isQAReview: t.is_qa_review,
-                  });
-
-                  return {
-                    overallScore: Math.min(10.0, overallScore),
-                    timeScore,
-                    workMatchScore,
-                    commentQualityScore: workMatchScore,
-                    complexityScore: 8.0,
-                    repetitionScore: 10.0,
-                    timeVarianceMinutes: variance,
-                    timeAssessmentLabel,
-                    isRepetitive: false,
-                    repetitionSimilarityPct: 0,
-                    matchedTaskId: null,
-                    workMatchFeedback: hasComments
-                      ? 'Comments directly substantiate the implementation and verification of the tasks described.'
-                      : 'No progress comments were logged in Zoho Projects to verify completion.',
-                    summaryFeedback: dynItem.performanceSummary,
-                    whereLacked: dynItem.whereLacked,
-                    whereToImprove: dynItem.whereToImprove,
-                    improvementItems: dynItem.improvementItems,
-                    strengths: [
-                      workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
-                      timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
-                    ],
-                    improvements: dynItem.improvementItems,
-                    aiModelUsed: 'engineering-rule-engine',
-                  };
-                })();
-
-                return {
-                  id: t.id,
-                  zohoTaskId: t.zoho_task_id,
-                  projectId: t.zoho_project_id,
-                  projectName: t.project_name,
-                  taskName: t.task_name,
-                  taskDescription: t.task_description,
-                  zohoStatus: t.zoho_status,
-                  isQAReview: t.is_qa_review,
-                  plannedHours: Number(t.planned_hours) || 0,
-                  actualHours: Number(t.actual_hours) || 0,
-                  taskDate: t.task_date,
-                  zohoLink: t.zoho_link,
-                  comments: (t.zoho_task_comments || []).map((c: any) => ({
-                    author: c.author_name || 'Team Member',
-                    content: c.comment_content,
-                    time: c.comment_added_time || date,
-                  })),
-                  evaluation: evalItem,
-                };
+              const dyn = generateDynamicPerformanceSummary({
+                taskDescription: t.task_description || '',
+                comments: (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || ''),
+                timeAssessmentLabel,
+                workMatchScore,
+                seniorityLevel,
+                userExperienceYears: yearsOfExp,
+                aiSubscriptions,
+                isQAReview: t.is_qa_review,
               });
 
-              const dayScoreSum = mappedTasks.reduce((sum, item) => sum + (item.evaluation?.overallScore || 0), 0);
-              const dayScore = mappedTasks.length > 0
-                ? Math.round((dayScoreSum / mappedTasks.length) * 10) / 10
-                : 8.5;
-
-              return {
-                date,
-                dayScore,
-                summary: `Completed ${mappedTasks.length} task(s) on ${date}.`,
-                tasks: mappedTasks,
+              evalItem = {
+                overallScore: Math.min(10.0, overallScore),
+                timeScore,
+                workMatchScore,
+                commentQualityScore: workMatchScore,
+                complexityScore: 8.0,
+                repetitionScore: 10.0,
+                timeVarianceMinutes: variance,
+                timeAssessmentLabel,
+                isRepetitive: false,
+                repetitionSimilarityPct: 0,
+                matchedTaskId: null,
+                workMatchFeedback: hasComments
+                  ? 'Comments directly substantiate the implementation and verify the work completed.'
+                  : 'No progress comments were logged in Zoho Projects to verify completion.',
+                summaryFeedback: dyn.performanceSummary,
+                whereLacked: dyn.whereLacked,
+                whereToImprove: dyn.whereToImprove,
+                improvementItems: dyn.improvementItems,
+                strengths: [
+                  workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
+                  timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
+                ],
+                improvements: dyn.improvementItems,
+                aiModelUsed: 'engineering-rule-engine',
               };
-            });
+            }
 
             return {
-              userId: authUser.id,
-              email: authUser.email || '',
-              name: fullName,
-              role,
-              yearsOfExperience: yearsOfExp,
-              seniorityLevel,
-              aiSubscriptions,
-              seniorEmails,
-              dailyEmailEnabled,
-              tillDateSummary: {
-                doneTasks: done,
-                pendingTasks: pending,
-                delayedTasks: delayed,
-                weeklyAvgScore: activeTasks.length > 0 ? Math.min(100, Math.round((scoreSum / activeTasks.length) * 10)) : 88,
-                totalHoursLogged: Math.round(totalHours * 10) / 10,
-              },
-              dailyEvaluations,
+              id: t.id,
+              zohoTaskId: t.zoho_task_id,
+              projectId: t.zoho_project_id,
+              projectName: t.project_name,
+              taskName: t.task_name,
+              taskDescription: t.task_description,
+              zohoStatus: t.zoho_status,
+              isQAReview: t.is_qa_review,
+              plannedHours: Number(t.planned_hours) || 0,
+              actualHours: Number(t.actual_hours) || 0,
+              taskDate: t.task_date,
+              zohoLink: t.zoho_link,
+              comments: (t.zoho_task_comments || []).map((c: any) => ({
+                author: c.author_name || 'Team Member',
+                content: c.comment_content,
+                time: c.comment_added_time || t.task_date,
+              })),
+              evaluation: evalItem,
             };
+          };
+
+          // 1. All tasks from beginning of history up to today (true cumulative Till-Date)
+          const upToDateDbTasks = userDbTasks;
+          const mappedUpToDateTasks = upToDateDbTasks.map(buildTaskItemWithEvaluation);
+
+          let tillDateDone = 0;
+          let tillDatePending = 0;
+          let tillDateDelayed = 0;
+          let tillDateTotalHours = 0;
+          let tillDateScoreSum = 0;
+
+          const upToDateDaysMap = new Map<string, ZohoTaskItem[]>();
+          for (const item of mappedUpToDateTasks) {
+            const date = item.taskDate;
+            if (!upToDateDaysMap.has(date)) upToDateDaysMap.set(date, []);
+            upToDateDaysMap.get(date)!.push(item);
+
+            tillDateTotalHours += item.actualHours || 0;
+            tillDateScoreSum += item.evaluation?.overallScore || 0;
+            if (item.evaluation?.timeAssessmentLabel === 'OVERDUE') tillDateDelayed++;
+
+            const st = (item.zohoStatus || '').toLowerCase();
+            if (st === 'closed' || st === 'done' || st.includes('completed') || item.isQAReview) {
+              tillDateDone++;
+            } else {
+              tillDatePending++;
+            }
           }
+
+          const allDailyEvaluationsUpToDate = Array.from(upToDateDaysMap.entries()).map(([date, tList]) => {
+            const dayScoreSum = tList.reduce((sum, it) => sum + (it.evaluation?.overallScore || 0), 0);
+            const dayScore = tList.length > 0 ? Math.round((dayScoreSum / tList.length) * 10) / 10 : 8.5;
+            return {
+              date,
+              dayScore,
+              summary: `Completed ${tList.length} task(s) on ${date}.`,
+              tasks: tList,
+            };
+          });
+
+          // 2. Active tasks strictly within date range (e.g. current week or selected month)
+          const activeTasks = mappedUpToDateTasks.filter((t) => t.taskDate >= dateRange.start && t.taskDate <= dateRange.end);
+
+          let activeDone = 0;
+          let activePending = 0;
+          let activeDelayed = 0;
+          let activeTotalHours = 0;
+          let activeScoreSum = 0;
+
+          const activeDaysMap = new Map<string, ZohoTaskItem[]>();
+          for (const item of activeTasks) {
+            const date = item.taskDate;
+            if (!activeDaysMap.has(date)) activeDaysMap.set(date, []);
+            activeDaysMap.get(date)!.push(item);
+
+            activeTotalHours += item.actualHours || 0;
+            activeScoreSum += item.evaluation?.overallScore || 0;
+            if (item.evaluation?.timeAssessmentLabel === 'OVERDUE') activeDelayed++;
+
+            const st = (item.zohoStatus || '').toLowerCase();
+            if (st === 'closed' || st === 'done' || st.includes('completed') || item.isQAReview) {
+              activeDone++;
+            } else {
+              activePending++;
+            }
+          }
+
+          const dailyEvaluations = Array.from(activeDaysMap.entries()).map(([date, tList]) => {
+            const dayScoreSum = tList.reduce((sum, it) => sum + (it.evaluation?.overallScore || 0), 0);
+            const dayScore = tList.length > 0 ? Math.round((dayScoreSum / tList.length) * 10) / 10 : 8.5;
+            return {
+              date,
+              dayScore,
+              summary: `Completed ${tList.length} task(s) on ${date}.`,
+              tasks: tList,
+            };
+          });
+
+          const filterSummary = {
+            doneTasks: activeDone,
+            pendingTasks: activePending,
+            delayedTasks: activeDelayed,
+            weeklyAvgScore: activeTasks.length > 0 ? Math.min(100, Math.round((activeScoreSum / activeTasks.length) * 10)) : 0,
+            totalHoursLogged: Math.round(activeTotalHours * 10) / 10,
+          };
+
+          const tillDateSummary = {
+            doneTasks: tillDateDone,
+            pendingTasks: tillDatePending,
+            delayedTasks: tillDateDelayed,
+            weeklyAvgScore: mappedUpToDateTasks.length > 0 ? Math.min(100, Math.round((tillDateScoreSum / mappedUpToDateTasks.length) * 10)) : 88,
+            totalHoursLogged: Math.round(tillDateTotalHours * 10) / 10,
+          };
 
           return {
             userId: authUser.id,
@@ -398,14 +385,10 @@ export async function GET(request: Request) {
             aiSubscriptions,
             seniorEmails,
             dailyEmailEnabled,
-            tillDateSummary: {
-              doneTasks: 0,
-              pendingTasks: 0,
-              delayedTasks: 0,
-              weeklyAvgScore: 0,
-              totalHoursLogged: 0,
-            },
-            dailyEvaluations: [],
+            filterSummary,
+            tillDateSummary,
+            dailyEvaluations,
+            allDailyEvaluationsUpToDate,
           };
         });
       } else {

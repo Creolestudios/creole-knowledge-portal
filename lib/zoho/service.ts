@@ -23,6 +23,13 @@ export interface ZohoUserSummary {
   aiSubscriptions: string[];
   seniorEmails?: string[];
   dailyEmailEnabled?: boolean;
+  filterSummary?: {
+    doneTasks: number;
+    pendingTasks: number;
+    delayedTasks: number;
+    weeklyAvgScore: number;
+    totalHoursLogged: number;
+  };
   tillDateSummary: {
     doneTasks: number;
     pendingTasks: number;
@@ -31,6 +38,12 @@ export interface ZohoUserSummary {
     totalHoursLogged: number;
   };
   dailyEvaluations: {
+    date: string;
+    dayScore: number;
+    summary: string;
+    tasks: ZohoTaskItem[];
+  }[];
+  allDailyEvaluationsUpToDate?: {
     date: string;
     dayScore: number;
     summary: string;
@@ -216,12 +229,8 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
   const currentWeekNum = getISOWeekNumber(now);
   const currentYear = now.getFullYear();
 
-  const allTasks: ZohoTaskItem[] = (user.dailyEvaluations || []).flatMap((d) => d.tasks || []);
+  const allTasks: ZohoTaskItem[] = (user.allDailyEvaluationsUpToDate || user.dailyEvaluations || []).flatMap((d) => d.tasks || []);
   const weekMap = new Map<string, { weekNumber: number; year: number; tasks: ZohoTaskItem[] }>();
-
-  // Ensure current week exists
-  const currentKey = `${currentYear}-W${currentWeekNum}`;
-  weekMap.set(currentKey, { weekNumber: currentWeekNum, year: currentYear, tasks: [] });
 
   for (const t of allTasks) {
     const tDate = t.taskDate ? new Date(t.taskDate) : now;
@@ -234,17 +243,21 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
     weekMap.get(key)!.tasks.push(t);
   }
 
-  // Include previous week for ongoing timeline continuity if only 1 week exists
-  if (weekMap.size === 1) {
-    const prevWeekNum = currentWeekNum > 1 ? currentWeekNum - 1 : 52;
-    const prevYear = currentWeekNum > 1 ? currentYear : currentYear - 1;
-    const prevKey = `${prevYear}-W${prevWeekNum}`;
-    weekMap.set(prevKey, { weekNumber: prevWeekNum, year: prevYear, tasks: [] });
+  // If there are no tasks across any weeks, ensure at least the current week is present with 0 tasks
+  if (weekMap.size === 0) {
+    const currentKey = `${currentYear}-W${currentWeekNum}`;
+    weekMap.set(currentKey, { weekNumber: currentWeekNum, year: currentYear, tasks: [] });
   }
 
   const reports: WeeklyEvaluationReportItem[] = [];
 
-  for (const [, entry] of weekMap.entries()) {
+  // Sort weeks chronologically descending (newest week first)
+  const sortedEntries = Array.from(weekMap.entries()).sort((a, b) => {
+    if (a[1].year !== b[1].year) return b[1].year - a[1].year;
+    return b[1].weekNumber - a[1].weekNumber;
+  });
+
+  for (const [, entry] of sortedEntries) {
     const isCurrentWeek = entry.weekNumber === currentWeekNum && entry.year === currentYear;
     const bounds = getIsoWeekBoundaries(entry.year, entry.weekNumber);
 
@@ -279,21 +292,13 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
           repetitiveCount++;
         }
       }
-    } else if (isCurrentWeek && user.tillDateSummary) {
-      done = user.tillDateSummary.doneTasks || 0;
-      pending = user.tillDateSummary.pendingTasks || 0;
-      delayed = user.tillDateSummary.delayedTasks || 0;
-      actualHours = user.tillDateSummary.totalHoursLogged || 0;
-      plannedHours = Math.max(actualHours, (done + pending + delayed) * 4);
-      const weeklyScore = user.tillDateSummary.weeklyAvgScore > 10 ? user.tillDateSummary.weeklyAvgScore : user.tillDateSummary.weeklyAvgScore * 10;
-      scoreSum = weeklyScore * Math.max(1, (done + pending + delayed));
     } else {
-      done = Math.max(2, Math.round((user.tillDateSummary?.doneTasks || 4) * 0.7));
-      pending = 1;
+      done = 0;
+      pending = 0;
       delayed = 0;
-      actualHours = 32.5;
-      plannedHours = 34.0;
-      scoreSum = 86 * 3;
+      actualHours = 0;
+      plannedHours = 0;
+      scoreSum = 0;
     }
 
     const totalTasks = done + pending + delayed;

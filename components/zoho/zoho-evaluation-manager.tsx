@@ -327,9 +327,17 @@ export default function ZohoEvaluationManager() {
                         >
                           {u.email}
                         </button>
-                        {u.name && (
-                          <p className="text-[11px] text-zinc-400">{u.name} · {u.role || 'Developer'}</p>
-                        )}
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {u.name && (
+                            <p className="text-[11px] text-zinc-400">{u.name} · {u.role || 'Developer'}</p>
+                          )}
+                          {u.aiSubscriptions && u.aiSubscriptions.length > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                              <Bot className="w-3 h-3" />
+                              {u.aiSubscriptions.join(', ')}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -500,9 +508,10 @@ export default function ZohoEvaluationManager() {
               yearsOfExperience={selectedUser.yearsOfExperience}
               seniorityLevel={selectedUser.seniorityLevel}
               aiSubscriptions={selectedUser.aiSubscriptions}
+              filterSummary={selectedUser.filterSummary}
               summary={selectedUser.tillDateSummary}
               onOpenWeeklyReport={() => setShowWeeklyReport(true)}
-              weekLabel={getDefaultWeekSelection().label.toUpperCase()}
+              weekLabel="TILL DATE (UP TO TODAY)"
             />
           </div>
 

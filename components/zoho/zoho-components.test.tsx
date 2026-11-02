@@ -13,7 +13,7 @@ import ZohoWeeklyEvaluationModal from './zoho-weekly-evaluation-modal';
 import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
 import ZohoReportModal from './zoho-report-modal';
 import ZohoEvaluationManager from './zoho-evaluation-manager';
-import { ZohoTaskItem, getMockZohoData, buildWeeklyPerformanceReports } from '@/lib/zoho/service';
+import { ZohoTaskItem, ZohoUserSummary, getMockZohoData, buildWeeklyPerformanceReports } from '@/lib/zoho/service';
 
 describe('Zoho Frontend Components', () => {
   describe('ZohoFilterBar', () => {
@@ -212,6 +212,50 @@ describe('Zoho Frontend Components', () => {
       expect(screen.getByText('89')).toBeDefined();
       expect(screen.getByText('GitHub Copilot')).toBeDefined();
       expect(screen.queryByText('View Full Weekly Audit & Appended History')).toBeNull();
+    });
+
+    it('renders separate filter metrics on the left bar and till-date score on the purple button without the word Dossier', () => {
+      const onOpenWeeklyReport = vi.fn();
+      render(
+        <ZohoTillDateSummary
+          hideProfileHeader={true}
+          userName="Srushti Amin"
+          userEmail="srushti.amin@creolestudios.com"
+          role="Junior developer"
+          yearsOfExperience={1}
+          seniorityLevel="Junior"
+          aiSubscriptions={['Antigravity Pro']}
+          filterSummary={{
+            doneTasks: 19,
+            pendingTasks: 0,
+            delayedTasks: 9,
+            weeklyAvgScore: 38,
+            totalHoursLogged: 156.8,
+          }}
+          summary={{
+            doneTasks: 38,
+            pendingTasks: 0,
+            delayedTasks: 9,
+            weeklyAvgScore: 72,
+            totalHoursLogged: 320.0,
+          }}
+          onOpenWeeklyReport={onOpenWeeklyReport}
+          weekLabel="RECORD UP TO SEP 2026"
+        />
+      );
+
+      // Left quick-metric bar shows filter period metrics
+      expect(screen.getByText('19')).toBeDefined();
+      expect(screen.getByText('156.8h')).toBeDefined();
+      expect(screen.getByText('38')).toBeDefined(); // filter score
+
+      // Right purple button displays Till-Date Evaluation Report (without word Dossier) and till-date score
+      expect(screen.getByText('Till-Date Evaluation Report (Weekly Additions)')).toBeDefined();
+      expect(screen.getByText('72/100')).toBeDefined(); // cumulative till-date score
+      expect(screen.queryByText(/Dossier/i)).toBeNull();
+
+      fireEvent.click(screen.getByText('Till-Date Evaluation Report (Weekly Additions)'));
+      expect(onOpenWeeklyReport).toHaveBeenCalled();
     });
   });
 
@@ -879,12 +923,74 @@ describe('Zoho Frontend Components', () => {
       expect(screen.getAllByText('Overall Score').length).toBeGreaterThan(0);
       expect(screen.getByText(/Task Progress:/i)).toBeDefined();
       expect(screen.getAllByText(/Repetitive/i).length).toBeGreaterThan(0);
+      expect(screen.queryByText(/Dossier/i)).toBeNull();
+      // Ensure visual multi-segment progress bar div is removed (only verbal info remains)
+      expect(document.querySelector('.w-full.h-2.rounded-full')).toBeNull();
       expect(screen.getByText('CURRENT WEEK')).toBeDefined();
       expect(screen.getByText(/Executive Performance Summary/i)).toBeDefined();
       expect(screen.getByText('Close Weekly Report')).toBeDefined();
 
       fireEvent.click(screen.getByText('Close Weekly Report'));
       expect(onClose).toHaveBeenCalled();
+    });
+
+    it('accurately displays 1 in progress task and 1 week on record when user has only 1 active task', () => {
+      const singleTaskUser: ZohoUserSummary = {
+        userId: 'u-single',
+        email: 'srushti.amin@creolestudios.com',
+        name: 'Srushti Amin',
+        role: 'Junior developer',
+        yearsOfExperience: 1,
+        seniorityLevel: 'Junior',
+        aiSubscriptions: ['Antigravity Pro'],
+        tillDateSummary: {
+          doneTasks: 0,
+          pendingTasks: 1,
+          delayedTasks: 0,
+          weeklyAvgScore: 20,
+          totalHoursLogged: 1.6,
+        },
+        dailyEvaluations: [
+          {
+            date: '2026-11-02',
+            dayScore: 2.0,
+            summary: 'Completed 1 task on 2026-11-02.',
+            tasks: [
+              {
+                id: 't1',
+                zohoTaskId: 'zt1',
+                projectId: 'p1',
+                projectName: 'CKP Portal',
+                taskName: 'UI, Routing & Zoho Optimization',
+                taskDescription: 'Bug fixes',
+                zohoStatus: 'In Progress',
+                isQAReview: false,
+                plannedHours: 4,
+                actualHours: 1.6,
+                taskDate: '2026-11-02',
+                zohoLink: '',
+                comments: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      render(
+        <ZohoWeeklyEvaluationModal
+          user={singleTaskUser}
+          onClose={vi.fn()}
+        />
+      );
+
+      expect(screen.getByText('1 Week on Record')).toBeDefined();
+      expect(screen.getByText('Cumulative Performance Scorecard (Add-On Totals)')).toBeDefined();
+      const inProgressCard = screen.getAllByText('In Progress')[0].parentElement?.parentElement;
+      expect(inProgressCard?.textContent).toContain('1');
+      const doneCard = screen.getAllByText('Done Tasks')[0].parentElement?.parentElement;
+      expect(doneCard?.textContent).toContain('0');
+      const hoursCard = screen.getAllByText('Logged Hours')[0].parentElement?.parentElement;
+      expect(hoursCard?.textContent).toContain('1.6h');
     });
   });
 });

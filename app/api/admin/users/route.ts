@@ -30,6 +30,12 @@ export async function GET() {
             : metaDailyEmail !== undefined
             ? Boolean(metaDailyEmail)
             : true;
+        const profileSubs = Array.isArray(profile.ai_subscriptions) && profile.ai_subscriptions.length > 0
+          ? profile.ai_subscriptions
+          : null;
+        const metaSubs = Array.isArray(metaSubscriptions) && metaSubscriptions.length > 0
+          ? metaSubscriptions
+          : null;
         return {
           user_id: authUser.id,
           email: authUser.email,
@@ -40,7 +46,7 @@ export async function GET() {
           primary_tech_stack: profile.primary_tech_stack || [],
           secondary_tech_stack: profile.secondary_tech_stack || [],
           future_interests: profile.future_interests || '',
-          ai_subscriptions: profile.ai_subscriptions || (Array.isArray(metaSubscriptions) ? metaSubscriptions : []),
+          ai_subscriptions: profileSubs || metaSubs || [],
           senior_emails: profile.senior_emails || (Array.isArray(metaSeniorEmails) ? metaSeniorEmails : []),
           daily_email_enabled: dailyEmailEnabled,
           updated_at: profile.updated_at || authUser.updated_at,

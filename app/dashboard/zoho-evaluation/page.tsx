@@ -152,9 +152,10 @@ function MyZohoEvaluationContent() {
               yearsOfExperience={data.yearsOfExperience}
               seniorityLevel={data.seniorityLevel}
               aiSubscriptions={data.aiSubscriptions}
+              filterSummary={data.filterSummary}
               summary={data.tillDateSummary}
               onOpenWeeklyReport={() => setShowWeeklyReport(true)}
-              weekLabel={dateSelection.label}
+              weekLabel="TILL DATE (UP TO TODAY)"
             />
 
             {/* Date Picker Filter Bar above user tasks - Matches image screenshot */}

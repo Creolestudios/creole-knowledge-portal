@@ -113,6 +113,59 @@ describe('Zoho Heuristics Engine', () => {
       expect(result.isBriefDescription).toBe(true);
       expect(result.isBriefComment).toBe(true);
     });
+
+    it('strictly penalizes task score (capped at 3.0/10) when description is completely missing but comments exist', () => {
+      const desc = '';
+      const comments = [
+        'Implemented the feature and resolved database query bottlenecks. All unit tests passing cleanly.',
+      ];
+
+      const result = evaluateWorkAndCommentMatch(desc, comments);
+      expect(result.workMatchScore).toBe(3.0);
+      expect(result.alignmentLabel).toBe('MISSING_TASK_DESCRIPTION');
+      expect(result.isMissingDescription).toBe(true);
+      expect(result.explanation).toContain('Task description is completely missing in Zoho Projects');
+    });
+
+    it('dynamically penalizes score when a Senior with Antigravity Pro logs inflated time', () => {
+      const desc = 'Add form validation to 3 inputs on profile settings';
+      const comments = ['Added regex validation for phone and zip code. Form updates properly.'];
+
+      // Planned 4h (240m), Senior with Antigravity Pro benchmark is ~1.2h (72m), but logged 4.5h (270m)
+      const result = evaluateWorkAndCommentMatch(desc, comments, {
+        userExperienceYears: 6,
+        seniorityLevel: 'Senior',
+        aiSubscriptions: ['Antigravity Pro'],
+        plannedMinutes: 240,
+        actualMinutes: 270,
+      });
+
+      expect(result.timeReasonableness).toBeDefined();
+      expect(result.timeReasonableness?.velocityLabel).toBe('TIME_INFLATED_FOR_AI_TIER');
+      expect(result.timeReasonableness?.penalty).toBeGreaterThan(0);
+      expect(result.workMatchScore).toBeLessThan(7.0);
+    });
+
+    it('awards velocity bonus when a Junior with Antigravity Pro delivers within benchmark', () => {
+      const desc = 'Build responsive user profile card with badge components';
+      const comments = [
+        'Implemented card layout with Antigravity Pro assistance. Added Tailwind classes and wrote 4 unit tests.',
+      ];
+
+      // Planned 4h (240m), Junior with Antigravity Pro benchmark is ~3.5h, logged 3.2h (192m)
+      const result = evaluateWorkAndCommentMatch(desc, comments, {
+        userExperienceYears: 1,
+        seniorityLevel: 'Junior',
+        aiSubscriptions: ['Antigravity Pro'],
+        plannedMinutes: 240,
+        actualMinutes: 192,
+      });
+
+      expect(result.timeReasonableness).toBeDefined();
+      expect(result.timeReasonableness?.velocityLabel).toBe('OPTIMAL');
+      expect(result.timeReasonableness?.bonus).toBeGreaterThan(0);
+      expect(result.workMatchScore).toBeGreaterThanOrEqual(9.0);
+    });
   });
 
   describe('detectRepetitiveTask', () => {
