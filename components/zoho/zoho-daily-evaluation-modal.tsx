@@ -39,6 +39,24 @@ export default function ZohoDailyEvaluationModal({
   onSelectTask,
   hideZohoLink = false,
 }: ZohoDailyEvaluationModalProps) {
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    const originalBodyOverflow = document.body.style.overflow;
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = originalBodyOverflow;
+      document.documentElement.style.overflow = originalHtmlOverflow;
+    };
+  }, [onClose]);
+
   // Aggregate daily time statistics
   const totalPlannedMins = day.tasks.reduce(
     (acc, t) => acc + (parseDurationToMinutes(t.plannedHours) || 240),
@@ -132,7 +150,7 @@ export default function ZohoDailyEvaluationModal({
       role="dialog"
       aria-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto cursor-pointer animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 sm:p-6 overflow-y-auto overscroll-contain cursor-pointer animate-in fade-in duration-150"
     >
       <div
         onClick={(e) => e.stopPropagation()}

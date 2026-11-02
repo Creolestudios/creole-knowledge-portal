@@ -410,6 +410,21 @@ describe('Zoho Frontend Components', () => {
       render(<ZohoTaskModal task={noCommentsTask} onClose={vi.fn()} />);
       expect(screen.getByText('No Comments')).toBeDefined();
     });
+
+    it('locks body overflow to hidden when modal mounts and restores it upon unmount', () => {
+      document.body.style.overflow = 'visible';
+      document.documentElement.style.overflow = 'visible';
+
+      const { unmount } = render(<ZohoTaskModal task={mockTask} onClose={vi.fn()} />);
+
+      expect(document.body.style.overflow).toBe('hidden');
+      expect(document.documentElement.style.overflow).toBe('hidden');
+
+      unmount();
+
+      expect(document.body.style.overflow).toBe('visible');
+      expect(document.documentElement.style.overflow).toBe('visible');
+    });
   });
 
   describe('ZohoReportModal', () => {

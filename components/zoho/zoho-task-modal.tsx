@@ -43,7 +43,18 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    // Prevent background scrolling while modal is open
+    const originalBodyOverflow = document.body.style.overflow;
+    const originalHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = originalBodyOverflow;
+      document.documentElement.style.overflow = originalHtmlOverflow;
+    };
   }, [task, onClose]);
 
   // Dynamic evaluation with buffer: up to +5m more and -15m less
@@ -147,11 +158,11 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       role="dialog"
       aria-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 cursor-pointer"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/60 backdrop-blur-xs overscroll-contain animate-in fade-in duration-200 cursor-pointer"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white dark:bg-[#14161b] border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-5xl xl:max-w-6xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl cursor-default"
+        className="bg-white dark:bg-[#14161b] border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-5xl xl:max-w-6xl max-h-[92vh] overflow-hidden flex flex-col shadow-2xl overscroll-contain cursor-default"
       >
         {/* Modal Header */}
         <div className="px-5 py-3.5 border-b border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-4 bg-white/95 dark:bg-[#14161b]/95 backdrop-blur-xs z-10 shrink-0">
@@ -202,7 +213,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
         </div>
 
         {/* Modal Body: Two Columns (Scrollable on small viewports, zero scroll on desktop) */}
-        <div className="p-5 overflow-y-auto max-h-[calc(92vh-100px)] grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div className="p-5 overflow-y-auto overscroll-contain max-h-[calc(92vh-100px)] grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
           {/* ======================================================== */}
           {/* LEFT COLUMN: Current Task & Logged Data                 */}
           {/* ======================================================== */}
@@ -234,7 +245,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
               <h4 className="text-[10.5px] font-bold uppercase tracking-wider text-zinc-400">
                 Task Description
               </h4>
-              <div className="p-3 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-200/70 dark:border-zinc-800/80 text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-line max-h-28 overflow-y-auto">
+              <div className="p-3 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-200/70 dark:border-zinc-800/80 text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-line max-h-28 overflow-y-auto overscroll-contain">
                 {task.taskDescription || 'No description provided in Zoho Projects.'}
               </div>
             </div>
@@ -252,7 +263,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
               </h4>
 
               {task.comments && task.comments.length > 0 ? (
-                <div className="space-y-2 max-h-28 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-28 overflow-y-auto overscroll-contain pr-1">
                   {task.comments.map((comment, index) => (
                     <div
                       key={index}
@@ -368,7 +379,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
 
               {/* Evaluation summary */}
               <div className="p-2.5 rounded-lg bg-white/80 dark:bg-zinc-800/80 border border-zinc-200/60 dark:border-zinc-700/50 shadow-2xs">
-                <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed font-normal max-h-24 overflow-y-auto">
+                <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed font-normal max-h-24 overflow-y-auto overscroll-contain">
                   {evalData.summaryFeedback}
                 </p>
               </div>
