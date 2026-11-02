@@ -7,6 +7,7 @@ import {
   stripHtml,
   buildZohoTaskDeepLink,
   parseDurationToMinutes,
+  extractPlannedMinutesFromTask,
 } from './client';
 import {
   evaluateZohoTask,
@@ -218,7 +219,7 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             continue;
           }
 
-          const plannedMins = parseDurationToMinutes(raw.duration || raw.work || '4:00');
+          const plannedMins = extractPlannedMinutesFromTask(raw.duration, raw.work, raw.name);
           let actualMins = 0;
           if (raw.log_hours) {
             const billableMins = parseDurationToMinutes(raw.log_hours.billable_hours);

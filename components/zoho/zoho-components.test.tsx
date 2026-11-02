@@ -692,6 +692,39 @@ describe('Zoho Frontend Components', () => {
         expect(screen.queryByText('Loading Tasks & Evaluations...')).toBeNull();
       });
     });
+
+    it('restores selected user view from URL query parameter on initial load or refresh', async () => {
+      window.history.replaceState(null, '', '/admin/dashboard?tab=zoho&user=jayesh.patel%40creolestudios.com');
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/admin/zoho/users')) {
+          return {
+            ok: true,
+            json: async () => ({ users: mockUsers }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      render(<ZohoEvaluationManager />);
+
+      // Should automatically mount in User Detail view for Jayesh Patel
+      await waitFor(() => {
+        expect(screen.getByLabelText('Back to All Users')).toBeDefined();
+        expect(screen.getByText('(jayesh.patel@creolestudios.com)')).toBeDefined();
+      });
+
+      // Clicking Back to All Users should clear the user query parameter
+      fireEvent.click(screen.getByLabelText('Back to All Users'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Zoho Users')).toBeDefined();
+      });
+      expect(window.location.search).not.toContain('user=');
+
+      // Cleanup URL
+      window.history.replaceState(null, '', '/');
+    });
   });
 
   describe('formatZohoDurationToClock', () => {

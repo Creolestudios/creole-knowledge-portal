@@ -476,6 +476,9 @@ app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in Dashboa
    - Gray: `actual == 0` (Not Logged — zero hours logged in Zoho Projects).
    - Orange: `actual < planned - 15m` (Early completion gap warning).
    - Red: `actual > planned + 5m` (Buffer exceeded / Overdue).
+7. **URL Query State Persistence & Zero-Scroll Modal**:
+   - In `ZohoEvaluationManager`, navigating into an employee's detailed task view automatically synchronizes `?tab=zoho&user={email}` to browser history. Page reloads and forward/back navigation accurately retain the selected user view.
+   - `ZohoTaskModal` utilizes a compact, zero-scroll responsive layout featuring an executive KPI strip, 2-column actionable improvements checklist grid, and dedicated dismiss controls.
 
 ---
 
@@ -503,7 +506,8 @@ To guarantee zero latency and prevent hitting Zoho Projects API rolling rate lim
 
 ### 7.2 Monday-to-Friday 10 PM Evaluation Email Reports & Reporting Seniors Notification Pipeline
 
-Following the Monday-to-Friday 10:00 PM IST crawl (`30 16 * * 1-5` UTC, skipping Saturday and Sunday), comprehensive task performance analysis emails are dispatched to each evaluated employee and their configured reporting seniors:
+Following the Monday-to-Friday 10:00 PM IST crawl (`30 16 * * 1-5` UTC, skipping Saturday and Sunday), comprehensive task performance analysis emails are dispatched to each evaluated employee, their configured reporting seniors, and an executive consolidated team digest is delivered to administrators and managers:
+
 1. **Reporting Senior Configuration**:
    - In Admin Portal (`/admin/dashboard` → Users tab), administrators can configure multiple senior email addresses (`senior_emails`) for any employee.
    - Senior emails are persisted in both `user_profiles.senior_emails` and `auth.users.user_metadata.senior_emails` for schema resilience.
@@ -511,21 +515,43 @@ Following the Monday-to-Friday 10:00 PM IST crawl (`30 16 * * 1-5` UTC, skipping
    - **Primary**: Google Workspace / Gmail SMTP via `nodemailer` (zero DNS configuration, 500-2,000 free emails/day).
    - **Secondary / Fallback**: Resend REST API (`RESEND_API_KEY`).
    - **Strict Day Filtering**: Only tasks scheduled/assigned strictly on that evaluation target date (`task_date === targetDate`) are processed and emailed.
-3. **Exact Admin Panel Parity in Email Reports**:
-   - **Header**: Employee Name, Date, Daily Score (0-10 scale with color-coded badges).
-   - **Today's Overall Analysis**: Total tasks, Completed, In Progress, Delayed, QA Review, Planned vs. Actual logged hours, and Executive Performance Summary.
-   - **Rich Task-Wise Analysis**:
-     - Task name, Project badge, and Status pill.
-     - Hours planned vs. actual spent (strictly keeping 0.0h if unlogged).
-     - Time Adherence tolerance badge (`Within Buffer`, `Early Gap`, `Buffer Exceeded`, `Not Logged`) and score (/10).
-     - Work Justification & comment alignment score (/10).
-     - Task Score (/10).
-     - Evaluative Performance Summary (2-3 lines of direct analysis).
-     - Actionable Improvement Items (bulleted list matching the Admin Panel task modal).
-   - **Key Strengths & Coaching Areas**: Summarized growth points.
-   - **Direct CTA**: One-click navigation link to review the full evaluation on the Creole Knowledge Portal.
+3. **Exact Modal Popup Parity in User & Senior Email Reports**:
+   - Directly mirrors the design, color scheme, and layout of `ZohoDailyEvaluationModal` and `ZohoTaskModal`:
+   - **Header & Meta**: Calendar date badge, total tasks evaluated badge, employee name, role, and prominent overall day score badge with qualitative rating (`Excellent`, `Good`, `Needs Attention`).
+   - **Time Breakdown**: Planned Time vs. Actual Time spent in clock H:MM format.
+   - **Daily Executive Performance Summary**: 2-3 sentence AI evaluative summary.
+   - **Accomplishments & Recommendations**: Clean side-by-side cards highlighting key strengths and areas for improvement.
+   - **Task-Wise Cards**:
+     - Project badge, clock hours (actual / planned), status badge, and individual task score pill (/10).
+     - Full task title.
+     - Tolerance badge (`Within Buffer`, `Early Gap`, `Buffer Exceeded`, `Not Logged`) and time score.
+     - Work justification and comment alignment score (/10).
+     - Per-task performance evaluation summary and actionable improvement bullets.
+   - **Knowledge Portal Direct CTA**: One-click navigation link to review the full interactive evaluation on the Creole Knowledge Portal.
 
-### 7.3 Admin Panel Controls for Daily Evaluation Emails
+### 7.3 Consolidated Daily Team Performance Digest for Administrators & Managers
+
+In addition to individual reports sent to employees and their reporting seniors, a single consolidated executive digest email is automatically compiled and dispatched daily to all configured Admin and Manager emails:
+
+1. **Consolidated Table Structure**:
+   - **Employee**: Full Name, Email, and Seniority badge (`Junior`, `Mid`, `Senior`, `Lead`).
+   - **Total Tasks**: Total count of evaluated tasks for the day.
+   - **Due / Delayed Tasks**: Count with colored badge highlighting overdue or delayed items.
+   - **Completed / QA**: Completed count and QA review status breakdown.
+   - **Hours Logged**: Actual logged hours vs planned hours (`e.g. 7.5h / 8.0h`).
+   - **Score**: Overall Day Score (/10) with color-coded rating badge (`Excellent`, `Good`, `Needs Attention`).
+   - **Reason & Performance Summary**: Evaluative justification explaining the score, key accomplishments, time adherence tolerance, and important notes.
+2. **Admin Panel Management Tab (`/admin/dashboard` → Users → Admin & Manager Digest)**:
+   - Dedicated sub-tab in User Management for configuring Admin & Manager digest recipients.
+   - Streamlined multi-email tag input interface (enter email, press Enter or comma to add tag chip).
+   - Removed legacy complex user creation forms and recipient tables per UX requirements.
+   - **Explicit Opt-in Rule**: Database site admin accounts (`user_profiles.role = 'admin'`) are system/testing accounts and are **never** included automatically. Daily digest emails are dispatched **strictly** to the email addresses explicitly configured in this field.
+   - Backed by `public.admin_digest_recipients` table with RLS security policies, coupled with a resilient dual-tier fallback to Supabase Auth user metadata via `lib/zoho/digest-recipients-store.ts` ensuring immediate zero-downtime operation even before SQL migrations are applied in PostgREST.
+   - Instant "Trigger Today's Digest Now" action button calling `POST /api/admin/zoho/send-digest-email` to evaluate and dispatch today's team digest on demand.
+3. **Automated 10:00 PM IST Cron Execution**:
+   - `runDailyZohoEvaluationCron` automatically compiles all evaluated users into `DailyDigestUserRow[]` and dispatches `sendDailyDigestEmail` to all active digest recipients.
+
+### 7.4 Admin Panel Controls for Daily Evaluation Emails
 
 Administrators have granular, selective control over daily evaluation emails directly within the Admin Panel:
 1. **Per-User 10 PM Notification Toggle**:
@@ -608,4 +634,43 @@ Administrators have granular, selective control over daily evaluation emails dir
    - Changing the period displays an immediate animated loader (`RefreshCw` spinner and dedicated loading state) across the filter bar, summary metrics, and task activity list, disabling actions until calculations complete for maximum UX responsiveness.
    - Blue Button (**Generate Report**): Generates a dedicated period evaluation report specifically scoped to the selected range/month/week.
    - Purple Button (**Weekly Evaluation Report**): Displays the continuous till-date report up to the present current week with cumulative scorecards and past weeks appended.
+
+---
+
+## 12. Admin & Manager Daily Digest & Enhanced Email Presentation Standards
+
+### 12.1 Daily Evaluation Email Overhaul (Modal UI Mirroring)
+1. **Identical Visual Design to Modal Popup**:
+   - The daily employee evaluation email (`lib/email/templates/daily-evaluation-email.ts`) strictly mirrors the layout and components of `ZohoDailyEvaluationModal`:
+     - **Header Bar**: Branded top accent, Date badge (`📅 YYYY-MM-DD`), Task count, Employee name & role, and hero Day Score badge (`X.X/10`) with rating label (`Excellent`, `Good`, `Needs Attention`).
+     - **4-Card Metric Grid**: Planned Time (`8:00 hrs`), Actual Spent (`8:00 hrs`), Completed Tasks (`3 / 3`), and Day Score.
+     - **Performance Evaluation Summary Box**: Left purple accent border callout explaining holistic daily execution.
+     - **Key Accomplishments & Areas for Improvement**: Side-by-side green and amber callout cards with clear bullet lists.
+     - **Structured Task Cards**: Each task rendered in its own bounded card featuring project badge, clock duration (`⏱ 4:00 hrs / 4:00 hrs`), Zoho status pill, task score (`/10`), adherence tolerance strip, performance evaluation note, and actionable improvement bullets.
+2. **100% Email Client Compatibility**:
+   - Built exclusively with nested HTML tables (`<table role="presentation">`) and inline styles.
+   - Eliminates unsupported CSS flexbox and grid, preventing layout breakage and text squishing in Gmail Web, Gmail Mobile, Apple Mail, and Outlook.
+3. **8.0 Hours Standard Planned Time Resolution**:
+   - Implements `extractPlannedMinutesFromTask` in `lib/zoho/client.ts`:
+     - Checks explicit Zoho duration/work fields.
+     - Parses bracketed hours in task titles (`[4 hours]`, `[2 hours]`).
+     - Parses suffix hours (`4 hrs`, `4hrs`, `2h`).
+     - Prevents omissions when duration is 0 or unassigned, ensuring full-time developers' planned hours accurately total 8.0 hours.
+
+### 12.2 Admin & Manager Team Digest
+1. **Consolidated Daily Email**:
+   - Delivered daily at 10:00 PM IST to authorized administrators and managers configured in the Admin Portal.
+   - Summarizes whole-team performance in a single executive table:
+     - Employee Name, Email, and Seniority badge.
+     - Total Tasks count.
+     - Due / Delayed Tasks count (colored pill).
+     - Completed / QA Tasks count.
+     - Total Hours logged vs planned (`8.0h / 8.0h`).
+     - Daily Score (`/10`) with rating badge.
+     - Evaluative explanation and key notes explaining why the score was awarded.
+2. **Dual-Tier Recipient Management**:
+   - Configurable in the Admin Portal User Management section under the dedicated **Admin & Manager Digest** tab (`components/user-management.tsx`).
+   - Supports chip-based multi-email inputs with real-time validation.
+   - Uses `lib/zoho/digest-recipients-store.ts` for dual-tier resilience: checks PostgreSQL table `admin_digest_recipients` first, with graceful fallback to Supabase Auth `user_metadata.digest_recipient_emails` if the table migration is pending.
+
 

@@ -21,7 +21,8 @@ import {
   Trash2,
   Sparkles,
   Bot,
-  Users
+  Users,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -78,7 +79,91 @@ export default function UserManagement() {
   const [seniorEmailInput, setSeniorEmailInput] = useState('');
   const [seniorEmailError, setSeniorEmailError] = useState('');
 
+  // Sub-Tab State: Users vs Admin & Manager Digest
+  const [managementTab, setManagementTab] = useState<'users' | 'digest'>('users');
+  const [digestEmails, setDigestEmails] = useState<string[]>([]);
+  const [digestLoading, setDigestLoading] = useState(false);
+  const [digestEmailInput, setDigestEmailInput] = useState('');
+  const [digestEmailError, setDigestEmailError] = useState('');
+  const [addingDigestEmail, setAddingDigestEmail] = useState(false);
+
   const supabase = createClient();
+
+  const fetchDigestRecipients = useCallback(async () => {
+    setDigestLoading(true);
+    try {
+      const res = await fetch('/api/admin/zoho/digest-recipients');
+      if (!res.ok) throw new Error('Failed to fetch digest recipients');
+      const json = await res.json();
+      const list = (json.data || [])
+        .map((r: any) => (r.email || '').toLowerCase().trim())
+        .filter(Boolean);
+      setDigestEmails(Array.from(new Set(list)));
+    } catch (err: unknown) {
+      console.warn('Could not fetch digest recipients:', err);
+    } finally {
+      setDigestLoading(false);
+    }
+  }, []);
+
+  const addDigestEmailTag = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e && 'key' in e && e.key !== 'Enter' && e.key !== ',') {
+      return;
+    }
+    if (e) e.preventDefault();
+    setDigestEmailError('');
+    const email = digestEmailInput.trim().toLowerCase().replace(/,$/, '');
+    if (!email) return;
+
+    const atIdx = email.indexOf('@');
+    const dotIdx = email.lastIndexOf('.');
+    const isValid = atIdx > 0 && dotIdx > atIdx + 1 && dotIdx < email.length - 1 && !email.includes(' ');
+    if (!isValid) {
+      setDigestEmailError('Please enter a valid email address');
+      return;
+    }
+
+    if (digestEmails.includes(email)) {
+      setDigestEmailError('This email has already been added');
+      return;
+    }
+
+    setAddingDigestEmail(true);
+    try {
+      const res = await fetch('/api/admin/zoho/digest-recipients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to add email');
+      setDigestEmails((prev) => [...prev, email]);
+      setDigestEmailInput('');
+      setToast({ message: `Added ${email} to daily digest`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setDigestEmailError(msg);
+    } finally {
+      setAddingDigestEmail(false);
+    }
+  };
+
+  const removeDigestEmailTag = async (emailToRemove: string) => {
+    try {
+      setDigestEmails((prev) => prev.filter((e) => e !== emailToRemove));
+      const res = await fetch(`/api/admin/zoho/digest-recipients?email=${encodeURIComponent(emailToRemove)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error('Failed to remove email');
+      setToast({ message: `Removed ${emailToRemove}`, type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ message: msg, type: 'error' });
+      void fetchDigestRecipients();
+    }
+  };
   
   const fetchUsers = useCallback(async () => {
     try {
@@ -96,9 +181,10 @@ export default function UserManagement() {
   useEffect(() => {
     const timer = setTimeout(() => {
       void fetchUsers();
+      void fetchDigestRecipients();
     }, 0);
     return () => clearTimeout(timer);
-  }, [fetchUsers]);
+  }, [fetchUsers, fetchDigestRecipients]);
 
   const handleUserClick = (user: UserProfile) => {
     setSelectedUser(user);
@@ -326,7 +412,44 @@ export default function UserManagement() {
 
   return (
     <div className="space-y-6">
-      <AnimatePresence mode="wait">
+      {/* User Management Sub-Tabs */}
+      <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedUser(null);
+            setManagementTab('users');
+          }}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+            managementTab === 'users'
+              ? 'bg-[#34c4f2] text-zinc-900 shadow-sm'
+              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+          }`}
+          data-testid="tab-user-profiles"
+        >
+          <Users size={15} />
+          <span>User Profiles ({users.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedUser(null);
+            setManagementTab('digest');
+          }}
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+            managementTab === 'digest'
+              ? 'bg-[#34c4f2] text-zinc-900 shadow-sm'
+              : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+          }`}
+          data-testid="tab-admin-manager-digest"
+        >
+          <Mail size={15} />
+          <span>Admin &amp; Manager Digest ({digestEmails.length})</span>
+        </button>
+      </div>
+
+      {managementTab === 'users' ? (
+        <AnimatePresence mode="wait">
         {!selectedUser ? (
           <motion.div
             key="list"
@@ -954,6 +1077,105 @@ export default function UserManagement() {
           </motion.div>
         )}
       </AnimatePresence>
+      ) : (
+        <div className="space-y-6 animate-in fade-in duration-200" data-testid="admin-manager-digest-section">
+          {/* Header */}
+          <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4">
+            <h2 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight flex items-center gap-2.5">
+              <Mail className="text-[#34c4f2] w-6 h-6" />
+              Admin &amp; Manager Digest Emails
+            </h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              Emails added here will receive the daily consolidated summary report table.
+            </p>
+          </div>
+
+          {/* Multiple Email Input Field Card */}
+          <div className="bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
+            {/* Email input + Add button */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                  <input
+                    type="email"
+                    value={digestEmailInput}
+                    onChange={(e) => setDigestEmailInput(e.target.value)}
+                    onKeyDown={(e) => addDigestEmailTag(e)}
+                    placeholder="Type email (e.g. manager@creolestudios.com) and press Enter or comma..."
+                    disabled={addingDigestEmail}
+                    className="w-full pl-11 pr-4 py-3 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all text-sm font-medium"
+                    data-testid="digest-email-input"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => addDigestEmailTag()}
+                  disabled={addingDigestEmail || !digestEmailInput.trim()}
+                  className="px-5 py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold rounded-2xl text-xs uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm shadow-[#34c4f2]/20 shrink-0 inline-flex items-center gap-1.5"
+                  data-testid="add-digest-email-button"
+                >
+                  {addingDigestEmail ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Plus size={14} />
+                  )}
+                  <span>Add Email</span>
+                </button>
+              </div>
+
+              {digestEmailError && (
+                <p className="text-xs text-red-500 font-medium ml-1" data-testid="digest-email-error">
+                  {digestEmailError}
+                </p>
+              )}
+            </div>
+
+            {/* Configured Email Tags */}
+            <div className="pt-2">
+              {digestLoading ? (
+                <div className="flex items-center gap-2 py-4 text-xs text-zinc-400">
+                  <Loader2 size={16} className="animate-spin text-[#34c4f2]" />
+                  <span>Loading recipients...</span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2" data-testid="digest-emails-container">
+                  <AnimatePresence>
+                    {digestEmails.map((email) => (
+                      <motion.span
+                        key={email}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="inline-flex items-center gap-2 px-3.5 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 text-xs font-bold rounded-xl shadow-xs"
+                        data-testid={`digest-email-chip-${email}`}
+                      >
+                        <Mail size={13} className="text-[#34c4f2]" />
+                        <span>{email}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeDigestEmailTag(email)}
+                          className="hover:scale-120 transition-transform cursor-pointer ml-1 text-zinc-400 hover:text-red-500 p-0.5 rounded"
+                          aria-label={`Remove ${email}`}
+                          data-testid={`remove-digest-email-${email}`}
+                        >
+                          <X size={13} />
+                        </button>
+                      </motion.span>
+                    ))}
+                  </AnimatePresence>
+
+                  {digestEmails.length === 0 && (
+                    <div className="w-full py-6 text-center text-xs text-zinc-400">
+                      No recipient emails added yet.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete User Confirmation Modal */}
       {deletingUser && (

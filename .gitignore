@@ -23,6 +23,7 @@ build/
 *.egg-info/
 # Local JSON DB (dev-only)
 lib/data/db.json
+.data/
 # Claude Code Harness (local-only)
 .claude/
 # Dependencies

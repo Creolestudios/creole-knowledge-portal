@@ -161,6 +161,45 @@ export function parseDurationToMinutes(durationStr: string | number | null | und
   return 0;
 }
 
+/**
+ * Extracts planned minutes for a Zoho task:
+ * 1. Checks explicit raw.duration or raw.work
+ * 2. Parses bracketed duration in task name like "[4 hours]", "[2 hours]"
+ * 3. Parses suffix duration in task name like "4 hrs", "4hrs", "2h"
+ * 4. Defaults to standard 240 mins (4.0 hours) if completely unspecified
+ */
+export function extractPlannedMinutesFromTask(
+  rawDuration: string | number | null | undefined,
+  rawWork: string | number | null | undefined,
+  taskName?: string | null
+): number {
+  const fromDuration = parseDurationToMinutes(rawDuration);
+  if (fromDuration > 0) return fromDuration;
+
+  const fromWork = parseDurationToMinutes(rawWork);
+  if (fromWork > 0) return fromWork;
+
+  if (taskName) {
+    const bracketMatch = taskName.match(/\[\s*([\d.]+)\s*(?:hours?|hrs?|h)\s*\]/i);
+    if (bracketMatch) {
+      const parsed = parseFloat(bracketMatch[1]);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        return Math.round(parsed * 60);
+      }
+    }
+
+    const suffixMatch = taskName.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs|h)\b/i);
+    if (suffixMatch) {
+      const parsed = parseFloat(suffixMatch[1]);
+      if (!Number.isNaN(parsed) && parsed > 0) {
+        return Math.round(parsed * 60);
+      }
+    }
+  }
+
+  return 240;
+}
+
 
 /**
  * Formats total minutes into clock format like "4:00" or "3:55".

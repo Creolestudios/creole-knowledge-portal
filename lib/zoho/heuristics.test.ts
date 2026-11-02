@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationToMinutes, parseZohoCommentDate } from './client';
+import { parseDurationToMinutes, parseZohoCommentDate, extractPlannedMinutesFromTask } from './client';
 import {
   calculateTimeAdherence,
   evaluateWorkAndCommentMatch,
@@ -284,6 +284,30 @@ describe('Zoho Heuristics Engine', () => {
       const iso = parseZohoCommentDate(null);
       expect(iso).toBeDefined();
       expect(new Date(iso).getTime()).toBeGreaterThan(0);
+    });
+  });
+
+  describe('extractPlannedMinutesFromTask', () => {
+    it('extracts planned minutes from explicit duration when present', () => {
+      expect(extractPlannedMinutesFromTask('4:00', null, 'Some task')).toBe(240);
+      expect(extractPlannedMinutesFromTask(2, null, 'Some task')).toBe(120);
+    });
+
+    it('extracts bracketed duration from task name when raw duration is 0 or missing', () => {
+      expect(extractPlannedMinutesFromTask(0, null, 'Shelter pets detail page - [4 hours]')).toBe(240);
+      expect(extractPlannedMinutesFromTask(null, null, 'Starting on service page - [2 hours ]')).toBe(120);
+      expect(extractPlannedMinutesFromTask(0, null, 'Research on user role wise action in sign in and sign up - [2 hours]')).toBe(120);
+      expect(extractPlannedMinutesFromTask(null, null, 'Working on the pricing page of a sailor [6.5 hours]')).toBe(390);
+    });
+
+    it('extracts suffix hours from task name when raw duration is 0', () => {
+      expect(extractPlannedMinutesFromTask(0, null, 'Working on contact form validation  4 hrs')).toBe(240);
+      expect(extractPlannedMinutesFromTask(null, null, 'Making a custom theme for sailor template  8hrs')).toBe(480);
+    });
+
+    it('defaults to 240 minutes (4 hours) when duration is completely missing', () => {
+      expect(extractPlannedMinutesFromTask(null, null, 'Task with no specified duration')).toBe(240);
+      expect(extractPlannedMinutesFromTask(0, null, '')).toBe(240);
     });
   });
 });

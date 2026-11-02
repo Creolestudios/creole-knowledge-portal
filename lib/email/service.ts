@@ -3,6 +3,10 @@ import {
   DailyEvaluationEmailPayload,
   generateDailyEvaluationEmail,
 } from './templates/daily-evaluation-email';
+import {
+  DailyDigestEmailPayload,
+  generateDailyDigestEmail,
+} from './templates/daily-digest-email';
 
 export interface SendDailyEvaluationEmailParams {
   to: string;
@@ -12,6 +16,21 @@ export interface SendDailyEvaluationEmailParams {
 }
 
 export interface SendDailyEvaluationEmailResult {
+  success: boolean;
+  recipientCount: number;
+  messageId?: string;
+  mocked?: boolean;
+  transportUsed?: 'smtp' | 'resend' | 'mock';
+  error?: string;
+}
+
+export interface SendDailyDigestEmailParams {
+  to: string[];
+  payload: DailyDigestEmailPayload;
+  dryRun?: boolean;
+}
+
+export interface SendDailyDigestEmailResult {
   success: boolean;
   recipientCount: number;
   messageId?: string;
@@ -202,5 +221,171 @@ export async function sendDailyEvaluationEmail(
     mocked: true,
     transportUsed: 'mock',
     messageId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  };
+}
+
+/**
+ * Dispatches the daily consolidated team performance table digest to configured
+ * Administrator and Manager email addresses.
+ */
+export async function sendDailyDigestEmail(
+  params: SendDailyDigestEmailParams
+): Promise<SendDailyDigestEmailResult> {
+  const validRecipients = (params.to || [])
+    .map((e) => (typeof e === 'string' ? e.trim().toLowerCase() : ''))
+    .filter((e) => isValidEmail(e));
+  const uniqueRecipients = Array.from(new Set(validRecipients));
+
+  if (uniqueRecipients.length === 0) {
+    console.warn('[EmailService] No valid recipient email addresses for daily digest');
+    return {
+      success: false,
+      recipientCount: 0,
+      error: 'No valid recipient email addresses for daily digest',
+    };
+  }
+
+  const emailContent = generateDailyDigestEmail(params.payload);
+
+  const smtpUser = process.env.SMTP_USER || process.env.GMAIL_USER;
+  const smtpPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
+  const resendApiKey = process.env.RESEND_API_KEY;
+
+  // 1. Dry run mode
+  if (params.dryRun) {
+    console.log(
+      `[EmailService:Mock] (dryRun mode enabled) Digest email generated for [${uniqueRecipients.join(', ')}]. Subject: "${emailContent.subject}"`
+    );
+    return {
+      success: true,
+      recipientCount: uniqueRecipients.length,
+      mocked: true,
+      transportUsed: 'mock',
+      messageId: `mock-digest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    };
+  }
+
+  // 2. Direct SMTP
+  if (smtpUser && smtpPass) {
+    try {
+      const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+      const smtpPort = Number(process.env.SMTP_PORT) || 465;
+      const isSecure = smtpPort === 465;
+      const fromAddress =
+        process.env.SMTP_FROM ||
+        process.env.EMAIL_FROM ||
+        `Creole Knowledge Portal <${smtpUser}>`;
+
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: isSecure,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      const info = await transporter.sendMail({
+        from: fromAddress,
+        to: uniqueRecipients,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
+      });
+
+      console.log(
+        `[EmailService:SMTP] Successfully dispatched daily digest to [${uniqueRecipients.join(', ')}]. MessageID: ${info.messageId}`
+      );
+
+      return {
+        success: true,
+        recipientCount: uniqueRecipients.length,
+        messageId: info.messageId,
+        mocked: false,
+        transportUsed: 'smtp',
+      };
+    } catch (smtpErr: unknown) {
+      const message = smtpErr instanceof Error ? smtpErr.message : String(smtpErr);
+      console.error('[EmailService:SMTP] Exception dispatching daily digest via SMTP:', smtpErr);
+      return {
+        success: false,
+        recipientCount: 0,
+        transportUsed: 'smtp',
+        error: `SMTP error: ${message}`,
+      };
+    }
+  }
+
+  // 3. Resend REST API
+  if (resendApiKey) {
+    const fromAddress =
+      process.env.RESEND_FROM_EMAIL ||
+      process.env.EMAIL_FROM ||
+      'Creole Knowledge Portal <onboarding@resend.dev>';
+
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: uniqueRecipients,
+          subject: emailContent.subject,
+          html: emailContent.html,
+          text: emailContent.text,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error(
+          `[EmailService:Resend] Resend API error (${res.status}) sending digest:`,
+          errorText
+        );
+        return {
+          success: false,
+          recipientCount: 0,
+          transportUsed: 'resend',
+          error: `Resend API error (${res.status}): ${errorText}`,
+        };
+      }
+
+      const data = (await res.json()) as { id?: string };
+      console.log(
+        `[EmailService:Resend] Successfully sent daily digest to [${uniqueRecipients.join(', ')}]. Resend ID: ${data.id}`
+      );
+      return {
+        success: true,
+        recipientCount: uniqueRecipients.length,
+        messageId: data.id,
+        mocked: false,
+        transportUsed: 'resend',
+      };
+    } catch (resendErr: unknown) {
+      const message = resendErr instanceof Error ? resendErr.message : String(resendErr);
+      console.error('[EmailService:Resend] Exception dispatching daily digest:', resendErr);
+      return {
+        success: false,
+        recipientCount: 0,
+        transportUsed: 'resend',
+        error: message,
+      };
+    }
+  }
+
+  // 4. Mock fallback
+  console.log(
+    `[EmailService:Mock] (Neither SMTP nor RESEND_API_KEY configured) Digest email generated for [${uniqueRecipients.join(', ')}]. Subject: "${emailContent.subject}"`
+  );
+  return {
+    success: true,
+    recipientCount: uniqueRecipients.length,
+    mocked: true,
+    transportUsed: 'mock',
+    messageId: `mock-digest-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   };
 }
