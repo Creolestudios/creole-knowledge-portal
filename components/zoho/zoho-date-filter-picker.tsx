@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  RefreshCw,
 } from 'lucide-react';
 import {
   getISOWeekNumber,
@@ -25,6 +26,7 @@ export interface DateRangeSelection {
 interface ZohoDateFilterPickerProps {
   value: DateRangeSelection;
   onChange: (selection: DateRangeSelection) => void;
+  loading?: boolean;
 }
 
 const MONTH_NAMES_SHORT = [
@@ -34,7 +36,7 @@ const MONTH_NAMES_SHORT = [
 
 const DAY_NAMES_HEADER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
-export default function ZohoDateFilterPicker({ value, onChange }: ZohoDateFilterPickerProps) {
+export default function ZohoDateFilterPicker({ value, onChange, loading = false }: ZohoDateFilterPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'week' | 'month' | 'range'>(value.type);
 
@@ -341,7 +343,11 @@ export default function ZohoDateFilterPicker({ value, onChange }: ZohoDateFilter
           className="flex items-center gap-2 px-2.5 py-1 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/80 transition-colors cursor-pointer"
         >
           <div className="p-1 rounded-md bg-[#34c4f2]/10 dark:bg-[#34c4f2]/20 text-[#1689aa] dark:text-[#34c4f2]">
-            <Calendar className="w-3.5 h-3.5" />
+            {loading ? (
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Calendar className="w-3.5 h-3.5" />
+            )}
           </div>
           <span className="font-bold tracking-tight text-zinc-900 dark:text-white">
             {value.label}

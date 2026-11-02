@@ -163,8 +163,8 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           console.warn('[ZohoSync] zoho_user_mappings upsert warning:', mErr);
         }
 
-        // Fetch real-time active open tasks from Zoho
-        const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100);
+        // Fetch real-time active open and completed tasks from Zoho
+        const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100);
 
         const taskItems: ZohoTaskItem[] = [];
         let doneTasks = 0;

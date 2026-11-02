@@ -224,105 +224,136 @@ export default function ZohoReportModal({
                 </button>
               )}
 
-              {/* Weekly Performance Reports - Starts with This Week & Appends Past Weeks */}
+              {/* Performance Reports - Scoped to Selected Date Range / Month / Week */}
               {(() => {
-                const weeklyReports = buildWeeklyPerformanceReports(singleUser);
-                const thisWeek = weeklyReports[0];
+                const isWeeklyFilter = filterType === 'week';
+                const periodBadge = filterType === 'month' ? 'MONTHLY EVALUATION' : filterType === 'range' ? 'CUSTOM RANGE EVALUATION' : 'WEEKLY EVALUATION';
+                const periodTitle = dateRangeText ? `Evaluation Report: ${dateRangeText}` : `${periodBadge}`;
+
+                const allPeriodTasks = singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+                const periodDoneTasks = singleUser.tillDateSummary?.doneTasks ?? allPeriodTasks.filter((t) => {
+                  const s = (t.zohoStatus || '').toLowerCase();
+                  return s.includes('closed') || s.includes('done') || s.includes('completed') || t.isQAReview;
+                }).length;
+                const periodPendingTasks = singleUser.tillDateSummary?.pendingTasks ?? allPeriodTasks.filter((t) => {
+                  const s = (t.zohoStatus || '').toLowerCase();
+                  return !s.includes('closed') && !s.includes('done') && !s.includes('completed') && !t.isQAReview;
+                }).length;
+                const periodDelayedTasks = singleUser.tillDateSummary?.delayedTasks ?? allPeriodTasks.filter((t) => t.evaluation?.timeAssessmentLabel === 'OVERDUE').length;
+                const periodTotalTasks = allPeriodTasks.length > 0 ? allPeriodTasks.length : (periodDoneTasks + periodPendingTasks);
+
+                const periodActualHours = singleUser.tillDateSummary?.totalHoursLogged ?? Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0) * 10) / 10;
+                const periodPlannedHours = Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.plannedHours) || 0), 0) * 10) / 10 || Math.round(periodActualHours * 10) / 10;
+
+                const periodDonePct = periodTotalTasks > 0 ? Math.round((periodDoneTasks / periodTotalTasks) * 100) : 100;
+                const rawScore = singleUser.tillDateSummary?.weeklyAvgScore ?? 88;
+                const periodOverallScore = rawScore <= 10 ? Math.round(rawScore * 10) : Math.round(rawScore);
+
+                const documentedTasksCount = allPeriodTasks.filter((t) => t.comments && t.comments.length > 0).length;
+
+                const summaryParagraphs = [
+                  `During the evaluated period (${dateRangeText || filterType.toUpperCase()}), ${singleUser.name || singleUser.email} logged ${periodActualHours}h across ${periodTotalTasks} task(s). ${periodDoneTasks} task(s) were successfully completed, while ${periodDelayedTasks} task(s) encountered schedule variance past the permitted tolerance buffer. Overall performance velocity attained ${periodOverallScore}/100.`,
+                  `Audit of technical work evidence shows that ${documentedTasksCount} of ${allPeriodTasks.length || 1} task(s) have documented comments in Zoho Projects. Logging clear implementation details and test verification notes before task closure provides traceability and validates actual logged time against initial estimates.`,
+                  `Recommendations for ${singleUser.name || 'this developer'} (${singleUser.role || 'Developer'}${singleUser.seniorityLevel ? ` • ${singleUser.seniorityLevel}` : ''}): ${singleUser.aiSubscriptions && singleUser.aiSubscriptions.length > 0 ? `Actively leverage subscribed AI tools (${singleUser.aiSubscriptions.join(', ')}) to assist with test verification and automated documentation.` : 'Incorporate automated test validation prior to task completion.'} Maintain close estimation fidelity within the +5m buffer to prevent overdue flags.`,
+                ];
+
+                const weeklyReports = isWeeklyFilter ? buildWeeklyPerformanceReports(singleUser) : [];
                 const pastWeeks = weeklyReports.slice(1);
 
                 return (
                   <div className="space-y-6">
-                    {/* THIS WEEK REPORT */}
+                    {/* PERIOD PERFORMANCE REPORT */}
                     <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-200 dark:border-zinc-700">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
-                              CURRENT SPRINT
+                            <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-[#34c4f2]/10 text-[#34c4f2] border border-[#34c4f2]/20">
+                              {periodBadge}
                             </span>
                             <h4 className="text-sm font-bold text-zinc-900 dark:text-white">
-                              {thisWeek?.label || 'This Week Performance Report'}
+                              {periodTitle}
                             </h4>
                           </div>
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                            Cumulative audit combining time adherence, work justification, complexity & repetition
+                            Performance audit combining time adherence, comment verification, and task completion velocity
                           </p>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Overall Score:</span>
                           <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
-                            {thisWeek?.overallScore ?? 88}
+                            {periodOverallScore}
                           </span>
                           <span className="text-xs text-zinc-400">/ 100</span>
                         </div>
                       </div>
 
-                      {/* Metrics Row: Hours, Progress Bar 3/5, Repetitive Rate */}
+                      {/* Metrics Row: Hours, Completion Velocity, Delayed Tasks */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
                           <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Hours Logged</span>
                           <div className="text-xl font-black text-[#34c4f2] mt-0.5">
-                            {thisWeek?.totalActualHours ?? 0}h
-                            <span className="text-xs text-zinc-400 font-normal"> / {thisWeek?.totalPlannedHours ?? 0}h planned</span>
-                          </div>
-                        </div>
-
-                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Repetitive Tasks</span>
-                          <div className="text-xl font-black text-purple-600 dark:text-purple-400 mt-0.5 flex items-center gap-1.5">
-                            <RefreshCw className="w-4 h-4 text-purple-500" />
-                            {thisWeek?.repetitivenessPct ?? 0}%
-                            <span className="text-xs text-zinc-400 font-normal">({thisWeek?.repetitiveCount ?? 0} flagged)</span>
+                            {periodActualHours}h
+                            {periodPlannedHours > 0 && (
+                              <span className="text-xs text-zinc-400 font-normal"> / {periodPlannedHours}h planned</span>
+                            )}
                           </div>
                         </div>
 
                         <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
                           <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Completion Velocity</span>
                           <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                            {thisWeek?.doneTasks ?? 0} / {thisWeek?.totalTasks ?? 0}
-                            <span className="text-xs text-zinc-400 font-normal"> ({thisWeek?.donePct ?? 100}%)</span>
+                            {periodDoneTasks} / {periodTotalTasks}
+                            <span className="text-xs text-zinc-400 font-normal"> ({periodDonePct}%)</span>
+                          </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Schedule Adherence</span>
+                          <div className="text-xl font-black text-rose-500 mt-0.5">
+                            {periodDelayedTasks}
+                            <span className="text-xs text-zinc-400 font-normal"> delayed past buffer</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Segmented Task Progress Bar (3/5 Done Style) */}
+                      {/* Segmented Task Progress Bar */}
                       <div className="space-y-1.5 pt-1">
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
                             <BarChart3 className="w-3.5 h-3.5 text-emerald-500" />
-                            Task Breakdown: {thisWeek?.doneTasks} Done • {thisWeek?.inProgressTasks} In Progress • {thisWeek?.delayedTasks} Delayed
+                            Task Breakdown: {periodDoneTasks} Done • {periodPendingTasks} In Progress • {periodDelayedTasks} Delayed
                           </span>
                           <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                            {thisWeek?.donePct}% Completed
+                            {periodDonePct}% Completed
                           </span>
                         </div>
                         <div className="w-full h-2.5 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex">
-                          {(thisWeek?.donePct ?? 0) > 0 && (
-                            <div style={{ width: `${thisWeek?.donePct}%` }} className="bg-emerald-500 h-full transition-all" />
+                          {periodDonePct > 0 && (
+                            <div style={{ width: `${periodDonePct}%` }} className="bg-emerald-500 h-full transition-all" />
                           )}
-                          {((thisWeek?.inProgressTasks ?? 0) > 0) && (
+                          {periodPendingTasks > 0 && (
                             <div
-                              style={{ width: `${Math.round(((thisWeek?.inProgressTasks ?? 0) / (thisWeek?.totalTasks || 1)) * 100)}%` }}
+                              style={{ width: `${Math.round((periodPendingTasks / (periodTotalTasks || 1)) * 100)}%` }}
                               className="bg-amber-400 h-full transition-all"
                             />
                           )}
-                          {((thisWeek?.delayedTasks ?? 0) > 0) && (
+                          {periodDelayedTasks > 0 && (
                             <div
-                              style={{ width: `${Math.round(((thisWeek?.delayedTasks ?? 0) / (thisWeek?.totalTasks || 1)) * 100)}%` }}
+                              style={{ width: `${Math.round((periodDelayedTasks / (periodTotalTasks || 1)) * 100)}%` }}
                               className="bg-rose-500 h-full transition-all"
                             />
                           )}
                         </div>
                       </div>
 
-                      {/* Full Week Executive Summary in 2-3 Paragraphs */}
+                      {/* Full Executive Summary in 2-3 Paragraphs */}
                       <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
                         <div className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1">
                           <Award className="w-3.5 h-3.5" />
-                          Executive Performance Summary (Week {thisWeek?.weekNumber})
+                          Executive Performance Summary ({dateRangeText || filterType.toUpperCase()})
                         </div>
-                        {thisWeek?.summaryParagraphs.map((para, idx) => (
+                        {summaryParagraphs.map((para, idx) => (
                           <p key={idx} className="p-3 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800">
                             {para}
                           </p>
@@ -330,8 +361,8 @@ export default function ZohoReportModal({
                       </div>
                     </div>
 
-                    {/* APPENDED PREVIOUS WEEKS (Rolling Cumulative Timeline) */}
-                    {pastWeeks.length > 0 && (
+                    {/* APPENDED PREVIOUS WEEKS (When in weekly mode) */}
+                    {isWeeklyFilter && pastWeeks.length > 0 && (
                       <div className="space-y-3 pt-2">
                         <div className="flex items-center justify-between">
                           <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">

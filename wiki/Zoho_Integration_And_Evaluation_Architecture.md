@@ -582,12 +582,16 @@ Administrators have granular, selective control over daily evaluation emails dir
      - **Daily Performance Evaluation & Actionable Insights**: Key accomplishments and targeted improvement areas for that day.
      - **Explicit Design Rule**: Weekly throughput progress bars (`X / Y Tasks Done`) and `% Repetitive` indices are **NEVER shown in Daily Evaluation**; they belong exclusively in the Weekly Evaluation Hub.
 2. **Weekly Performance & Evaluation Report (`ZohoWeeklyEvaluationModal`)**:
-   - Triggered via the **`✨ Weekly Evaluation Report [XX/100]`** button on the main employee dashboard summary.
+   - Triggered via the prominent **`✨ Weekly Evaluation Report [XX/100]`** gradient button on the employee profile summary header (redundant secondary text links removed for visual simplicity).
    - Houses the **5 Cumulative Add-On Cards**: Done Tasks, In Progress, Delayed Tasks, Logged Hours, and Overall Score (0–100 scale).
    - Houses the **Weekly Task Completion Bar** (`X / Y Tasks Done` with segmented distribution).
    - Houses the **Weekly Repetitive Task Rate** (`% Repetitive`).
    - Houses the **3-Paragraph Executive Performance Summary** for This Week (Current Sprint).
    - Houses the **Continuous Week-Over-Week Append Timeline**: Past completed weeks append chronologically below the active sprint (`Week 44` $\rightarrow$ `Week 43` $\rightarrow$ `Week 42`), dynamically updating cumulative totals without replacing previous history.
+
+3. **Duration & Comment Synchronization Precision**:
+   - Timelogs in `08:15` or decimal `8.25` / `8.15` format map strictly to `8:15 hrs` clock time without artificial 10-minute inflation.
+   - Comment ingestion inspects all Zoho comment schema keys (`comment`, `comment_content`, `content`, `description`, `notes`) and safely parses international/Indian timestamps (`DD-MM-YYYY hh:mm a`), preventing comment omission or evaluation penalties.
 
 ---
 
@@ -599,7 +603,9 @@ Administrators have granular, selective control over daily evaluation emails dir
    - Includes individual 12:30 PM automated daily email toggles per developer.
 2. **Inner View (Inspecting a Developer)**:
    - Back arrow icon button (`←`) enables instant return to the all-users list.
-   - Developer identity (Name & Email) sits cleanly in the header with an individual Sync Zoho action.
+   - Developer identity (Name, Email, Role, Seniority & Experience badge, AI Subscriptions) sits cleanly in the header with an individual Sync Zoho action.
    - Positioned directly below the identity header is the dedicated period filter (`ZohoDateFilterPicker` supporting Week, Month, and Custom Date Range) alongside the **Generate Report** action.
-   - Changing the period immediately recalculates that developer's Till-Date Summary, velocity, and daily task audits.
+   - Changing the period displays an immediate animated loader (`RefreshCw` spinner and dedicated loading state) across the filter bar, summary metrics, and task activity list, disabling actions until calculations complete for maximum UX responsiveness.
+   - Blue Button (**Generate Report**): Generates a dedicated period evaluation report specifically scoped to the selected range/month/week.
+   - Purple Button (**Weekly Evaluation Report**): Displays the continuous till-date report up to the present current week with cumulative scorecards and past weeks appended.
 

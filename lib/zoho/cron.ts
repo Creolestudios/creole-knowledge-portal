@@ -207,8 +207,8 @@ export async function runDailyZohoEvaluationCron(
         }
       }
 
-      // Fetch user's active & open tasks from Zoho
-      const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100);
+      // Fetch user's active, open, and completed tasks from Zoho
+      const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100);
 
       let userDoneTasks = 0;
       let userDelayedTasks = 0;

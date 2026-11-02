@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ArrowLeft,
   Bot,
+  Briefcase,
   Mail,
   Search,
   RefreshCw,
@@ -177,6 +178,13 @@ export default function ZohoEvaluationManager() {
             </div>
 
             <div className="flex items-center gap-2.5">
+              {loading && users.length > 0 && (
+                <span className="hidden sm:flex items-center gap-1.5 text-xs text-[#34c4f2] font-semibold animate-pulse">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Loading...</span>
+                </span>
+              )}
+
               {/* Quick search input by email */}
               <div className="relative w-full sm:w-72">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -234,7 +242,7 @@ export default function ZohoEvaluationManager() {
               <p>No active users match your search.</p>
             </div>
           ) : (
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl divide-y divide-zinc-100 dark:divide-zinc-800 shadow-xs overflow-hidden">
+            <div className={`bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl divide-y divide-zinc-100 dark:divide-zinc-800 shadow-xs overflow-hidden transition-opacity duration-200 ${loading ? 'opacity-60' : 'opacity-100'}`}>
               {filteredUsers.map((u) => {
                 return (
                   <div
@@ -322,11 +330,12 @@ export default function ZohoEvaluationManager() {
               </button>
 
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-[#34c4f2]/10 text-[#34c4f2] shrink-0">
+                <div className="p-2.5 rounded-xl bg-[#34c4f2]/10 text-[#34c4f2] shrink-0 self-start">
                   <Mail className="w-4 h-4" />
                 </div>
-                <div>
-                  <div className="flex flex-wrap items-baseline gap-2">
+                <div className="space-y-1">
+                  {/* Row 1: Name, Email, Seniority & Experience, Subscriptions */}
+                  <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg font-black text-zinc-900 dark:text-white">
                       {selectedUser.name || selectedUser.email}
                     </h2>
@@ -335,16 +344,43 @@ export default function ZohoEvaluationManager() {
                         ({selectedUser.email})
                       </span>
                     )}
+                    {selectedUser.seniorityLevel && (
+                      <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-[#34c4f2]/10 text-[#34c4f2] border border-[#34c4f2]/20">
+                        {selectedUser.seniorityLevel} ({selectedUser.yearsOfExperience} yrs)
+                      </span>
+                    )}
+                    {selectedUser.aiSubscriptions && selectedUser.aiSubscriptions.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Bot className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        {selectedUser.aiSubscriptions.map((tool) => (
+                          <span
+                            key={tool}
+                            className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
+                          >
+                            {tool}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-xs text-zinc-400">
-                    Date-wise task data and evaluations
+
+                  {/* Row 2: Role + Description */}
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-2 flex-wrap">
+                    {selectedUser.role && (
+                      <span className="flex items-center gap-1.5 font-medium text-zinc-600 dark:text-zinc-300">
+                        <Briefcase className="w-3.5 h-3.5 text-zinc-400" />
+                        <span>{selectedUser.role}</span>
+                      </span>
+                    )}
+                    {selectedUser.role && <span>•</span>}
+                    <span className="text-zinc-400">Date-wise task data and evaluations</span>
                   </p>
                 </div>
               </div>
             </div>
 
             {/* Sync Zoho Button on Top Right */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
               <button
                 type="button"
                 onClick={handleSyncFromZoho}
@@ -366,13 +402,15 @@ export default function ZohoEvaluationManager() {
                 <ZohoDateFilterPicker
                   value={dateSelection}
                   onChange={(newSel) => setDateSelection(newSel)}
+                  loading={loading}
                 />
 
                 {/* Generate Report for this user */}
                 <button
                   type="button"
                   onClick={() => setShowReport(true)}
-                  className="text-xs font-bold px-4 py-2 rounded-xl bg-[#34c4f2] hover:bg-[#2eb0db] text-zinc-900 shadow-sm flex items-center gap-2 transition-all cursor-pointer active:scale-95"
+                  disabled={loading}
+                  className="text-xs font-bold px-4 py-2 rounded-xl bg-[#34c4f2] hover:bg-[#2eb0db] disabled:opacity-60 disabled:cursor-not-allowed text-zinc-900 shadow-sm flex items-center gap-2 transition-all cursor-pointer active:scale-95"
                   title={`Generate evaluation report for ${selectedUser.name || selectedUser.email}`}
                 >
                   <FileText className="w-3.5 h-3.5" />
@@ -380,24 +418,34 @@ export default function ZohoEvaluationManager() {
                 </button>
               </div>
 
-              <span className="text-xs text-zinc-400">
-                {selectedUser.dailyEvaluations.flatMap((d) => d.tasks).length} tasks in {dateSelection.label}
-              </span>
+              {loading ? (
+                <span className="flex items-center gap-1.5 text-xs text-[#34c4f2] font-semibold animate-pulse">
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Loading {dateSelection.label}...</span>
+                </span>
+              ) : (
+                <span className="text-xs text-zinc-400">
+                  {selectedUser.dailyEvaluations.flatMap((d) => d.tasks).length} tasks in {dateSelection.label}
+                </span>
+              )}
             </div>
           </div>
 
           {/* Till-Date Summary displayed above task evaluation list */}
-          <ZohoTillDateSummary
-            userName={selectedUser.name}
-            userEmail={selectedUser.email}
-            role={selectedUser.role}
-            yearsOfExperience={selectedUser.yearsOfExperience}
-            seniorityLevel={selectedUser.seniorityLevel}
-            aiSubscriptions={selectedUser.aiSubscriptions}
-            summary={selectedUser.tillDateSummary}
-            onOpenWeeklyReport={() => setShowWeeklyReport(true)}
-            weekLabel={dateSelection.label}
-          />
+          <div className={`transition-opacity duration-200 ${loading ? 'opacity-60 pointer-events-none' : 'opacity-100'}`}>
+            <ZohoTillDateSummary
+              hideProfileHeader={true}
+              userName={selectedUser.name}
+              userEmail={selectedUser.email}
+              role={selectedUser.role}
+              yearsOfExperience={selectedUser.yearsOfExperience}
+              seniorityLevel={selectedUser.seniorityLevel}
+              aiSubscriptions={selectedUser.aiSubscriptions}
+              summary={selectedUser.tillDateSummary}
+              onOpenWeeklyReport={() => setShowWeeklyReport(true)}
+              weekLabel={getDefaultWeekSelection().label.toUpperCase()}
+            />
+          </div>
 
           {/* Section Header: Tasks in selected period */}
           <div className="flex items-center justify-between px-1">
@@ -407,7 +455,17 @@ export default function ZohoEvaluationManager() {
           </div>
 
           {/* Date-Wise Task Breakdown */}
-          {selectedUser.dailyEvaluations.length === 0 ? (
+          {loading ? (
+            <div className="p-16 text-center text-xs text-zinc-400 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl space-y-3 shadow-xs animate-pulse">
+              <RefreshCw className="w-8 h-8 text-[#34c4f2] mx-auto animate-spin" />
+              <p className="font-bold text-sm text-zinc-800 dark:text-zinc-200">
+                Loading Tasks & Evaluations...
+              </p>
+              <p className="max-w-md mx-auto text-zinc-500">
+                Fetching date-wise activity and heuristic evaluations for {dateSelection.label}
+              </p>
+            </div>
+          ) : selectedUser.dailyEvaluations.length === 0 ? (
             <div className="p-16 text-center text-xs text-zinc-400 bg-white dark:bg-zinc-900 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-3xl space-y-3">
               <Calendar className="w-8 h-8 text-zinc-300 dark:text-zinc-600 mx-auto" />
               <p className="font-semibold text-zinc-700 dark:text-zinc-300 text-sm">

@@ -4,12 +4,13 @@ import React from 'react';
 import { Sparkles, Briefcase, Bot, ChevronRight, Award, CheckCircle2, Clock, Zap, AlertTriangle } from 'lucide-react';
 
 interface TillDateSummaryProps {
-  userName: string;
-  userEmail: string;
-  role: string;
-  yearsOfExperience: number;
-  seniorityLevel: string;
-  aiSubscriptions: string[];
+  userName?: string;
+  userEmail?: string;
+  role?: string;
+  yearsOfExperience?: number;
+  seniorityLevel?: string;
+  aiSubscriptions?: string[];
+  hideProfileHeader?: boolean;
   summary: {
     doneTasks: number;
     pendingTasks: number;
@@ -28,6 +29,7 @@ export default function ZohoTillDateSummary({
   yearsOfExperience,
   seniorityLevel,
   aiSubscriptions,
+  hideProfileHeader = false,
   summary,
   onOpenWeeklyReport,
   weekLabel,
@@ -39,6 +41,62 @@ export default function ZohoTillDateSummary({
     : 88;
 
   const totalTasks = (summary.doneTasks || 0) + (summary.pendingTasks || 0) + (summary.delayedTasks || 0);
+
+  if (hideProfileHeader) {
+    return (
+      <div className="bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-900/80 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Quick-Metric Bar */}
+          <div className="flex items-center gap-3.5 sm:gap-5 flex-wrap text-xs text-zinc-500 dark:text-zinc-400 font-medium">
+            <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+              <strong className="text-zinc-900 dark:text-white font-bold">{summary.doneTasks}</strong> Done Tasks
+            </span>
+            <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <Clock className="w-3.5 h-3.5 text-amber-500" />
+              <strong className="text-zinc-900 dark:text-white font-bold">{summary.pendingTasks}</strong> In Progress
+            </span>
+            <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
+              <strong className="text-zinc-900 dark:text-white font-bold">{summary.delayedTasks}</strong> Delayed Tasks
+            </span>
+            <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <Zap className="w-3.5 h-3.5 text-[#34c4f2]" />
+              <strong className="text-zinc-900 dark:text-white font-bold">{summary.totalHoursLogged}h</strong> Logged
+            </span>
+            <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <Award className="w-3.5 h-3.5 text-purple-500" />
+              Score: <strong className="text-purple-600 dark:text-purple-400 font-bold">{normalizedWeeklyScore}</strong><span className="text-[11px] text-zinc-400">/100</span>
+            </span>
+          </div>
+
+          {/* Weekly Evaluation Report Button */}
+          {onOpenWeeklyReport && (
+            <button
+              type="button"
+              onClick={onOpenWeeklyReport}
+              className="inline-flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-bold bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md hover:shadow-lg transition-all cursor-pointer group shrink-0"
+              title="Open comprehensive weekly performance report with continuous week-over-week appends"
+            >
+              <Sparkles className="w-4 h-4 text-purple-200 group-hover:scale-110 transition-transform shrink-0" />
+              <div className="flex flex-col text-left">
+                <span className="text-[10px] text-purple-200 font-semibold uppercase tracking-wider leading-none">
+                  {weekLabel || 'Current Sprint Evaluation'}
+                </span>
+                <span className="text-xs font-black mt-0.5">
+                  Weekly Evaluation Report
+                </span>
+              </div>
+              <span className="font-black px-2 py-0.5 rounded-md bg-white/20 text-white border border-white/25 text-xs">
+                {normalizedWeeklyScore}/100
+              </span>
+              <ChevronRight className="w-4 h-4 text-purple-200 group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gradient-to-br from-white to-zinc-50 dark:from-zinc-900 dark:to-zinc-900/80 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm space-y-4">
@@ -121,17 +179,6 @@ export default function ZohoTillDateSummary({
             Score: <strong className="text-purple-600 dark:text-purple-400 font-bold">{normalizedWeeklyScore}</strong><span className="text-[11px] text-zinc-400">/100</span>
           </span>
         </div>
-
-        {onOpenWeeklyReport && (
-          <button
-            type="button"
-            onClick={onOpenWeeklyReport}
-            className="text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            <span>View Full Weekly Audit & Appended History</span>
-            <ChevronRight className="w-3 h-3" />
-          </button>
-        )}
       </div>
     </div>
   );

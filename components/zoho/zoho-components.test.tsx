@@ -211,6 +211,7 @@ describe('Zoho Frontend Components', () => {
       expect(screen.getByText('1')).toBeDefined();
       expect(screen.getByText('89')).toBeDefined();
       expect(screen.getByText('GitHub Copilot')).toBeDefined();
+      expect(screen.queryByText('View Full Weekly Audit & Appended History')).toBeNull();
     });
   });
 
@@ -616,12 +617,91 @@ describe('Zoho Frontend Components', () => {
       });
       expect(screen.getByText('Generate Report')).toBeDefined();
     });
+
+    it('displays loading indicator and dims view when date filtering is in flight', async () => {
+      let resolveFetch: (val: any) => void;
+      const delayedFetchPromise = new Promise((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/admin/zoho/users')) {
+          return {
+            ok: true,
+            json: async () => {
+              await delayedFetchPromise;
+              return { users: mockUsers };
+            },
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      render(<ZohoEvaluationManager />);
+
+      // While initial fetch is delayed, loader appears
+      expect(screen.getByText('Loading user list...')).toBeDefined();
+
+      // Resolve fetch
+      resolveFetch!({ users: mockUsers });
+
+      await waitFor(() => {
+        expect(screen.getByText('jayesh.patel@creolestudios.com')).toBeDefined();
+      });
+
+      // Enter user view
+      fireEvent.click(screen.getByText('jayesh.patel@creolestudios.com'));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Back to All Users')).toBeDefined();
+      });
+
+      // Next filtering call will be delayed
+      let resolveSecondFetch: (val: any) => void;
+      const secondFetchPromise = new Promise((resolve) => {
+        resolveSecondFetch = resolve;
+      });
+
+      (global.fetch as any).mockImplementation(async (url: string) => {
+        if (url.includes('/api/admin/zoho/users')) {
+          return {
+            ok: true,
+            json: async () => {
+              await secondFetchPromise;
+              return { users: mockUsers };
+            },
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      // Trigger prev week step on date filter
+      const prevStepBtn = screen.getByLabelText('Previous Period');
+      fireEvent.click(prevStepBtn);
+
+      // Verify loader indicator is shown on screen while waiting
+      await waitFor(() => {
+        expect(screen.getByText('Loading Tasks & Evaluations...')).toBeDefined();
+      });
+
+      // Resolve second fetch
+      resolveSecondFetch!({ users: mockUsers });
+
+      // Verify task list returns after load finishes
+      await waitFor(() => {
+        expect(screen.queryByText('Loading Tasks & Evaluations...')).toBeNull();
+      });
+    });
   });
 
   describe('formatZohoDurationToClock', () => {
     it('formats numbers and strings into standard clock H:MM format', () => {
       expect(formatZohoDurationToClock(4)).toBe('4:00');
       expect(formatZohoDurationToClock('4:00')).toBe('4:00');
+      expect(formatZohoDurationToClock(8.25)).toBe('8:15');
+      expect(formatZohoDurationToClock('8.25')).toBe('8:15');
+      expect(formatZohoDurationToClock('08:15')).toBe('8:15');
+      expect(formatZohoDurationToClock('8:15')).toBe('8:15');
       expect(formatZohoDurationToClock(3.55)).toBe('3:55');
       expect(formatZohoDurationToClock('3:55')).toBe('3:55');
       expect(formatZohoDurationToClock(3.18)).toBe('3:18');

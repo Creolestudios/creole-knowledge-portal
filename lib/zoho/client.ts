@@ -90,17 +90,23 @@ export function parseDurationToMinutes(durationStr: string | number | null | und
     if (!Number.isFinite(durationStr) || durationStr <= 0) return 0;
     if (Number.isInteger(durationStr)) return durationStr * 60;
 
-    // Numbers like 3.55, 3.18, 4.08 from Zoho timesheets:
-    // If fractional part has 2 digits and is <= 59, it represents clock minutes (H.MM format, e.g. 3.55 = 3h 55m -> 235m)
+    // Numbers like 3.55, 3.18, 4.08 from Zoho timesheets (H.MM format)
+    // or standard decimal fractions from dividing minutes by 60 (.25 = 15m, .50 = 30m, .75 = 45m)
     const str = durationStr.toString();
     const parts = str.split('.');
     const hours = parseInt(parts[0], 10) || 0;
     const fracStr = parts[1] || '';
     if (fracStr.length === 2) {
+      if (fracStr === '25') return hours * 60 + 15;
+      if (fracStr === '50') return hours * 60 + 30;
+      if (fracStr === '75') return hours * 60 + 45;
+
       const mins = parseInt(fracStr, 10);
       if (mins <= 59) {
         return hours * 60 + mins;
       }
+    } else if (fracStr.length === 1) {
+      if (fracStr === '5') return hours * 60 + 30;
     }
     return Math.round(durationStr * 60);
   }
@@ -109,7 +115,7 @@ export function parseDurationToMinutes(durationStr: string | number | null | und
   const trimmed = durationStr.trim();
   if (!trimmed || trimmed === '0' || trimmed === '0:00') return 0;
 
-  // Colon format: "3:55", "03:55", "1:30"
+  // Colon format: "3:55", "03:55", "1:30", "8:15", "08:15"
   if (trimmed.includes(':')) {
     const [h, m] = trimmed.split(':').map(val => parseInt(val, 10));
     const hours = Number.isNaN(h) ? 0 : h;
@@ -125,16 +131,22 @@ export function parseDurationToMinutes(durationStr: string | number | null | und
   if (minsMatch) total += parseInt(minsMatch[1], 10);
   if (total > 0) return total;
 
-  // Dot format string: "3.55", "3.18", "4.08"
+  // Dot format string: "3.55", "3.18", "4.08", "8.25"
   if (trimmed.includes('.')) {
     const parts = trimmed.split('.');
     const hours = parseInt(parts[0], 10) || 0;
     const fracStr = parts[1] || '';
     if (fracStr.length === 2) {
+      if (fracStr === '25') return hours * 60 + 15;
+      if (fracStr === '50') return hours * 60 + 30;
+      if (fracStr === '75') return hours * 60 + 45;
+
       const mins = parseInt(fracStr, 10);
       if (mins <= 59) {
         return hours * 60 + mins;
       }
+    } else if (fracStr.length === 1) {
+      if (fracStr === '5') return hours * 60 + 30;
     }
     const rawNum = parseFloat(trimmed);
     if (!Number.isNaN(rawNum)) return Math.round(rawNum * 60);
@@ -161,10 +173,16 @@ export function formatMinutesToClock(mins: number): string {
 }
 
 /**
- * Formats any Zoho duration string or number into standard "H:MM" format (e.g. 4 -> "4:00", 3.55 -> "3:55").
+ * Formats any Zoho duration string or number into standard "H:MM" format (e.g. 4 -> "4:00", 8.25 -> "8:15", "08:15" -> "8:15").
  */
 export function formatZohoDurationToClock(val: string | number | null | undefined): string {
   if (val == null || val === 0 || val === '0' || val === '0:00') return '0:00';
+  if (typeof val === 'string' && val.includes(':')) {
+    const [h, m] = val.trim().split(':').map(v => parseInt(v, 10));
+    const hours = Number.isNaN(h) ? 0 : h;
+    const minutes = Number.isNaN(m) ? 0 : m;
+    return `${hours}:${minutes.toString().padStart(2, '0')}`;
+  }
   const totalMins = parseDurationToMinutes(val);
   return formatMinutesToClock(totalMins);
 }
@@ -299,7 +317,7 @@ export async function fetchZohoUserTasks(
   token: string,
   portalId: string,
   zohoUserId: string,
-  status: string = 'open',
+  status: string = 'all',
   range = 100
 ): Promise<any[]> {
   try {
@@ -353,6 +371,48 @@ export async function fetchZohoTaskDetails(
 }
 
 /**
+ * Helper to safely parse Zoho comment dates without throwing RangeError on invalid formats
+ */
+export function parseZohoCommentDate(rawTime: any, rawTimeLong?: any): string {
+  if (rawTimeLong) {
+    const num = Number(rawTimeLong);
+    if (!Number.isNaN(num) && num > 0) {
+      return new Date(num).toISOString();
+    }
+  }
+  if (!rawTime) return new Date().toISOString();
+  const str = String(rawTime).trim();
+  // Formats like "30-10-2026 07:10 PM" or "30-10-2026"
+  const dmyMatch = str.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(.*)$/);
+  if (dmyMatch) {
+    const p1 = dmyMatch[1].padStart(2, '0');
+    const p2 = dmyMatch[2].padStart(2, '0');
+    const year = dmyMatch[3];
+    const timeRest = (dmyMatch[4] || '').trim();
+    let day = p1;
+    let month = p2;
+    if (parseInt(p2, 10) > 12 && parseInt(p1, 10) <= 12) {
+      month = p1;
+      day = p2;
+    }
+    const candidate = timeRest ? `${year}-${month}-${day} ${timeRest}` : `${year}-${month}-${day}`;
+    const parsed = new Date(candidate);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+    const fallback = new Date(`${year}-${month}-${day}T00:00:00Z`);
+    if (!Number.isNaN(fallback.getTime())) {
+      return fallback.toISOString();
+    }
+  }
+  const direct = new Date(str);
+  if (!Number.isNaN(direct.getTime())) {
+    return direct.toISOString();
+  }
+  return new Date().toISOString();
+}
+
+/**
  * Fetches comments for a specific Zoho task
  */
 export async function fetchZohoTaskComments(
@@ -371,27 +431,45 @@ export async function fetchZohoTaskComments(
     );
     if (!res.ok) return [];
     const text = await res.text();
-    if (!text || !text.trim().startsWith('{')) return [];
-    const data = JSON.parse(text);
-    const comments = data.comments || [];
-    return comments.map((c: any) => {
-      let isoTime = new Date().toISOString();
-      if (c.created_time_long) {
-        isoTime = new Date(c.created_time_long).toISOString();
-      } else if (c.created_time) {
-        const parts = c.created_time.split('-');
-        if (parts.length === 3) {
-          const dateStr = parts[0].length === 4 ? `${parts[0]}-${parts[1]}-${parts[2]}` : `${parts[2]}-${parts[0]}-${parts[1]}`;
-          isoTime = new Date(dateStr).toISOString();
-        }
-      }
-      return {
-        id: String(c.id_string || c.id || ''),
-        content: stripHtml(c.content || ''),
-        author_name: c.added_person || c.added_by || c.created_person || 'Team Member',
-        added_time: isoTime,
-      };
-    });
+    const trimmed = (text || '').trim();
+    if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return [];
+    const data = JSON.parse(trimmed);
+    const comments = Array.isArray(data)
+      ? data
+      : Array.isArray(data.comments)
+      ? data.comments
+      : Array.isArray(data.task_comments)
+      ? data.task_comments
+      : [];
+
+    return comments
+      .map((c: any) => {
+        const isoTime = parseZohoCommentDate(c.created_time || c.added_time, c.created_time_long);
+        const rawContent =
+          c.comment ||
+          c.comment_content ||
+          c.content ||
+          c.description ||
+          c.notes ||
+          '';
+
+        const authorName =
+          c.added_person ||
+          c.added_by ||
+          c.created_person ||
+          (typeof c.created_by === 'object' && c.created_by ? c.created_by.name : null) ||
+          (typeof c.added_by === 'object' && c.added_by ? c.added_by.name : null) ||
+          c.author ||
+          'Team Member';
+
+        return {
+          id: String(c.id_string || c.id || ''),
+          content: stripHtml(String(rawContent || '')).trim(),
+          author_name: String(authorName || 'Team Member').trim(),
+          added_time: isoTime,
+        };
+      })
+      .filter((c: any) => c.content.length > 0);
   } catch (err) {
     console.warn(`[ZohoClient] fetchZohoTaskComments error for ${taskId}:`, err);
     return [];

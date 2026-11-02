@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseDurationToMinutes } from './client';
+import { parseDurationToMinutes, parseZohoCommentDate } from './client';
 import {
   calculateTimeAdherence,
   evaluateWorkAndCommentMatch,
@@ -241,6 +241,49 @@ describe('Zoho Heuristics Engine', () => {
       expect(summary.performanceSummary).not.toContain('40');
       expect(summary.whereLacked).not.toContain('40');
       expect(summary.whereToImprove).not.toContain('40');
+    });
+  });
+
+  describe('parseDurationToMinutes & Clock Conversion', () => {
+    it('accurately parses 8.25 decimal hours to 495 minutes (8h 15m)', () => {
+      expect(parseDurationToMinutes(8.25)).toBe(495);
+      expect(parseDurationToMinutes('8.25')).toBe(495);
+    });
+
+    it('accurately parses colon duration strings like 08:15 and 8:15 to 495 minutes', () => {
+      expect(parseDurationToMinutes('08:15')).toBe(495);
+      expect(parseDurationToMinutes('8:15')).toBe(495);
+    });
+
+    it('preserves H.MM timesheet entries like 3.55 (235m) and 3.18 (198m)', () => {
+      expect(parseDurationToMinutes(3.55)).toBe(235);
+      expect(parseDurationToMinutes(3.18)).toBe(198);
+    });
+
+    it('handles clean integers like 4 to 240 minutes and 0 to 0', () => {
+      expect(parseDurationToMinutes(4)).toBe(240);
+      expect(parseDurationToMinutes(0)).toBe(0);
+      expect(parseDurationToMinutes(null)).toBe(0);
+    });
+  });
+
+  describe('parseZohoCommentDate', () => {
+    it('safely parses Indian/UK format date string "30-10-2026 07:10 PM" without throwing', () => {
+      const iso = parseZohoCommentDate('30-10-2026 07:10 PM');
+      expect(iso).toBeDefined();
+      expect(iso).toContain('2026-10-30');
+    });
+
+    it('safely handles millisecond timestamps', () => {
+      const timestamp = 1793361000000;
+      const iso = parseZohoCommentDate(null, timestamp);
+      expect(iso).toBe(new Date(timestamp).toISOString());
+    });
+
+    it('gracefully falls back to current time on empty or invalid inputs', () => {
+      const iso = parseZohoCommentDate(null);
+      expect(iso).toBeDefined();
+      expect(new Date(iso).getTime()).toBeGreaterThan(0);
     });
   });
 });
