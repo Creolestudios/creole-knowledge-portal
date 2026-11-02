@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Printer, Award, Clock, CheckCircle2, AlertTriangle, FileText, Bot, Users } from 'lucide-react';
-import { ZohoUserSummary } from '@/lib/zoho/service';
+import { X, Printer, Award, Clock, CheckCircle2, AlertTriangle, FileText, Bot, Users, BarChart3, RefreshCw, History } from 'lucide-react';
+import { ZohoUserSummary, buildWeeklyPerformanceReports } from '@/lib/zoho/service';
 
 interface ZohoReportModalProps {
   isOpen?: boolean;
@@ -66,7 +66,7 @@ export default function ZohoReportModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col cursor-default"
+        className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-5xl xl:max-w-6xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col cursor-default"
       >
         {/* Header */}
         <div className="p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between sticky top-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm z-10">
@@ -224,52 +224,165 @@ export default function ZohoReportModal({
                 </button>
               )}
 
-              {/* Single User Scorecard */}
-              <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                <div>
-                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Evaluation Score</span>
-                  <div className="text-3xl font-black text-purple-600 dark:text-purple-400 mt-1">
-                    {singleUser.tillDateSummary?.weeklyAvgScore ?? 85}
-                  </div>
-                  <span className="text-[10px] text-zinc-400">out of 100</span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Tasks Evaluated</span>
-                  <div className="text-3xl font-black text-zinc-900 dark:text-white mt-1">
-                    {(singleUser.tillDateSummary?.doneTasks || 0) + (singleUser.tillDateSummary?.pendingTasks || 0)}
-                  </div>
-                  <span className="text-[10px] text-emerald-500 font-bold">
-                    {singleUser.tillDateSummary?.doneTasks || 0} Completed
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Hours Logged</span>
-                  <div className="text-3xl font-black text-[#34c4f2] mt-1">
-                    {singleUser.tillDateSummary?.totalHoursLogged || 0}h
-                  </div>
-                  <span className="text-[10px] text-zinc-400">tracked in Zoho</span>
-                </div>
-                <div>
-                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Delayed Tasks</span>
-                  <div className="text-3xl font-black text-rose-500 mt-1">
-                    {singleUser.tillDateSummary?.delayedTasks || 0}
-                  </div>
-                  <span className="text-[10px] text-rose-400 font-bold">past tolerance</span>
-                </div>
-              </div>
+              {/* Weekly Performance Reports - Starts with This Week & Appends Past Weeks */}
+              {(() => {
+                const weeklyReports = buildWeeklyPerformanceReports(singleUser);
+                const thisWeek = weeklyReports[0];
+                const pastWeeks = weeklyReports.slice(1);
 
-              {/* AI Productivity & Executive Summary */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                  <Award className="w-3.5 h-3.5 text-purple-500" />
-                  Executive Evaluation Summary
-                </h4>
-                <div className="p-4 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/60 dark:border-purple-900/30 text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
-                  {(singleUser.tillDateSummary?.weeklyAvgScore ?? 85) >= 85
-                    ? `${singleUser.name || singleUser.email} has demonstrated exemplary engineering discipline during this period. Tasks were consistently transitioned to QA Review with high punctuality, keeping overtime strictly within the 5-minute buffer allowance.`
-                    : `${singleUser.name || singleUser.email} maintained steady velocity; however, evaluations detected areas for improvement including early completion gap alerts and schedule variance.`}
-                </div>
-              </div>
+                return (
+                  <div className="space-y-6">
+                    {/* THIS WEEK REPORT */}
+                    <div className="p-6 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-200 dark:border-zinc-700">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
+                              CURRENT SPRINT
+                            </span>
+                            <h4 className="text-sm font-bold text-zinc-900 dark:text-white">
+                              {thisWeek?.label || 'This Week Performance Report'}
+                            </h4>
+                          </div>
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                            Cumulative audit combining time adherence, work justification, complexity & repetition
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Overall Score:</span>
+                          <span className="text-2xl font-black text-purple-600 dark:text-purple-400">
+                            {thisWeek?.overallScore ?? 88}
+                          </span>
+                          <span className="text-xs text-zinc-400">/ 100</span>
+                        </div>
+                      </div>
+
+                      {/* Metrics Row: Hours, Progress Bar 3/5, Repetitive Rate */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Hours Logged</span>
+                          <div className="text-xl font-black text-[#34c4f2] mt-0.5">
+                            {thisWeek?.totalActualHours ?? 0}h
+                            <span className="text-xs text-zinc-400 font-normal"> / {thisWeek?.totalPlannedHours ?? 0}h planned</span>
+                          </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Repetitive Tasks</span>
+                          <div className="text-xl font-black text-purple-600 dark:text-purple-400 mt-0.5 flex items-center gap-1.5">
+                            <RefreshCw className="w-4 h-4 text-purple-500" />
+                            {thisWeek?.repetitivenessPct ?? 0}%
+                            <span className="text-xs text-zinc-400 font-normal">({thisWeek?.repetitiveCount ?? 0} flagged)</span>
+                          </div>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Completion Velocity</span>
+                          <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                            {thisWeek?.doneTasks ?? 0} / {thisWeek?.totalTasks ?? 0}
+                            <span className="text-xs text-zinc-400 font-normal"> ({thisWeek?.donePct ?? 100}%)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Segmented Task Progress Bar (3/5 Done Style) */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
+                            <BarChart3 className="w-3.5 h-3.5 text-emerald-500" />
+                            Task Breakdown: {thisWeek?.doneTasks} Done • {thisWeek?.inProgressTasks} In Progress • {thisWeek?.delayedTasks} Delayed
+                          </span>
+                          <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                            {thisWeek?.donePct}% Completed
+                          </span>
+                        </div>
+                        <div className="w-full h-2.5 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex">
+                          {(thisWeek?.donePct ?? 0) > 0 && (
+                            <div style={{ width: `${thisWeek?.donePct}%` }} className="bg-emerald-500 h-full transition-all" />
+                          )}
+                          {((thisWeek?.inProgressTasks ?? 0) > 0) && (
+                            <div
+                              style={{ width: `${Math.round(((thisWeek?.inProgressTasks ?? 0) / (thisWeek?.totalTasks || 1)) * 100)}%` }}
+                              className="bg-amber-400 h-full transition-all"
+                            />
+                          )}
+                          {((thisWeek?.delayedTasks ?? 0) > 0) && (
+                            <div
+                              style={{ width: `${Math.round(((thisWeek?.delayedTasks ?? 0) / (thisWeek?.totalTasks || 1)) * 100)}%` }}
+                              className="bg-rose-500 h-full transition-all"
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Full Week Executive Summary in 2-3 Paragraphs */}
+                      <div className="space-y-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                          <Award className="w-3.5 h-3.5" />
+                          Executive Performance Summary (Week {thisWeek?.weekNumber})
+                        </div>
+                        {thisWeek?.summaryParagraphs.map((para, idx) => (
+                          <p key={idx} className="p-3 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800">
+                            {para}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* APPENDED PREVIOUS WEEKS (Rolling Cumulative Timeline) */}
+                    {pastWeeks.length > 0 && (
+                      <div className="space-y-3 pt-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                            <History className="w-3.5 h-3.5 text-zinc-400" />
+                            Appended Performance History ({pastWeeks.length} Previous Week{pastWeeks.length === 1 ? '' : 's'})
+                          </h4>
+                          <span className="text-[11px] text-zinc-400">
+                            Rolling multi-week record automatically updated
+                          </span>
+                        </div>
+
+                        <div className="space-y-3">
+                          {pastWeeks.map((pw) => (
+                            <div
+                              key={pw.weekNumber}
+                              className="p-5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 space-y-3"
+                            >
+                              <div className="flex items-center justify-between pb-2 border-b border-zinc-200/70 dark:border-zinc-700/70">
+                                <div>
+                                  <span className="text-xs font-bold text-zinc-900 dark:text-white">
+                                    {pw.label}
+                                  </span>
+                                  <span className="text-[11px] text-zinc-500 ml-2">
+                                    • {pw.totalActualHours}h logged • {pw.repetitivenessPct}% Repetitive
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                                    {pw.doneTasks}/{pw.totalTasks} Done
+                                  </span>
+                                  <span className="text-sm font-black text-purple-600 dark:text-purple-400">
+                                    {pw.overallScore}/100
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="space-y-1.5 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                                {pw.summaryParagraphs.map((para, idx) => (
+                                  <p key={idx} className="p-2 rounded-lg bg-white/70 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/50">
+                                    {para}
+                                  </p>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Task Log Details Table */}
               {(() => {

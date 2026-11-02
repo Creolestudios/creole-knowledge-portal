@@ -83,13 +83,33 @@ export function buildZohoTaskDeepLink(
 /**
  * Parses time string like "4:30" or "4h 30m" into decimal hours and total minutes
  */
-export function parseDurationToMinutes(durationStr: string | number): number {
+export function parseDurationToMinutes(durationStr: string | number | null | undefined): number {
+  if (durationStr == null) return 0;
+
   if (typeof durationStr === 'number') {
+    if (!Number.isFinite(durationStr) || durationStr <= 0) return 0;
+    if (Number.isInteger(durationStr)) return durationStr * 60;
+
+    // Numbers like 3.55, 3.18, 4.08 from Zoho timesheets:
+    // If fractional part has 2 digits and is <= 59, it represents clock minutes (H.MM format, e.g. 3.55 = 3h 55m -> 235m)
+    const str = durationStr.toString();
+    const parts = str.split('.');
+    const hours = parseInt(parts[0], 10) || 0;
+    const fracStr = parts[1] || '';
+    if (fracStr.length === 2) {
+      const mins = parseInt(fracStr, 10);
+      if (mins <= 59) {
+        return hours * 60 + mins;
+      }
+    }
     return Math.round(durationStr * 60);
   }
-  if (!durationStr || typeof durationStr !== 'string') return 0;
 
+  if (typeof durationStr !== 'string') return 0;
   const trimmed = durationStr.trim();
+  if (!trimmed || trimmed === '0' || trimmed === '0:00') return 0;
+
+  // Colon format: "3:55", "03:55", "1:30"
   if (trimmed.includes(':')) {
     const [h, m] = trimmed.split(':').map(val => parseInt(val, 10));
     const hours = Number.isNaN(h) ? 0 : h;
@@ -97,18 +117,56 @@ export function parseDurationToMinutes(durationStr: string | number): number {
     return hours * 60 + minutes;
   }
 
+  // "3h 55m" or "3h" or "55m"
   const hoursMatch = trimmed.match(/(\d+)\s*h/i);
   const minsMatch = trimmed.match(/(\d+)\s*m/i);
   let total = 0;
   if (hoursMatch) total += parseInt(hoursMatch[1], 10) * 60;
   if (minsMatch) total += parseInt(minsMatch[1], 10);
+  if (total > 0) return total;
 
-  if (total === 0) {
+  // Dot format string: "3.55", "3.18", "4.08"
+  if (trimmed.includes('.')) {
+    const parts = trimmed.split('.');
+    const hours = parseInt(parts[0], 10) || 0;
+    const fracStr = parts[1] || '';
+    if (fracStr.length === 2) {
+      const mins = parseInt(fracStr, 10);
+      if (mins <= 59) {
+        return hours * 60 + mins;
+      }
+    }
     const rawNum = parseFloat(trimmed);
     if (!Number.isNaN(rawNum)) return Math.round(rawNum * 60);
   }
 
-  return total;
+  const rawNum = parseFloat(trimmed);
+  if (!Number.isNaN(rawNum)) {
+    if (Number.isInteger(rawNum)) return rawNum * 60;
+    return Math.round(rawNum * 60);
+  }
+
+  return 0;
+}
+
+
+/**
+ * Formats total minutes into clock format like "4:00" or "3:55".
+ */
+export function formatMinutesToClock(mins: number): string {
+  if (!mins || mins <= 0 || !Number.isFinite(mins)) return '0:00';
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${h}:${m.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Formats any Zoho duration string or number into standard "H:MM" format (e.g. 4 -> "4:00", 3.55 -> "3:55").
+ */
+export function formatZohoDurationToClock(val: string | number | null | undefined): string {
+  if (val == null || val === 0 || val === '0' || val === '0:00') return '0:00';
+  const totalMins = parseDurationToMinutes(val);
+  return formatMinutesToClock(totalMins);
 }
 
 // Global in-memory token cache to prevent hitting Zoho OAuth rate limiters

@@ -221,12 +221,8 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           const plannedMins = parseDurationToMinutes(raw.duration || raw.work || '4:00');
           let actualMins = 0;
           if (raw.log_hours) {
-            const billableMins = typeof raw.log_hours.billable_hours === 'string'
-              ? parseDurationToMinutes(raw.log_hours.billable_hours)
-              : (Number(raw.log_hours.billable_hours) || 0) * 60;
-            const nonBillableMins = typeof raw.log_hours.non_billable_hours === 'string'
-              ? parseDurationToMinutes(raw.log_hours.non_billable_hours)
-              : (Number(raw.log_hours.non_billable_hours) || 0) * 60;
+            const billableMins = parseDurationToMinutes(raw.log_hours.billable_hours);
+            const nonBillableMins = parseDurationToMinutes(raw.log_hours.non_billable_hours);
             const totalMins = billableMins + nonBillableMins;
             if (totalMins > 0) {
               actualMins = Math.round(totalMins);

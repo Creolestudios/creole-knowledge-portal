@@ -8,7 +8,8 @@ import {
   buildSampleUserSummary,
 } from '@/lib/zoho/service';
 import { getLiveZohoSummariesWithFilter } from '@/lib/zoho/sync';
-import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch } from '@/lib/zoho/heuristics';
+import { parseDurationToMinutes } from '@/lib/zoho/client';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence } from '@/lib/zoho/heuristics';
 
 export async function GET(request: Request) {
   try {
@@ -157,17 +158,24 @@ export async function GET(request: Request) {
 
               totalHours += Number(task.actual_hours) || 0;
               const taskEval = (() => {
+                const plannedMins = parseDurationToMinutes(task.planned_hours) || 240;
+                const actualMins = parseDurationToMinutes(task.actual_hours);
+                const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins);
+
                 const raw = task.zoho_task_evaluations?.[0];
                 if (raw) {
+                  const workMatch = raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score;
+                  const overall = Number((workMatch * 0.55 + dynamicTimeAdh.timeScore * 0.40 + (task.is_qa_review ? 0.5 : 0)).toFixed(1));
+
                   return {
-                    overallScore: raw.overall_score > 10 ? raw.overall_score / 10 : raw.overall_score,
-                    timeScore: raw.time_score > 10 ? raw.time_score / 10 : raw.time_score,
-                    workMatchScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
-                    commentQualityScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
+                    overallScore: Math.min(10.0, overall),
+                    timeScore: dynamicTimeAdh.timeScore,
+                    workMatchScore: workMatch,
+                    commentQualityScore: workMatch,
                     complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
                     repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
-                    timeVarianceMinutes: raw.time_variance_minutes,
-                    timeAssessmentLabel: raw.time_assessment_label,
+                    timeVarianceMinutes: dynamicTimeAdh.timeVarianceMinutes,
+                    timeAssessmentLabel: dynamicTimeAdh.assessmentLabel,
                     isRepetitive: raw.is_repetitive,
                     repetitionSimilarityPct: raw.repetition_similarity_pct,
                     matchedTaskId: raw.matched_repetitive_task_id,
@@ -179,34 +187,9 @@ export async function GET(request: Request) {
                   };
                 }
 
-                const plannedHoursNum = Number(task.planned_hours);
-                const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
-                const actualHoursNum = Number(task.actual_hours);
-                const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
-                const variance = actualMins - plannedMins;
-                let timeScore = 10;
-                let timeAssessmentLabel = 'ON_TIME';
-
-                if (actualMins === 0) {
-                  timeScore = 0;
-                  timeAssessmentLabel = 'NOT_LOGGED';
-                } else if (variance > 0 && variance <= 5) {
-                  timeScore = 10;
-                  timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
-                } else if (variance <= 0 && variance >= -15) {
-                  timeScore = 10;
-                  timeAssessmentLabel = 'ON_TIME';
-                } else if (variance < -15) {
-                  const earlyGap = Math.abs(variance) - 15;
-                  const penalty = Math.min(5.0, Number(((earlyGap / (plannedMins || 60)) * 8).toFixed(1)));
-                  timeScore = Math.max(3.0, Number((10 - penalty).toFixed(1)));
-                  timeAssessmentLabel = 'UNEXPECTED_EARLY';
-                } else {
-                  const excess = variance - 5;
-                  const penalty = Math.min(7.0, Number(((excess / (plannedMins || 60)) * 7).toFixed(1)));
-                  timeScore = Math.max(2.0, Number((10 - penalty).toFixed(1)));
-                  timeAssessmentLabel = 'OVERDUE';
-                }
+                const variance = dynamicTimeAdh.timeVarianceMinutes;
+                const timeScore = dynamicTimeAdh.timeScore;
+                const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
 
                 const taskCommentsList = (task.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
                 const hasComments = taskCommentsList.length > 0;
@@ -265,23 +248,27 @@ export async function GET(request: Request) {
               else pending++;
             }
 
-            const dailyEvaluations = Array.from(daysMap.entries()).map(([date, tList]) => ({
-              date,
-              dayScore: tList.length > 0 ? Math.round((scoreSum / activeTasks.length) * 10) / 10 : 8.5,
-              summary: `Completed ${tList.length} task(s) on ${date}.`,
-              tasks: tList.map((t) => {
+            const dailyEvaluations = Array.from(daysMap.entries()).map(([date, tList]) => {
+              const mappedTasks = tList.map((t) => {
                 const evalItem = (() => {
+                  const plannedMins = parseDurationToMinutes(t.planned_hours) || 240;
+                  const actualMins = parseDurationToMinutes(t.actual_hours);
+                  const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins);
+
                   const raw = t.zoho_task_evaluations?.[0];
                   if (raw) {
+                    const workMatch = raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score;
+                    const overall = Number((workMatch * 0.55 + dynamicTimeAdh.timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
+
                     return {
-                      overallScore: raw.overall_score > 10 ? raw.overall_score / 10 : raw.overall_score,
-                      timeScore: raw.time_score > 10 ? raw.time_score / 10 : raw.time_score,
-                      workMatchScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
-                      commentQualityScore: raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score,
+                      overallScore: Math.min(10.0, overall),
+                      timeScore: dynamicTimeAdh.timeScore,
+                      workMatchScore: workMatch,
+                      commentQualityScore: workMatch,
                       complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
                       repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
-                      timeVarianceMinutes: raw.time_variance_minutes,
-                      timeAssessmentLabel: raw.time_assessment_label,
+                      timeVarianceMinutes: dynamicTimeAdh.timeVarianceMinutes,
+                      timeAssessmentLabel: dynamicTimeAdh.assessmentLabel,
                       isRepetitive: raw.is_repetitive,
                       repetitionSimilarityPct: raw.repetition_similarity_pct,
                       matchedTaskId: raw.matched_repetitive_task_id,
@@ -292,34 +279,9 @@ export async function GET(request: Request) {
                       aiModelUsed: raw.ai_model_used || 'gemini-2.5-flash',
                     };
                   }
-                  const plannedHoursNum = Number(t.planned_hours);
-                  const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
-                  const actualHoursNum = Number(t.actual_hours);
-                  const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
-                  const variance = actualMins - plannedMins;
-                  let timeScore = 10;
-                  let timeAssessmentLabel = 'ON_TIME';
-
-                  if (actualMins === 0) {
-                    timeScore = 0;
-                    timeAssessmentLabel = 'NOT_LOGGED';
-                  } else if (variance > 0 && variance <= 5) {
-                    timeScore = 10;
-                    timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
-                  } else if (variance <= 0 && variance >= -15) {
-                    timeScore = 10;
-                    timeAssessmentLabel = 'ON_TIME';
-                  } else if (variance < -15) {
-                    const earlyGap = Math.abs(variance) - 15;
-                    const penalty = Math.min(5.0, Number(((earlyGap / (plannedMins || 60)) * 8).toFixed(1)));
-                    timeScore = Math.max(3.0, Number((10 - penalty).toFixed(1)));
-                    timeAssessmentLabel = 'UNEXPECTED_EARLY';
-                  } else {
-                    const excess = variance - 5;
-                    const penalty = Math.min(7.0, Number(((excess / (plannedMins || 60)) * 7).toFixed(1)));
-                    timeScore = Math.max(2.0, Number((10 - penalty).toFixed(1)));
-                    timeAssessmentLabel = 'OVERDUE';
-                  }
+                  const variance = dynamicTimeAdh.timeVarianceMinutes;
+                  const timeScore = dynamicTimeAdh.timeScore;
+                  const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
 
                   const tCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
                   const hasComments = tCommentsList.length > 0;
@@ -390,8 +352,20 @@ export async function GET(request: Request) {
                   })),
                   evaluation: evalItem,
                 };
-              }),
-            }));
+              });
+
+              const dayScoreSum = mappedTasks.reduce((sum, item) => sum + (item.evaluation?.overallScore || 0), 0);
+              const dayScore = mappedTasks.length > 0
+                ? Math.round((dayScoreSum / mappedTasks.length) * 10) / 10
+                : 8.5;
+
+              return {
+                date,
+                dayScore,
+                summary: `Completed ${mappedTasks.length} task(s) on ${date}.`,
+                tasks: mappedTasks,
+              };
+            });
 
             return {
               userId: authUser.id,
@@ -407,7 +381,7 @@ export async function GET(request: Request) {
                 doneTasks: done,
                 pendingTasks: pending,
                 delayedTasks: delayed,
-                weeklyAvgScore: activeTasks.length > 0 ? Math.round(scoreSum / activeTasks.length) : 88,
+                weeklyAvgScore: activeTasks.length > 0 ? Math.min(100, Math.round((scoreSum / activeTasks.length) * 10)) : 88,
                 totalHoursLogged: Math.round(totalHours * 10) / 10,
               },
               dailyEvaluations,

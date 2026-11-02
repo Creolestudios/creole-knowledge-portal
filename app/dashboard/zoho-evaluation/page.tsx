@@ -15,6 +15,8 @@ import LogoutButton from '@/components/logout-button';
 import ZohoDateFilterPicker, { DateRangeSelection } from '@/components/zoho/zoho-date-filter-picker';
 import ZohoTillDateSummary from '@/components/zoho/zoho-till-date-summary';
 import ZohoTaskModal from '@/components/zoho/zoho-task-modal';
+import ZohoDailyEvaluationModal from '@/components/zoho/zoho-daily-evaluation-modal';
+import ZohoWeeklyEvaluationModal from '@/components/zoho/zoho-weekly-evaluation-modal';
 import {
   ZohoUserSummary,
   ZohoTaskItem,
@@ -42,6 +44,8 @@ function MyZohoEvaluationContent() {
   const [profile, setProfile] = useState<UserProfileSchema | null>(null);
   const [data, setData] = useState<ZohoUserSummary | null>(null);
   const [activeTask, setActiveTask] = useState<ZohoTaskItem | null>(null);
+  const [activeDailyEval, setActiveDailyEval] = useState<any | null>(null);
+  const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Default week filter matching admin dashboard
@@ -149,6 +153,8 @@ function MyZohoEvaluationContent() {
               seniorityLevel={data.seniorityLevel}
               aiSubscriptions={data.aiSubscriptions}
               summary={data.tillDateSummary}
+              onOpenWeeklyReport={() => setShowWeeklyReport(true)}
+              weekLabel={dateSelection.label}
             />
 
             {/* Date Picker Filter Bar above user tasks - Matches image screenshot */}
@@ -187,14 +193,29 @@ function MyZohoEvaluationContent() {
                     key={day.date}
                     className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-xs space-y-4"
                   >
-                    {/* Day Header - Task Date only */}
-                    <div className="flex items-center gap-2 pb-2.5 border-b border-zinc-100 dark:border-zinc-800">
-                      <div className="w-6 h-6 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
-                        <Calendar className="w-3.5 h-3.5" />
+                    {/* Day Header - Task Date & Daily Evaluation Button */}
+                    <div className="flex items-center justify-between pb-2.5 border-b border-zinc-100 dark:border-zinc-800">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
+                          <Calendar className="w-3.5 h-3.5" />
+                        </div>
+                        <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                          {day.date}
+                        </h3>
                       </div>
-                      <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
-                        {day.date}
-                      </h3>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveDailyEval(day)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-all cursor-pointer shadow-2xs hover:shadow-xs group"
+                        title={`View complete daily evaluation audit for ${day.date}`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-purple-500 group-hover:scale-110 transition-transform" />
+                        <span>Daily Evaluation</span>
+                        <span className="font-black px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200">
+                          {day.dayScore.toFixed(1)}/10
+                        </span>
+                      </button>
                     </div>
 
                     {/* Tasks for this day - Only Project Name and Task Title */}
@@ -241,6 +262,31 @@ function MyZohoEvaluationContent() {
           <div className="p-16 text-center text-xs text-zinc-400 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl">
             Could not find your Zoho integration profile.
           </div>
+        )}
+
+        {/* Daily Evaluation Modal */}
+        {activeDailyEval && (
+          <ZohoDailyEvaluationModal
+            day={activeDailyEval}
+            userName={data?.name || user?.email?.split('@')[0] || 'My Evaluations'}
+            userRole={data?.role || profile?.current_role || 'Developer'}
+            userSummary={data || undefined}
+            onClose={() => setActiveDailyEval(null)}
+            hideZohoLink={true}
+            onSelectTask={(task) => {
+              setActiveDailyEval(null);
+              setActiveTask(task);
+            }}
+          />
+        )}
+
+        {/* Weekly Evaluation Modal */}
+        {showWeeklyReport && data && (
+          <ZohoWeeklyEvaluationModal
+            user={data}
+            hideZohoLink={true}
+            onClose={() => setShowWeeklyReport(false)}
+          />
         )}
 
         {/* Task Detail Modal - With hideZohoLink={true} to remove Zoho task link for regular user */}

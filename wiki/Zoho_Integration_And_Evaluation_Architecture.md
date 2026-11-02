@@ -271,7 +271,10 @@ $$\Delta T = T_{\text{actual}} - T_{\text{planned}}$$
 
 #### 2. Early Completion Gap Rule:
 - A buffer of **15 minutes early completion** is permitted with zero penalty:
-  $$-15 \le \Delta T \le 0 \implies \text{Normal completion (100\% adherence)}$$
+  $-15 \le \Delta T \le 0 \implies \text{Normal completion (100\% adherence)}$
+- **Zoho Timesheet Duration Parsing (`H:MM` and `H.MM` format)**:
+  When hours are logged in Zoho Projects in `H:MM` (e.g. `3:55`) or timesheet dot format `H.MM` (e.g. `3.55`), the system parses them as clock hours and minutes ($3\text{ hrs } 55\text{ mins} = 235\text{ mins}$) rather than decimal hours ($3.55 \times 60 = 213\text{ mins}$).
+  For a 4-hour planned task ($240\text{ mins}$), logging `3:55` or `3.55` ($235\text{ mins}$) results in a $-5\text{ minute}$ variance, which falls within the permitted $-15\text{ minute}$ early buffer, correctly earning a **10.0 / 10** Time Adherence score and **'Within Buffer'** status.
 - If completed **earlier than 15 minutes** (e.g., 4h planned task completed in 3h 30m, $\Delta T = -30\text{ min}$):
   - Why this affects evaluation: In professional engineering, significant early completion flags:
     1. **Task Over-Estimation / Estimation Inaccuracy** (padding estimates).
@@ -553,3 +556,36 @@ Administrators have granular, selective control over daily evaluation emails dir
 3. **Zoho Free Tier Rate Limiting**:
    - Internal token bucket with backoff ensures no more than 30 API calls per minute.
    - Sync service persists `last_synced_at` timestamp per user to fetch only modified records.
+
+---
+
+## 9. UI Architecture & Modal Presentation Standards
+
+1. **Wider Modal Architecture (`max-w-5xl xl:max-w-6xl`)**:
+   - All evaluation dialogs (`ZohoDailyEvaluationModal`, `ZohoTaskModal`, and `ZohoReportModal`) utilize an expansive `max-w-5xl xl:max-w-6xl` responsive container.
+   - On desktop screens, this provides ~540px width per column in two-column split audits, eliminating cramped layouts, badge wrapping, and text squishing.
+2. **Horizontal Overflow Prevention (`overflow-x-hidden`)**:
+   - The task list scroll area strictly specifies `overflow-x-hidden` alongside `overflow-y-auto` to prevent horizontal scrollbars on desktop browsers.
+   - Each task card uses a structured two-row responsive layout:
+     - **Row 1**: Project tag, clock hours (`H:MM hrs`), status pill, AI score badge, and Zoho deep link.
+     - **Row 2**: Full-width task title (`w-full truncate block text-left`) with clean hover states and drilldown interaction into individual task evaluations.
+
+---
+
+## 10. Dedicated Weekly Performance Hub & Separation from Daily Audits
+
+1. **Daily Evaluation vs Weekly Evaluation Scope Separation**:
+   - The **Daily Evaluation Modal** (`ZohoDailyEvaluationModal`) strictly focuses on that single calendar day:
+     - Cumulative Planned Time, Actual Spent, and Tolerance Status in clock `H:MM` format.
+     - List of tasks evaluated for that day with one-click drilldown into single-task audits.
+     - Daily score out of 10, Time Adherence (out of 10), Work Justification (out of 10), and Work Status.
+     - **Daily Performance Evaluation & Actionable Insights**: Key accomplishments and targeted improvement areas for that day.
+     - **Explicit Design Rule**: Weekly throughput progress bars (`X / Y Tasks Done`) and `% Repetitive` indices are **NEVER shown in Daily Evaluation**; they belong exclusively in the Weekly Evaluation Hub.
+2. **Weekly Performance & Evaluation Report (`ZohoWeeklyEvaluationModal`)**:
+   - Triggered via the **`✨ Weekly Evaluation Report [XX/100]`** button on the main employee dashboard summary.
+   - Houses the **5 Cumulative Add-On Cards**: Done Tasks, In Progress, Delayed Tasks, Logged Hours, and Overall Score (0–100 scale).
+   - Houses the **Weekly Task Completion Bar** (`X / Y Tasks Done` with segmented distribution).
+   - Houses the **Weekly Repetitive Task Rate** (`% Repetitive`).
+   - Houses the **3-Paragraph Executive Performance Summary** for This Week (Current Sprint).
+   - Houses the **Continuous Week-Over-Week Append Timeline**: Past completed weeks append chronologically below the active sprint (`Week 44` $\rightarrow$ `Week 43` $\rightarrow$ `Week 42`), dynamically updating cumulative totals without replacing previous history.
+

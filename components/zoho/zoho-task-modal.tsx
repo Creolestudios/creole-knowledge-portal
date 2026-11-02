@@ -12,6 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
+import { formatZohoDurationToClock } from '@/lib/zoho/client';
 import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch } from '@/lib/zoho/heuristics';
 
 interface ZohoTaskModalProps {
@@ -149,7 +150,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col cursor-default"
+        className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-5xl xl:max-w-6xl max-h-[92vh] overflow-y-auto shadow-2xl flex flex-col cursor-default"
       >
         {/* Modal Header */}
         <div className="p-5 sm:p-6 border-b border-zinc-100 dark:border-zinc-800 flex items-start justify-between gap-4 sticky top-0 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm z-10">
@@ -213,32 +214,14 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
             </div>
 
             {/* Time & Hours Breakdown Bar */}
-            <div className="grid grid-cols-3 gap-2 p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 text-center">
+            <div className="grid grid-cols-2 gap-3 py-2 px-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 text-center">
               <div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Planned Time</div>
-                <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">{task.plannedHours} hrs</div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">Planned Time</div>
+                <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5 leading-tight">{formatZohoDurationToClock(task.plannedHours)} hrs</div>
               </div>
               <div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Actual Spent</div>
-                <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">{Number(task.actualHours) || 0} hrs</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tolerance Status</div>
-                <div className="text-xs font-bold mt-1">
-                  {(evalData?.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData?.timeAssessmentLabel === 'ON_TIME') && (
-                    <span className="text-emerald-600 dark:text-emerald-400">Within Buffer</span>
-                  )}
-                  {evalData?.timeAssessmentLabel === 'UNEXPECTED_EARLY' && (
-                    <span className="text-amber-600 dark:text-amber-400">Early Gap</span>
-                  )}
-                  {evalData?.timeAssessmentLabel === 'OVERDUE' && (
-                    <span className="text-rose-600 dark:text-rose-400">Buffer Exceeded</span>
-                  )}
-                  {evalData?.timeAssessmentLabel === 'NOT_LOGGED' && (
-                    <span className="text-zinc-500 dark:text-zinc-400">Not Logged</span>
-                  )}
-                  {!evalData && <span className="text-zinc-400">Pending</span>}
-                </div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">Actual Spent</div>
+                <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5 leading-tight">{formatZohoDurationToClock(task.actualHours)} hrs</div>
               </div>
             </div>
 
@@ -306,99 +289,70 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
               </div>
             </div>
 
-            {/* 3 Square Boxes Side by Side */}
-            <div className="grid grid-cols-3 gap-3 text-center">
-              {/* Box 1: TIME ADHERENCE */}
-              <div className="p-3 aspect-square rounded-2xl bg-white dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 shadow-xs flex flex-col justify-between items-center text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block truncate">
-                  Time Adherence
-                </span>
-                <div className="my-auto">
-                  <span className="text-2xl font-black text-zinc-900 dark:text-white">
-                    {timeScore10}
-                  </span>
-                  <span className="text-[10px] font-normal text-zinc-400"> / 10</span>
+            {/* Evaluation Metrics Strip (Reduced space matching Planned Time exactly) */}
+            <div className="grid grid-cols-2 gap-3 py-2 px-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 text-center">
+              {/* Item 1: TIME SPENT (in place of Time Adherence) */}
+              <div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">
+                  Time Spent
                 </div>
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md truncate ${
-                    evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME'
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
-                      : evalData.timeAssessmentLabel === 'NOT_LOGGED'
-                      ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
-                      : evalData.timeAssessmentLabel === 'UNEXPECTED_EARLY'
-                      ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                      : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
-                  }`}
-                >
-                  {evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME'
-                    ? 'Within Buffer'
-                    : evalData.timeAssessmentLabel === 'NOT_LOGGED'
-                    ? 'Not Logged'
-                    : evalData.timeAssessmentLabel === 'UNEXPECTED_EARLY'
-                    ? 'Early Gap'
-                    : 'Buffer Exceeded'}
-                </span>
-              </div>
-
-              {/* Box 2: WORK JUSTIFICATION */}
-              <div className="p-3 aspect-square rounded-2xl bg-white dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 shadow-xs flex flex-col justify-between items-center text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block truncate">
-                  Work Justification
-                </span>
-                <div className="my-auto">
+                <div className="flex items-center justify-center gap-1.5 mt-0.5 flex-wrap">
+                  <span className="text-sm font-black text-zinc-900 dark:text-white leading-tight">
+                    {timeScore10}
+                    <span className="text-[10px] font-normal text-zinc-400">/10</span>
+                  </span>
                   <span
-                    className={`text-2xl font-black ${
-                      !hasComments || Number(workMatchScore10) === 0
-                        ? 'text-rose-600 dark:text-rose-400'
-                        : Number(workMatchScore10) < 6.0
-                        ? 'text-amber-600 dark:text-amber-400'
-                        : 'text-purple-600 dark:text-purple-400'
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none ${
+                      evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+                        : evalData.timeAssessmentLabel === 'NOT_LOGGED'
+                        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400'
+                        : evalData.timeAssessmentLabel === 'UNEXPECTED_EARLY'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
                     }`}
                   >
-                    {workMatchScore10}
+                    {evalData.timeAssessmentLabel === 'SLIGHT_OVERRUN_TOLERATED' || evalData.timeAssessmentLabel === 'ON_TIME'
+                      ? 'Within Buffer'
+                      : evalData.timeAssessmentLabel === 'NOT_LOGGED'
+                      ? 'Not Logged'
+                      : evalData.timeAssessmentLabel === 'UNEXPECTED_EARLY'
+                      ? 'Early Gap'
+                      : 'Buffer Exceeded'}
                   </span>
-                  <span className="text-[10px] font-normal text-zinc-400"> / 10</span>
                 </div>
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md truncate ${
-                    !hasComments || Number(workMatchScore10) === 0
-                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
-                      : Number(workMatchScore10) >= 8.5
-                      ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400'
-                      : Number(workMatchScore10) >= 6.0
-                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400'
-                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
-                  }`}
-                >
-                  {!hasComments || Number(workMatchScore10) === 0
-                    ? 'No Comments'
-                    : Number(workMatchScore10) >= 8.5
-                    ? 'Justified'
-                    : Number(workMatchScore10) >= 6.0
-                    ? 'Partial'
-                    : 'Less Accurate'}
-                </span>
               </div>
 
-              {/* Box 3: WORK STATUS */}
-              <div className="p-3 aspect-square rounded-2xl bg-white dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 shadow-xs flex flex-col justify-between items-center text-center">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block truncate">
-                  Work Status
-                </span>
-                <div className="my-auto px-1">
-                  <span className="text-xs font-black text-zinc-800 dark:text-zinc-200 line-clamp-2 leading-tight">
-                    {task.zohoStatus}
+              {/* Item 2: SCORE (in place of Work Justification) */}
+              <div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">
+                  Score
+                </div>
+                <div className="flex items-center justify-center gap-1.5 mt-0.5 flex-wrap">
+                  <span className="text-sm font-black text-purple-600 dark:text-purple-400 leading-tight">
+                    {workMatchScore10}
+                    <span className="text-[10px] font-normal text-zinc-400">/10</span>
+                  </span>
+                  <span
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none ${
+                      !hasComments || Number(workMatchScore10) === 0
+                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
+                        : Number(workMatchScore10) >= 8.5
+                        ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400'
+                        : Number(workMatchScore10) >= 6.0
+                        ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400'
+                        : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+                    }`}
+                  >
+                    {!hasComments || Number(workMatchScore10) === 0
+                      ? 'No Comments'
+                      : Number(workMatchScore10) >= 8.5
+                      ? 'Justified'
+                      : Number(workMatchScore10) >= 6.0
+                      ? 'Partial'
+                      : 'Less Accurate'}
                   </span>
                 </div>
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md truncate ${
-                    task.isQAReview || task.zohoStatus.toLowerCase().includes('qa')
-                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-                  }`}
-                >
-                  {task.isQAReview || task.zohoStatus.toLowerCase().includes('qa') ? 'QA Verified' : 'In Progress'}
-                </span>
               </div>
             </div>
 

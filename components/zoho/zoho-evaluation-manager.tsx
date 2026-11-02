@@ -22,6 +22,8 @@ import ZohoUserSelectDropdown from './zoho-user-select-dropdown';
 import ZohoFilterBar, { FilterState } from './zoho-filter-bar';
 import ZohoTillDateSummary from './zoho-till-date-summary';
 import ZohoTaskModal from './zoho-task-modal';
+import ZohoDailyEvaluationModal from './zoho-daily-evaluation-modal';
+import ZohoWeeklyEvaluationModal from './zoho-weekly-evaluation-modal';
 import ZohoReportModal from './zoho-report-modal';
 import {
   ZohoUserSummary,
@@ -38,6 +40,8 @@ export default function ZohoEvaluationManager() {
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<ZohoUserSummary | null>(null);
   const [activeTask, setActiveTask] = useState<ZohoTaskItem | null>(null);
+  const [activeDailyEval, setActiveDailyEval] = useState<{ day: any; userName: string; userRole: string } | null>(null);
+  const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isLiveZoho, setIsLiveZoho] = useState(false);
@@ -300,25 +304,6 @@ export default function ZohoEvaluationManager() {
                   <span>{isSyncing ? 'Syncing...' : 'Sync from Zoho'}</span>
                 </button>
               </div>
-
-              {/* Status Indicators & Count Pill */}
-              <div className="flex items-center gap-2">
-                {isLiveZoho && (
-                  <span
-                    className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5"
-                    title={`Live Zoho Projects connected. Last synced: ${lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : 'Recently'}`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>Live Zoho</span>
-                  </span>
-                )}
-
-                <div className="text-xs text-zinc-500 dark:text-zinc-400 font-medium bg-zinc-50 dark:bg-zinc-800/60 px-3 py-1.5 rounded-xl border border-zinc-200/60 dark:border-zinc-800">
-                  {selectedUserIds.length > 0
-                    ? `${selectedUserIds.length} of ${nonAdminUsers.length} users selected`
-                    : `${nonAdminUsers.length} active users`}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -482,6 +467,8 @@ export default function ZohoEvaluationManager() {
             seniorityLevel={selectedUser.seniorityLevel}
             aiSubscriptions={selectedUser.aiSubscriptions}
             summary={selectedUser.tillDateSummary}
+            onOpenWeeklyReport={() => setShowWeeklyReport(true)}
+            weekLabel={dateSelection.label}
           />
 
           {/* Date Picker Filter Bar above user tasks */}
@@ -518,14 +505,35 @@ export default function ZohoEvaluationManager() {
                   key={day.date}
                   className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-xs space-y-4"
                 >
-                  {/* Day Header - Task Date only */}
-                  <div className="flex items-center gap-2 pb-2.5 border-b border-zinc-100 dark:border-zinc-800">
-                    <div className="w-6 h-6 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
-                      <Calendar className="w-3.5 h-3.5" />
+                  {/* Day Header - Task Date & Daily Evaluation Button */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
+                        <Calendar className="w-3.5 h-3.5" />
+                      </div>
+                      <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+                        {day.date}
+                      </h3>
                     </div>
-                    <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
-                      {day.date}
-                    </h3>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveDailyEval({
+                          day,
+                          userName: selectedUser.name,
+                          userRole: selectedUser.role,
+                        })
+                      }
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-all cursor-pointer shadow-2xs hover:shadow-xs group"
+                      title={`View complete daily evaluation audit for ${day.date}`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-purple-500 group-hover:scale-110 transition-transform" />
+                      <span>Daily Evaluation</span>
+                      <span className="font-black px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200">
+                        {day.dayScore.toFixed(1)}/10
+                      </span>
+                    </button>
                   </div>
 
                   {/* Tasks for this day - Only Project Name and Task Title */}
@@ -566,6 +574,29 @@ export default function ZohoEvaluationManager() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Daily Evaluation Modal */}
+      {activeDailyEval && (
+        <ZohoDailyEvaluationModal
+          day={activeDailyEval.day}
+          userName={activeDailyEval.userName}
+          userRole={activeDailyEval.userRole}
+          userSummary={selectedUser || undefined}
+          onClose={() => setActiveDailyEval(null)}
+          onSelectTask={(task) => {
+            setActiveDailyEval(null);
+            setActiveTask(task);
+          }}
+        />
+      )}
+
+      {/* Weekly Evaluation Modal */}
+      {showWeeklyReport && selectedUser && (
+        <ZohoWeeklyEvaluationModal
+          user={selectedUser}
+          onClose={() => setShowWeeklyReport(false)}
+        />
       )}
 
       {/* Task Detail Modal */}

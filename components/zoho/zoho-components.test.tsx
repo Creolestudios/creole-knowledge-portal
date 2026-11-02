@@ -8,9 +8,12 @@ import ZohoUserSelectDropdown from './zoho-user-select-dropdown';
 import ZohoTillDateSummary from './zoho-till-date-summary';
 import ZohoTaskCard from './zoho-task-card';
 import ZohoTaskModal from './zoho-task-modal';
+import ZohoDailyEvaluationModal from './zoho-daily-evaluation-modal';
+import ZohoWeeklyEvaluationModal from './zoho-weekly-evaluation-modal';
+import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
 import ZohoReportModal from './zoho-report-modal';
 import ZohoEvaluationManager from './zoho-evaluation-manager';
-import { ZohoTaskItem, getMockZohoData } from '@/lib/zoho/service';
+import { ZohoTaskItem, getMockZohoData, buildWeeklyPerformanceReports } from '@/lib/zoho/service';
 
 describe('Zoho Frontend Components', () => {
   describe('ZohoFilterBar', () => {
@@ -301,12 +304,13 @@ describe('Zoho Frontend Components', () => {
       expect(screen.getByText('Task Description')).toBeDefined();
       expect(screen.getByText('Detailed description of task scope and RLS rules')).toBeDefined();
       expect(screen.getByText('Planned Time')).toBeDefined();
-      expect(screen.getAllByText('4 hrs').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('4:00 hrs').length).toBeGreaterThan(0);
       expect(screen.getByText('Related Comments (1)')).toBeDefined();
       expect(screen.getByText('Performance Evaluation')).toBeDefined();
-      expect(screen.getByText('Time Adherence')).toBeDefined();
-      expect(screen.getByText('Work Justification')).toBeDefined();
-      expect(screen.getByText('Work Status')).toBeDefined();
+      expect(screen.getByText('Time Spent')).toBeDefined();
+      expect(screen.getByText('Score')).toBeDefined();
+      expect(screen.queryByText('Tolerance Status')).toBeNull();
+      expect(screen.queryByText('Work Status')).toBeNull();
 
       const closeBtn = screen.getByText('Close');
       fireEvent.click(closeBtn);
@@ -331,8 +335,8 @@ describe('Zoho Frontend Components', () => {
         plannedHours: 8,
       };
       render(<ZohoTaskModal task={unloggedTask} onClose={vi.fn()} />);
-      expect(screen.getByText('0 hrs')).toBeDefined();
-      expect(screen.getByText('8 hrs')).toBeDefined();
+      expect(screen.getByText('0:00 hrs')).toBeDefined();
+      expect(screen.getByText('8:00 hrs')).toBeDefined();
       expect(screen.getAllByText('Not Logged').length).toBeGreaterThan(0);
     });
 
@@ -526,6 +530,163 @@ describe('Zoho Frontend Components', () => {
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith('/api/admin/zoho/sync', { method: 'POST' });
       });
+    });
+  });
+
+  describe('formatZohoDurationToClock', () => {
+    it('formats numbers and strings into standard clock H:MM format', () => {
+      expect(formatZohoDurationToClock(4)).toBe('4:00');
+      expect(formatZohoDurationToClock('4:00')).toBe('4:00');
+      expect(formatZohoDurationToClock(3.55)).toBe('3:55');
+      expect(formatZohoDurationToClock('3:55')).toBe('3:55');
+      expect(formatZohoDurationToClock(3.18)).toBe('3:18');
+      expect(formatZohoDurationToClock(0)).toBe('0:00');
+      expect(formatZohoDurationToClock('0')).toBe('0:00');
+      expect(formatMinutesToClock(235)).toBe('3:55');
+      expect(formatMinutesToClock(240)).toBe('4:00');
+    });
+  });
+
+  describe('ZohoDailyEvaluationModal', () => {
+    const mockDay = {
+      date: '2026-10-30',
+      dayScore: 8.8,
+      summary: 'Completed 2 task(s) on 2026-10-30 with high adherence.',
+      tasks: [
+        {
+          id: 't-1',
+          zohoTaskId: 'z-1',
+          projectId: 'p-1',
+          projectName: 'CS Website',
+          taskName: 'Clean Up Database and Review Geolocation Storage',
+          taskDescription: 'Detailed database cleanup',
+          zohoStatus: 'In QA Review',
+          isQAReview: true,
+          plannedHours: 4.0,
+          actualHours: 3.97,
+          taskDate: '2026-10-30',
+          zohoLink: 'https://projects.zoho.com/...',
+          comments: [{ author: 'Krunal', content: 'Reviewed database and executed cleanup', time: '1:00 PM' }],
+          evaluation: {
+            overallScore: 9.9,
+            timeScore: 10.0,
+            commentQualityScore: 9.9,
+            complexityScore: 8.5,
+            repetitionScore: 10.0,
+            timeVarianceMinutes: -2,
+            timeAssessmentLabel: 'ON_TIME',
+            isRepetitive: false,
+            repetitionSimilarityPct: 0,
+            matchedTaskId: null,
+            summaryFeedback: 'Excellent implementation and progress updates.',
+            strengths: ['Clean database migration'],
+            improvements: [],
+            aiModelUsed: 'gemini-2.5-flash',
+          },
+        },
+        {
+          id: 't-2',
+          zohoTaskId: 'z-2',
+          projectId: 'p-1',
+          projectName: 'CS Website',
+          taskName: 'Continue upgrade WordPress Core and Plugins on CS and KSA',
+          taskDescription: 'Upgraded WordPress plugins',
+          zohoStatus: 'In QA Review',
+          isQAReview: true,
+          plannedHours: 4.0,
+          actualHours: 3.55,
+          taskDate: '2026-10-30',
+          zohoLink: 'https://projects.zoho.com/...',
+          comments: [{ author: 'Krunal', content: 'Updated core version and plugin versions', time: '2:00 PM' }],
+          evaluation: {
+            overallScore: 8.0,
+            timeScore: 10.0,
+            commentQualityScore: 6.2,
+            complexityScore: 8.0,
+            repetitionScore: 10.0,
+            timeVarianceMinutes: -5,
+            timeAssessmentLabel: 'ON_TIME',
+            isRepetitive: false,
+            repetitionSimilarityPct: 0,
+            matchedTaskId: null,
+            summaryFeedback: 'Solid execution within time buffer.',
+            strengths: ['Disciplined time buffer'],
+            improvements: ['Provide more technical depth'],
+            aiModelUsed: 'gemini-2.5-flash',
+          },
+        },
+      ],
+    };
+
+    it('renders daily evaluation header, aggregate clock hours, and day score', () => {
+      const onClose = vi.fn();
+      render(
+        <ZohoDailyEvaluationModal
+          day={mockDay}
+          userName="Krunal Bhimajiyani"
+          userRole="Senior Developer"
+          onClose={onClose}
+        />
+      );
+
+      expect(screen.getByText('Daily Performance & Activity Evaluation')).toBeDefined();
+      expect(screen.getByText('2026-10-30')).toBeDefined();
+      expect(screen.getByText('2 Tasks Evaluated')).toBeDefined();
+      expect(screen.getAllByText('Within Buffer').length).toBeGreaterThan(0);
+      expect(screen.getByText('8:00 hrs')).toBeDefined(); // Planned time
+      expect(screen.getByText('Time Spent')).toBeDefined();
+      expect(screen.getByText('Score')).toBeDefined();
+      expect(screen.queryByText('Tolerance Status')).toBeNull();
+      expect(screen.queryByText('Work Status')).toBeNull();
+      expect(screen.getByText('Daily Performance Evaluation & Actionable Insights')).toBeDefined();
+      expect(screen.getByText('Key Accomplishments for the Day:')).toBeDefined();
+      expect(screen.getByText('Key Areas to Improve & Work On:')).toBeDefined();
+      expect(screen.getByText('Close Daily Evaluation')).toBeDefined();
+
+      fireEvent.click(screen.getByText('Close Daily Evaluation'));
+      expect(onClose).toHaveBeenCalled();
+    });
+  });
+
+  describe('buildWeeklyPerformanceReports', () => {
+    it('generates weekly reports starting with this week, completion progress bar, and 3 paragraphs', () => {
+      const mockUser = getMockZohoData()[0];
+      const reports = buildWeeklyPerformanceReports(mockUser);
+      expect(reports.length).toBeGreaterThan(0);
+      expect(reports[0].isCurrentWeek).toBe(true);
+      expect(reports[0].overallScore).toBeGreaterThanOrEqual(50);
+      expect(reports[0].overallScore).toBeLessThanOrEqual(100);
+      expect(reports[0].summaryParagraphs.length).toBe(3);
+      expect(reports[0].doneTasks).toBeDefined();
+      expect(reports[0].repetitivenessPct).toBeDefined();
+    });
+  });
+
+  describe('ZohoWeeklyEvaluationModal', () => {
+    it('renders cumulative 5 cards, task progress bar, % repetitive, and 3-paragraph executive summary with appended past weeks', () => {
+      const mockUser = getMockZohoData()[0];
+      const onClose = vi.fn();
+      render(
+        <ZohoWeeklyEvaluationModal
+          user={mockUser}
+          onClose={onClose}
+        />
+      );
+
+      expect(screen.getByText('Weekly Performance & Evaluation Report (Cumulative)')).toBeDefined();
+      expect(screen.getAllByText('Done Tasks').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('In Progress').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Delayed Tasks').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Logged Hours').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('Overall Score').length).toBeGreaterThan(0);
+      expect(screen.getByText(/Task Progress:/i)).toBeDefined();
+      expect(screen.getAllByText(/Repetitive/i).length).toBeGreaterThan(0);
+      expect(screen.getByText('CURRENT WEEK')).toBeDefined();
+      expect(screen.getByText(/Executive Performance Summary/i)).toBeDefined();
+      expect(screen.getByText('Close Weekly Report')).toBeDefined();
+
+      fireEvent.click(screen.getByText('Close Weekly Report'));
+      expect(onClose).toHaveBeenCalled();
     });
   });
 });

@@ -3,6 +3,7 @@
 import React from 'react';
 import { ExternalLink, Clock, MessageSquare, CheckCircle, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
+import { formatZohoDurationToClock } from '@/lib/zoho/client';
 
 interface ZohoTaskCardProps {
   task: ZohoTaskItem;
@@ -14,19 +15,22 @@ export default function ZohoTaskCard({ task, onClick }: ZohoTaskCardProps) {
 
   // Time status color pill
   const getTimeBadge = () => {
+    const actualClock = formatZohoDurationToClock(task.actualHours);
+    const plannedClock = formatZohoDurationToClock(task.plannedHours);
+
     if (!evalData) {
       return (
         <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
-          {task.actualHours}h / {task.plannedHours}h
+          {actualClock} hrs / {plannedClock} hrs
         </span>
       );
     }
 
-    if (evalData.timeAssessmentLabel === 'NOT_LOGGED' || task.actualHours === 0) {
+    if (evalData.timeAssessmentLabel === 'NOT_LOGGED' || Number(task.actualHours) === 0) {
       return (
         <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          {task.actualHours}h / {task.plannedHours}h (Not Logged)
+          0:00 hrs / {plannedClock} hrs (Not Logged)
         </span>
       );
     }
@@ -35,7 +39,7 @@ export default function ZohoTaskCard({ task, onClick }: ZohoTaskCardProps) {
       return (
         <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          {task.actualHours}h / {task.plannedHours}h (On Time)
+          {actualClock} hrs / {plannedClock} hrs (On Time)
         </span>
       );
     }
@@ -44,7 +48,7 @@ export default function ZohoTaskCard({ task, onClick }: ZohoTaskCardProps) {
       return (
         <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
           <Clock className="w-3 h-3" />
-          {task.actualHours}h / {task.plannedHours}h (Early Gap)
+          {actualClock} hrs / {plannedClock} hrs (Early Gap)
         </span>
       );
     }
@@ -52,7 +56,7 @@ export default function ZohoTaskCard({ task, onClick }: ZohoTaskCardProps) {
     return (
       <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 flex items-center gap-1">
         <Clock className="w-3 h-3" />
-        {task.actualHours}h / {task.plannedHours}h (Overdue)
+        {actualClock} hrs / {plannedClock} hrs (Overdue)
       </span>
     );
   };

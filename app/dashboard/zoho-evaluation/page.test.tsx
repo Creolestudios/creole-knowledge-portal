@@ -176,11 +176,32 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
       expect(screen.getByText('Performance Evaluation')).toBeDefined();
     });
 
-    expect(screen.getByText('Time Adherence')).toBeDefined();
-    expect(screen.getByText('Work Justification')).toBeDefined();
-    expect(screen.getByText('Work Status')).toBeDefined();
+    expect(screen.getByText('Time Spent')).toBeDefined();
+    expect(screen.getByText('Score')).toBeDefined();
+    expect(screen.queryByText('Tolerance Status')).toBeNull();
+    expect(screen.queryByText('Work Status')).toBeNull();
 
     // CRITICAL USER REQUIREMENT: In popup remove task link for zoho in user
     expect(screen.queryByText('Open in Zoho')).toBeNull();
+  });
+
+  it('opens daily evaluation popup when clicking Daily Evaluation button beside date header', async () => {
+    render(<MyZohoEvaluationPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('2026-10-30')).toBeDefined();
+    });
+
+    const dailyEvalButtons = screen.getAllByRole('button', { name: /Daily Evaluation/i });
+    expect(dailyEvalButtons.length).toBeGreaterThan(0);
+
+    fireEvent.click(dailyEvalButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Daily Performance & Activity Evaluation')).toBeDefined();
+    });
+
+    expect(screen.getByText('Tasks Evaluated for this Day (2)')).toBeDefined();
+    expect(screen.getByText('Close Daily Evaluation')).toBeDefined();
   });
 });

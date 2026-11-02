@@ -264,7 +264,7 @@ describe('/api/cron/zoho-evaluation Route Handler', () => {
 
   it('rejects unauthorized requests in production when secret is incorrect', async () => {
     const originalEnv = process.env.NODE_ENV;
-    (process.env as Record<string, string>).NODE_ENV = 'production';
+    (process.env as Record<string, string | undefined>).NODE_ENV = 'production';
 
     const req = new Request('https://portal.creolestudios.com/api/cron/zoho-evaluation', {
       headers: { authorization: 'Bearer wrong-secret' },
@@ -273,7 +273,7 @@ describe('/api/cron/zoho-evaluation Route Handler', () => {
     const res = await GET(req);
     expect(res.status).toBe(401);
 
-    (process.env as Record<string, string>).NODE_ENV = originalEnv;
+    (process.env as Record<string, string | undefined>).NODE_ENV = originalEnv;
   });
 
   it('authorizes requests with matching Bearer CRON_SECRET and executes cron', async () => {
