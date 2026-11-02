@@ -193,8 +193,8 @@ describe('UserManagement Admin & Manager Digest Sub-Tab', () => {
     });
   });
 
-  it('triggers manual digest dispatch via Trigger Today\'s Digest Now button', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string, opts?: any) => {
+  it('does not render trigger button and renders concise note explaining digest email usage', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/admin/users')) {
         return Promise.resolve({ ok: true, json: async () => [] });
       }
@@ -204,16 +204,6 @@ describe('UserManagement Admin & Manager Digest Sub-Tab', () => {
           json: async () => ({
             success: true,
             data: [{ id: 'rec-1', email: 'cto@creolestudios.com' }],
-          }),
-        });
-      }
-      if (url.includes('/api/admin/zoho/send-digest-email')) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({
-            success: true,
-            recipientCount: 1,
-            usersEvaluated: 5,
           }),
         });
       }
@@ -229,17 +219,8 @@ describe('UserManagement Admin & Manager Digest Sub-Tab', () => {
     fireEvent.click(screen.getByTestId('tab-admin-manager-digest'));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /Trigger Today's Digest Now/i })).toBeDefined();
-    });
-
-    const triggerBtn = screen.getByRole('button', { name: /Trigger Today's Digest Now/i });
-    fireEvent.click(triggerBtn);
-
-    await waitFor(() => {
-      expect(global.fetch).toHaveBeenCalledWith(
-        '/api/admin/zoho/send-digest-email',
-        expect.objectContaining({ method: 'POST' })
-      );
+      expect(screen.queryByRole('button', { name: /Trigger Today's Digest Now/i })).toBeNull();
+      expect(screen.getByText('Emails added here will receive the daily consolidated summary report table.')).toBeDefined();
     });
   });
 });

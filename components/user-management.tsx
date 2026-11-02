@@ -22,7 +22,6 @@ import {
   Sparkles,
   Bot,
   Users,
-  Send,
   Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -87,7 +86,6 @@ export default function UserManagement() {
   const [digestEmailInput, setDigestEmailInput] = useState('');
   const [digestEmailError, setDigestEmailError] = useState('');
   const [addingDigestEmail, setAddingDigestEmail] = useState(false);
-  const [sendingDigest, setSendingDigest] = useState(false);
 
   const supabase = createClient();
 
@@ -164,30 +162,6 @@ export default function UserManagement() {
       const msg = err instanceof Error ? err.message : String(err);
       setToast({ message: msg, type: 'error' });
       void fetchDigestRecipients();
-    }
-  };
-
-  const handleTriggerDigestNow = async () => {
-    setSendingDigest(true);
-    try {
-      const res = await fetch('/api/admin/zoho/send-digest-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to trigger digest email');
-      setToast({
-        message: `Daily digest dispatched to ${json.recipientCount} recipient(s) for ${json.usersEvaluated} team members!`,
-        type: 'success',
-      });
-      setTimeout(() => setToast(null), 4000);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setToast({ message: msg, type: 'error' });
-      setTimeout(() => setToast(null), 4000);
-    } finally {
-      setSendingDigest(false);
     }
   };
   
@@ -1105,46 +1079,19 @@ export default function UserManagement() {
       </AnimatePresence>
       ) : (
         <div className="space-y-6 animate-in fade-in duration-200" data-testid="admin-manager-digest-section">
-          {/* Header Card */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-6">
-            <div>
-              <h2 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight flex items-center gap-2.5">
-                <Mail className="text-[#34c4f2] w-6 h-6" />
-                Admin &amp; Manager Digest Emails
-              </h2>
-              <p className="text-zinc-500 dark:text-zinc-400 text-sm mt-1">
-                Configure email addresses that receive the daily 10:00 PM IST consolidated report with all employee tasks, hours, scores, and evaluation reasons in a table format.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              disabled={sendingDigest || digestEmails.length === 0}
-              onClick={handleTriggerDigestNow}
-              className="inline-flex items-center gap-2 px-5 py-3 bg-[#34c4f2] hover:bg-[#2db0db] text-zinc-900 font-bold rounded-xl text-xs uppercase tracking-wider transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-sm shadow-[#34c4f2]/20"
-              title="Trigger today's consolidated table digest email right now to all configured recipient emails"
-            >
-              {sendingDigest ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Send size={15} />
-              )}
-              <span>{sendingDigest ? 'Dispatching...' : "Trigger Today's Digest Now"}</span>
-            </button>
+          {/* Header */}
+          <div className="border-b border-zinc-200 dark:border-zinc-800 pb-4">
+            <h2 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight flex items-center gap-2.5">
+              <Mail className="text-[#34c4f2] w-6 h-6" />
+              Admin &amp; Manager Digest Emails
+            </h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              Emails added here will receive the daily consolidated summary report table.
+            </p>
           </div>
 
           {/* Multiple Email Input Field Card */}
-          <div className="bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-5">
-            <div>
-              <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-400">
-                <Mail size={14} className="text-[#34c4f2]" />
-                Recipient Emails ({digestEmails.length})
-              </label>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                Enter emails of admins, managers, or stakeholders who should receive the consolidated daily summary table.
-              </p>
-            </div>
-
+          <div className="bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs space-y-4">
             {/* Email input + Add button */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -1219,28 +1166,12 @@ export default function UserManagement() {
                   </AnimatePresence>
 
                   {digestEmails.length === 0 && (
-                    <div className="w-full py-8 text-center bg-zinc-50 dark:bg-zinc-900/40 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
-                      <Mail className="w-8 h-8 text-zinc-300 dark:text-zinc-600 mx-auto mb-2" />
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 font-medium">
-                        No recipient emails added yet.
-                      </p>
-                      <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                        Type an email address above and press Enter or comma to start receiving daily consolidated reports.
-                      </p>
+                    <div className="w-full py-6 text-center text-xs text-zinc-400">
+                      No recipient emails added yet.
                     </div>
                   )}
                 </div>
               )}
-            </div>
-
-            {/* Informational Callout */}
-            <div className="p-4 bg-sky-50 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/40 rounded-xl text-xs text-sky-800 dark:text-sky-300 space-y-1">
-              <p className="font-bold flex items-center gap-1.5">
-                <span>ℹ️</span> Consolidated Daily Digest Delivery
-              </p>
-              <p className="text-[11px] leading-relaxed text-sky-700 dark:text-sky-400">
-                At 10:00 PM IST daily, a single consolidated email is dispatched exclusively to the email addresses listed above. The report includes a complete evaluation table summarizing each team member&apos;s logged tasks, planned vs. actual hours, due/delayed tasks, quality score, and evaluative reason. Site admins are not included unless their emails are explicitly added above.
-              </p>
             </div>
           </div>
         </div>
