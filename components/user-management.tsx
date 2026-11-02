@@ -769,15 +769,15 @@ export default function UserManagement() {
                     </div>
                   </div>
 
-                  {/* Daily 10 PM Evaluation Email Toggle */}
+                  {/* Daily 12:30 PM Evaluation Email Toggle */}
                   <div className="p-5 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700/80 rounded-2xl flex items-center justify-between gap-4">
                     <div>
                       <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-900 dark:text-white">
                         <Mail size={14} className="text-[#34c4f2]" />
-                        Daily 10:00 PM Evaluation Email
+                        Daily 12:30 PM Evaluation Email
                       </label>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                        When enabled, daily performance reports will be automatically emailed to this user and their reporting seniors at 10:00 PM IST.
+                        When enabled, daily performance reports will be automatically emailed to this user and their reporting seniors at 12:30 PM IST.
                       </p>
                     </div>
 

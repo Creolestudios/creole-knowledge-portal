@@ -304,4 +304,17 @@ describe('/api/cron/zoho-evaluation Route Handler', () => {
     expect(data.skipped).toBe(true);
     expect(data.message).toContain('Saturday');
   });
+
+  it('verifies vercel.json schedules /api/cron/zoho-evaluation at 07:00 UTC (12:30 PM IST) on weekdays', async () => {
+    const fs = await import('fs');
+    const path = await import('path');
+    const vercelConfig = JSON.parse(
+      fs.readFileSync(path.resolve(process.cwd(), 'vercel.json'), 'utf-8')
+    );
+    const cronItem = vercelConfig.crons.find(
+      (c: { path: string }) => c.path === '/api/cron/zoho-evaluation'
+    );
+    expect(cronItem).toBeDefined();
+    expect(cronItem.schedule).toBe('0 7 * * 1-5');
+  });
 });

@@ -69,7 +69,7 @@ function getTimeBadgeColor(assessment: string): { bg: string; text: string } {
 
 /**
  * Generates an executive, mobile-friendly HTML & plain-text email
- * for daily 10 PM Zoho Task Evaluation reporting.
+ * for daily Zoho Task Evaluation reporting.
  */
 export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayload): {
   subject: string;
@@ -215,7 +215,7 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
                   <td>
                     <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; color: #34c4f2; font-weight: 700;">Creole Knowledge Portal</span>
                     <h1 style="margin: 4px 0 0 0; font-size: 20px; font-weight: 800; color: #ffffff;">Daily Zoho Task Evaluation</h1>
-                    <p style="margin: 4px 0 0 0; font-size: 13px; color: #a1a1aa;">Automated 10:00 PM IST Analysis Report</p>
+                    <p style="margin: 4px 0 0 0; font-size: 13px; color: #a1a1aa;">Automated 12:30 PM IST Analysis Report</p>
                   </td>
                   <td align="right" style="vertical-align: middle;">
                     <div style="background-color: ${scoreColors.bg}; border: 1px solid ${scoreColors.border}; color: ${scoreColors.text}; padding: 8px 16px; border-radius: 12px; text-align: center; display: inline-block;">
@@ -340,7 +340,7 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                This automated email was delivered to <strong>${escapeHtml(payload.userEmail)}</strong> and designated reporting seniors following the daily 10:00 PM IST Zoho evaluation crawl.
+                This automated email was delivered to <strong>${escapeHtml(payload.userEmail)}</strong> and designated reporting seniors following the daily 12:30 PM IST Zoho evaluation crawl.
               </p>
               <p style="margin: 6px 0 0 0; font-size: 10px; color: #cbd5e1;">
                 &copy; ${new Date().getFullYear()} Creole Studios &middot; Creole Knowledge Portal
