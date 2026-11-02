@@ -59,7 +59,7 @@ function cleanText(str: string | null | undefined): string {
 }
 
 /**
- * Runs the dedicated daily 12:30 PM Zoho Evaluation Cron.
+ * Runs the dedicated daily 10 PM Zoho Evaluation Cron.
  * Monday to Friday only (skips Saturday and Sunday unless allowWeekend is true).
  *
  * Steps:
