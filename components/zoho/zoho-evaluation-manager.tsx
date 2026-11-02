@@ -122,6 +122,11 @@ export default function ZohoEvaluationManager() {
     return u.email.toLowerCase().includes(q);
   });
 
+  const handleSelectUser = (u: ZohoUserSummary | null) => {
+    setDateSelection(getDefaultWeekSelection());
+    setSelectedUser(u);
+  };
+
   const handleToggleDailyEmail = async (userId: string, currentEnabled: boolean) => {
     const newEnabled = !currentEnabled;
     // Optimistic update
@@ -235,7 +240,7 @@ export default function ZohoEvaluationManager() {
                   <div
                     key={u.userId}
                     className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-850 transition-colors group cursor-pointer"
-                    onClick={() => setSelectedUser(u)}
+                    onClick={() => handleSelectUser(u)}
                   >
                     <div className="flex items-center gap-3">
                       {/* Icon */}
@@ -249,7 +254,7 @@ export default function ZohoEvaluationManager() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setSelectedUser(u);
+                            handleSelectUser(u);
                           }}
                           className="text-sm font-semibold text-zinc-900 dark:text-white group-hover:text-[#34c4f2] transition-colors text-left cursor-pointer"
                         >
@@ -284,7 +289,7 @@ export default function ZohoEvaluationManager() {
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSelectedUser(u);
+                          handleSelectUser(u);
                         }}
                         className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 group-hover:text-[#34c4f2] transition-colors cursor-pointer"
                       >
@@ -307,7 +312,7 @@ export default function ZohoEvaluationManager() {
               {/* Back Arrow Button */}
               <button
                 type="button"
-                onClick={() => setSelectedUser(null)}
+                onClick={() => handleSelectUser(null)}
                 className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-[#34c4f2] text-xs font-bold transition-all cursor-pointer shadow-xs hover:text-[#34c4f2] hover:bg-[#34c4f2]/5 shrink-0"
                 title="Back to All Users"
                 aria-label="Back to All Users"

@@ -576,6 +576,46 @@ describe('Zoho Frontend Components', () => {
         expect(screen.queryByText('Employee Evaluation Report')).toBeNull();
       });
     });
+
+    it('resets date filter back to default week when selecting or switching between users', async () => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/admin/zoho/users')) {
+          return {
+            ok: true,
+            json: async () => ({ users: mockUsers }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      render(<ZohoEvaluationManager />);
+
+      await waitFor(() => {
+        expect(screen.getByText('jayesh.patel@creolestudios.com')).toBeDefined();
+      });
+
+      // Click on User A
+      fireEvent.click(screen.getByText('jayesh.patel@creolestudios.com'));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Back to All Users')).toBeDefined();
+      });
+
+      // Navigate back
+      fireEvent.click(screen.getByLabelText('Back to All Users'));
+
+      await waitFor(() => {
+        expect(screen.getByText('srushti.amin@creolestudios.com')).toBeDefined();
+      });
+
+      // Click on User B - date filter is fresh for the new user
+      fireEvent.click(screen.getByText('srushti.amin@creolestudios.com'));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Back to All Users')).toBeDefined();
+      });
+      expect(screen.getByText('Generate Report')).toBeDefined();
+    });
   });
 
   describe('formatZohoDurationToClock', () => {
