@@ -589,3 +589,17 @@ Administrators have granular, selective control over daily evaluation emails dir
    - Houses the **3-Paragraph Executive Performance Summary** for This Week (Current Sprint).
    - Houses the **Continuous Week-Over-Week Append Timeline**: Past completed weeks append chronologically below the active sprint (`Week 44` $\rightarrow$ `Week 43` $\rightarrow$ `Week 42`), dynamically updating cumulative totals without replacing previous history.
 
+---
+
+## 11. Admin Zoho Evaluation Navigation & User-Scoped Filtering
+
+1. **Outer View (All Users Dashboard)**:
+   - Displays a clean list of active Zoho developers, with search-by-email and live Zoho synchronization.
+   - Multi-select dropdowns and outer date filters are removed to eliminate ambiguity.
+   - Includes individual 12:30 PM automated daily email toggles per developer.
+2. **Inner View (Inspecting a Developer)**:
+   - Back arrow icon button (`←`) enables instant return to the all-users list.
+   - Developer identity (Name & Email) sits cleanly in the header with an individual Sync Zoho action.
+   - Positioned directly below the identity header is the dedicated period filter (`ZohoDateFilterPicker` supporting Week, Month, and Custom Date Range) alongside the **Generate Report** action.
+   - Changing the period immediately recalculates that developer's Till-Date Summary, velocity, and daily task audits.
+

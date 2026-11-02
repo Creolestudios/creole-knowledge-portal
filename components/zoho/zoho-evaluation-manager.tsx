@@ -18,8 +18,6 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import ZohoDateFilterPicker, { DateRangeSelection } from './zoho-date-filter-picker';
-import ZohoUserSelectDropdown from './zoho-user-select-dropdown';
-import ZohoFilterBar, { FilterState } from './zoho-filter-bar';
 import ZohoTillDateSummary from './zoho-till-date-summary';
 import ZohoTaskModal from './zoho-task-modal';
 import ZohoDailyEvaluationModal from './zoho-daily-evaluation-modal';
@@ -37,7 +35,6 @@ import {
 
 export default function ZohoEvaluationManager() {
   const [users, setUsers] = useState<ZohoUserSummary[]>([]);
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedUser, setSelectedUser] = useState<ZohoUserSummary | null>(null);
   const [activeTask, setActiveTask] = useState<ZohoTaskItem | null>(null);
   const [activeDailyEval, setActiveDailyEval] = useState<{ day: any; userName: string; userRole: string } | null>(null);
@@ -47,7 +44,6 @@ export default function ZohoEvaluationManager() {
   const [isLiveZoho, setIsLiveZoho] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailNotification, setEmailNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Zoho-style Date Selection (Week, Month, Range, Day)
@@ -126,45 +122,6 @@ export default function ZohoEvaluationManager() {
     return u.email.toLowerCase().includes(q);
   });
 
-  // Handle single user checkbox toggle
-  const handleToggleUser = (userId: string) => {
-    if (selectedUserIds.includes(userId)) {
-      setSelectedUserIds((prev) => prev.filter((id) => id !== userId));
-    } else {
-      setSelectedUserIds((prev) => [...prev, userId]);
-    }
-  };
-
-  const handleSendEvaluationEmail = async () => {
-    if (selectedUserIds.length === 0 || isSendingEmail) return;
-    setIsSendingEmail(true);
-    try {
-      const res = await fetch('/api/admin/zoho/send-evaluation-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userIds: selectedUserIds }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setEmailNotification({
-          message: `Successfully dispatched evaluation emails to ${data.sentCount} user(s) and their reporting seniors!`,
-          type: 'success',
-        });
-      } else {
-        setEmailNotification({
-          message: data.error || 'Failed to dispatch evaluation emails',
-          type: 'error',
-        });
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setEmailNotification({ message: msg, type: 'error' });
-    } finally {
-      setIsSendingEmail(false);
-      setTimeout(() => setEmailNotification(null), 5000);
-    }
-  };
-
   const handleToggleDailyEmail = async (userId: string, currentEnabled: boolean) => {
     const newEnabled = !currentEnabled;
     // Optimistic update
@@ -209,101 +166,35 @@ export default function ZohoEvaluationManager() {
                   Zoho Users
                 </h2>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  Select a user email to inspect their date-wise task data, or generate evaluation reports
+                  Select a user email to inspect their date-wise task data and evaluations
                 </p>
               </div>
             </div>
 
-            {/* Quick search input by email */}
-            <div className="relative w-full sm:w-72">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Search user email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#34c4f2]"
-              />
-            </div>
-          </div>
-
-          {/* Filter Toolbar Above User List: Week/Month/Range Selection + Users Dropdown + Generate Report Button */}
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-xs">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-3">
-                {/* 1. Zoho Date Filter Picker (Week / Month / Range Selection) */}
-                <ZohoDateFilterPicker
-                  value={dateSelection}
-                  onChange={(newSel) => setDateSelection(newSel)}
+            <div className="flex items-center gap-2.5">
+              {/* Quick search input by email */}
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search user email..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#34c4f2]"
                 />
-
-                {/* 2. Dropdown of All Users with 'All Users' checkbox and individual checkboxes */}
-                <ZohoUserSelectDropdown
-                  users={nonAdminUsers.map((u) => ({
-                    userId: u.userId,
-                    email: u.email,
-                    name: u.name,
-                  }))}
-                  selectedUserIds={selectedUserIds}
-                  onChange={(newSelected) => setSelectedUserIds(newSelected)}
-                />
-
-                {/* 3. Generate Report Button */}
-                <button
-                  type="button"
-                  onClick={() => setShowReport(true)}
-                  disabled={selectedUserIds.length === 0}
-                  className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all ${
-                    selectedUserIds.length > 0
-                      ? 'bg-[#34c4f2] hover:bg-[#2eb0db] text-zinc-900 shadow-sm shadow-[#34c4f2]/20 active:scale-95 cursor-pointer font-bold'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700/60 cursor-not-allowed opacity-60'
-                  }`}
-                  title={
-                    selectedUserIds.length > 0
-                      ? `Generate evaluation report for ${selectedUserIds.length} users`
-                      : 'Select at least one user to generate report'
-                  }
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>
-                    Generate Report {selectedUserIds.length > 0 ? `(${selectedUserIds.length})` : ''}
-                  </span>
-                </button>
-
-                {/* 4. Send Evaluation Email to Selected Users */}
-                <button
-                  type="button"
-                  onClick={handleSendEvaluationEmail}
-                  disabled={selectedUserIds.length === 0 || isSendingEmail}
-                  className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all ${
-                    selectedUserIds.length > 0 && !isSendingEmail
-                      ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-sm shadow-purple-600/20 active:scale-95 cursor-pointer font-bold'
-                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700/60 cursor-not-allowed opacity-60'
-                  }`}
-                  title={
-                    selectedUserIds.length > 0
-                      ? `Send daily evaluation email to ${selectedUserIds.length} selected user(s) and their seniors`
-                      : 'Select at least one user to send email'
-                  }
-                >
-                  <Mail className={`w-4 h-4 ${isSendingEmail ? 'animate-bounce' : ''}`} />
-                  <span>
-                    {isSendingEmail ? 'Sending...' : `Send Email ${selectedUserIds.length > 0 ? `(${selectedUserIds.length})` : ''}`}
-                  </span>
-                </button>
-
-                {/* 5. Sync Live Tasks from Zoho Button */}
-                <button
-                  type="button"
-                  onClick={handleSyncFromZoho}
-                  disabled={isSyncing}
-                  className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60"
-                  title="Synchronize real-time tasks, descriptions, and hours from Zoho Projects"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-[#34c4f2] ${isSyncing ? 'animate-spin' : ''}`} />
-                  <span>{isSyncing ? 'Syncing...' : 'Sync from Zoho'}</span>
-                </button>
               </div>
+
+              {/* Sync Live Tasks from Zoho Button */}
+              <button
+                type="button"
+                onClick={handleSyncFromZoho}
+                disabled={isSyncing}
+                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 shrink-0"
+                title="Synchronize real-time tasks, descriptions, and hours from Zoho Projects"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#34c4f2] ${isSyncing ? 'animate-spin' : ''}`} />
+                <span>{isSyncing ? 'Syncing...' : 'Sync from Zoho'}</span>
+              </button>
             </div>
           </div>
 
@@ -340,35 +231,34 @@ export default function ZohoEvaluationManager() {
           ) : (
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl divide-y divide-zinc-100 dark:divide-zinc-800 shadow-xs overflow-hidden">
               {filteredUsers.map((u) => {
-                const isChecked = selectedUserIds.includes(u.userId);
                 return (
                   <div
                     key={u.userId}
-                    className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-850 transition-colors group"
+                    className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-850 transition-colors group cursor-pointer"
+                    onClick={() => setSelectedUser(u)}
                   >
                     <div className="flex items-center gap-3">
-                      {/* Checkbox for report selection */}
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleToggleUser(u.userId)}
-                        className="w-4 h-4 rounded text-[#34c4f2] bg-zinc-100 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 focus:ring-[#34c4f2] focus:ring-offset-0 cursor-pointer accent-[#34c4f2] shrink-0"
-                        title="Include in report"
-                      />
-
                       {/* Icon */}
                       <div className="w-9 h-9 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-500 group-hover:text-[#34c4f2] group-hover:bg-[#34c4f2]/10 transition-colors flex items-center justify-center shrink-0">
                         <Mail className="w-4 h-4" />
                       </div>
 
-                      {/* User Email (Clickable to view task data) */}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedUser(u)}
-                        className="text-sm font-semibold text-zinc-900 dark:text-white group-hover:text-[#34c4f2] transition-colors text-left cursor-pointer"
-                      >
-                        {u.email}
-                      </button>
+                      {/* User Email & Name (Clickable to view task data) */}
+                      <div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedUser(u);
+                          }}
+                          className="text-sm font-semibold text-zinc-900 dark:text-white group-hover:text-[#34c4f2] transition-colors text-left cursor-pointer"
+                        >
+                          {u.email}
+                        </button>
+                        {u.name && (
+                          <p className="text-[11px] text-zinc-400">{u.name} · {u.role || 'Developer'}</p>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -392,8 +282,11 @@ export default function ZohoEvaluationManager() {
 
                       <button
                         type="button"
-                        onClick={() => setSelectedUser(u)}
-                        className="flex items-center gap-2 text-xs font-semibold text-zinc-400 group-hover:text-[#34c4f2] transition-colors cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedUser(u);
+                        }}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 group-hover:text-[#34c4f2] transition-colors cursor-pointer"
                       >
                         <span>View Task Data</span>
                         <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -408,26 +301,36 @@ export default function ZohoEvaluationManager() {
       ) : (
         /* View 2: Date-Wise Task Data for Selected User */
         <div className="space-y-6">
-          {/* Top Bar with Back Button & Report Action */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-zinc-200 dark:border-zinc-800">
+          {/* Header Row: Back Arrow, User Name & Email, Sync Action */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
             <div className="flex items-center gap-3">
+              {/* Back Arrow Button */}
               <button
                 type="button"
                 onClick={() => setSelectedUser(null)}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-[#34c4f2] text-xs font-bold transition-all cursor-pointer shadow-xs hover:text-[#34c4f2]"
+                className="p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 hover:border-[#34c4f2] text-xs font-bold transition-all cursor-pointer shadow-xs hover:text-[#34c4f2] hover:bg-[#34c4f2]/5 shrink-0"
+                title="Back to All Users"
+                aria-label="Back to All Users"
               >
                 <ArrowLeft className="w-4 h-4" />
-                <span>Back to All Users</span>
+                <span className="sr-only">Back to All Users</span>
               </button>
 
               <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-[#34c4f2]/10 text-[#34c4f2]">
+                <div className="p-2 rounded-xl bg-[#34c4f2]/10 text-[#34c4f2] shrink-0">
                   <Mail className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-black text-zinc-900 dark:text-white">
-                    {selectedUser.email}
-                  </h2>
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <h2 className="text-lg font-black text-zinc-900 dark:text-white">
+                      {selectedUser.name || selectedUser.email}
+                    </h2>
+                    {selectedUser.name && (
+                      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                        ({selectedUser.email})
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-zinc-400">
                     Date-wise task data and evaluations
                   </p>
@@ -435,26 +338,46 @@ export default function ZohoEvaluationManager() {
               </div>
             </div>
 
+            {/* Sync Zoho Button on Top Right */}
             <div className="flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={handleSyncFromZoho}
                 disabled={isSyncing}
-                className="text-xs font-bold px-3 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60"
+                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60"
                 title="Synchronize latest tasks from Zoho Projects"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-[#34c4f2] ${isSyncing ? 'animate-spin' : ''}`} />
                 <span>{isSyncing ? 'Syncing...' : 'Sync Zoho'}</span>
               </button>
+            </div>
+          </div>
 
-              <button
-                type="button"
-                onClick={() => setShowReport(true)}
-                className="text-xs font-bold px-4 py-2 rounded-xl bg-[#34c4f2] hover:bg-[#2eb0db] text-zinc-900 shadow-sm flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Generate Evaluation Report</span>
-              </button>
+          {/* Filter Bar Below User Info: Date Filter Picker & Generate Report Button */}
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-3 px-4 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Date Filter Picker (Week / Month / Range Selection) */}
+                <ZohoDateFilterPicker
+                  value={dateSelection}
+                  onChange={(newSel) => setDateSelection(newSel)}
+                />
+
+                {/* Generate Report for this user */}
+                <button
+                  type="button"
+                  onClick={() => setShowReport(true)}
+                  className="text-xs font-bold px-4 py-2 rounded-xl bg-[#34c4f2] hover:bg-[#2eb0db] text-zinc-900 shadow-sm flex items-center gap-2 transition-all cursor-pointer active:scale-95"
+                  title={`Generate evaluation report for ${selectedUser.name || selectedUser.email}`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Generate Report</span>
+                </button>
+              </div>
+
+              <span className="text-xs text-zinc-400">
+                {selectedUser.dailyEvaluations.flatMap((d) => d.tasks).length} tasks in {dateSelection.label}
+              </span>
             </div>
           </div>
 
@@ -471,20 +394,11 @@ export default function ZohoEvaluationManager() {
             weekLabel={dateSelection.label}
           />
 
-          {/* Date Picker Filter Bar above user tasks */}
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 shadow-xs">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-zinc-500">Period:</span>
-                <ZohoDateFilterPicker
-                  value={dateSelection}
-                  onChange={(newSel) => setDateSelection(newSel)}
-                />
-              </div>
-              <span className="text-xs text-zinc-400">
-                {selectedUser.dailyEvaluations.flatMap((d) => d.tasks).length} tasks in selected period
-              </span>
-            </div>
+          {/* Section Header: Tasks in selected period */}
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+              Daily Task Activity
+            </h3>
           </div>
 
           {/* Date-Wise Task Breakdown */}
@@ -605,11 +519,10 @@ export default function ZohoEvaluationManager() {
       )}
 
       {/* Evaluation Report Modal */}
-      {showReport && (
+      {showReport && selectedUser && (
         <ZohoReportModal
           isOpen={showReport}
           user={selectedUser}
-          users={!selectedUser ? nonAdminUsers.filter((u) => selectedUserIds.includes(u.userId)) : undefined}
           filterType={dateSelection.type}
           dateRangeText={dateSelection.label}
           onClose={() => setShowReport(false)}

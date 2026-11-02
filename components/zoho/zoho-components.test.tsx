@@ -531,6 +531,51 @@ describe('Zoho Frontend Components', () => {
         expect(mockFetch).toHaveBeenCalledWith('/api/admin/zoho/sync', { method: 'POST' });
       });
     });
+
+    it('moves date filter and generate report inside user detail view and removes outer select user dropdown', async () => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/admin/zoho/users')) {
+          return {
+            ok: true,
+            json: async () => ({ users: mockUsers }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+
+      render(<ZohoEvaluationManager />);
+
+      // Outer view: Ensure "Select Users" dropdown is removed
+      await waitFor(() => {
+        expect(screen.getByText('jayesh.patel@creolestudios.com')).toBeDefined();
+      });
+      expect(screen.queryByText('Select Users')).toBeNull();
+
+      // Click on a user
+      fireEvent.click(screen.getByText('jayesh.patel@creolestudios.com'));
+
+      // Inner view: Verify back arrow button and inside controls
+      await waitFor(() => {
+        expect(screen.getByLabelText('Back to All Users')).toBeDefined();
+      });
+      // Generate Report button is now inside the clicked user's view
+      expect(screen.getByText('Generate Report')).toBeDefined();
+
+      // Click Generate Report inside user view
+      fireEvent.click(screen.getByText('Generate Report'));
+
+      // Verify single employee evaluation report opens
+      await waitFor(() => {
+        expect(screen.getByText('Employee Evaluation Report')).toBeDefined();
+        expect(screen.getByText(/Generated for Jayesh Patel/)).toBeDefined();
+      });
+
+      // Close report
+      fireEvent.click(screen.getByText('Close Report'));
+      await waitFor(() => {
+        expect(screen.queryByText('Employee Evaluation Report')).toBeNull();
+      });
+    });
   });
 
   describe('formatZohoDurationToClock', () => {
