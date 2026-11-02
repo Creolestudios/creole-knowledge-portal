@@ -8,11 +8,14 @@ import {
   stripHtml,
   buildZohoTaskDeepLink,
   parseDurationToMinutes,
+  extractPlannedMinutesFromTask,
 } from './client';
 import { evaluateZohoTask } from './evaluator';
 import { formatDateYYYYMMDD, formatUserName } from './service';
-import { sendDailyEvaluationEmail } from '../email/service';
+import { sendDailyEvaluationEmail, sendDailyDigestEmail } from '../email/service';
+import { getDigestRecipientEmails } from './digest-recipients-store';
 import type { TaskEmailItem, DailyEvaluationEmailPayload } from '../email/templates/daily-evaluation-email';
+import type { DailyDigestUserRow, DailyDigestEmailPayload } from '../email/templates/daily-digest-email';
 
 export interface UserEvaluationDetail {
   userEmail: string;
@@ -39,6 +42,8 @@ export interface DailyZohoEvaluationCronResult {
   durationMs: number;
   error?: string;
   details: UserEvaluationDetail[];
+  digestDelivered?: boolean;
+  digestRecipientsCount?: number;
   skipped?: boolean;
   skipReason?: string;
 }
@@ -150,6 +155,8 @@ export async function runDailyZohoEvaluationCron(
       return profile?.role !== 'admin';
     });
 
+    const digestUserRows: DailyDigestUserRow[] = [];
+
     for (const authUser of nonAdminUsers) {
       const email = (authUser.email || '').toLowerCase().trim();
       const profile = profiles?.find(
@@ -243,7 +250,7 @@ export async function runDailyZohoEvaluationCron(
           continue;
         }
 
-        const plannedMins = parseDurationToMinutes(raw.duration || raw.work || '4:00');
+        const plannedMins = extractPlannedMinutesFromTask(raw.duration, raw.work, raw.name);
         let actualMins = 0;
 
         if (raw.log_hours) {
@@ -468,6 +475,7 @@ export async function runDailyZohoEvaluationCron(
           const emailPayload: DailyEvaluationEmailPayload = {
             userName: fullName,
             userEmail: email,
+            userRole: (profile?.current_role as string) || (profile?.role as string) || 'Developer',
             date: targetDate,
             dailyScore,
             totalPlannedHours: Math.round(userPlannedHours * 100) / 100,
@@ -503,6 +511,25 @@ export async function runDailyZohoEvaluationCron(
         console.log(`[ZohoCron] Daily evaluation email is disabled for ${email}. Skipping dispatch.`);
       }
 
+      if (userTaskCount > 0) {
+        digestUserRows.push({
+          userId: authUser.id,
+          userName: fullName,
+          userEmail: email,
+          role: profile?.role || 'user',
+          seniorityLevel,
+          totalTasks: userTaskCount,
+          doneTasks: userDoneTasks,
+          delayedTasks: userDelayedTasks,
+          qaTasks: userQATasks,
+          totalPlannedHours: Math.round(userPlannedHours * 100) / 100,
+          totalActualHours: Math.round(userActualHours * 100) / 100,
+          dailyScore,
+          reason: dailySummary || 'Daily evaluation completed.',
+          importantNotes: Array.from(new Set(userImprovements)).slice(0, 3),
+        });
+      }
+
       details.push({
         userEmail: email,
         userName: fullName,
@@ -514,6 +541,51 @@ export async function runDailyZohoEvaluationCron(
         seniorEmails,
         emailDelivered,
       });
+    }
+
+    // Dispatch consolidated Daily Digest Email to Admins & Managers
+    let digestDelivered = false;
+    let digestRecipientsCount = 0;
+
+    if (digestUserRows.length > 0) {
+      try {
+        const adminEmails = await getDigestRecipientEmails();
+
+        if (adminEmails.length > 0) {
+          const teamAvgScore =
+            digestUserRows.reduce((acc, u) => acc + u.dailyScore, 0) / digestUserRows.length;
+          const totalPlanned = digestUserRows.reduce((acc, u) => acc + u.totalPlannedHours, 0);
+          const totalActual = digestUserRows.reduce((acc, u) => acc + u.totalActualHours, 0);
+          const totalTasks = digestUserRows.reduce((acc, u) => acc + u.totalTasks, 0);
+          const totalDone = digestUserRows.reduce((acc, u) => acc + u.doneTasks, 0);
+          const totalDelayed = digestUserRows.reduce((acc, u) => acc + u.delayedTasks, 0);
+
+          const digestPayload: DailyDigestEmailPayload = {
+            date: targetDate,
+            teamAvgScore: Math.round(teamAvgScore * 10) / 10,
+            totalUsersEvaluated: digestUserRows.length,
+            totalTasks,
+            totalDoneTasks: totalDone,
+            totalDelayedTasks: totalDelayed,
+            totalPlannedHours: Math.round(totalPlanned * 100) / 100,
+            totalActualHours: Math.round(totalActual * 100) / 100,
+            users: digestUserRows,
+          };
+
+          const digestResult = await sendDailyDigestEmail({
+            to: adminEmails,
+            payload: digestPayload,
+            dryRun,
+          });
+
+          if (digestResult.success) {
+            digestDelivered = true;
+            digestRecipientsCount = digestResult.recipientCount;
+          }
+        }
+      } catch (dErr) {
+        console.warn('[ZohoCron] Daily digest dispatch to admins failed:', dErr);
+      }
     }
 
     return {
@@ -528,6 +600,8 @@ export async function runDailyZohoEvaluationCron(
       emailsFailed: totalEmailsFailed,
       durationMs: Date.now() - startTime,
       details,
+      digestDelivered,
+      digestRecipientsCount,
     };
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);

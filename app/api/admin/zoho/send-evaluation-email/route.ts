@@ -265,6 +265,7 @@ export async function POST(request: Request) {
       const payload: DailyEvaluationEmailPayload = {
         userName: fullName,
         userEmail: email,
+        userRole: (profile?.current_role as string) || (profile?.role as string) || 'Developer',
         date: targetDate,
         dailyScore: Math.round(dailyScore * 10),
         totalPlannedHours: Math.round(userPlannedHours * 100) / 100,
