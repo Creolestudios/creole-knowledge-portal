@@ -95,9 +95,10 @@ export async function middleware(request: NextRequest) {
     return redirectResponse;
   };
 
-  // 1. If not logged in and trying to access protected routes -> redirect to login
+  // 1. If not logged in and trying to access protected routes -> redirect to login preserving next destination
   if (!user && (isDashboard || isAdminDashboard)) {
-    return redirect('/');
+    const nextDestination = request.nextUrl.pathname + request.nextUrl.search;
+    return redirect(`/?next=${encodeURIComponent(nextDestination)}`);
   }
 
   // 2. If logged in as admin and trying to access root -> redirect to admin dashboard (but allow access to standard dashboard)

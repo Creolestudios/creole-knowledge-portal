@@ -14,7 +14,11 @@ import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch } from '
 import { formatDateYYYYMMDD, formatUserName } from '@/lib/zoho/service';
 import { sendDailyDigestEmail } from '@/lib/email/service';
 import { getDigestRecipientEmails } from '@/lib/zoho/digest-recipients-store';
-import type { DailyDigestUserRow, DailyDigestEmailPayload } from '@/lib/email/templates/daily-digest-email';
+import {
+  type DailyDigestUserRow,
+  type DailyDigestEmailPayload,
+  buildEvaluationSummaryPointers,
+} from '@/lib/email/templates/daily-digest-email';
 
 export async function POST(request: Request) {
   try {
@@ -78,6 +82,17 @@ export async function POST(request: Request) {
       // Continue if table or mock unavailable
     }
 
+    let allTasks: any[] = [];
+    try {
+      const resTasks = await supabaseAdmin
+        .from('zoho_tasks')
+        .select('*')
+        .eq('task_date', targetDate);
+      if (Array.isArray(resTasks?.data)) allTasks = resTasks.data;
+    } catch {
+      // Continue if table or mock unavailable
+    }
+
     const ckpUsers = authData?.users?.filter((u) => u.last_sign_in_at != null) || [];
     const nonAdminUsers = ckpUsers.filter((authUser) => {
       const email = (authUser.email || '').toLowerCase().trim();
@@ -122,6 +137,7 @@ export async function POST(request: Request) {
       let userScoreSum = 0;
       let userTaskCount = 0;
       const userImprovements: string[] = [];
+      const userTaskStatuses: string[] = [];
 
       for (const raw of rawTasks) {
         let taskDateStr = '';
@@ -137,6 +153,8 @@ export async function POST(request: Request) {
         if (!taskDateStr) taskDateStr = targetDate;
 
         if (taskDateStr !== targetDate) continue;
+
+        userTaskStatuses.push(raw.status?.name || 'In Progress');
 
         const plannedMins = extractPlannedMinutesFromTask(raw.duration, raw.work, raw.name);
         let actualMins = 0;
@@ -228,7 +246,7 @@ export async function POST(request: Request) {
           isQAReview: userQATasks > 0,
         });
 
-        digestUserRows.push({
+        const rowData: DailyDigestUserRow = {
           userId: authUser.id,
           userName: fullName,
           userEmail: email,
@@ -242,14 +260,18 @@ export async function POST(request: Request) {
           dailyScore,
           reason: dynamicSummary.performanceSummary,
           importantNotes: Array.from(new Set(userImprovements)).slice(0, 3),
-        });
+          taskStatuses: userTaskStatuses,
+        };
+        rowData.summaryPointers = buildEvaluationSummaryPointers(rowData);
+        digestUserRows.push(rowData);
       } else {
         const dbEval = dbDailyEvals?.find((e) => e.user_id === authUser.id);
         if (dbEval) {
           const scoreNorm = Number(
             (dbEval.daily_score > 10 ? dbEval.daily_score / 10 : dbEval.daily_score).toFixed(1)
           );
-          digestUserRows.push({
+          const userTaskItems = (allTasks || []).filter((t: any) => t.user_id === authUser.id);
+          const rowData: DailyDigestUserRow = {
             userId: authUser.id,
             userName: fullName,
             userEmail: email,
@@ -263,7 +285,10 @@ export async function POST(request: Request) {
             dailyScore: scoreNorm,
             reason: dbEval.daily_summary || 'Task activity evaluated from Zoho Projects.',
             importantNotes: dbEval.total_actual_hours === 0 ? ['No timelog hours recorded in Zoho for this date'] : ['Timelog entries recorded in Zoho Projects'],
-          });
+            taskStatuses: userTaskItems.map((t: any) => t.zoho_status || 'In Progress'),
+          };
+          rowData.summaryPointers = buildEvaluationSummaryPointers(rowData);
+          digestUserRows.push(rowData);
         }
       }
     }
@@ -292,6 +317,7 @@ export async function POST(request: Request) {
       totalPlannedHours: Math.round(totalPlanned * 100) / 100,
       totalActualHours: Math.round(totalActual * 100) / 100,
       users: digestUserRows,
+      portalUrl: process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
     };
 
     const emailResult = await sendDailyDigestEmail({

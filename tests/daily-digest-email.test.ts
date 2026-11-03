@@ -9,7 +9,11 @@ vi.mock('nodemailer', () => ({
   },
 }));
 
-import { generateDailyDigestEmail, DailyDigestEmailPayload } from '@/lib/email/templates/daily-digest-email';
+import {
+  generateDailyDigestEmail,
+  buildEvaluationSummaryPointers,
+  DailyDigestEmailPayload,
+} from '@/lib/email/templates/daily-digest-email';
 import { sendDailyDigestEmail } from '@/lib/email/service';
 
 describe('Daily Digest Email Generator', () => {
@@ -57,21 +61,30 @@ describe('Daily Digest Email Generator', () => {
   it('generates subject, HTML table, and plain text with consolidated team metrics', () => {
     const result = generateDailyDigestEmail(samplePayload);
 
-    expect(result.subject).toBe('[Daily Zoho Digest] Team Performance Report - 2026-11-02 (Avg Score: 8.4/10)');
+    expect(result.subject).toBe('[Daily Zoho Digest] Team Performance Report - 2026-11-02');
     expect(result.html).toContain('Executive Daily Team Zoho Digest');
-    expect(result.html).toContain('Alice Engineer');
+    expect(result.html).toContain('Target Date:');
+    expect(result.html).not.toContain('Consolidated 10:00 PM IST Analysis for Administrators & Managers');
+    expect(result.html).not.toContain('Team Avg Score');
+    expect(result.html).not.toContain('Due / Delayed');
+    expect(result.html).not.toContain('Hours Logged');
     expect(result.html).toContain('alice@creolestudios.com');
-    expect(result.html).toContain('Senior');
-    expect(result.html).toContain('Bob Developer');
     expect(result.html).toContain('bob@creolestudios.com');
-    expect(result.html).toContain('Mid');
-    expect(result.html).toContain('8.4');
+    expect(result.html).toContain('User Email');
+    expect(result.html).toContain('Total Tasks');
+    expect(result.html).toContain('Task Status');
+    expect(result.html).toContain('Logged Hours');
+    expect(result.html).toContain('Total Score');
+    expect(result.html).toContain('Evaluation Summary');
+    expect(result.html).not.toContain('Excellent');
+    expect(result.html).toContain('9.2/10');
+    expect(result.html).toContain('7.6/10');
     expect(result.html).toContain('Delivered all 2 tasks with strong code quality');
     expect(result.html).toContain('/admin/dashboard?tab=zoho');
 
-    expect(result.text).toContain('Alice Engineer');
-    expect(result.text).toContain('Bob Developer');
-    expect(result.text).toContain('Team Average Score: 8.4/10');
+    expect(result.text).toContain('alice@creolestudios.com');
+    expect(result.text).toContain('bob@creolestudios.com');
+    expect(result.text).not.toContain('Team Average Score:');
   });
 
   it('renders fallback table row when users list is empty', () => {
@@ -88,6 +101,98 @@ describe('Daily Digest Email Generator', () => {
     const result = generateDailyDigestEmail(emptyPayload);
 
     expect(result.html).toContain('No employee activity recorded or evaluated');
+  });
+
+  it('formats evaluation summary as 3-4 bullet pointers in HTML and plain text', () => {
+    const result = generateDailyDigestEmail(samplePayload);
+
+    // Verify HTML renders structured bullet list
+    expect(result.html).toContain('<strong>Done:</strong>');
+    expect(result.html).toContain('<strong>Pending:</strong>');
+    expect(result.html).toContain('<strong>Why this score (9.2/10):</strong>');
+    expect(result.html).toContain('<strong>Action:</strong>');
+
+    // Verify Plain text renders bullet points
+    expect(result.text).toContain('• Done:');
+    expect(result.text).toContain('• Pending:');
+    expect(result.text).toContain('• Why this score (9.2/10):');
+  });
+
+  it('respects custom summaryPointers passed on DailyDigestUserRow', () => {
+    const customPayload: DailyDigestEmailPayload = {
+      ...samplePayload,
+      users: [
+        {
+          userName: 'Charlie Tech',
+          userEmail: 'charlie@creolestudios.com',
+          totalTasks: 2,
+          doneTasks: 0,
+          delayedTasks: 0,
+          qaTasks: 2,
+          totalPlannedHours: 8.0,
+          totalActualHours: 8.1,
+          dailyScore: 9.9,
+          reason: 'Custom reason',
+          summaryPointers: [
+            'Done: 2 tasks submitted to QA Review (8.1h logged).',
+            'Pending: Awaiting QA verification before closing tickets.',
+            'Why this score (9.9/10): Detailed comments and strict time adherence.',
+            'Action: Follow up with QA to complete review.',
+          ],
+        },
+      ],
+    };
+
+    const result = generateDailyDigestEmail(customPayload);
+    expect(result.html).toContain('<strong>Done:</strong> 2 tasks submitted to QA Review (8.1h logged).');
+    expect(result.html).toContain('<strong>Pending:</strong> Awaiting QA verification before closing tickets.');
+    expect(result.html).toContain('<strong>Why this score (9.9/10):</strong> Detailed comments and strict time adherence.');
+    expect(result.html).toContain('<strong>Action:</strong> Follow up with QA to complete review.');
+
+    expect(result.text).toContain('• Done: 2 tasks submitted to QA Review (8.1h logged).');
+    expect(result.text).toContain('• Pending: Awaiting QA verification before closing tickets.');
+  });
+
+  it('buildEvaluationSummaryPointers generates 3-4 clear pointers for various employee states', () => {
+    // Overdue/delayed case
+    const delayedPointers = buildEvaluationSummaryPointers({
+      userName: 'Delayed Dev',
+      userEmail: 'dev@creolestudios.com',
+      totalTasks: 2,
+      doneTasks: 0,
+      delayedTasks: 1,
+      qaTasks: 0,
+      totalPlannedHours: 8.0,
+      totalActualHours: 9.5,
+      dailyScore: 5.5,
+      reason: 'Daily evaluation completed.', // generic
+    });
+
+    expect(delayedPointers.length).toBeGreaterThanOrEqual(3);
+    expect(delayedPointers.length).toBeLessThanOrEqual(4);
+    expect(delayedPointers[0]).toContain('Done:');
+    expect(delayedPointers[1]).toContain('Pending: 1 task(s) delayed/overdue');
+    expect(delayedPointers[2]).toContain('Why this score (5.5/10):');
+    expect(delayedPointers[3]).toContain('Action:');
+
+    // Missing timelog case
+    const zeroHoursPointers = buildEvaluationSummaryPointers({
+      userName: 'Zero Hours',
+      userEmail: 'zero@creolestudios.com',
+      totalTasks: 2,
+      doneTasks: 0,
+      delayedTasks: 0,
+      qaTasks: 0,
+      totalPlannedHours: 8.0,
+      totalActualHours: 0,
+      dailyScore: 2.0,
+      reason: 'No hours recorded.',
+    });
+
+    expect(zeroHoursPointers[0]).toBe('Done: 0 tasks completed; no timelog recorded today.');
+    expect(zeroHoursPointers[1]).toContain('Pending: Incomplete timelog entries');
+    expect(zeroHoursPointers[2]).toContain('Why this score (2.0/10):');
+    expect(zeroHoursPointers[3]).toContain('Action: Ensure daily hours');
   });
 });
 

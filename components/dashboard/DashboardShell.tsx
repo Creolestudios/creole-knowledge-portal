@@ -84,6 +84,14 @@ export default function DashboardShell({
     ? previewTab
     : tabFromLocation(pathname, searchParams.get('tab'));
 
+  // Seamless redirect from /dashboard?tab=zoho to /dashboard/zoho-evaluation
+  const tabParam = searchParams.get('tab');
+  useEffect(() => {
+    if (tabParam === 'zoho' && pathname === '/dashboard') {
+      router.replace('/dashboard/zoho-evaluation');
+    }
+  }, [tabParam, pathname, router]);
+
   // Refresh stats + streak on tab change so the sidebar reflects reading time /
   // quiz results logged while on the Daily tab.
   useEffect(() => {

@@ -642,7 +642,7 @@ Administrators have granular, selective control over daily evaluation emails dir
    - The daily employee evaluation email (`lib/email/templates/daily-evaluation-email.ts`) strictly mirrors the layout and components of `ZohoDailyEvaluationModal`:
      - **Header Bar**: Branded top accent, Date badge (`📅 YYYY-MM-DD`), Task count, Employee name & role, and hero Day Score badge (`X.X/10`) with rating label (`Excellent`, `Good`, `Needs Attention`).
      - **4-Card Metric Grid**: Planned Time (`8:00 hrs`), Actual Spent (`8:00 hrs`), Completed Tasks (`3 / 3`), and Day Score.
-     - **Performance Evaluation Summary Box**: Left purple accent border callout explaining holistic daily execution.
+     - **Streamlined Metric Presentation**: Removed redundant text summary banner to eliminate duplication with the 4-card metric grid above.
      - **Key Accomplishments & Areas for Improvement**: Side-by-side green and amber callout cards with clear bullet lists.
      - **Structured Task Cards**: Each task rendered in its own bounded card featuring project badge, clock duration (`⏱ 4:00 hrs / 4:00 hrs`), Zoho status pill, task score (`/10`), adherence tolerance strip, performance evaluation note, and actionable improvement bullets.
 2. **100% Email Client Compatibility**:
@@ -658,17 +658,41 @@ Administrators have granular, selective control over daily evaluation emails dir
 ### 12.2 Admin & Manager Team Digest
 1. **Consolidated Daily Email**:
    - Delivered daily at 10:00 PM IST to authorized administrators and managers configured in the Admin Portal.
-   - Summarizes whole-team performance in a single executive table:
-     - Employee Name, Email, and Seniority badge.
-     - Total Tasks count.
-     - Due / Delayed Tasks count (colored pill).
-     - Completed / QA Tasks count.
-     - Total Hours logged vs planned (`8.0h / 8.0h`).
-     - Daily Score (`/10`) with rating badge.
-     - Evaluative explanation and key notes explaining why the score was awarded.
-2. **Dual-Tier Recipient Management**:
-   - Configurable in the Admin Portal User Management section under the dedicated **Admin & Manager Digest** tab (`components/user-management.tsx`).
-   - Supports chip-based multi-email inputs with real-time validation.
-   - Uses `lib/zoho/digest-recipients-store.ts` for dual-tier resilience: checks PostgreSQL table `admin_digest_recipients` first, with graceful fallback to Supabase Auth `user_metadata.digest_recipient_emails` if the table migration is pending.
+   - Removed aggregate KPI metric cards strip (`Members`, `Total Tasks`, `Completed`, `Due / Delayed`, `Hours Logged`) and header subtitle for a clean, scannable layout.
+   - **Streamlined 6-Column Member Table**:
+     1. **User Email**: Employee email address only.
+     2. **Total Tasks**: Count of tasks assigned/added for the day.
+     3. **Task Status**: Explicit status for each task (e.g. `In QA Review`, `In Progress`, `Closed`).
+     4. **Logged Hours**: Total logged hours for the day (`X.Xh`).
+     5. **Total Score**: Clean numerical score badge (`X.X/10`) without subjective text labels ("Excellent", "Good").
+     6. **Evaluation Summary**: Clear, to-the-point summary structured into **3-4 concise bullet pointers**:
+        - **Done**: What was delivered or worked on (tasks finished / submitted to QA / hours logged).
+        - **Pending**: What was not finished, overdue, or awaiting review (e.g. QA verification, delays).
+        - **Why this score**: Clear rationale explaining the score breakdown (on-time execution, comment depth, or deductions).
+        - **Action**: Direct actionable recommendation / next step (e.g. follow up with QA, log missing timelogs).
+   - Rendered using responsive bullet lists (`<ul>` / `<li>`) with bold prefix tags in HTML and indented bullets in plain-text format.
+
+### 12.3 Robust Cron Task & Comment Retrieval Architecture
+1. **Open and Historical Task Multi-Querying**:
+   - Both `runDailyZohoEvaluationCron` and `syncLiveZohoTasks` query `fetchZohoUserTasks` with `status='open'` alongside general tasks.
+   - Prevents Zoho Projects REST API oldest-first default ordering from truncating recent active tasks beyond the 100-item page boundary.
+   - Incorporates existing database tasks for the targeted date (`task_date = targetDate`) as a fallback safeguard so no assigned task is omitted from evaluation.
+2. **Dual Date-Format Resolution**:
+   - Correctly parses both ISO `YYYY-MM-DD` and Zoho standard `MM-DD-YYYY` formats across `start_date`, `end_date`, `created_time`, and task title regex patterns, eliminating off-by-one or swapped month-day comparison failures.
+3. **Resilient OAuth Token Caching**:
+   - Combines module-level in-memory cache with safe filesystem cache (`/tmp/.zoho_token_cache.json`).
+   - Ensures sub-processes, worker restarts, and CLI triggers reuse unexpired tokens without triggering Zoho's 400 rate limit ("too many requests continuously").
+
+### 12.4 Portal URL Resolution & User Dashboard Navigation
+1. **Dynamic Host Resolution**:
+   - Both `daily-evaluation-email.ts` and `daily-digest-email.ts` resolve the base URL using `payload.portalUrl || process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'`.
+   - Strips trailing slashes cleanly and prevents hardcoded production domain fallbacks from breaking local and staging environments.
+2. **User Dashboard Zoho Tab Linking**:
+   - The primary CTA button ("View in Knowledge Portal &rarr;") routes users directly to `/dashboard/zoho-evaluation`, which is the user portal's dedicated Zoho Evaluation tab within `DashboardShell`.
+   - Added seamless redirect in `DashboardShell.tsx` from `/dashboard?tab=zoho` to `/dashboard/zoho-evaluation` and in `next.config.ts` from `/dashboard/zoho` to `/dashboard/zoho-evaluation`.
+3. **Deep-Link Authentication Preservation**:
+   - In `middleware.ts`, unauthenticated requests to `/dashboard/zoho-evaluation` preserve the target path in the login query parameter: `/?next=%2Fdashboard%2Fzoho-evaluation`.
+   - `app/page.tsx` forwards `next` through OAuth redirects (`options.redirectTo`), and `app/auth/callback/route.ts` honors `next` so users land directly on their Zoho evaluation after completing authentication.
+
 
 

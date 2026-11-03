@@ -63,10 +63,12 @@ describe('Daily Evaluation Email Generator', () => {
     expect(result.html).toContain('High comment quality');
     expect(result.html).toContain('Log time earlier in the afternoon');
     expect(result.html).toContain('/dashboard/zoho-evaluation');
+    expect(result.html).not.toContain('Performance Evaluation Summary');
 
     expect(result.text).toContain('Jane Developer');
     expect(result.text).toContain('Score: 8.8/10');
     expect(result.text).toContain('Implement Resend Email Service');
+    expect(result.text).not.toContain('Performance Evaluation Summary:');
   });
 
   it('renders fallback messages when tasks, strengths or improvements are empty', () => {

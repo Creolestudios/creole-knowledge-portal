@@ -90,7 +90,8 @@ export async function GET(request: Request) {
           console.error('[Auth Callback] error fetching profile role:', err);
         }
 
-        const finalRedirect = isAdmin ? '/admin/dashboard' : next;
+        const hasExplicitNext = requestUrl.searchParams.has('next');
+        const finalRedirect = hasExplicitNext ? next : (isAdmin ? '/admin/dashboard' : '/dashboard');
 
         console.log(`[Auth Callback] Success! User: ${user.email}, Admin: ${isAdmin}, Redirecting to: ${finalRedirect}`);
 

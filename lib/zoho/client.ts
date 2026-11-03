@@ -226,11 +226,39 @@ export function formatZohoDurationToClock(val: string | number | null | undefine
   return formatMinutesToClock(totalMins);
 }
 
-// Global in-memory token cache to prevent hitting Zoho OAuth rate limiters
+// Global in-memory and disk token cache to prevent hitting Zoho OAuth rate limiters
 let tokenCache: {
   accessToken: string;
   expiresAt: number;
 } | null = null;
+
+const TOKEN_CACHE_FILE = '/tmp/.zoho_token_cache.json';
+
+function readDiskTokenCache(): { accessToken: string; expiresAt: number } | null {
+  if (typeof window !== 'undefined') return null;
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(TOKEN_CACHE_FILE)) {
+      const data = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
+      if (data?.accessToken && typeof data.expiresAt === 'number' && data.expiresAt > Date.now() + 180000) {
+        return data;
+      }
+    }
+  } catch {
+    // Ignore disk cache read errors
+  }
+  return null;
+}
+
+function writeDiskTokenCache(cache: { accessToken: string; expiresAt: number }): void {
+  if (typeof window !== 'undefined') return;
+  try {
+    const fs = require('fs');
+    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(cache), 'utf8');
+  } catch {
+    // Ignore disk cache write errors
+  }
+}
 
 /**
  * Refreshes Zoho OAuth access token with expiration caching
@@ -259,11 +287,13 @@ export async function refreshZohoAccessToken(params: {
     if (!res.ok) {
       const errText = await res.text();
       console.warn(`[ZohoClient] Refresh token request failed: ${res.status}`, errText);
-      // If we have an existing unexpired cached token, reuse it
-      if (tokenCache && tokenCache.expiresAt > Date.now()) {
+      // If we have an existing unexpired cached token (memory or disk), reuse it
+      const fallback = tokenCache || readDiskTokenCache();
+      if (fallback && fallback.expiresAt > Date.now()) {
+        tokenCache = fallback;
         return {
-          accessToken: tokenCache.accessToken,
-          expiresIn: Math.round((tokenCache.expiresAt - Date.now()) / 1000),
+          accessToken: fallback.accessToken,
+          expiresIn: Math.round((fallback.expiresAt - Date.now()) / 1000),
         };
       }
       return null;
@@ -280,6 +310,7 @@ export async function refreshZohoAccessToken(params: {
       accessToken: data.access_token,
       expiresAt: Date.now() + expiresIn * 1000,
     };
+    writeDiskTokenCache(tokenCache);
 
     return {
       accessToken: data.access_token,
@@ -287,10 +318,12 @@ export async function refreshZohoAccessToken(params: {
     };
   } catch (error) {
     console.error('[ZohoClient] Error refreshing Zoho token:', error);
-    if (tokenCache && tokenCache.expiresAt > Date.now()) {
+    const fallback = tokenCache || readDiskTokenCache();
+    if (fallback && fallback.expiresAt > Date.now()) {
+      tokenCache = fallback;
       return {
-        accessToken: tokenCache.accessToken,
-        expiresIn: Math.round((tokenCache.expiresAt - Date.now()) / 1000),
+        accessToken: fallback.accessToken,
+        expiresIn: Math.round((fallback.expiresAt - Date.now()) / 1000),
       };
     }
     return null;
@@ -310,9 +343,16 @@ export async function getZohoAccessToken(): Promise<string | null> {
     return null;
   }
 
-  // If token is cached and has at least 3 minutes left, return it
+  // 1. If token is in memory and has at least 3 minutes left, return it
   if (tokenCache && tokenCache.expiresAt > Date.now() + 180000) {
     return tokenCache.accessToken;
+  }
+
+  // 2. Check disk cache if process restarted
+  const diskCache = readDiskTokenCache();
+  if (diskCache) {
+    tokenCache = diskCache;
+    return diskCache.accessToken;
   }
 
   const result = await refreshZohoAccessToken({

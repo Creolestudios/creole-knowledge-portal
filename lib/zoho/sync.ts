@@ -168,7 +168,18 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
         }
 
         // Fetch real-time active open and completed tasks from Zoho
-        const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100);
+        const [openTasks, allTasks] = await Promise.all([
+          fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100),
+          fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100),
+        ]);
+        const taskMap = new Map<string, any>();
+        for (const t of [...(openTasks || []), ...(allTasks || [])]) {
+          const id = String(t.id_string || t.id || '');
+          if (id && !taskMap.has(id)) {
+            taskMap.set(id, t);
+          }
+        }
+        const rawTasks = Array.from(taskMap.values());
 
         const taskItems: ZohoTaskItem[] = [];
         let doneTasks = 0;

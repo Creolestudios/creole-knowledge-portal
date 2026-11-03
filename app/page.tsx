@@ -48,10 +48,13 @@ export default function LoginPage() {
   const handleOAuthLogin = async (provider: 'google' | 'apple') => {
     setError(null);
     try {
+      const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      const nextParam = searchParams.get('next');
+      const callbackUrl = `${getAuthRedirectOrigin()}/auth/callback${nextParam ? `?next=${encodeURIComponent(nextParam)}` : ''}`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${getAuthRedirectOrigin()}/auth/callback`,
+          redirectTo: callbackUrl,
         },
       });
       if (error) throw error;

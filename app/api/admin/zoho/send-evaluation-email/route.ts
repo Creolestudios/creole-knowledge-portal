@@ -281,6 +281,7 @@ export async function POST(request: Request) {
         strengths: Array.from(new Set(userStrengths)).slice(0, 3),
         improvements: Array.from(new Set(userImprovements)).slice(0, 4),
         tasks: userEmailTasks,
+        portalUrl: process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
       };
 
       const emailResult = await sendDailyEvaluationEmail({

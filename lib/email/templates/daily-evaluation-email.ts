@@ -96,7 +96,12 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
     : payload.dailyScore.toFixed(1);
   const rating = getScoreRating(Number(normalizedScore));
   const userRole = payload.userRole || 'Developer';
-  const portalUrl = payload.portalUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://portal.creolestudios.com';
+  const rawPortalUrl =
+    payload.portalUrl ||
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'http://localhost:3000';
+  const portalUrl = rawPortalUrl.replace(/\/+$/, '');
   const evaluationLink = `${portalUrl}/dashboard/zoho-evaluation`;
 
   const subject = `[Zoho Daily Evaluation] ${payload.userName} - ${payload.date} (Score: ${normalizedScore}/10)`;
@@ -135,85 +140,65 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
         const taskActualClock = formatHoursToClock(task.actualHours);
 
         return `
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);">
             <tr>
-              <td style="padding: 16px 18px;">
-                <!-- Card Header Table: Project, Duration, Status, Score -->
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 10px;">
+              <td style="padding: 10px 14px;">
+                <!-- Header: Project, Task Name, Hours, Status & Score -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                   <tr>
                     <td style="vertical-align: middle;">
-                      <span style="display: inline-block; font-size: 10px; font-weight: 800; color: #1e293b; background-color: #e2e8f0; padding: 3px 8px; border-radius: 6px; margin-right: 6px; text-transform: uppercase; letter-spacing: 0.04em;">
+                      <span style="display: inline-block; font-size: 9.5px; font-weight: 800; color: #475569; background-color: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 6px;">
                         ${escapeHtml(task.projectName)}
                       </span>
-                      <span style="display: inline-block; font-size: 10.5px; font-weight: 600; color: #334155; background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 2px 8px; border-radius: 6px; margin-right: 6px;">
-                        ⏱ ${taskActualClock} hrs / ${taskPlannedClock} hrs
-                      </span>
-                      ${task.status ? `
-                        <span style="display: inline-block; font-size: 10px; font-weight: 700; color: ${statusBadgeText}; background-color: ${statusBadgeBg}; border: 1px solid ${statusBadgeBorder}; padding: 2px 8px; border-radius: 6px; text-transform: uppercase;">
-                          ${escapeHtml(task.status)}
-                        </span>
-                      ` : ''}
+                      <strong style="font-size: 13.5px; color: #0f172a; vertical-align: middle;">
+                        ${escapeHtml(task.taskName)}
+                      </strong>
                     </td>
-                    <td align="right" style="vertical-align: middle; white-space: nowrap;">
-                      <span style="display: inline-block; font-size: 13px; font-weight: 900; color: #6d28d9; background-color: #f5f3ff; border: 1px solid #ddd6fe; padding: 4px 10px; border-radius: 8px;">
+                    <td align="right" style="vertical-align: middle; white-space: nowrap; padding-left: 8px;">
+                      <span style="font-size: 12.5px; font-weight: 900; color: #6d28d9; background-color: #f5f3ff; border: 1px solid #ddd6fe; padding: 2px 8px; border-radius: 6px;">
                         ${taskScore}/10
                       </span>
                     </td>
                   </tr>
                 </table>
 
-                <!-- Task Title -->
-                <div style="font-size: 14.5px; font-weight: 800; color: #0f172a; line-height: 1.4; margin-bottom: 12px;">
-                  ${escapeHtml(task.taskName)}
-                </div>
-
-                <!-- Metrics Strip: Time Adherence & Work Justification -->
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px;">
+                <!-- Compact Sub-bar: Status, Hours & Tolerance -->
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top: 6px; margin-bottom: 6px;">
                   <tr>
-                    <td style="padding: 8px 12px; font-size: 11px; color: #64748b;">
-                      Time Tolerance: <span style="display: inline-block; padding: 2px 8px; border-radius: 6px; font-weight: 700; font-size: 10px; background-color: ${timeBadge.bg}; color: ${timeBadge.text}; border: 1px solid ${timeBadge.border}; margin-left: 4px;">
+                    <td style="font-size: 11px; color: #64748b; vertical-align: middle;">
+                      <span style="display: inline-block; font-size: 10.5px; font-weight: 600; color: #334155; margin-right: 8px;">
+                        ⏱ <strong>${taskActualClock}</strong> / ${taskPlannedClock} hrs
+                      </span>
+                      ${task.status ? `
+                        <span style="display: inline-block; font-size: 9.5px; font-weight: 700; color: ${statusBadgeText}; background-color: ${statusBadgeBg}; border: 1px solid ${statusBadgeBorder}; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; margin-right: 8px;">
+                          ${escapeHtml(task.status)}
+                        </span>
+                      ` : ''}
+                      <span style="display: inline-block; font-size: 9.5px; font-weight: 700; color: ${timeBadge.text}; background-color: ${timeBadge.bg}; border: 1px solid ${timeBadge.border}; padding: 1px 6px; border-radius: 4px;">
                         ${timeBadge.label}
                       </span>
-                      ${timeScore ? `<strong style="color: #0f172a; margin-left: 6px;">(${timeScore}/10)</strong>` : ''}
+                      ${workMatchScore ? `
+                        <span style="margin-left: 8px; font-size: 10.5px; color: #64748b;">
+                          Work Justification: <strong style="color: #7c3aed;">${workMatchScore}/10</strong>
+                        </span>
+                      ` : ''}
                     </td>
-                    ${workMatchScore ? `
-                      <td align="right" style="padding: 8px 12px; font-size: 11px; color: #64748b;">
-                        Work Justification: <strong style="color: #7c3aed; font-size: 11.5px;">${workMatchScore}/10</strong>
-                      </td>
-                    ` : ''}
                   </tr>
                 </table>
 
-                <!-- Performance Evaluation / Feedback -->
+                <!-- Performance Feedback (Compact) -->
                 ${task.feedback ? `
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
-                    <tr>
-                      <td style="background-color: #faf5ff; border-left: 3px solid #8b5cf6; border-radius: 6px; padding: 10px 14px;">
-                        <span style="display: block; font-size: 10px; font-weight: 800; color: #6b21a8; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px;">
-                          ✨ Performance Evaluation
-                        </span>
-                        <p style="margin: 0; font-size: 12px; color: #334155; line-height: 1.5;">
-                          ${escapeHtml(task.feedback)}
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
+                  <div style="background-color: #faf5ff; border-left: 3px solid #8b5cf6; border-radius: 4px; padding: 6px 10px; margin-top: 6px; font-size: 11.5px; color: #334155; line-height: 1.4;">
+                    ${escapeHtml(task.feedback)}
+                  </div>
                 ` : ''}
 
-                <!-- Actionable Improvements -->
+                <!-- Actionable Improvement (Compact) -->
                 ${task.improvementItems && task.improvementItems.length > 0 ? `
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 6px; padding: 10px 14px;">
-                        <span style="display: block; font-size: 10px; font-weight: 800; color: #b45309; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">
-                          💡 Actionable Improvements
-                        </span>
-                        <ul style="margin: 0; padding-left: 18px; font-size: 11.5px; color: #92400e; line-height: 1.45;">
-                          ${task.improvementItems.map(item => `<li style="margin-bottom: 2px;">${escapeHtml(item)}</li>`).join('')}
-                        </ul>
-                      </td>
-                    </tr>
-                  </table>
+                  <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 4px; padding: 6px 10px; margin-top: 6px; font-size: 11px; color: #92400e; line-height: 1.35;">
+                    <strong style="color: #b45309; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.04em;">Improvement:</strong>
+                    ${task.improvementItems.map(item => escapeHtml(item)).join(' &bull; ')}
+                  </div>
                 ` : ''}
               </td>
             </tr>
@@ -222,11 +207,11 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
       }).join('');
 
   const strengthsListHtml = payload.strengths.length > 0
-    ? payload.strengths.map(s => `<li style="margin-bottom: 4px;">${escapeHtml(s)}</li>`).join('')
+    ? payload.strengths.map(s => `<li style="margin-bottom: 2px;">${escapeHtml(s)}</li>`).join('')
     : '<li>Consistent execution and delivery against assigned tasks.</li>';
 
   const improvementsListHtml = payload.improvements.length > 0
-    ? payload.improvements.map(i => `<li style="margin-bottom: 4px;">${escapeHtml(i)}</li>`).join('')
+    ? payload.improvements.map(i => `<li style="margin-bottom: 2px;">${escapeHtml(i)}</li>`).join('')
     : '<li>Continue logging timely work progress and updates regularly.</li>';
 
   const html = `
@@ -237,65 +222,40 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(subject)}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.5;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 24px 10px;">
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.45;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 12px 6px;">
     <tr>
       <td align="center">
-        <!-- Main Modal-Style Container -->
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 680px; background-color: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);">
+        <!-- Main Modal-Style Container: 760px wide for maximum screen efficiency -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 760px; background-color: #ffffff; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.05);">
           
-          <!-- Branded Top Accent Bar -->
+          <!-- Compact Clean Header Bar: User, Role, Date + ONLY ONE Day Score Badge on right -->
           <tr>
-            <td style="background-color: #09090b; padding: 6px 28px; border-bottom: 3px solid #34c4f2;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="font-size: 10px; font-weight: 800; color: #34c4f2; text-transform: uppercase; letter-spacing: 0.12em;">
-                    CREOLE KNOWLEDGE PORTAL &bull; ZOHO PERFORMANCE AUDIT
-                  </td>
-                  <td align="right" style="font-size: 10px; font-weight: 600; color: #94a3b8;">
-                    DAILY 10:00 PM IST
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Modal Header (Header Badges + Title + Overall Score) -->
-          <tr>
-            <td style="padding: 24px 28px; background-color: #ffffff; border-bottom: 1px solid #e2e8f0;">
-              <!-- Badges Line (Date, Tasks Count, Employee Info) -->
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
-                <tr>
-                  <td>
-                    <span style="display: inline-block; font-size: 11px; font-weight: 700; background-color: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; padding: 3px 10px; border-radius: 6px; margin-right: 6px;">
-                      📅 ${escapeHtml(payload.date)}
-                    </span>
-                    <span style="display: inline-block; font-size: 11px; font-weight: 700; background-color: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; padding: 3px 10px; border-radius: 6px; margin-right: 6px;">
-                      ${payload.taskCount} Task${payload.taskCount === 1 ? '' : 's'} Evaluated
-                    </span>
-                    <span style="font-size: 12px; color: #64748b; font-weight: 600;">
-                      ${escapeHtml(payload.userName)} &bull; ${escapeHtml(userRole)}
-                    </span>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Main Title and Overall Day Score Badge -->
+            <td style="padding: 14px 20px; background-color: #ffffff; border-bottom: 1px solid #e2e8f0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td style="vertical-align: middle;">
-                    <h1 style="margin: 0; font-size: 21px; font-weight: 900; color: #0f172a; letter-spacing: -0.02em; line-height: 1.3;">
-                      <span style="color: #8b5cf6;">✨</span> Daily Performance &amp; Activity Evaluation
-                    </h1>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-                      Evaluation summary &amp; timelog audit for <strong>${escapeHtml(payload.userEmail)}</strong>
+                    <div style="font-size: 10px; font-weight: 800; color: #0284c7; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px;">
+                      Creole Knowledge Portal &bull; Daily Evaluation
+                    </div>
+                    <div style="font-size: 16px; font-weight: 900; color: #0f172a; line-height: 1.2;">
+                      ${escapeHtml(payload.userName)}
+                      <span style="font-size: 11.5px; font-weight: 500; color: #64748b;">(${escapeHtml(payload.userEmail)})</span>
+                    </div>
+                    <div style="font-size: 11.5px; color: #64748b; margin-top: 3px;">
+                      <span style="font-weight: 600; color: #334155;">${escapeHtml(userRole)}</span>
+                      <span style="color: #cbd5e1; margin: 0 5px;">&bull;</span>
+                      <span>📅 ${escapeHtml(payload.date)}</span>
+                      <span style="color: #cbd5e1; margin: 0 5px;">&bull;</span>
+                      <span><strong>${payload.taskCount}</strong> Tasks Evaluated</span>
                     </div>
                   </td>
-                  <td align="right" style="vertical-align: middle; white-space: nowrap; padding-left: 14px;">
-                    <div style="background-color: ${rating.bg}; border: 1px solid ${rating.border}; color: ${rating.text}; padding: 8px 16px; border-radius: 12px; text-align: center; display: inline-block;">
-                      <span style="display: block; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">${rating.label}</span>
-                      <strong style="font-size: 22px; font-weight: 900; line-height: 1.1;">${normalizedScore}</strong>
-                      <span style="font-size: 11px; font-weight: 600; opacity: 0.8;">/10</span>
+                  <td align="right" style="vertical-align: middle; white-space: nowrap; padding-left: 12px;">
+                    <!-- Day Score shown ONLY ONCE here on the top right -->
+                    <div style="background-color: ${rating.bg}; border: 1.5px solid ${rating.border}; color: ${rating.text}; padding: 6px 14px; border-radius: 10px; text-align: center; display: inline-block;">
+                      <span style="display: block; font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;">Day Score</span>
+                      <strong style="font-size: 20px; font-weight: 900; line-height: 1.1;">${normalizedScore}</strong>
+                      <span style="font-size: 11px; font-weight: 700; opacity: 0.85;">/ 10</span>
                     </div>
                   </td>
                 </tr>
@@ -303,82 +263,56 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
             </td>
           </tr>
 
-          <!-- Summary Metric Cards (Planned Time, Actual Spent, Done Tasks, Score) -->
+          <!-- Compact 3-Metric Cards: Planned Time, Actual Spent, Status (No duplicated score card) -->
           <tr>
-            <td style="padding: 16px 28px; background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 10px 20px; background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <!-- Planned Time -->
-                  <td width="23%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 10px; text-align: center;">
-                    <span style="display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.04em;">Planned Time</span>
-                    <strong style="display: block; font-size: 17px; font-weight: 900; color: #0f172a; margin-top: 2px;">${plannedClock} hrs</strong>
-                    <span style="display: block; font-size: 10px; color: #94a3b8; margin-top: 1px;">(${payload.totalPlannedHours.toFixed(1)}h total)</span>
+                  <td width="32%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; text-align: center;">
+                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.04em;">Planned Time</span>
+                    <strong style="display: block; font-size: 15px; font-weight: 900; color: #0f172a; margin-top: 1px;">${plannedClock} hrs</strong>
                   </td>
                   <td width="2%"></td>
                   <!-- Actual Spent -->
-                  <td width="23%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 10px; text-align: center;">
-                    <span style="display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #0284c7; letter-spacing: 0.04em;">Actual Spent</span>
-                    <strong style="display: block; font-size: 17px; font-weight: 900; color: #0284c7; margin-top: 2px;">${actualClock} hrs</strong>
-                    <span style="display: block; font-size: 10px; color: #94a3b8; margin-top: 1px;">(${payload.totalActualHours.toFixed(1)}h total)</span>
+                  <td width="32%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; text-align: center;">
+                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #0284c7; letter-spacing: 0.04em;">Actual Spent</span>
+                    <strong style="display: block; font-size: 15px; font-weight: 900; color: #0284c7; margin-top: 1px;">${actualClock} hrs</strong>
                   </td>
                   <td width="2%"></td>
                   <!-- Task Status -->
-                  <td width="23%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 10px; text-align: center;">
-                    <span style="display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #16a34a; letter-spacing: 0.04em;">Completed</span>
-                    <strong style="display: block; font-size: 17px; font-weight: 900; color: #16a34a; margin-top: 2px;">${payload.doneTasks} / ${payload.taskCount}</strong>
-                    <span style="display: block; font-size: 10px; color: #94a3b8; margin-top: 1px;">${payload.delayedTasks > 0 ? `${payload.delayedTasks} delayed` : '0 delayed'}</span>
-                  </td>
-                  <td width="2%"></td>
-                  <!-- Quality Rating -->
-                  <td width="23%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 10px; text-align: center;">
-                    <span style="display: block; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #7c3aed; letter-spacing: 0.04em;">Day Score</span>
-                    <strong style="display: block; font-size: 17px; font-weight: 900; color: #7c3aed; margin-top: 2px;">${normalizedScore} / 10</strong>
-                    <span style="display: block; font-size: 10px; color: #94a3b8; margin-top: 1px;">${rating.label}</span>
+                  <td width="32%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; text-align: center;">
+                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #16a34a; letter-spacing: 0.04em;">Status Breakdown</span>
+                    <strong style="display: block; font-size: 15px; font-weight: 900; color: #16a34a; margin-top: 1px;">
+                      ${payload.qaTasks > 0 ? `${payload.qaTasks} QA Review` : `${payload.doneTasks} Completed`}
+                    </strong>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
 
-          <!-- Daily Performance Summary (Modal Left/Right Split Alignment) -->
+          <!-- Compact Accomplishments & Improvements (Side by side) -->
           <tr>
-            <td style="padding: 20px 28px 12px 28px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="background-color: #fbfaff; border: 1px solid #ede9fe; border-left: 4px solid #8b5cf6; border-radius: 8px; padding: 16px;">
-                    <span style="display: block; font-size: 11px; text-transform: uppercase; font-weight: 800; color: #6b21a8; letter-spacing: 0.05em; margin-bottom: 6px;">
-                      ✨ Performance Evaluation Summary
-                    </span>
-                    <p style="margin: 0; font-size: 13px; color: #1e293b; line-height: 1.55;">
-                      ${escapeHtml(payload.dailySummary)}
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- Key Accomplishments and Areas for Improvement Cards -->
-          <tr>
-            <td style="padding: 8px 28px 16px 28px;">
+            <td style="padding: 10px 20px 8px 20px;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <!-- Accomplishments -->
-                  <td width="48%" style="vertical-align: top; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 14px 16px;">
-                    <strong style="display: block; font-size: 11px; text-transform: uppercase; color: #166534; letter-spacing: 0.04em; margin-bottom: 8px;">
+                  <td width="48%" style="vertical-align: top; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px;">
+                    <strong style="display: block; font-size: 10px; text-transform: uppercase; color: #166534; letter-spacing: 0.04em; margin-bottom: 5px;">
                       ✅ Key Accomplishments
                     </strong>
-                    <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #14532d; line-height: 1.5;">
+                    <ul style="margin: 0; padding-left: 16px; font-size: 11.5px; color: #14532d; line-height: 1.4;">
                       ${strengthsListHtml}
                     </ul>
                   </td>
                   <td width="4%"></td>
                   <!-- Improvements -->
-                  <td width="48%" style="vertical-align: top; background-color: #fffbeb; border: 1px solid #fed7aa; border-radius: 10px; padding: 14px 16px;">
-                    <strong style="display: block; font-size: 11px; text-transform: uppercase; color: #9a3412; letter-spacing: 0.04em; margin-bottom: 8px;">
+                  <td width="48%" style="vertical-align: top; background-color: #fffbeb; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 14px;">
+                    <strong style="display: block; font-size: 10px; text-transform: uppercase; color: #9a3412; letter-spacing: 0.04em; margin-bottom: 5px;">
                       💡 Areas for Improvement
                     </strong>
-                    <ul style="margin: 0; padding-left: 18px; font-size: 12px; color: #7c2d12; line-height: 1.5;">
+                    <ul style="margin: 0; padding-left: 16px; font-size: 11.5px; color: #7c2d12; line-height: 1.4;">
                       ${improvementsListHtml}
                     </ul>
                   </td>
@@ -387,50 +321,32 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
             </td>
           </tr>
 
-          <!-- Tasks Evaluated for this Day Section -->
+          <!-- Tasks List Section (Compact layout) -->
           <tr>
-            <td style="padding: 12px 28px 20px 28px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
-                <tr>
-                  <td>
-                    <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.06em;">
-                      Tasks Evaluated for this Day (${payload.tasks.length})
-                    </h3>
-                  </td>
-                  <td align="right" style="font-size: 11px; color: #64748b;">
-                    Exact activity &amp; time breakdown
-                  </td>
-                </tr>
-              </table>
+            <td style="padding: 8px 20px 14px 20px;">
+              <div style="font-size: 11.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                Daily Tasks Breakdown (${payload.tasks.length})
+              </div>
 
               ${taskCardsHtml}
             </td>
           </tr>
 
-          <!-- Portal CTA Action Button -->
+          <!-- Compact CTA Button & Footer -->
           <tr>
-            <td align="center" style="padding: 0 28px 28px 28px;">
+            <td align="center" style="padding: 0 20px 16px 20px;">
               <table role="presentation" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td align="center" style="background-color: #34c4f2; border-radius: 10px; box-shadow: 0 4px 12px rgba(52, 196, 242, 0.35);">
-                    <a href="${evaluationLink}" style="display: inline-block; color: #09090b; font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; text-decoration: none; padding: 13px 28px;">
-                      View Full Analysis in Knowledge Portal &rarr;
+                  <td align="center" style="background-color: #34c4f2; border-radius: 8px; box-shadow: 0 2px 8px rgba(52, 196, 242, 0.25);">
+                    <a href="${evaluationLink}" style="display: inline-block; color: #09090b; font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; text-decoration: none; padding: 9px 22px;">
+                      View in Knowledge Portal &rarr;
                     </a>
                   </td>
                 </tr>
               </table>
-            </td>
-          </tr>
-
-          <!-- Footer Information -->
-          <tr>
-            <td style="background-color: #f8fafc; padding: 20px 28px; border-top: 1px solid #e2e8f0; text-align: center;">
-              <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.5;">
-                This automated evaluation was delivered to <strong>${escapeHtml(payload.userEmail)}</strong> and designated reporting seniors following the daily 10:00 PM IST Zoho evaluation crawl.
-              </p>
-              <p style="margin: 6px 0 0 0; font-size: 10px; color: #94a3b8;">
+              <div style="font-size: 10px; color: #94a3b8; margin-top: 10px;">
                 &copy; ${new Date().getFullYear()} Creole Studios &middot; Creole Knowledge Portal
-              </p>
+              </div>
             </td>
           </tr>
 
@@ -453,9 +369,6 @@ Cumulative Time Activity:
 - Planned Time: ${plannedClock} hrs (${payload.totalPlannedHours.toFixed(1)}h total)
 - Actual Spent: ${actualClock} hrs (${payload.totalActualHours.toFixed(1)}h total)
 - Tasks Evaluated: ${payload.taskCount} (Done: ${payload.doneTasks}, Delayed/Gap: ${payload.delayedTasks}, QA: ${payload.qaTasks})
-
-Performance Evaluation Summary:
-${payload.dailySummary}
 
 Key Accomplishments:
 ${payload.strengths.map(s => `- ${s}`).join('\n')}

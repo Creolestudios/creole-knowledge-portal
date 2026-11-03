@@ -12,8 +12,10 @@ export interface DailyDigestUserRow {
   totalActualHours: number;
   dailyScore: number; // 0 to 10 or 0 to 100
   reason: string; // Evaluative explanation / performance summary
+  summaryPointers?: string[]; // 3-4 bullet points: what is done, what not, why this score
   importantNotes?: string[];
   timeAssessmentLabel?: string;
+  taskStatuses?: string[];
 }
 
 export interface DailyDigestEmailPayload {
@@ -54,6 +56,97 @@ function getScoreBadgeColor(score: number): { bg: string; text: string; border: 
 }
 
 /**
+ * Constructs 3-4 concise, clear bullet pointers for a user's daily evaluation:
+ * 1. What was done (completed tasks / submitted QA / hours logged)
+ * 2. What was not done / pending / delayed (pending QA, in progress, overdue)
+ * 3. Why this score (rationale explaining high score or deductions)
+ * 4. Action / Focus (recommended next step / blocker resolution)
+ */
+export function buildEvaluationSummaryPointers(user: DailyDigestUserRow): string[] {
+  if (user.summaryPointers && user.summaryPointers.length > 0) {
+    return user.summaryPointers;
+  }
+
+  const pointers: string[] = [];
+  const normScore = user.dailyScore > 10
+    ? (user.dailyScore / 10).toFixed(1)
+    : user.dailyScore.toFixed(1);
+  const scoreNum = Number(normScore);
+
+  // 1. What is done
+  if (user.doneTasks > 0 && user.doneTasks === user.totalTasks) {
+    pointers.push(`Done: All ${user.totalTasks} task(s) completed on schedule (${user.totalActualHours.toFixed(1)}h logged).`);
+  } else if (user.doneTasks > 0) {
+    pointers.push(`Done: ${user.doneTasks}/${user.totalTasks} task(s) completed (${user.totalActualHours.toFixed(1)}h logged).`);
+  } else if (user.qaTasks > 0) {
+    pointers.push(`Done: ${user.qaTasks}/${user.totalTasks} task(s) submitted to QA Review (${user.totalActualHours.toFixed(1)}h logged).`);
+  } else if (user.totalActualHours > 0) {
+    pointers.push(`Done: Progress logged on ${user.totalTasks} active task(s) (${user.totalActualHours.toFixed(1)}h recorded).`);
+  } else {
+    pointers.push(`Done: 0 tasks completed; no timelog recorded today.`);
+  }
+
+  // 2. What is not done / pending / delayed
+  const pendingCount = Math.max(0, user.totalTasks - user.doneTasks - user.qaTasks);
+  if (user.delayedTasks > 0) {
+    pointers.push(`Pending: ${user.delayedTasks} task(s) delayed/overdue beyond planned hours.`);
+  } else if (user.totalActualHours === 0) {
+    pointers.push(`Pending: Incomplete timelog entries for ${user.totalTasks} assigned task(s).`);
+  } else if (user.qaTasks > 0 && user.doneTasks === 0) {
+    pointers.push(`Pending: Final QA review & verification pending on ${user.qaTasks} task(s).`);
+  } else if (pendingCount > 0) {
+    pointers.push(`Pending: ${pendingCount} task(s) in progress, pending completion.`);
+  } else if (user.doneTasks === user.totalTasks && user.totalTasks > 0) {
+    pointers.push(`Pending: None — all assigned tasks delivered.`);
+  } else {
+    pointers.push(`Pending: Ongoing execution across assigned tasks.`);
+  }
+
+  // 3. Why this score
+  const isGenericReason = !user.reason ||
+    /^completed \d+\/\d+ task/i.test(user.reason.trim()) ||
+    /^daily evaluation completed/i.test(user.reason.trim()) ||
+    /^task activity evaluated/i.test(user.reason.trim());
+
+  if (!isGenericReason && user.reason.length > 10) {
+    pointers.push(`Why this score (${normScore}/10): ${user.reason}`);
+  } else if (scoreNum >= 8.5) {
+    pointers.push(`Why this score (${normScore}/10): High adherence to timeline with comprehensive technical progress comments.`);
+  } else if (scoreNum >= 7.0) {
+    pointers.push(`Why this score (${normScore}/10): Good task progress with minor deductions for time variance or brief comments.`);
+  } else if (scoreNum >= 5.0) {
+    pointers.push(`Why this score (${normScore}/10): Score reduced due to overtime hours or lack of progress comments in Zoho.`);
+  } else {
+    pointers.push(`Why this score (${normScore}/10): Low score due to missing timelogs, unresolved delays, or unlogged updates.`);
+  }
+
+  // 4. Action / Focus item (ensuring 3-4 pointers)
+  if (user.totalActualHours === 0) {
+    pointers.push(`Action: Ensure daily hours and task progress are logged in Zoho Projects.`);
+  } else if (user.delayedTasks > 0) {
+    pointers.push(`Action: Proactively communicate blockers and adjust task estimates.`);
+  } else if (user.qaTasks > 0 && user.doneTasks === 0) {
+    pointers.push(`Action: Follow up with QA to complete verification and close tickets.`);
+  } else if (user.importantNotes && user.importantNotes.length > 0 && user.importantNotes[0]) {
+    pointers.push(`Action: ${user.importantNotes[0]}`);
+  } else if (scoreNum < 7.0) {
+    pointers.push(`Action: Always log progress comments describing implementation and test status.`);
+  }
+
+  return pointers;
+}
+
+function renderPointerHtml(pointer: string): string {
+  const colonIdx = pointer.indexOf(':');
+  if (colonIdx > 0 && colonIdx < 35) {
+    const label = pointer.substring(0, colonIdx);
+    const rest = pointer.substring(colonIdx + 1);
+    return `<strong>${escapeHtml(label)}:</strong>${escapeHtml(rest)}`;
+  }
+  return escapeHtml(pointer);
+}
+
+/**
  * Generates an executive, mobile-friendly HTML & plain-text email for
  * the consolidated Daily Team Zoho Task Performance Digest for Admins & Managers.
  * Built 100% with email-safe tables and high readability.
@@ -63,87 +156,90 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
   html: string;
   text: string;
 } {
-  const normalizedAvg = payload.teamAvgScore > 10
-    ? (payload.teamAvgScore / 10).toFixed(1)
-    : payload.teamAvgScore.toFixed(1);
-  const portalUrl = payload.portalUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://portal.creolestudios.com';
+  const rawPortalUrl =
+    payload.portalUrl ||
+    process.env.APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'http://localhost:3000';
+  const portalUrl = rawPortalUrl.replace(/\/+$/, '');
   const evaluationLink = `${portalUrl}/admin/dashboard?tab=zoho`;
 
-  const subject = `[Daily Zoho Digest] Team Performance Report - ${payload.date} (Avg Score: ${normalizedAvg}/10)`;
+  const subject = `[Daily Zoho Digest] Team Performance Report - ${payload.date}`;
 
   // Generate table rows for users
   const tableRowsHtml = payload.users.length === 0
-    ? `<tr><td colspan="7" style="padding: 24px; text-align: center; color: #71717a; font-style: italic; font-size: 13px;">No employee activity recorded or evaluated for ${escapeHtml(payload.date)}.</td></tr>`
+    ? `<tr><td colspan="6" style="padding: 24px; text-align: center; color: #71717a; font-style: italic; font-size: 13px;">No employee activity recorded or evaluated for ${escapeHtml(payload.date)}.</td></tr>`
     : payload.users.map((user, idx) => {
         const userNormScore = user.dailyScore > 10
           ? (user.dailyScore / 10).toFixed(1)
           : user.dailyScore.toFixed(1);
         const scoreBadge = getScoreBadgeColor(Number(userNormScore));
         const rowBg = idx % 2 === 0 ? '#ffffff' : '#f8fafc';
-        const delayedBadgeColor = user.delayedTasks > 0 ? '#dc2626' : '#16a34a';
-        const delayedBgColor = user.delayedTasks > 0 ? '#fee2e2' : '#dcfce7';
-        const delayedBorder = user.delayedTasks > 0 ? '#fca5a5' : '#86efac';
+        const pointers = (user.summaryPointers && user.summaryPointers.length > 0)
+          ? user.summaryPointers
+          : buildEvaluationSummaryPointers(user);
+
+        // Render both task statuses
+        let taskStatusesHtml = '';
+        if (user.taskStatuses && user.taskStatuses.length > 0) {
+          taskStatusesHtml = user.taskStatuses.map((st) => {
+            const lower = st.toLowerCase();
+            const isDone = ['closed', 'completed', 'done'].includes(lower);
+            const isQa = lower.includes('qa');
+            const color = isDone ? '#15803d' : isQa ? '#2563eb' : '#b45309';
+            const bg = isDone ? '#f0fdf4' : isQa ? '#eff6ff' : '#fffbeb';
+            const border = isDone ? '#bbf7d0' : isQa ? '#bfdbfe' : '#fde68a';
+            return `<span style="display: inline-block; font-size: 10px; font-weight: 700; color: ${color}; background-color: ${bg}; border: 1px solid ${border}; padding: 2px 7px; border-radius: 4px; margin: 2px 0; white-space: nowrap;">${escapeHtml(st)}</span>`;
+          }).join('<br>');
+        } else {
+          const parts: string[] = [];
+          if (user.doneTasks > 0) {
+            parts.push(`<span style="display: inline-block; font-size: 10px; font-weight: 700; color: #15803d; background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 2px 7px; border-radius: 4px; margin: 2px 0; white-space: nowrap;">${user.doneTasks} Done</span>`);
+          }
+          if (user.qaTasks > 0) {
+            parts.push(`<span style="display: inline-block; font-size: 10px; font-weight: 700; color: #2563eb; background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 2px 7px; border-radius: 4px; margin: 2px 0; white-space: nowrap;">${user.qaTasks} QA</span>`);
+          }
+          const pending = user.totalTasks - user.doneTasks - user.qaTasks;
+          if (pending > 0) {
+            parts.push(`<span style="display: inline-block; font-size: 10px; font-weight: 700; color: #b45309; background-color: #fffbeb; border: 1px solid #fde68a; padding: 2px 7px; border-radius: 4px; margin: 2px 0; white-space: nowrap;">${pending} In Progress</span>`);
+          }
+          taskStatusesHtml = parts.join('<br>') || `<span style="display: inline-block; font-size: 10px; font-weight: 700; color: #64748b; background-color: #f1f5f9; border: 1px solid #e2e8f0; padding: 2px 7px; border-radius: 4px;">Assigned</span>`;
+        }
 
         return `
           <tr style="background-color: ${rowBg}; border-bottom: 1px solid #e2e8f0;">
-            <!-- Employee Info -->
-            <td style="padding: 14px 12px; vertical-align: top;">
-              <strong style="display: block; font-size: 13.5px; color: #0f172a; line-height: 1.3;">
-                ${escapeHtml(user.userName)}
-              </strong>
-              <span style="display: block; font-size: 11px; color: #64748b; margin-top: 2px;">
-                ${escapeHtml(user.userEmail)}
-              </span>
-              ${user.seniorityLevel ? `
-                <span style="display: inline-block; font-size: 9.5px; font-weight: 700; color: #4338ca; background-color: #e0e7ff; padding: 2px 7px; border-radius: 4px; margin-top: 5px; text-transform: uppercase; letter-spacing: 0.03em;">
-                  ${escapeHtml(user.seniorityLevel)}
-                </span>
-              ` : ''}
+            <!-- Column 1: Only User Email -->
+            <td style="padding: 12px 14px; vertical-align: top; font-size: 12.5px; color: #0f172a; font-weight: 600;">
+              ${escapeHtml(user.userEmail)}
             </td>
 
-            <!-- Total Tasks -->
-            <td align="center" style="padding: 14px 8px; vertical-align: top; font-size: 13.5px; font-weight: 800; color: #0f172a;">
+            <!-- Column 2: Total Added Tasks for Today -->
+            <td align="center" style="padding: 12px 8px; vertical-align: top; font-size: 13.5px; font-weight: 800; color: #0f172a;">
               ${user.totalTasks}
             </td>
 
-            <!-- Due / Delayed Tasks -->
-            <td align="center" style="padding: 14px 8px; vertical-align: top;">
-              <span style="display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; background-color: ${delayedBgColor}; color: ${delayedBadgeColor}; border: 1px solid ${delayedBorder};">
-                ${user.delayedTasks}
+            <!-- Column 3: Both Task Statuses -->
+            <td align="center" style="padding: 12px 8px; vertical-align: top;">
+              ${taskStatusesHtml}
+            </td>
+
+            <!-- Column 4: Total Logged Hours -->
+            <td align="center" style="padding: 12px 8px; vertical-align: top; font-size: 12.5px; white-space: nowrap;">
+              <strong style="color: #0284c7; font-weight: 800; font-size: 13px;">${user.totalActualHours.toFixed(1)}h</strong>
+            </td>
+
+            <!-- Column 5: Only Total Score (No text badge) -->
+            <td align="center" style="padding: 12px 8px; vertical-align: top; white-space: nowrap;">
+              <span style="display: inline-block; font-size: 13px; font-weight: 900; color: ${scoreBadge.text}; background-color: ${scoreBadge.bg}; border: 1px solid ${scoreBadge.border}; padding: 3px 9px; border-radius: 6px;">
+                ${userNormScore}/10
               </span>
             </td>
 
-            <!-- Done / QA Tasks -->
-            <td align="center" style="padding: 14px 8px; vertical-align: top; font-size: 12px; color: #334155;">
-              <span style="color: #16a34a; font-weight: 800; font-size: 12.5px;">${user.doneTasks} done</span>
-              ${user.qaTasks > 0 ? `<br><span style="display: inline-block; color: #2563eb; font-size: 10px; font-weight: 700; background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 1px 6px; border-radius: 4px; margin-top: 3px;">${user.qaTasks} QA</span>` : ''}
-            </td>
-
-            <!-- Logged vs Planned Hours -->
-            <td align="center" style="padding: 14px 8px; vertical-align: top; font-size: 12.5px; white-space: nowrap;">
-              <strong style="color: #0284c7; font-weight: 800;">${user.totalActualHours.toFixed(1)}h</strong>
-              <span style="color: #94a3b8; font-size: 11px;"> / ${user.totalPlannedHours.toFixed(1)}h</span>
-            </td>
-
-            <!-- Daily Score -->
-            <td align="center" style="padding: 14px 8px; vertical-align: top; white-space: nowrap;">
-              <div style="background-color: ${scoreBadge.bg}; border: 1px solid ${scoreBadge.border}; color: ${scoreBadge.text}; padding: 4px 9px; border-radius: 8px; display: inline-block; text-align: center;">
-                <strong style="font-size: 14px; font-weight: 900; line-height: 1;">${userNormScore}</strong>
-                <span style="font-size: 10px; font-weight: 700;">/10</span>
-                <span style="display: block; font-size: 8.5px; font-weight: 800; text-transform: uppercase; margin-top: 2px;">${scoreBadge.label}</span>
-              </div>
-            </td>
-
-            <!-- Reason & Performance Summary -->
-            <td style="padding: 14px 12px; vertical-align: top; font-size: 12px; color: #334155; line-height: 1.5;">
-              <p style="margin: 0; font-size: 12px; color: #1e293b; font-weight: 500;">
-                ${escapeHtml(user.reason)}
-              </p>
-              ${user.importantNotes && user.importantNotes.length > 0 ? `
-                <ul style="margin: 5px 0 0 0; padding-left: 14px; font-size: 11px; color: #b45309; line-height: 1.4;">
-                  ${user.importantNotes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}
-                </ul>
-              ` : ''}
+            <!-- Column 6: Evaluation Summary To The Point (3-4 bullet pointers) -->
+            <td style="padding: 10px 14px; vertical-align: top; font-size: 11.5px; color: #334155; line-height: 1.45;">
+              <ul style="margin: 0; padding-left: 14px; list-style-type: disc;">
+                ${pointers.map((p) => `<li style="margin-bottom: 3px;">${renderPointerHtml(p)}</li>`).join('')}
+              </ul>
             </td>
           </tr>
         `;
@@ -172,49 +268,7 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
                   <td>
                     <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; color: #34c4f2; font-weight: 800;">Creole Knowledge Portal</span>
                     <h1 style="margin: 4px 0 0 0; font-size: 22px; font-weight: 900; color: #ffffff; letter-spacing: -0.01em;">Executive Daily Team Zoho Digest</h1>
-                    <p style="margin: 5px 0 0 0; font-size: 13px; color: #a1a1aa;">Consolidated 10:00 PM IST Analysis for Administrators &amp; Managers &middot; Target Date: <strong>${escapeHtml(payload.date)}</strong></p>
-                  </td>
-                  <td align="right" style="vertical-align: middle; white-space: nowrap; padding-left: 16px;">
-                    <div style="background-color: #18181b; border: 1px solid #3f3f46; padding: 10px 18px; border-radius: 12px; text-align: center; display: inline-block;">
-                      <span style="display: block; font-size: 10px; font-weight: 800; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em;">Team Avg Score</span>
-                      <strong style="font-size: 24px; font-weight: 900; color: #34c4f2; line-height: 1.1;">${normalizedAvg}</strong>
-                      <span style="font-size: 11px; font-weight: 600; color: #71717a;">/10</span>
-                    </div>
-                  </td>
-                </tr>
-              </table>
-            </td>
-          </tr>
-
-          <!-- KPI Metric Cards Strip -->
-          <tr>
-            <td style="padding: 18px 32px; background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td width="19%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; text-align: center;">
-                    <span style="display: block; font-size: 10px; text-transform: uppercase; font-weight: 800; color: #64748b; letter-spacing: 0.04em;">Members</span>
-                    <strong style="font-size: 20px; font-weight: 900; color: #0f172a; display: block; margin-top: 2px;">${payload.totalUsersEvaluated}</strong>
-                  </td>
-                  <td width="1.25%"></td>
-                  <td width="19%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; text-align: center;">
-                    <span style="display: block; font-size: 10px; text-transform: uppercase; font-weight: 800; color: #64748b; letter-spacing: 0.04em;">Total Tasks</span>
-                    <strong style="font-size: 20px; font-weight: 900; color: #0f172a; display: block; margin-top: 2px;">${payload.totalTasks}</strong>
-                  </td>
-                  <td width="1.25%"></td>
-                  <td width="19%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; text-align: center;">
-                    <span style="display: block; font-size: 10px; text-transform: uppercase; font-weight: 800; color: #16a34a; letter-spacing: 0.04em;">Completed</span>
-                    <strong style="font-size: 20px; font-weight: 900; color: #16a34a; display: block; margin-top: 2px;">${payload.totalDoneTasks}</strong>
-                  </td>
-                  <td width="1.25%"></td>
-                  <td width="19%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; text-align: center;">
-                    <span style="display: block; font-size: 10px; text-transform: uppercase; font-weight: 800; color: #dc2626; letter-spacing: 0.04em;">Due / Delayed</span>
-                    <strong style="font-size: 20px; font-weight: 900; color: #dc2626; display: block; margin-top: 2px;">${payload.totalDelayedTasks}</strong>
-                  </td>
-                  <td width="1.25%"></td>
-                  <td width="19%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; text-align: center;">
-                    <span style="display: block; font-size: 10px; text-transform: uppercase; font-weight: 800; color: #0284c7; letter-spacing: 0.04em;">Hours Logged</span>
-                    <strong style="font-size: 20px; font-weight: 900; color: #0284c7; display: block; margin-top: 2px;">${payload.totalActualHours.toFixed(1)}h</strong>
-                    <span style="font-size: 10px; color: #94a3b8;">/${payload.totalPlannedHours.toFixed(1)}h</span>
+                    <p style="margin: 5px 0 0 0; font-size: 13px; color: #a1a1aa;">Target Date: <strong>${escapeHtml(payload.date)}</strong></p>
                   </td>
                 </tr>
               </table>
@@ -237,16 +291,15 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
                 </tr>
               </table>
               
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; width: 100%;">
                 <thead>
                   <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
-                    <th style="padding: 12px 12px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">Employee</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">Tasks</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">Due / Delay</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">Status</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">Hours</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">Score</th>
-                    <th style="padding: 12px 12px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; min-width: 220px;">Reason &amp; Evaluation Summary</th>
+                    <th style="padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">User Email</th>
+                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Total Tasks</th>
+                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Task Status</th>
+                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Logged Hours</th>
+                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Total Score</th>
+                    <th style="padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; min-width: 220px;">Evaluation Summary</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -295,17 +348,21 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
 Creole Knowledge Portal - Daily Team Zoho Task Performance Digest
 ==================================================================
 Target Date: ${payload.date}
-Team Members Evaluated: ${payload.totalUsersEvaluated}
-Team Average Score: ${normalizedAvg}/10
-Total Tasks: ${payload.totalTasks} (Completed: ${payload.totalDoneTasks}, Due/Delayed: ${payload.totalDelayedTasks})
-Total Hours: ${payload.totalActualHours.toFixed(1)}h logged / ${payload.totalPlannedHours.toFixed(1)}h planned
 
 Summary Table:
 -----------------------------------------------------------------------------------------------------
 ${payload.users.map((u) => {
   const norm = u.dailyScore > 10 ? (u.dailyScore / 10).toFixed(1) : u.dailyScore.toFixed(1);
-  return `• ${u.userName} (${u.userEmail}) | Tasks: ${u.totalTasks} (Done: ${u.doneTasks}, Delayed: ${u.delayedTasks}) | Hours: ${u.totalActualHours.toFixed(1)}h/${u.totalPlannedHours.toFixed(1)}h | Score: ${norm}/10
-  Reason: ${u.reason}${u.importantNotes && u.importantNotes.length > 0 ? `\n  Notes: ${u.importantNotes.join('; ')}` : ''}`;
+  const statusStr = (u.taskStatuses && u.taskStatuses.length > 0)
+    ? u.taskStatuses.join(', ')
+    : `${u.doneTasks} Done, ${u.totalTasks - u.doneTasks} In Progress`;
+  const pointers = (u.summaryPointers && u.summaryPointers.length > 0)
+    ? u.summaryPointers
+    : buildEvaluationSummaryPointers(u);
+  const pointersText = pointers.map((p) => `    • ${p}`).join('\n');
+  return `• ${u.userEmail} | Tasks: ${u.totalTasks} | Status: ${statusStr} | Hours: ${u.totalActualHours.toFixed(1)}h | Score: ${norm}/10
+  Summary:
+${pointersText}`;
 }).join('\n\n')}
 -----------------------------------------------------------------------------------------------------
 

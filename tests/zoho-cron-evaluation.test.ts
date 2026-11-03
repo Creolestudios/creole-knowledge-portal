@@ -20,6 +20,8 @@ vi.mock('@/lib/zoho/client', () => ({
   fetchZohoPortalUsers: vi.fn(),
   fetchZohoUserTasks: vi.fn(),
   fetchZohoTaskComments: vi.fn(),
+  fetchZohoTaskDetails: vi.fn().mockResolvedValue(null),
+  extractPlannedMinutesFromTask: vi.fn((duration?: string) => (duration === '8:00' ? 480 : duration === '4:00' ? 240 : 240)),
   stripHtml: (s: string) => s.replace(/<[^>]*>?/gm, ''),
   buildZohoTaskDeepLink: vi.fn(() => 'https://projects.zoho.com/...'),
   parseDurationToMinutes: (s: string) => {

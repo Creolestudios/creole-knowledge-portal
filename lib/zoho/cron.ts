@@ -15,7 +15,11 @@ import { formatDateYYYYMMDD, formatUserName } from './service';
 import { sendDailyEvaluationEmail, sendDailyDigestEmail } from '../email/service';
 import { getDigestRecipientEmails } from './digest-recipients-store';
 import type { TaskEmailItem, DailyEvaluationEmailPayload } from '../email/templates/daily-evaluation-email';
-import type { DailyDigestUserRow, DailyDigestEmailPayload } from '../email/templates/daily-digest-email';
+import {
+  type DailyDigestUserRow,
+  type DailyDigestEmailPayload,
+  buildEvaluationSummaryPointers,
+} from '../email/templates/daily-digest-email';
 
 export interface UserEvaluationDetail {
   userEmail: string;
@@ -217,8 +221,61 @@ export async function runDailyZohoEvaluationCron(
         }
       }
 
-      // Fetch user's active, open, and completed tasks from Zoho
-      const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100);
+      // Fetch user's active, open, and completed tasks from Zoho (merging open and general tasks)
+      const [openTasks, allTasks] = await Promise.all([
+        fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100),
+        fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100),
+      ]);
+
+      const taskMap = new Map<string, any>();
+      for (const t of [...(openTasks || []), ...(allTasks || [])]) {
+        const id = String(t.id_string || t.id || '');
+        if (id && !taskMap.has(id)) {
+          taskMap.set(id, t);
+        }
+      }
+
+      // Also include any tasks already recorded in database for this user & targetDate
+      try {
+        const query = supabaseAdmin.from('zoho_tasks').select('*');
+        const res = typeof query?.eq === 'function'
+          ? await query.eq('user_id', authUser.id).eq('task_date', targetDate)
+          : { data: [] };
+        const dbExistingTasks = res?.data;
+
+        if (Array.isArray(dbExistingTasks)) {
+          for (const dbt of dbExistingTasks) {
+            const taskIdStr = String(dbt.zoho_task_id || '');
+            if (taskIdStr && !taskMap.has(taskIdStr)) {
+              taskMap.set(taskIdStr, {
+                id_string: dbt.zoho_task_id,
+                id: dbt.zoho_task_id,
+                name: dbt.task_name,
+                description: dbt.task_description,
+                project: {
+                  id_string: dbt.zoho_project_id,
+                  id: dbt.zoho_project_id,
+                  name: dbt.project_name,
+                },
+                status: { name: dbt.zoho_status },
+                duration: dbt.planned_hours ? `${dbt.planned_hours}:00` : undefined,
+                work: dbt.planned_hours ? `${dbt.planned_hours}:00` : undefined,
+                log_hours: {
+                  billable_hours: '0.0',
+                  non_billable_hours: String(dbt.actual_hours || '0.0'),
+                },
+                created_time_long: dbt.created_time ? new Date(dbt.created_time).getTime() : undefined,
+                last_updated_time_long: dbt.last_modified_time ? new Date(dbt.last_modified_time).getTime() : undefined,
+                start_date: dbt.task_date,
+              });
+            }
+          }
+        }
+      } catch (dbFetchErr) {
+        console.warn(`[ZohoCron] Could not load existing db tasks for ${email}:`, dbFetchErr);
+      }
+
+      const rawTasks = Array.from(taskMap.values());
 
       let userDoneTasks = 0;
       let userDelayedTasks = 0;
@@ -233,17 +290,45 @@ export async function runDailyZohoEvaluationCron(
       const userImprovements: string[] = [];
 
       for (const raw of rawTasks) {
-        // Resolve task date
+        // Resolve task date in YYYY-MM-DD
         let taskDateStr = '';
         if (raw.start_date) {
           const parts = raw.start_date.split('-');
           if (parts.length === 3) {
-            taskDateStr = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            taskDateStr = parts[0].length === 4
+              ? `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+              : `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+          }
+        } else if (raw.end_date) {
+          const parts = raw.end_date.split('-');
+          if (parts.length === 3) {
+            taskDateStr = parts[0].length === 4
+              ? `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+              : `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
           }
         }
+
         if (!taskDateStr && raw.created_time_long) {
           taskDateStr = formatDateYYYYMMDD(new Date(raw.created_time_long));
+        } else if (!taskDateStr && raw.created_time) {
+          const parts = raw.created_time.split('-');
+          if (parts.length === 3) {
+            taskDateStr = parts[0].length === 4
+              ? `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+              : `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+          }
         }
+
+        if (!taskDateStr && raw.name) {
+          const nameMatch = raw.name.match(/\b(\d{1,2})-(\d{1,2})(?:-(\d{4}))?\b/);
+          if (nameMatch) {
+            const dDay = nameMatch[1].padStart(2, '0');
+            const dMonth = nameMatch[2].padStart(2, '0');
+            const dYear = nameMatch[3] || String(new Date().getFullYear());
+            taskDateStr = `${dYear}-${dMonth}-${dDay}`;
+          }
+        }
+
         if (!taskDateStr) {
           taskDateStr = targetDate;
         }
@@ -352,9 +437,10 @@ export async function runDailyZohoEvaluationCron(
 
             for (const c of apiComments) {
               if (c.content) {
+                const commentId = (c as any).id || `zc-${taskId}-${c.added_time || Date.now()}`;
                 await supabaseAdmin.from('zoho_task_comments').upsert(
                   {
-                    zoho_comment_id: `zc-${taskId}-${c.added_time || Date.now()}`,
+                    zoho_comment_id: String(commentId),
                     zoho_task_id: taskId,
                     author_name: c.author_name || 'Team Member',
                     comment_content: c.content,
@@ -491,6 +577,7 @@ export async function runDailyZohoEvaluationCron(
             strengths: Array.from(new Set(userStrengths)).slice(0, 4),
             improvements: Array.from(new Set(userImprovements)).slice(0, 4),
             tasks: userEmailTasks,
+            portalUrl: process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
           };
 
           const emailResult = await sendDailyEvaluationEmail({
@@ -515,7 +602,7 @@ export async function runDailyZohoEvaluationCron(
       }
 
       if (userTaskCount > 0) {
-        digestUserRows.push({
+        const rowData: DailyDigestUserRow = {
           userId: authUser.id,
           userName: fullName,
           userEmail: email,
@@ -530,7 +617,10 @@ export async function runDailyZohoEvaluationCron(
           dailyScore,
           reason: dailySummary || 'Daily evaluation completed.',
           importantNotes: Array.from(new Set(userImprovements)).slice(0, 3),
-        });
+          taskStatuses: userEmailTasks.map((t) => t.status || 'In Progress'),
+        };
+        rowData.summaryPointers = buildEvaluationSummaryPointers(rowData);
+        digestUserRows.push(rowData);
       }
 
       details.push({
@@ -573,6 +663,7 @@ export async function runDailyZohoEvaluationCron(
             totalPlannedHours: Math.round(totalPlanned * 100) / 100,
             totalActualHours: Math.round(totalActual * 100) / 100,
             users: digestUserRows,
+            portalUrl: process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
           };
 
           const digestResult = await sendDailyDigestEmail({
