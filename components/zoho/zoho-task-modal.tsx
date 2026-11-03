@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
 import { formatZohoDurationToClock } from '@/lib/zoho/client';
-import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch } from '@/lib/zoho/heuristics';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence } from '@/lib/zoho/heuristics';
 
 interface ZohoTaskModalProps {
   task: ZohoTaskItem | null;
@@ -60,40 +60,41 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
   // Dynamic evaluation with buffer: up to +5m more and -15m less
   const evalData = React.useMemo(() => {
     if (!task) return null;
+
     const plannedHoursNum = Number(task.plannedHours);
     const plannedMins = Math.round((Number.isFinite(plannedHoursNum) && plannedHoursNum > 0 ? plannedHoursNum : 4) * 60);
     const actualHoursNum = Number(task.actualHours);
     const actualMins = Math.round((Number.isFinite(actualHoursNum) && actualHoursNum >= 0 ? actualHoursNum : 0) * 60);
-    const variance = actualMins - plannedMins;
 
-    // Buffer: up to 5 mins more (+5m overtime) and up to 15 mins less (-15m early)
-    let timeScore = 10;
-    let timeAssessmentLabel = 'ON_TIME';
+    const timeAdh = calculateTimeAdherence(plannedMins, actualMins);
 
-    if (actualMins === 0) {
-      timeScore = 0;
-      timeAssessmentLabel = 'NOT_LOGGED';
-    } else if (variance > 0 && variance <= 5) {
-      timeScore = 10;
-      timeAssessmentLabel = 'SLIGHT_OVERRUN_TOLERATED';
-    } else if (variance <= 0 && variance >= -15) {
-      timeScore = 10;
-      timeAssessmentLabel = 'ON_TIME';
-    } else if (variance < -15) {
-      const earlyGap = Math.abs(variance) - 15;
-      const penalty = Math.min(5.0, Number(((earlyGap / (plannedMins || 60)) * 8).toFixed(1)));
-      timeScore = Math.max(3.0, Number((10 - penalty).toFixed(1)));
-      timeAssessmentLabel = 'UNEXPECTED_EARLY';
-    } else {
-      const excess = variance - 5;
-      const penalty = Math.min(7.0, Number(((excess / (plannedMins || 60)) * 7).toFixed(1)));
-      timeScore = Math.max(2.0, Number((10 - penalty).toFixed(1)));
-      timeAssessmentLabel = 'OVERDUE';
+    const commentContents = (task.comments || []).map((c) => c.content || '');
+    const workMatchResult = evaluateWorkAndCommentMatch(task.taskDescription, commentContents, {
+      taskName: task.taskName,
+      plannedMinutes: plannedMins,
+      actualMinutes: actualMins,
+    });
+
+    const isChecklistOrVagueOrOffTopic =
+      workMatchResult.isChecklistComment ||
+      workMatchResult.hasPendingScope ||
+      workMatchResult.alignmentLabel === 'PARTIAL_DELIVERY' ||
+      (workMatchResult.isBriefDescription && workMatchResult.isBriefComment) ||
+      workMatchResult.alignmentLabel === 'OFF_TOPIC';
+
+    // If task has precomputed evaluation from server, verify actual hours and comments match
+    if (task.evaluation && actualMins > 0 && !isChecklistOrVagueOrOffTopic && commentContents.length > 0) {
+      return {
+        ...task.evaluation,
+        timeScore: timeAdh.timeScore,
+        timeAssessmentLabel: timeAdh.assessmentLabel,
+        timeVarianceMinutes: timeAdh.timeVarianceMinutes,
+      };
     }
 
-    const hasComments = Boolean(task.comments && task.comments.length > 0);
-    const commentContents = (task.comments || []).map((c) => c.content || '');
-    const workMatchResult = evaluateWorkAndCommentMatch(task.taskDescription, commentContents);
+    const timeScore = timeAdh.timeScore;
+    const timeAssessmentLabel = timeAdh.assessmentLabel;
+    const variance = timeAdh.timeVarianceMinutes;
     const workMatchScore = workMatchResult.workMatchScore;
 
     const overallScore = Number((
@@ -104,12 +105,9 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
 
     const dyn = generateDynamicPerformanceSummary({
       taskDescription: task.taskDescription || '',
-      comments: (task.comments || []).map((c) => c.content || ''),
+      comments: commentContents,
       timeAssessmentLabel,
       workMatchScore,
-      seniorityLevel: 'Senior',
-      userExperienceYears: 4,
-      aiSubscriptions: ['GitHub Copilot'],
       isQAReview: task.isQAReview || task.zohoStatus.toLowerCase().includes('qa'),
     });
 
@@ -125,15 +123,19 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       isRepetitive: false,
       repetitionSimilarityPct: 0,
       matchedTaskId: null,
-      workMatchFeedback: hasComments
-        ? 'Comments substantiate the completed scope and justify the time given for this task.'
-        : 'Missing progress comments in Zoho. Work justification score is 0.',
+      workMatchFeedback: workMatchResult.explanation,
       summaryFeedback: dyn.performanceSummary,
       whereLacked: dyn.whereLacked,
       whereToImprove: dyn.whereToImprove,
       improvementItems: dyn.improvementItems,
-      strengths: [],
-      improvements: [],
+      strengths: [
+        workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
+        timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
+      ],
+      improvements: dyn.improvementItems,
+      hasPendingScope: workMatchResult.hasPendingScope,
+      isPartialDelivery: workMatchResult.isPartialDelivery,
+      hasMeetingLogged: workMatchResult.hasMeetingLogged,
       aiModelUsed: 'engineering-rule-engine',
     };
   }, [task]);
@@ -351,6 +353,8 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                     className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none ${
                       !hasComments || Number(workMatchScore10) === 0
                         ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40'
+                        : evalData.isPartialDelivery || evalData.hasPendingScope
+                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40'
                         : Number(workMatchScore10) >= 8.5
                         ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/40'
                         : Number(workMatchScore10) >= 6.0
@@ -360,6 +364,8 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                   >
                     {!hasComments || Number(workMatchScore10) === 0
                       ? 'No Comments'
+                      : evalData.isPartialDelivery || evalData.hasPendingScope
+                      ? 'Incomplete'
                       : Number(workMatchScore10) >= 8.5
                       ? 'Justified'
                       : Number(workMatchScore10) >= 6.0

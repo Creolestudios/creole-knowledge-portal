@@ -168,15 +168,15 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
         }
 
         // Fetch real-time active open and completed tasks from Zoho
-        const [openTasks, allTasks] = await Promise.all([
+        const [openTasks, recentTasks] = await Promise.all([
           fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100),
           fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100),
         ]);
         const taskMap = new Map<string, any>();
-        for (const t of [...(openTasks || []), ...(allTasks || [])]) {
-          const id = String(t.id_string || t.id || '');
-          if (id && !taskMap.has(id)) {
-            taskMap.set(id, t);
+        for (const t of [...(openTasks || []), ...(recentTasks || [])]) {
+          const tid = String(t.id_string || t.id || '');
+          if (tid && !taskMap.has(tid)) {
+            taskMap.set(tid, t);
           }
         }
         const rawTasks = Array.from(taskMap.values());
@@ -228,8 +228,39 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             }
           }
 
-          // Strictly filter: only include tasks for this active week
-          if (!taskDateStr || taskDateStr < weekStartStr || taskDateStr > weekEndStr) {
+          const statusName = raw.status?.name || 'In Progress';
+          const statusLower = statusName.toLowerCase();
+          const isDone =
+            statusLower.includes('completed') ||
+            statusLower.includes('closed') ||
+            raw.completed === true;
+
+          const lastUpdatedStr = raw.last_updated_time_long
+            ? formatDateYYYYMMDD(new Date(raw.last_updated_time_long))
+            : raw.last_updated_time
+            ? (() => {
+                const parts = String(raw.last_updated_time).split('-');
+                return parts.length === 3
+                  ? `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`
+                  : '';
+              })()
+            : '';
+
+          const isUpdatedThisWeek = Boolean(lastUpdatedStr && lastUpdatedStr >= weekStartStr && lastUpdatedStr <= weekEndStr);
+          const isTaskDateThisWeek = Boolean(taskDateStr && taskDateStr >= weekStartStr && taskDateStr <= weekEndStr);
+
+          // If task date is not resolved, fallback to last updated or created time
+          if (!taskDateStr) {
+            taskDateStr = lastUpdatedStr || (raw.created_time_long ? formatDateYYYYMMDD(new Date(raw.created_time_long)) : formatDateYYYYMMDD(now));
+          }
+
+          // If the task was actively updated this week, use the update date as its active work date
+          if (isUpdatedThisWeek && lastUpdatedStr) {
+            taskDateStr = lastUpdatedStr;
+          }
+
+          // Skip closed tasks that are outside this week and were not worked on this week
+          if (!isTaskDateThisWeek && !isUpdatedThisWeek && isDone) {
             continue;
           }
 
@@ -248,12 +279,7 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           const plannedHours = Math.round((plannedMins / 60) * 100) / 100;
           totalHoursLogged += actualHours;
 
-          const statusName = raw.status?.name || 'In Progress';
-          const statusLower = statusName.toLowerCase();
-          const isDone =
-            statusLower.includes('completed') ||
-            statusLower.includes('closed') ||
-            raw.completed === true;
+
           const isDelayed =
             statusLower.includes('delay') ||
             statusLower.includes('overdue') ||

@@ -40,12 +40,16 @@ export interface TaskTimeReasonablenessResult {
 
 export interface WorkMatchResult {
   workMatchScore: number; // 0 - 10
-  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED' | 'MISSING_TASK_DESCRIPTION';
+  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED' | 'MISSING_TASK_DESCRIPTION' | 'OFF_TOPIC' | 'PARTIAL_DELIVERY';
   explanation: string;
   isBriefDescription?: boolean;
   isChecklistComment?: boolean;
   isBriefComment?: boolean;
   isMissingDescription?: boolean;
+  hasPendingScope?: boolean;
+  pendingItemsCount?: number;
+  hasMeetingLogged?: boolean;
+  isPartialDelivery?: boolean;
   timeReasonableness?: TaskTimeReasonablenessResult;
 }
 
@@ -96,32 +100,34 @@ export function calculateTimeAdherence(
     };
   }
 
-  // Case 3: Completed too early (> 15 min early, e.g. 4h planned done in 3h 30m => 30m early)
+  // Case 3: Completed too early (> 15 min early, e.g. 4h planned done in 3h 15m => 45m early)
   if (variance < -15) {
     const earlyGapMinutes = Math.abs(variance) - 15;
     const earlyRatio = earlyGapMinutes / safePlanned;
-    const penalty = Math.min(5.0, Number((earlyRatio * 10 * 0.8).toFixed(1)));
-    const score = Math.max(3.0, Number((10 - penalty).toFixed(1)));
+    // Strict early completion penalty: buffer breach immediately caps score at 8.0
+    const scaledPenalty = Math.min(5.5, Number((earlyRatio * 9.0).toFixed(1)));
+    const score = Math.max(2.5, Number((8.0 - scaledPenalty).toFixed(1)));
 
     return {
       timeScore: score,
       timeVarianceMinutes: variance,
       assessmentLabel: 'UNEXPECTED_EARLY',
-      explanation: `Task finished ${Math.abs(variance)}m earlier than estimated (${earlyGapMinutes}m beyond the -15m buffer). Early gap negatively impacted time score (${score}/10).`
+      explanation: `Task finished ${Math.abs(variance)}m earlier than estimated (${earlyGapMinutes}m beyond the -15m buffer). Early completion gap strictly penalized time score (${score}/10).`
     };
   }
 
-  // Case 4: Overdue (> 5 minutes overtime, e.g. 4h planned done in 4h 20m => 20m overtime)
+  // Case 4: Overdue (> 5 minutes overtime, e.g. 3h planned done in 3h 12m => 7m excess overtime)
   const excessOvertime = variance - 5;
   const lateRatio = excessOvertime / safePlanned;
-  const penalty = Math.min(7.0, Number((lateRatio * 10 * 0.7).toFixed(1)));
-  const score = Math.max(2.0, Number((10 - penalty).toFixed(1)));
+  // Strict buffer breach penalty: exceeding the +5m buffer immediately drops max score to 8.0
+  const scaledPenalty = Math.min(6.0, Number((lateRatio * 8.0).toFixed(1)));
+  const score = Math.max(2.0, Number((8.0 - scaledPenalty).toFixed(1)));
 
   return {
     timeScore: score,
     timeVarianceMinutes: variance,
     assessmentLabel: 'OVERDUE',
-    explanation: `Task exceeded planned time by ${variance}m (${excessOvertime}m beyond the +5m buffer). Overtime negatively impacted time score (${score}/10).`
+    explanation: `Task exceeded planned time by ${variance}m (${excessOvertime}m beyond the +5m buffer). Buffer breach strictly penalized time score (${score}/10).`
   };
 }
 
@@ -231,7 +237,7 @@ export function calculateDynamicTaskTimeReasonableness(params: {
  */
 export function evaluateWorkAndCommentMatch(
   taskDescription: string | null | undefined,
-  comments: string[] = [],
+  comments: string[],
   context?: {
     taskName?: string;
     userExperienceYears?: number;
@@ -242,64 +248,51 @@ export function evaluateWorkAndCommentMatch(
   }
 ): WorkMatchResult {
   const cleanDesc = (taskDescription || '').trim();
-  const cleanComments = (comments || []).map(c => (c || '').trim()).filter(c => c.length > 0);
+  const cleanComments = (comments || []).filter(c => Boolean(c && c.trim().length > 0));
 
-  if (cleanComments.length === 0) {
-    if (cleanDesc.length === 0) {
-      return {
-        workMatchScore: 0,
-        alignmentLabel: 'NO_COMMENTS',
-        explanation: 'Missing both task description and progress comments in Zoho Projects.',
-        isMissingDescription: true,
-      };
-    }
+  if (!cleanComments || cleanComments.length === 0) {
     return {
-      workMatchScore: 0,
+      workMatchScore: 0.0,
       alignmentLabel: 'NO_COMMENTS',
-      explanation: 'Task description exists, but zero progress comments were logged in Zoho. Score is 0.'
+      explanation: 'No progress comments were logged in Zoho Projects to substantiate the work completed. Score is 0.',
+      isBriefDescription: false,
+      isChecklistComment: false,
+      isBriefComment: false,
     };
   }
 
-  // Strict rule: If task description is completely missing but comments exist,
-  // strictly penalize with a lower score (cannot verify work against missing scope)
-  if (cleanDesc.length === 0) {
+  const combinedComments = cleanComments.join(' ').trim();
+  const descWords = cleanDesc ? cleanDesc.split(/\s+/).filter(Boolean) : [];
+  const commentWords = combinedComments ? combinedComments.split(/\s+/).filter(Boolean) : [];
+
+  const isBriefDescription = descWords.length < 20;
+  const isBriefComment = commentWords.length < 10;
+
+  if (!cleanDesc) {
     return {
       workMatchScore: 3.0,
       alignmentLabel: 'MISSING_TASK_DESCRIPTION',
-      explanation: 'Task description is completely missing in Zoho Projects. Logged progress comments cannot be verified against any defined scope or acceptance criteria. Strictly penalized.',
+      isMissingDescription: true,
+      explanation: 'Task description is completely missing in Zoho Projects. Work justification score is strictly capped at 3.0/10.',
       isBriefDescription: true,
       isChecklistComment: false,
-      isBriefComment: false,
-      isMissingDescription: true,
+      isBriefComment,
     };
   }
 
-  const combinedComments = cleanComments.join(' ').toLowerCase();
+  // Detect pending deliverables or unfinished scope in comments
+  const pendingMarkers = [
+    /-\s*(?:pending|not done|in progress|left|remaining|deferred)/i,
+    /\b(?:testing\s+is\s+pending|work\s+is\s+pending|integration\s+is\s+pending|pending\s+testing|pending\s+review|deferred|not\s+completed|not\s+done|cant\s+go\s+till|could\s+not\s+complete|couldnt\s+complete|issue\s+in\s+.*?\s+cant)\b/i,
+    /\b(?:will\s+do\s+tomorrow|will\s+finish\s+tomorrow|pending\s+for\s+tomorrow|remaining\s+for\s+tomorrow)\b/i,
+  ];
+  const hasPendingScope = pendingMarkers.some(re => re.test(combinedComments));
+  const pendingOccurrences = (combinedComments.match(/-\s*(?:pending|not done)\b/gi) || []).length +
+    (combinedComments.match(/\b(?:testing\s+is\s+pending|work\s+is\s+pending|is\s+pending|issue\s+in\s+.*?\s+cant|cant\s+go\s+till|will\s+do\s+tomorrow)\b/gi) || []).length;
 
-  // Word counts (substance benchmarks)
-  const descWords = cleanDesc.split(/\s+/).filter(Boolean);
-  const descWordCount = descWords.length;
-  const isBriefDescription = descWordCount < 40;
-
-  const commentWords = cleanComments.join(' ').split(/\s+/).filter(Boolean);
-  const commentWordCount = commentWords.length;
-  const isBriefComment = commentWordCount < 40;
-
-  // Check for superficial / single-word comments
-  const isSuperficial =
-    cleanComments.length === 1 &&
-    ['done', 'completed', 'fixed', 'resolved', 'ok', 'yes', 'update', 'working on it', 'wip'].includes(cleanComments[0].toLowerCase());
-
-  if (isSuperficial) {
-    return {
-      workMatchScore: 4.0,
-      alignmentLabel: 'WEAK_ALIGNMENT',
-      explanation: 'Logged comment is superficial (e.g. "done") and does not justify the time taken or technical scope.',
-      isBriefDescription,
-      isChecklistComment: true,
-      isBriefComment: true,
-    };
-  }
+  // Detect meeting hours logged inside development feature tickets
+  const meetingPattern = /\b(?:\d+\s*(?:hr|hour|mins?|minutes?)\s*(?:of\s*)?meeting|meeting\s+is\s+logged|meeting\s+logged|logged\s+in\s+this\s+task\s+itself)\b/i;
+  const hasMeetingLogged = meetingPattern.test(combinedComments);
 
   // Detect checklist comments that copy-paste the description with "- Done", "Done", "pending"
   const checklistMarkers = [
@@ -308,14 +301,23 @@ export function evaluateWorkAndCommentMatch(
   ];
   const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
 
+  const doneStampCount = (combinedComments.match(/-\s*done\b/gi) || []).length;
+  const pendingStampCount = (combinedComments.match(/-\s*pending\b/gi) || []).length;
+  const totalStamps = doneStampCount + pendingStampCount;
+
   const descWordSet = new Set(descWords.map(w => w.toLowerCase().replace(/[^a-z0-9]/g, '')));
   const nonDescWords = commentWords.filter(w => {
     const cleanW = w.toLowerCase().replace(/[^a-z0-9]/g, '');
     return cleanW.length > 0 && !descWordSet.has(cleanW);
   });
-  const statusStopWords = new Set(['done', 'pending', 'not', 'is', 'are', 'which', 'by', 'client', 'key', 'for', 'and', 'the', 'on', 'to', '1', '2', '3', 'ok', 'yes', 'no', 'of', 'in', 'at']);
+  const statusStopWords = new Set([
+    'done', 'pending', 'not', 'is', 'are', 'which', 'by', 'client', 'key', 'for', 'and',
+    'the', 'on', 'to', '1', '2', '3', 'ok', 'yes', 'no', 'of', 'in', 'at', 'instead',
+    'did', 'note', '1hr', 'task', 'itself', 'as', 'there', 'some'
+  ]);
   const technicalExplanationWords = nonDescWords.filter(w => !statusStopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
-  const isChecklistComment = hasChecklistMarkers && (technicalExplanationWords.length < 15);
+  const isChecklistComment = (hasChecklistMarkers && technicalExplanationWords.length < 18) ||
+    (totalStamps >= 2 && technicalExplanationWords.length < 25);
 
   // Check action words
   const actionTerms = [
@@ -325,33 +327,132 @@ export function evaluateWorkAndCommentMatch(
   ];
   let actionHits = 0;
   for (const term of actionTerms) {
-    if (combinedComments.includes(term)) actionHits++;
+    if (combinedComments.toLowerCase().includes(term)) actionHits++;
   }
 
-  // Tokenize description and comments to check overlap
+  // Detect superficial comments (e.g. just "done", "fixed", "completed", <= 3 words without technical substance)
+  if (commentWords.length <= 3 && actionHits <= 1 && technicalExplanationWords.length < 4) {
+    return {
+      workMatchScore: 4.0,
+      alignmentLabel: 'WEAK_ALIGNMENT',
+      explanation: 'Comments are superficial (e.g. "done") and lack technical details.',
+      isBriefDescription,
+      isChecklistComment: false,
+      isBriefComment: true,
+      hasPendingScope,
+      pendingItemsCount: pendingOccurrences,
+      hasMeetingLogged,
+    };
+  }
+
+  // Extract true topical/domain keywords from task name and description
+  const TOPIC_STOP_WORDS = new Set([
+    'the', 'and', 'for', 'that', 'this', 'with', 'from', 'have', 'has', 'had',
+    'not', 'but', 'are', 'was', 'were', 'been', 'being', 'can', 'could', 'will',
+    'would', 'should', 'all', 'any', 'each', 'both', 'few', 'more', 'most', 'other',
+    'some', 'such', 'into', 'over', 'after', 'about', 'than', 'them', 'then', 'there',
+    'these', 'they', 'through', 'under', 'further', 'which', 'while', 'who', 'whom',
+    'our', 'their', 'your', 'his', 'her', 'its', 'out', 'off', 'down', 'only', 'own',
+    'same', 'too', 'very', 'just', 'where', 'when', 'why', 'how', 'again', 'once',
+    'here', 'also', 'part', 'make', 'made', 'like', 'well', 'back', 'even', 'still',
+    'must', 'done', 'doing', 'does', 'did', 'work', 'working', 'task', 'tasks',
+    // Action verbs describing generic progress rather than specific domain deliverable:
+    'ensure', 'ensuring', 'ensured', 'implemented', 'implementing', 'implement',
+    'updated', 'updating', 'update', 'configured', 'configuring', 'configure',
+    'resolved', 'resolving', 'resolve', 'tested', 'testing', 'tests', 'test',
+    'created', 'creating', 'create', 'added', 'adding', 'add', 'fixed', 'fixing', 'fix',
+    'review', 'reviewed', 'reviewing', 'support', 'supporting', 'supported',
+    'across', 'including', 'included', 'include', 'project', 'projects', 'user', 'users',
+    'status', 'detail', 'details', 'section', 'sections', 'item', 'items', 'complete',
+    'completed', 'completing', 'setup', 'requirement', 'requirements'
+  ]);
+
+  // Extract title deliverable keywords
+  const titleTokens = (context?.taskName || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 2 && !TOPIC_STOP_WORDS.has(w));
+  const titleKeywords = new Set(titleTokens);
+
+  const fullTaskText = `${context?.taskName || ''} ${cleanDesc}`.toLowerCase();
+  const rawDescTokens = fullTaskText.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+  const topicKeywords = new Set(rawDescTokens.filter(w => !TOPIC_STOP_WORDS.has(w)));
+
+  const rawCommentTokens = combinedComments.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2);
+  const commentTopicWords = new Set(rawCommentTokens.filter(w => !TOPIC_STOP_WORDS.has(w)));
+
+  let topicMatches = 0;
+  for (const kw of topicKeywords) {
+    if (commentTopicWords.has(kw)) {
+      topicMatches++;
+    }
+  }
+
+  let titleMatches = 0;
+  for (const kw of titleKeywords) {
+    if (commentTopicWords.has(kw)) {
+      titleMatches++;
+    }
+  }
+
   const descTokens = tokenizeText(cleanDesc);
   const commentTokens = tokenizeText(combinedComments);
-  const similarity = computeJaccardSimilarity(descTokens, commentTokens);
+  const overallSimilarity = computeJaccardSimilarity(descTokens, commentTokens);
+  const topicSimilarity = computeJaccardSimilarity(topicKeywords, commentTopicWords);
+
+  // Strict check: Is the comment completely off-topic or addressing a completely different feature?
+  // E.g. Task is "Admin Portal UI Improvements & Tab-Based Routing Fixes" but comment is about "mail server and SMTP settings"
+  const isOffTopic = (titleKeywords.size >= 2 && titleMatches === 0 && topicSimilarity < 0.08) ||
+                     (topicKeywords.size >= 8 && topicMatches <= 1 && titleMatches === 0 && topicSimilarity < 0.06);
+
+  const isWeakTopicalMatch = !isOffTopic && (
+    (titleKeywords.size >= 2 && titleMatches === 0 && topicSimilarity < 0.12) ||
+    (topicKeywords.size >= 8 && topicMatches <= 2 && topicSimilarity < 0.09)
+  );
 
   // Consider user seniority and AI subscriptions in expectations
   const hasAi = context?.aiSubscriptions && context.aiSubscriptions.length > 0;
   const isSenior = (context?.userExperienceYears || 2) >= 5;
 
+  const safePlannedMins = context?.plannedMinutes && context.plannedMinutes > 0 ? context.plannedMinutes : 240;
+  const isHighPlannedDuration = typeof context?.plannedMinutes === 'number' && context.plannedMinutes >= 180;
+  const isPartialDelivery = Boolean(hasPendingScope && (isHighPlannedDuration || pendingOccurrences >= 2));
+
   let baseScore = 7.5;
 
-  const hasStrongTechnicalEvidence = (actionHits >= 2) || (actionHits >= 1 && !isBriefComment && similarity >= 0.15) || (!isBriefComment && similarity >= 0.35);
+  const hasStrongTechnicalEvidence = !isOffTopic && !isWeakTopicalMatch && (
+    (actionHits >= 2 && (topicMatches >= 1 || overallSimilarity >= 0.05)) ||
+    (actionHits >= 1 && topicMatches >= 1 && (topicSimilarity >= 0.10 || overallSimilarity >= 0.08)) ||
+    (!isBriefComment && overallSimilarity >= 0.25)
+  );
 
-  if (isChecklistComment && isBriefDescription) {
+  if (isPartialDelivery) {
+    // Deliverables left pending on a 3h-8h ticket:
+    // With 4h to 8h planned, leaving core deliverables pending (or untested) means the assigned scope was incomplete.
+    if (pendingOccurrences >= 2 || isChecklistComment || totalStamps >= 2) {
+      baseScore = 5.0;
+    } else {
+      baseScore = 5.5;
+    }
+  } else if (isChecklistComment && isBriefDescription) {
     baseScore = 4.8;
   } else if (isChecklistComment) {
     baseScore = 5.2;
-  } else if (hasStrongTechnicalEvidence) {
-    baseScore = 9.0 + Math.min(1.0, actionHits * 0.3);
+  } else if (isOffTopic) {
+    // Strictly penalize off-topic comments where user logged work unrelated to task description/title
+    baseScore = 3.8;
+  } else if (isWeakTopicalMatch) {
+    // Weak topical alignment between description and progress comment
+    baseScore = 4.5;
   } else if (isBriefDescription && isBriefComment) {
+    // Vague/brief description combined with brief comment lacks substantive context
     baseScore = 5.5;
+  } else if (hasStrongTechnicalEvidence && !hasPendingScope) {
+    baseScore = 9.0 + Math.min(1.0, actionHits * 0.3);
   } else if (isBriefDescription || isBriefComment) {
     baseScore = 6.2;
-  } else if (similarity >= 0.06 || actionHits >= 1) {
+  } else if (topicMatches >= 2 || overallSimilarity >= 0.15) {
     baseScore = 8.0;
   } else {
     baseScore = 6.8;
@@ -373,17 +474,31 @@ export function evaluateWorkAndCommentMatch(
 
   if (timeReasonableness && timeReasonableness.penalty > 0) {
     baseScore = Math.max(2.5, baseScore - timeReasonableness.penalty);
-  } else if (timeReasonableness && timeReasonableness.bonus > 0 && !isChecklistComment && !isBriefDescription) {
+  } else if (timeReasonableness && timeReasonableness.bonus > 0 && !isChecklistComment && !isBriefDescription && !isOffTopic && !isWeakTopicalMatch && !isPartialDelivery) {
     baseScore = Math.min(10.0, baseScore + timeReasonableness.bonus);
-  } else if (hasAi && !isChecklistComment && !isBriefDescription) {
+  } else if (hasAi && !isChecklistComment && !isBriefDescription && !isOffTopic && !isWeakTopicalMatch && !isPartialDelivery) {
     baseScore = Math.min(10.0, baseScore + 0.2);
+  }
+
+  // Cap score strictly if partial delivery or checklist comment
+  if (isPartialDelivery) {
+    baseScore = Math.min(5.5, baseScore);
+  } else if (isChecklistComment) {
+    baseScore = Math.min(5.2, baseScore);
   }
 
   const finalScore = Number(Math.min(10.0, Math.max(1.0, baseScore)).toFixed(1));
   const expTag = context?.seniorityLevel ? ` for a ${context.seniorityLevel} developer (${context.userExperienceYears || 2} yrs)` : '';
 
   let explanation = '';
-  if (timeReasonableness && timeReasonableness.velocityLabel === 'TIME_INFLATED_FOR_AI_TIER') {
+  if (isOffTopic) {
+    explanation = `Comments do not topically align with the assigned task description or requirements${expTag}. Progress notes must directly substantiate the specific deliverable.`;
+  } else if (isPartialDelivery) {
+    const plannedHrs = Math.round((safePlannedMins / 60) * 10) / 10;
+    explanation = `Key deliverables were left pending or unverified (e.g. testing pending, uncompleted sections) despite ${plannedHrs}h allocated${expTag}. High-duration tasks must be fully completed and verified or blockers escalated earlier.`;
+  } else if (isWeakTopicalMatch) {
+    explanation = `Comments show weak topical alignment with the assigned task scope${expTag}. Progress notes should directly address the assigned features and deliverables.`;
+  } else if (timeReasonableness && timeReasonableness.velocityLabel === 'TIME_INFLATED_FOR_AI_TIER') {
     explanation = `${timeReasonableness.explanation} Comments partially explain implementation${expTag}.`;
   } else if (isChecklistComment) {
     explanation = `Comments primarily mirror the task checklist with status indicators rather than explaining technical implementation steps${expTag}.`;
@@ -395,20 +510,33 @@ export function evaluateWorkAndCommentMatch(
     explanation = `Comments partially explain the task description${expTag}.`;
   }
 
+  const alignmentLabel = isOffTopic
+    ? 'OFF_TOPIC'
+    : isPartialDelivery
+    ? 'PARTIAL_DELIVERY'
+    : isChecklistComment
+    ? 'WEAK_ALIGNMENT'
+    : finalScore >= 8.5
+    ? 'STRONG_ALIGNMENT'
+    : finalScore >= 7.0
+    ? 'MODERATE_ALIGNMENT'
+    : 'WEAK_ALIGNMENT';
+
   return {
     workMatchScore: finalScore,
-    alignmentLabel: finalScore >= 8.5 ? 'STRONG_ALIGNMENT' : finalScore >= 7.0 ? 'MODERATE_ALIGNMENT' : 'WEAK_ALIGNMENT',
+    alignmentLabel,
     explanation,
     isBriefDescription,
     isChecklistComment,
     isBriefComment,
+    hasPendingScope,
+    pendingItemsCount: pendingOccurrences,
+    hasMeetingLogged,
+    isPartialDelivery,
     timeReasonableness,
   };
 }
 
-/**
- * Normalizes text to tokens without vulnerable greedy regexes
- */
 function tokenizeText(text: string): Set<string> {
   if (!text) return new Set();
   const normalized = text
@@ -568,18 +696,40 @@ export function generateDynamicPerformanceSummary(params: {
   ];
   const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
 
+  const pendingMarkers = [
+    /-\s*(?:pending|not done|in progress|left|remaining|deferred)/i,
+    /\b(?:testing\s+is\s+pending|work\s+is\s+pending|integration\s+is\s+pending|pending\s+testing|pending\s+review|deferred|not\s+completed|not\s+done|cant\s+go\s+till|could\s+not\s+complete|couldnt\s+complete|issue\s+in\s+.*?\s+cant)\b/i,
+    /\b(?:will\s+do\s+tomorrow|will\s+finish\s+tomorrow|pending\s+for\s+tomorrow|remaining\s+for\s+tomorrow)\b/i,
+  ];
+  const hasPendingScope = hasComments && pendingMarkers.some(re => re.test(combinedComments));
+
+  const meetingPattern = /\b(?:\d+\s*(?:hr|hour|mins?|minutes?)\s*(?:of\s*)?meeting|meeting\s+is\s+logged|meeting\s+logged|logged\s+in\s+this\s+task\s+itself)\b/i;
+  const hasMeetingLogged = hasComments && meetingPattern.test(combinedComments);
+
+  const doneStampCount = (combinedComments.match(/-\s*done\b/gi) || []).length;
+  const pendingStampCount = (combinedComments.match(/-\s*pending\b/gi) || []).length;
+  const totalStamps = doneStampCount + pendingStampCount;
+
   const descWordSet = new Set(descWords.map(w => w.toLowerCase().replace(/[^a-z0-9]/g, '')));
   const nonDescWords = commentWords.filter(w => {
     const cleanW = w.toLowerCase().replace(/[^a-z0-9]/g, '');
     return cleanW.length > 0 && !descWordSet.has(cleanW);
   });
-  const statusStopWords = new Set(['done', 'pending', 'not', 'is', 'are', 'which', 'by', 'client', 'key', 'for', 'and', 'the', 'on', 'to', '1', '2', '3', 'ok', 'yes', 'no', 'of', 'in', 'at']);
+  const statusStopWords = new Set([
+    'done', 'pending', 'not', 'is', 'are', 'which', 'by', 'client', 'key', 'for', 'and',
+    'the', 'on', 'to', '1', '2', '3', 'ok', 'yes', 'no', 'of', 'in', 'at', 'instead',
+    'did', 'note', '1hr', 'task', 'itself', 'as', 'there', 'some'
+  ]);
   const technicalExplanationWords = nonDescWords.filter(w => !statusStopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
-  const isChecklistComment = hasComments && hasChecklistMarkers && (technicalExplanationWords.length < 15);
+  const isChecklistComment = hasComments && ((hasChecklistMarkers && technicalExplanationWords.length < 18) || (totalStamps >= 2 && technicalExplanationWords.length < 25));
 
   // 1. Performance Summary
   const lines: string[] = [];
-  if (params.workMatchScore >= 8.5) {
+  if (hasPendingScope && params.workMatchScore < 7.0) {
+    lines.push(`Task was recorded with deliverables left pending or unverified at the end of the planned duration.`);
+    lines.push(`While partial progress was noted, closing extended duration tasks with pending deliverables or unresolved testing does not meet engineering completion standards.`);
+    lines.push(`For a ${params.seniorityLevel || 'developer'}, tasks should either be completed and verified within the allocated time or roadblocks escalated proactively.`);
+  } else if (params.workMatchScore >= 8.5) {
     lines.push(`Task implementation was successfully executed with clear, substantive progress updates validating the completed scope.`);
     lines.push(`The technical commentary directly corroborates the development effort required for a ${params.seniorityLevel || 'developer'} with ${params.userExperienceYears || 2}+ years of experience.`);
     if (aiTools) {
@@ -610,6 +760,8 @@ export function generateDynamicPerformanceSummary(params: {
     whereLacked = 'No actual hours were logged in Zoho Projects for this task.';
   } else if (!hasComments) {
     whereLacked = 'Lacked progress comments, PR references, or test verification notes in Zoho to confirm completion of the task description.';
+  } else if (hasPendingScope) {
+    whereLacked = 'Key deliverables were left in a pending or unverified state (e.g. testing pending, uncompleted sections) at the end of the planned duration without proactive blocker escalation.';
   } else if (isChecklistComment) {
     whereLacked = 'Comments primarily mirrored the task checklist with status markers (done/pending) rather than detailing the actual technical work, code changes, or verification outcomes.';
   } else if (params.timeAssessmentLabel === 'OVERDUE') {
@@ -634,6 +786,8 @@ export function generateDynamicPerformanceSummary(params: {
   let whereToImprove = '';
   if (!params.taskDescription || params.taskDescription.trim().length === 0) {
     whereToImprove = 'Always provide clear task descriptions with defined acceptance criteria in Zoho Projects before tracking hours and logging progress.';
+  } else if (hasPendingScope) {
+    whereToImprove = 'Complete and test all assigned deliverables within the allocated timeframe, or proactively escalate blockers to project leads during the shift.';
   } else if (isChecklistComment || (params.workMatchScore < 7.0 && isBriefDescription && isBriefComment)) {
     whereToImprove = 'Document comprehensive technical requirements in task descriptions and detail the specific code changes, configurations, and verification results in task comments.';
   } else if (params.timeAssessmentLabel === 'NOT_LOGGED') {
@@ -650,6 +804,12 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 4. Actionable improvement points list for user to work on
   const improvementItems: string[] = [];
+  if (hasPendingScope) {
+    improvementItems.push('Resolve Pending Deliverables & Escalate Blockers: Work was logged with items explicitly marked "Pending" (e.g. testing pending or deferred scope) on an extended duration ticket. Fully complete and test deliverables within the allocated timeframe, or proactively escalate blockers to project leads during the day rather than closing tasks with pending items.');
+  }
+  if (hasMeetingLogged) {
+    improvementItems.push('Separate Meeting Logs from Development Tasks: Record non-development activities such as internal or client meetings (e.g. 1 hour logged) under dedicated administrative/meeting tasks in Zoho Projects rather than commingling meeting hours inside technical feature tickets.');
+  }
   if (isChecklistComment) {
     improvementItems.push('Explain Work Done Beyond Status Updates: In Zoho task comments, substantiate your work with at least 40–50 words detailing specific technical implementation (what code was modified, packages upgraded, issues resolved, and verification findings) instead of repeating the task checklist with status markers like "done" or "pending".');
   }
@@ -675,7 +835,7 @@ export function generateDynamicPerformanceSummary(params: {
     improvementItems.push(`Leverage AI Subscriptions (${aiTools}): Utilize AI coding assistants for automated unit test authoring and commit message generation.`);
   }
   if (!params.isQAReview) {
-    improvementItems.push('Complete QA Verification Handoff: Explicitly transition tasks to QA Review with verification criteria for testers.');
+    improvementItems.push('Complete Verification Handoff: Explicitly transition tasks to In QA Review with self-testing verification notes.');
   }
   if (improvementItems.length === 0) {
     improvementItems.push('Continue maintaining high-quality commit summaries and structured technical comments on upcoming milestones.');

@@ -226,38 +226,40 @@ export function formatZohoDurationToClock(val: string | number | null | undefine
   return formatMinutesToClock(totalMins);
 }
 
-// Global in-memory and disk token cache to prevent hitting Zoho OAuth rate limiters
+// Global token cache with disk persistence to prevent hitting Zoho OAuth rate limiters across restarts
 let tokenCache: {
   accessToken: string;
   expiresAt: number;
 } | null = null;
 
-const TOKEN_CACHE_FILE = '/tmp/.zoho_token_cache.json';
-
 function readDiskTokenCache(): { accessToken: string; expiresAt: number } | null {
-  if (typeof window !== 'undefined') return null;
   try {
-    const fs = require('fs');
-    if (fs.existsSync(TOKEN_CACHE_FILE)) {
-      const data = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
-      if (data?.accessToken && typeof data.expiresAt === 'number' && data.expiresAt > Date.now() + 180000) {
+    if (typeof window !== 'undefined') return null;
+    const fsMod = require('fs');
+    const pathMod = require('path');
+    const cachePath = pathMod.join(process.cwd(), '.next', 'zoho-token-cache.json');
+    if (fsMod.existsSync(cachePath)) {
+      const data = JSON.parse(fsMod.readFileSync(cachePath, 'utf8'));
+      if (data && data.accessToken && Number(data.expiresAt) > Date.now() + 60000) {
         return data;
       }
     }
-  } catch {
-    // Ignore disk cache read errors
-  }
+  } catch {}
   return null;
 }
 
-function writeDiskTokenCache(cache: { accessToken: string; expiresAt: number }): void {
-  if (typeof window !== 'undefined') return;
+function writeDiskTokenCache(accessToken: string, expiresAt: number): void {
   try {
-    const fs = require('fs');
-    fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(cache), 'utf8');
-  } catch {
-    // Ignore disk cache write errors
-  }
+    if (typeof window !== 'undefined') return;
+    const fsMod = require('fs');
+    const pathMod = require('path');
+    const cacheDir = pathMod.join(process.cwd(), '.next');
+    if (!fsMod.existsSync(cacheDir)) {
+      fsMod.mkdirSync(cacheDir, { recursive: true });
+    }
+    const cachePath = pathMod.join(cacheDir, 'zoho-token-cache.json');
+    fsMod.writeFileSync(cachePath, JSON.stringify({ accessToken, expiresAt }), 'utf8');
+  } catch {}
 }
 
 /**
@@ -310,7 +312,7 @@ export async function refreshZohoAccessToken(params: {
       accessToken: data.access_token,
       expiresAt: Date.now() + expiresIn * 1000,
     };
-    writeDiskTokenCache(tokenCache);
+    writeDiskTokenCache(tokenCache.accessToken, tokenCache.expiresAt);
 
     return {
       accessToken: data.access_token,
@@ -343,16 +345,16 @@ export async function getZohoAccessToken(): Promise<string | null> {
     return null;
   }
 
-  // 1. If token is in memory and has at least 3 minutes left, return it
+  // 1. Check in-memory token cache
   if (tokenCache && tokenCache.expiresAt > Date.now() + 180000) {
     return tokenCache.accessToken;
   }
 
-  // 2. Check disk cache if process restarted
-  const diskCache = readDiskTokenCache();
-  if (diskCache) {
-    tokenCache = diskCache;
-    return diskCache.accessToken;
+  // 2. Check disk-persisted token cache to survive server restarts and avoid rate limits
+  const disk = readDiskTokenCache();
+  if (disk) {
+    tokenCache = disk;
+    return disk.accessToken;
   }
 
   const result = await refreshZohoAccessToken({

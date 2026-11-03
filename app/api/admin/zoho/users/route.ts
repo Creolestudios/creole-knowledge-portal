@@ -173,92 +173,77 @@ export async function GET(request: Request) {
                    (taskEmail && (taskEmail === email || taskEmail === mappedZohoEmail));
           });
 
-          // Helper to build a unified ZohoTaskItem with full evaluation
+          // Helper to build a unified ZohoTaskItem with authoritative strict evaluation
           const buildTaskItemWithEvaluation = (t: any): ZohoTaskItem => {
             const plannedMins = parseDurationToMinutes(t.planned_hours) || 240;
             const actualMins = parseDurationToMinutes(t.actual_hours);
             const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins);
 
-            let evalItem: any;
+            const taskCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
+            const hasComments = taskCommentsList.length > 0;
+            const workMatchResult = evaluateWorkAndCommentMatch(t.task_description, taskCommentsList, {
+              userExperienceYears: yearsOfExp,
+              seniorityLevel,
+              aiSubscriptions,
+              plannedMinutes: plannedMins,
+              actualMinutes: actualMins,
+              taskName: t.task_name,
+            });
+
+            const workMatchScore = workMatchResult.workMatchScore;
+            const timeScore = dynamicTimeAdh.timeScore;
+            const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
+            const variance = dynamicTimeAdh.timeVarianceMinutes;
+            const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
+
             const raw = t.zoho_task_evaluations?.[0];
-            if (raw) {
-              const workMatch = raw.comment_quality_score > 10 ? raw.comment_quality_score / 10 : raw.comment_quality_score;
-              const overall = Number((workMatch * 0.55 + dynamicTimeAdh.timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
+            const dyn = generateDynamicPerformanceSummary({
+              taskDescription: t.task_description || '',
+              comments: taskCommentsList,
+              timeAssessmentLabel,
+              workMatchScore,
+              seniorityLevel,
+              userExperienceYears: yearsOfExp,
+              aiSubscriptions,
+              isQAReview: t.is_qa_review,
+            });
 
-              evalItem = {
-                overallScore: Math.min(10.0, overall),
-                timeScore: dynamicTimeAdh.timeScore,
-                workMatchScore: workMatch,
-                commentQualityScore: workMatch,
-                complexityScore: raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score,
-                repetitionScore: raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score,
-                timeVarianceMinutes: dynamicTimeAdh.timeVarianceMinutes,
-                timeAssessmentLabel: dynamicTimeAdh.assessmentLabel,
-                isRepetitive: raw.is_repetitive,
-                repetitionSimilarityPct: raw.repetition_similarity_pct,
-                matchedTaskId: raw.matched_repetitive_task_id,
-                workMatchFeedback: raw.summary_feedback,
-                summaryFeedback: raw.summary_feedback,
-                strengths: raw.strengths || [],
-                improvements: raw.improvements || [],
-                aiModelUsed: raw.ai_model_used || 'gemini-2.5-flash',
-              };
-            } else {
-              const variance = dynamicTimeAdh.timeVarianceMinutes;
-              const timeScore = dynamicTimeAdh.timeScore;
-              const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
+            const isStalePraise = raw?.summary_feedback && (
+              workMatchScore < 7.0 ||
+              workMatchResult.hasPendingScope ||
+              workMatchResult.isChecklistComment ||
+              workMatchResult.alignmentLabel === 'OFF_TOPIC' ||
+              workMatchResult.alignmentLabel === 'PARTIAL_DELIVERY'
+            );
 
-              const taskCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
-              const hasComments = taskCommentsList.length > 0;
-              const workMatchResult = evaluateWorkAndCommentMatch(t.task_description, taskCommentsList, {
-                userExperienceYears: yearsOfExp,
-                seniorityLevel,
-                aiSubscriptions,
-                plannedMinutes: plannedMins,
-                actualMinutes: actualMins,
-                taskName: t.task_name,
-              });
-              const workMatchScore = workMatchResult.workMatchScore;
-              const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
-
-              const dyn = generateDynamicPerformanceSummary({
-                taskDescription: t.task_description || '',
-                comments: (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || ''),
-                timeAssessmentLabel,
-                workMatchScore,
-                seniorityLevel,
-                userExperienceYears: yearsOfExp,
-                aiSubscriptions,
-                isQAReview: t.is_qa_review,
-              });
-
-              evalItem = {
-                overallScore: Math.min(10.0, overallScore),
-                timeScore,
-                workMatchScore,
-                commentQualityScore: workMatchScore,
-                complexityScore: 8.0,
-                repetitionScore: 10.0,
-                timeVarianceMinutes: variance,
-                timeAssessmentLabel,
-                isRepetitive: false,
-                repetitionSimilarityPct: 0,
-                matchedTaskId: null,
-                workMatchFeedback: hasComments
-                  ? 'Comments directly substantiate the implementation and verify the work completed.'
-                  : 'No progress comments were logged in Zoho Projects to verify completion.',
-                summaryFeedback: dyn.performanceSummary,
-                whereLacked: dyn.whereLacked,
-                whereToImprove: dyn.whereToImprove,
-                improvementItems: dyn.improvementItems,
-                strengths: [
-                  workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
-                  timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
-                ],
-                improvements: dyn.improvementItems,
-                aiModelUsed: 'engineering-rule-engine',
-              };
-            }
+            const evalItem = {
+              overallScore: Math.min(10.0, overallScore),
+              timeScore,
+              workMatchScore,
+              commentQualityScore: workMatchScore,
+              complexityScore: raw?.complexity_score ? (raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score) : 8.0,
+              repetitionScore: raw?.repetition_score ? (raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score) : 10.0,
+              timeVarianceMinutes: variance,
+              timeAssessmentLabel,
+              isRepetitive: raw?.is_repetitive || false,
+              repetitionSimilarityPct: raw?.repetition_similarity_pct || 0,
+              matchedTaskId: raw?.matched_repetitive_task_id || null,
+              workMatchFeedback: workMatchResult.explanation,
+              summaryFeedback: !isStalePraise && raw?.summary_feedback && !raw.summary_feedback.includes('Without technical verification')
+                ? raw.summary_feedback
+                : dyn.performanceSummary,
+              whereLacked: dyn.whereLacked,
+              whereToImprove: dyn.whereToImprove,
+              improvementItems: dyn.improvementItems,
+              strengths: (!isStalePraise && raw?.strengths && raw.strengths.length > 0)
+                ? raw.strengths
+                : [
+                    workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
+                    timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
+                  ],
+              improvements: dyn.improvementItems,
+              aiModelUsed: raw?.ai_model_used || 'engineering-rule-engine',
+            };
 
             return {
               id: t.id,
