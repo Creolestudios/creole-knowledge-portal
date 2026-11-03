@@ -104,6 +104,49 @@ describe('Zoho Heuristics Engine', () => {
       expect(result.explanation).toContain('mirror the task checklist with status indicators');
     });
 
+    it('strictly penalizes score (<= 5.2/10) when extended duration task leaves deliverables pending with checklist markers (Navratan case)', () => {
+      const desc = `Cash Free Integration
+Gemstone for Every purpose detail page image change
+S3 Bucket integration
+check with anant sir about CTA Ai else will do video section changes for the 2-3 sections on the mobile and desktop different videos.`;
+
+      const comments = [
+        `Cash Free Integration - Added the plugin and configured , Testing is pending as there is some issue in cart cant go till the payment section. Gemstone for Every purpose detail page image change - Done S3 Bucket integration - Done check with anant sir about CTA Ai else will do video section changes for the 2-3 sections on the mobile and desktop different videos. - Pending (Instead did the mega menu discussed in todays meeting)
+Note: 1Hr of meeting is logged in this task itself.`
+      ];
+
+      const result = evaluateWorkAndCommentMatch(desc, comments, {
+        taskName: 'CTA for the Kundli and Gemstone suggestion (first need to confirm from Anant Sir. ) , Few feed back...',
+        plannedMinutes: 480,
+        actualMinutes: 479,
+        userExperienceYears: 2,
+        seniorityLevel: 'Junior',
+        aiSubscriptions: [],
+      });
+
+      expect(result.workMatchScore).toBeLessThanOrEqual(5.2);
+      expect(result.hasPendingScope).toBe(true);
+      expect(result.hasMeetingLogged).toBe(true);
+      expect(result.isChecklistComment).toBe(true);
+      expect(result.isPartialDelivery).toBe(true);
+      expect(result.alignmentLabel).toBe('PARTIAL_DELIVERY');
+      expect(result.explanation).toContain('left pending or unverified');
+
+      const dynSummary = generateDynamicPerformanceSummary({
+        taskDescription: desc,
+        comments,
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: result.workMatchScore,
+        seniorityLevel: 'Junior',
+        userExperienceYears: 2,
+        isQAReview: true,
+      });
+
+      expect(dynSummary.whereLacked).toContain('pending or unverified');
+      expect(dynSummary.improvementItems.some(i => i.includes('Pending Deliverables') || i.includes('Pending'))).toBe(true);
+      expect(dynSummary.improvementItems.some(i => i.includes('Separate Meeting Logs') || i.includes('meeting'))).toBe(true);
+    });
+
     it('penalizes score when task description is vague and brief (e.g. "Continue AI chatbot research")', () => {
       const desc = 'Continue AI chatbot research. Make home page section changes';
       const comments = ['Worked on chatbot and updated home page sections'];

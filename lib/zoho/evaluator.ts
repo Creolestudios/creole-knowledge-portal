@@ -150,10 +150,16 @@ function generateHeuristicEvaluation(
 
   if (workMatch.alignmentLabel === 'STRONG_ALIGNMENT') {
     strengths.push('Logged comments clearly match the task description and confirm the completed work.');
+  } else if (workMatch.isPartialDelivery || workMatch.hasPendingScope) {
+    improvements.push('Resolve pending deliverables and escalate blockers during the scheduled time rather than leaving items incomplete.');
   } else if (workMatch.alignmentLabel === 'NO_COMMENTS') {
     improvements.push('Always log progress comments in Zoho Projects describing the implementation steps and test status.');
   } else {
     improvements.push('Ensure comments provide specific technical details aligned with the task description.');
+  }
+
+  if (workMatch.hasMeetingLogged) {
+    improvements.push('Record meeting hours under dedicated administrative/meeting tasks rather than inside technical feature tickets.');
   }
 
   if (input.isQAReview) {
@@ -248,10 +254,16 @@ EVALUATION CRITERIA:
 1. Work Justification & Comment Alignment (Score 0.0 - 10.0):
    - Compare the Task Description with the Comments logged.
    - Substance Benchmark: Both task description and comments should provide substantive technical depth (benchmark: 40–50 words each) and both must make sense. Comments must reflect the work done regarding the description in depth (modules modified, packages upgraded, errors resolved, testing done).
+   - Pending Scope & Incomplete Deliverables Penalization:
+     * If comments mention that deliverables or testing are 'Pending', 'not done', 'in progress', or deferred (e.g. 'testing is pending', '- Pending'), OR
+     * If work that could reasonably be completed within the allocated hours (e.g. 4h - 8h) given the engineer's seniority and AI subscriptions was left unfinished without timely blocker escalation,
+     * THEN strictly penalize the Work Justification score (cap at 5.0 - 5.5 / 10.0). High scores (8.5+) must NEVER be given when core deliverables are left pending.
    - Vague Description & Checklist Penalization:
      * If the user provided a vague, generic description (e.g. 'Continue AI chatbot research. Make home page section changes', or brief bullets without acceptance criteria like 'Do Server (Ubuntu) Upgrade. Do php upgrade Update 3 plugins on live Testing on live.'), OR
      * If comments merely mirror the description checklist with status flags like 'done', 'not done', '- Done', '1 is done 2 are pending',
      * THEN heavily penalize the Work Justification score (cap between 4.0 - 5.0 / 10.0).
+   - Meeting Hours Segregation:
+     * If comments indicate that meeting hours (e.g. 1 hour of meeting) were logged inside the technical feature ticket, highlight this in the improvements to separate administrative meetings from technical tasks.
    - If comments clearly substantiate the work completed with detailed technical context, award a high score (8.5 - 10.0).
    - If comments are missing, score is strictly 0.0.
    - Privacy Rule for "40–50 words": DO NOT mention the word count or '40–50 words' anywhere in the performance summary, whereLacked, or workMatchFeedback. ONLY provide the 40–50 words coaching in the improvements/to-work-on points.
@@ -294,8 +306,8 @@ Return your evaluation strictly conforming to the requested JSON schema.
     const hasComments = input.comments && input.comments.length > 0;
     const rawWorkMatch = hasComments && Number.isFinite(parsed.workMatchScore) ? parsed.workMatchScore : (hasComments ? workMatch.workMatchScore : 0);
     let workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : 0;
-    if (workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {
-      workMatchScore = Math.min(workMatchScore, 5.0);
+    if (workMatch.isPartialDelivery || workMatch.hasPendingScope || workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {
+      workMatchScore = Math.min(workMatchScore, 5.5);
     }
 
     const rawCommentQuality = Number.isFinite(parsed.commentQualityScore) ? parsed.commentQualityScore : workMatchScore;
@@ -316,6 +328,12 @@ Return your evaluation strictly conforming to the requested JSON schema.
     const rawImprovements = Array.isArray(parsed.improvements) ? parsed.improvements : [];
 
     // Ensure critical engineering heuristics are always surfaced in feedback
+    if (workMatch.hasPendingScope && !rawImprovements.some((i: string) => i.toLowerCase().includes('pending deliverables') || i.toLowerCase().includes('escalate blockers'))) {
+      rawImprovements.unshift('Work was logged with items explicitly marked "Pending" on an extended duration ticket. Fully complete and test deliverables within the allocated timeframe, or proactively escalate blockers during the day.');
+    }
+    if (workMatch.hasMeetingLogged && !rawImprovements.some((i: string) => i.toLowerCase().includes('meeting logs') || i.toLowerCase().includes('separate meeting'))) {
+      rawImprovements.unshift('Record meeting hours under dedicated administrative/meeting tasks rather than inside technical feature tickets.');
+    }
     if (workMatch.isChecklistComment && !rawImprovements.some((i: string) => i.toLowerCase().includes('status updates') || i.toLowerCase().includes('checklist'))) {
       rawImprovements.unshift('In Zoho task comments, substantiate your work with at least 40–50 words detailing specific technical implementation (what code was modified, packages upgraded, issues resolved, and verification findings) instead of repeating the task checklist with status markers like "done" or "pending".');
     }

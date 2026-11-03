@@ -28,6 +28,11 @@ vi.mock('@/lib/zoho/client', () => ({
     if (s === '4:00') return 240;
     return 0;
   },
+  extractPlannedMinutesFromTask: (duration: any, work: any, name: any) => {
+    if (duration === '8:00' || duration === 480 || work === '8:00') return 480;
+    if (duration === '4:00' || duration === 240 || work === '4:00') return 240;
+    return 480;
+  },
 }));
 
 import { runDailyZohoEvaluationCron } from '@/lib/zoho/cron';

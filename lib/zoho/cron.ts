@@ -218,7 +218,18 @@ export async function runDailyZohoEvaluationCron(
       }
 
       // Fetch user's active, open, and completed tasks from Zoho
-      const rawTasks = await fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100);
+      const [openTasks, recentTasks] = await Promise.all([
+        fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'open', 100),
+        fetchZohoUserTasks(token, portalId, matchedZohoUser.id, 'all', 100),
+      ]);
+      const taskMap = new Map<string, any>();
+      for (const t of [...(openTasks || []), ...(recentTasks || [])]) {
+        const tid = String(t.id_string || t.id || '');
+        if (tid && !taskMap.has(tid)) {
+          taskMap.set(tid, t);
+        }
+      }
+      const rawTasks = Array.from(taskMap.values());
 
       let userDoneTasks = 0;
       let userDelayedTasks = 0;
@@ -248,9 +259,21 @@ export async function runDailyZohoEvaluationCron(
           taskDateStr = targetDate;
         }
 
-        // Only evaluate tasks assigned or active on the target evaluation date
-        if (taskDateStr !== targetDate) {
+        const lastUpdatedDateStr = raw.last_updated_time_long
+          ? formatDateYYYYMMDD(new Date(raw.last_updated_time_long))
+          : raw.last_updated_time
+          ? (() => {
+              const p = String(raw.last_updated_time).split('-');
+              return p.length === 3 ? `${p[2]}-${p[0].padStart(2, '0')}-${p[1].padStart(2, '0')}` : '';
+            })()
+          : '';
+
+        const isTargetDay = taskDateStr === targetDate || lastUpdatedDateStr === targetDate;
+        if (!isTargetDay) {
           continue;
+        }
+        if (taskDateStr !== targetDate && lastUpdatedDateStr === targetDate) {
+          taskDateStr = targetDate;
         }
 
         const plannedMins = extractPlannedMinutesFromTask(raw.duration, raw.work, raw.name);
