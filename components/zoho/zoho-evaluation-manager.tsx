@@ -17,6 +17,7 @@ import {
   Mail,
   Search,
   RefreshCw,
+  Sliders,
 } from 'lucide-react';
 import ZohoDateFilterPicker, { DateRangeSelection } from './zoho-date-filter-picker';
 import ZohoTillDateSummary from './zoho-till-date-summary';
@@ -24,6 +25,7 @@ import ZohoTaskModal from './zoho-task-modal';
 import ZohoDailyEvaluationModal from './zoho-daily-evaluation-modal';
 import ZohoWeeklyEvaluationModal from './zoho-weekly-evaluation-modal';
 import ZohoReportModal from './zoho-report-modal';
+import { ZohoEvaluationCriteriaModal } from './zoho-evaluation-criteria-modal';
 import {
   ZohoUserSummary,
   ZohoTaskItem,
@@ -52,6 +54,7 @@ export default function ZohoEvaluationManager() {
   const [activeDailyEval, setActiveDailyEval] = useState<{ day: any; userName: string; userRole: string } | null>(null);
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [showReport, setShowReport] = useState(false);
+  const [showCriteriaModal, setShowCriteriaModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isLiveZoho, setIsLiveZoho] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -257,6 +260,16 @@ export default function ZohoEvaluationManager() {
               </div>
 
               {/* Sync Live Tasks from Zoho Button */}
+              <button
+                type="button"
+                onClick={() => setShowCriteriaModal(true)}
+                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
+                title="Configure global evaluation criteria, tolerances, and scoring rules"
+              >
+                <Sliders className="w-3.5 h-3.5 text-[#34c4f2]" />
+                <span>Evaluation Criteria</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleSyncFromZoho}
@@ -657,6 +670,15 @@ export default function ZohoEvaluationManager() {
           filterType={dateSelection.type}
           dateRangeText={dateSelection.label}
           onClose={() => setShowReport(false)}
+        />
+      )}
+
+      {/* Evaluation Criteria Modal */}
+      {showCriteriaModal && (
+        <ZohoEvaluationCriteriaModal
+          isOpen={showCriteriaModal}
+          onClose={() => setShowCriteriaModal(false)}
+          onSaved={() => void fetchUsers()}
         />
       )}
     </div>

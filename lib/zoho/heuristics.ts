@@ -1,3 +1,66 @@
+import type { ZohoEvaluationRulesConfig } from './rules-types';
+/**
+ * Analyzes whole-sentence context to accurately identify actual pending deliverables,
+ * while preventing false penalties on roadmap boundaries ("audio and video support remain deferred")
+ * or resolved items ("resolved pending comments").
+ */
+export function detectPendingScope(commentsText: string): {
+  hasPendingScope: boolean;
+  pendingOccurrences: number;
+} {
+  if (!commentsText || !commentsText.trim()) {
+    return { hasPendingScope: false, pendingOccurrences: 0 };
+  }
+
+  // Split into sentences / bullet segments by newline, semicolon, bullet dash/asterisk, or sentence terminator (. / ! / ?)
+  const segments = commentsText
+    .split(/(?:\r?\n|;|\.\s+|[-*•]\s+)/)
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  // Markers that explicitly indicate unfinished deliverables or scope
+  const unfinishedPatterns = [
+    /^(?:pending|not done|in progress|left|remaining|deferred)\b/i,
+    /[-*•]\s*(?:pending|not done|in progress|left|remaining|deferred)\b/i,
+    /\b(?:pending|not done)\s*[:\-(]/i,
+    /[:\-]\s*(?:pending|not done)\b/i,
+    /\b(?:is\s+pending|remains\s+pending|left\s+pending)\b/i,
+    /\b(?:testing|work|integration|review|verification|deployment)\s+is\s+pending\b/i,
+    /\b(?:pending\s+testing|pending\s+review|pending\s+verification)\b/i,
+    /\b(?:task\s+deferred|ticket\s+deferred)\b/i,
+    /\b(?:not\s+completed|not\s+done|could\s+not\s+complete|couldnt\s+complete)\b/i,
+    /\b(?:cant\s+go\s+till|issue\s+in\s+.*?\s+cant)\b/i,
+    /\b(?:will\s+do\s+tomorrow|will\s+finish\s+tomorrow|pending\s+for\s+tomorrow|remaining\s+for\s+tomorrow)\b/i,
+  ];
+
+  // Patterns indicating out-of-scope / future architectural roadmap notes or completed resolutions
+  const roadmapOrResolvedPatterns = [
+    /\b(?:remain\s+deferred|support\s+remain|deferred\s+to\s+(?:future|next|later|phase|sprint|release)|out\s+of\s+scope|client\s+deferred|deferred\s+by\s+client)\b/i,
+    /\b(?:resolved|fixed|completed|cleared|addressed|closed|handled)\s+(?:all\s+)?(?:pending|deferred)\b/i,
+    /\b(?:no|zero|without\s+any)\s+(?:pending|remaining)\b/i,
+  ];
+
+  let occurrences = 0;
+
+  for (const segment of segments) {
+    const hasUnfinished = unfinishedPatterns.some(p => p.test(segment));
+    if (!hasUnfinished) continue;
+
+    const isRoadmapOrResolved = roadmapOrResolvedPatterns.some(p => p.test(segment));
+    // If it's a roadmap or resolved statement and doesn't explicitly start with a pending marker like "- Pending" or "testing is pending"
+    if (isRoadmapOrResolved && !/^(?:pending|not done)\b/i.test(segment) && !/\b(?:testing|work)\s+is\s+pending\b/i.test(segment)) {
+      continue;
+    }
+
+    occurrences++;
+  }
+
+  return {
+    hasPendingScope: occurrences > 0,
+    pendingOccurrences: occurrences,
+  };
+}
+
 /**
  * Zoho Task Evaluation Heuristics Engine
  *
@@ -62,14 +125,23 @@ export interface WorkMatchResult {
  */
 export function calculateTimeAdherence(
   plannedMinutes: number,
-  actualMinutes: number
+  actualMinutes: number,
+  rules?: Partial<ZohoEvaluationRulesConfig>
 ): TimeAdherenceResult {
   const safePlanned = Number.isFinite(plannedMinutes) && plannedMinutes > 0 ? plannedMinutes : 60;
   const safeActual = Number.isFinite(actualMinutes) && actualMinutes >= 0 ? actualMinutes : 0;
 
+  const zeroScore = rules?.zeroHoursLoggedScore ?? 0;
+  const overtimeGrace = rules?.overtimeGraceMinutes ?? 5;
+  const earlyGrace = rules?.earlyCompletionBufferMinutes ?? 15;
+  const earlyDeduction = rules?.earlyGapDeduction ?? 2.0;
+  const overtimeDeduction = rules?.overtimeBreachDeduction ?? 2.0;
+  const earlyBaseCap = Math.max(1.0, 10.0 - earlyDeduction);
+  const overtimeBaseCap = Math.max(1.0, 10.0 - overtimeDeduction);
+
   if (safeActual === 0) {
     return {
-      timeScore: 0,
+      timeScore: zeroScore,
       timeVarianceMinutes: -safePlanned,
       assessmentLabel: 'NOT_LOGGED',
       explanation: 'No hours were logged for this task in Zoho Projects.'
@@ -79,55 +151,55 @@ export function calculateTimeAdherence(
   const variance = safeActual - safePlanned;
 
   // Case 1: Overtime with <= 5 minutes buffer (e.g. 4h planned, up to 4:05)
-  if (variance > 0 && variance <= 5) {
+  if (variance > 0 && variance <= overtimeGrace) {
     return {
       timeScore: 10,
       timeVarianceMinutes: variance,
       assessmentLabel: 'SLIGHT_OVERRUN_TOLERATED',
-      explanation: `Task took ${variance}m over planned time, within the permitted +5m buffer. Full score (10/10) awarded.`
+      explanation: `Task took ${variance}m over planned time, within the permitted +${overtimeGrace}m buffer. Full score (10/10) awarded.`
     };
   }
 
   // Case 2: Exact on-time or completed within 15 min early buffer (e.g. 4h planned, down to 3:45)
-  if (variance <= 0 && variance >= -15) {
+  if (variance <= 0 && variance >= -earlyGrace) {
     return {
       timeScore: 10,
       timeVarianceMinutes: variance,
       assessmentLabel: 'ON_TIME',
       explanation: variance === 0
         ? 'Task completed exactly on planned time (10/10).'
-        : `Task completed ${Math.abs(variance)}m early, within the permitted -15m buffer. Full score (10/10) awarded.`
+        : `Task completed ${Math.abs(variance)}m early, within the permitted -${earlyGrace}m buffer. Full score (10/10) awarded.`
     };
   }
 
   // Case 3: Completed too early (> 15 min early, e.g. 4h planned done in 3h 15m => 45m early)
-  if (variance < -15) {
-    const earlyGapMinutes = Math.abs(variance) - 15;
+  if (variance < -earlyGrace) {
+    const earlyGapMinutes = Math.abs(variance) - earlyGrace;
     const earlyRatio = earlyGapMinutes / safePlanned;
-    // Strict early completion penalty: buffer breach immediately caps score at 8.0
+    // Strict early completion penalty: buffer breach immediately caps score by earlyGapDeduction
     const scaledPenalty = Math.min(5.5, Number((earlyRatio * 9.0).toFixed(1)));
-    const score = Math.max(2.5, Number((8.0 - scaledPenalty).toFixed(1)));
+    const score = Math.max(2.5, Number((earlyBaseCap - scaledPenalty).toFixed(1)));
 
     return {
       timeScore: score,
       timeVarianceMinutes: variance,
       assessmentLabel: 'UNEXPECTED_EARLY',
-      explanation: `Task finished ${Math.abs(variance)}m earlier than estimated (${earlyGapMinutes}m beyond the -15m buffer). Early completion gap strictly penalized time score (${score}/10).`
+      explanation: `Task finished ${Math.abs(variance)}m earlier than estimated (${earlyGapMinutes}m beyond the -${earlyGrace}m buffer). Early completion gap strictly penalized time score (${score}/10).`
     };
   }
 
   // Case 4: Overdue (> 5 minutes overtime, e.g. 3h planned done in 3h 12m => 7m excess overtime)
-  const excessOvertime = variance - 5;
+  const excessOvertime = variance - overtimeGrace;
   const lateRatio = excessOvertime / safePlanned;
-  // Strict buffer breach penalty: exceeding the +5m buffer immediately drops max score to 8.0
+  // Strict buffer breach penalty: exceeding the buffer immediately drops max score by overtimeBreachDeduction
   const scaledPenalty = Math.min(6.0, Number((lateRatio * 8.0).toFixed(1)));
-  const score = Math.max(2.0, Number((8.0 - scaledPenalty).toFixed(1)));
+  const score = Math.max(2.0, Number((overtimeBaseCap - scaledPenalty).toFixed(1)));
 
   return {
     timeScore: score,
     timeVarianceMinutes: variance,
     assessmentLabel: 'OVERDUE',
-    explanation: `Task exceeded planned time by ${variance}m (${excessOvertime}m beyond the +5m buffer). Buffer breach strictly penalized time score (${score}/10).`
+    explanation: `Task exceeded planned time by ${variance}m (${excessOvertime}m beyond the +${overtimeGrace}m buffer). Buffer breach strictly penalized time score (${score}/10).`
   };
 }
 
@@ -280,15 +352,8 @@ export function evaluateWorkAndCommentMatch(
     };
   }
 
-  // Detect pending deliverables or unfinished scope in comments
-  const pendingMarkers = [
-    /-\s*(?:pending|not done|in progress|left|remaining|deferred)/i,
-    /\b(?:testing\s+is\s+pending|work\s+is\s+pending|integration\s+is\s+pending|pending\s+testing|pending\s+review|deferred|not\s+completed|not\s+done|cant\s+go\s+till|could\s+not\s+complete|couldnt\s+complete|issue\s+in\s+.*?\s+cant)\b/i,
-    /\b(?:will\s+do\s+tomorrow|will\s+finish\s+tomorrow|pending\s+for\s+tomorrow|remaining\s+for\s+tomorrow)\b/i,
-  ];
-  const hasPendingScope = pendingMarkers.some(re => re.test(combinedComments));
-  const pendingOccurrences = (combinedComments.match(/-\s*(?:pending|not done)\b/gi) || []).length +
-    (combinedComments.match(/\b(?:testing\s+is\s+pending|work\s+is\s+pending|is\s+pending|issue\s+in\s+.*?\s+cant|cant\s+go\s+till|will\s+do\s+tomorrow)\b/gi) || []).length;
+  // Detect pending deliverables or unfinished scope in comments using sentence context
+  const { hasPendingScope, pendingOccurrences } = detectPendingScope(combinedComments);
 
   // Detect meeting hours logged inside development feature tickets
   const meetingPattern = /\b(?:\d+\s*(?:hr|hour|mins?|minutes?)\s*(?:of\s*)?meeting|meeting\s+is\s+logged|meeting\s+logged|logged\s+in\s+this\s+task\s+itself)\b/i;
@@ -632,6 +697,7 @@ export function computeCompositeTaskScore(params: {
   complexityScore: number;
   repetitionScore: number;
   isQAReview: boolean;
+  rules?: Partial<ZohoEvaluationRulesConfig>;
 }): number {
   const normTime = params.timeScore > 10 ? params.timeScore / 10 : params.timeScore;
   const normComment = params.commentQualityScore > 10 ? params.commentQualityScore / 10 : params.commentQualityScore;
@@ -643,15 +709,20 @@ export function computeCompositeTaskScore(params: {
   // Time Adherence (±10m buffer): 35% (3.5 pts)
   // Complexity: 10% (1.0 pt)
   // Originality / Non-Repetition: 10% (1.0 pt)
-  let weighted =
-    normComment * 0.45 +
-    normTime * 0.35 +
-    normComplexity * 0.10 +
-    normRepetition * 0.10;
+  const wComment = params.rules?.workMatchWeight ?? 0.45;
+  const wTime = params.rules?.timeAdherenceWeight ?? 0.35;
+  const wComplexity = params.rules?.complexityWeight ?? 0.10;
+  const wRepetition = params.rules?.repetitionWeight ?? 0.10;
+  const nonQADeduction = params.rules?.nonQAReviewDeduction ?? 1.0;
 
-  // Bonus for moving to QA Review with clear handoff (+0.3 pts)
-  if (params.isQAReview) {
-    weighted = Math.min(10, weighted + 0.3);
+  let weighted =
+    normComment * wComment +
+    normTime * wTime +
+    normComplexity * wComplexity +
+    normRepetition * wRepetition;
+
+  if (!params.isQAReview) {
+    weighted = Math.max(1.0, weighted - nonQADeduction);
   }
 
   return Number(Math.max(1.0, Math.min(10.0, weighted)).toFixed(1));
@@ -696,12 +767,7 @@ export function generateDynamicPerformanceSummary(params: {
   ];
   const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
 
-  const pendingMarkers = [
-    /-\s*(?:pending|not done|in progress|left|remaining|deferred)/i,
-    /\b(?:testing\s+is\s+pending|work\s+is\s+pending|integration\s+is\s+pending|pending\s+testing|pending\s+review|deferred|not\s+completed|not\s+done|cant\s+go\s+till|could\s+not\s+complete|couldnt\s+complete|issue\s+in\s+.*?\s+cant)\b/i,
-    /\b(?:will\s+do\s+tomorrow|will\s+finish\s+tomorrow|pending\s+for\s+tomorrow|remaining\s+for\s+tomorrow)\b/i,
-  ];
-  const hasPendingScope = hasComments && pendingMarkers.some(re => re.test(combinedComments));
+  const { hasPendingScope, pendingOccurrences } = detectPendingScope(combinedComments);
 
   const meetingPattern = /\b(?:\d+\s*(?:hr|hour|mins?|minutes?)\s*(?:of\s*)?meeting|meeting\s+is\s+logged|meeting\s+logged|logged\s+in\s+this\s+task\s+itself)\b/i;
   const hasMeetingLogged = hasComments && meetingPattern.test(combinedComments);
@@ -777,7 +843,7 @@ export function generateDynamicPerformanceSummary(params: {
   } else if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
     whereLacked = 'Completed well ahead of estimate without documenting comprehensive automated tests or edge-case handling.';
   } else if (!params.isQAReview) {
-    whereLacked = 'Lacked formal transition to QA review with deployment verification notes.';
+    whereLacked = 'Status Not In QA Review: Task was left in "In Progress" or "Backlog" instead of formally transitioning to In QA Review upon completion; points were deducted from the overall score.';
   } else {
     whereLacked = 'Minimal gaps identified; could further document architectural decisions or edge cases.';
   }
@@ -835,7 +901,7 @@ export function generateDynamicPerformanceSummary(params: {
     improvementItems.push(`Leverage AI Subscriptions (${aiTools}): Utilize AI coding assistants for automated unit test authoring and commit message generation.`);
   }
   if (!params.isQAReview) {
-    improvementItems.push('Complete Verification Handoff: Explicitly transition tasks to In QA Review with self-testing verification notes.');
+    improvementItems.push('Status Not Moved to In QA Review: Task was left in "In Progress" or "Backlog" instead of transitioning to In QA Review upon completion. 1.0 point was deducted from the overall score. Ensure task is formally moved to In QA Review with self-testing verification notes.');
   }
   if (improvementItems.length === 0) {
     improvementItems.push('Continue maintaining high-quality commit summaries and structured technical comments on upcoming milestones.');

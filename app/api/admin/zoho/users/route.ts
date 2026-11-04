@@ -10,7 +10,8 @@ import {
 } from '@/lib/zoho/service';
 import { getLiveZohoSummariesWithFilter } from '@/lib/zoho/sync';
 import { parseDurationToMinutes } from '@/lib/zoho/client';
-import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence } from '@/lib/zoho/heuristics';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence, computeCompositeTaskScore } from '@/lib/zoho/heuristics';
+import { getZohoEvaluationRules } from '@/lib/zoho/rules-store';
 
 export async function GET(request: Request) {
   try {
@@ -122,6 +123,8 @@ export async function GET(request: Request) {
         console.warn('[Admin Zoho Users API] Could not fetch zoho_tasks:', taskErr);
       }
 
+      const activeRules = await getZohoEvaluationRules();
+
       // 4. Build ZohoUserSummary for each login user (excluding admins)
       const nonAdminAuthUsers = authUsers.filter((authUser) => {
         const email = (authUser.email || '').toLowerCase().trim();
@@ -175,9 +178,13 @@ export async function GET(request: Request) {
 
           // Helper to build a unified ZohoTaskItem with authoritative strict evaluation
           const buildTaskItemWithEvaluation = (t: any): ZohoTaskItem => {
-            const plannedMins = parseDurationToMinutes(t.planned_hours) || 240;
-            const actualMins = parseDurationToMinutes(t.actual_hours);
-            const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins);
+            const plannedMins = t.planned_minutes != null && Number(t.planned_minutes) > 0
+              ? Number(t.planned_minutes)
+              : Math.round((Number(t.planned_hours) || 0) * 60) || 240;
+            const actualMins = t.actual_minutes != null
+              ? Number(t.actual_minutes)
+              : Math.round((Number(t.actual_hours) || 0) * 60);
+            const dynamicTimeAdh = calculateTimeAdherence(plannedMins, actualMins, activeRules);
 
             const taskCommentsList = (t.zoho_task_comments || []).map((c: any) => c.comment_content || c.content || '');
             const hasComments = taskCommentsList.length > 0;
@@ -194,9 +201,18 @@ export async function GET(request: Request) {
             const timeScore = dynamicTimeAdh.timeScore;
             const timeAssessmentLabel = dynamicTimeAdh.assessmentLabel;
             const variance = dynamicTimeAdh.timeVarianceMinutes;
-            const overallScore = Number((workMatchScore * 0.55 + timeScore * 0.40 + (t.is_qa_review ? 0.5 : 0)).toFixed(1));
-
             const raw = t.zoho_task_evaluations?.[0];
+            const complexityScore = raw?.complexity_score ? (raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score) : 8.0;
+            const repetitionScore = raw?.repetition_score ? (raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score) : 10.0;
+            const overallScore = computeCompositeTaskScore({
+              timeScore,
+              commentQualityScore: workMatchScore,
+              complexityScore,
+              repetitionScore,
+              isQAReview: t.is_qa_review,
+              rules: activeRules,
+            });
+
             const dyn = generateDynamicPerformanceSummary({
               taskDescription: t.task_description || '',
               comments: taskCommentsList,
@@ -256,6 +272,8 @@ export async function GET(request: Request) {
               isQAReview: t.is_qa_review,
               plannedHours: Number(t.planned_hours) || 0,
               actualHours: Number(t.actual_hours) || 0,
+              plannedMinutes: plannedMins,
+              actualMinutes: actualMins,
               taskDate: t.task_date,
               zohoLink: t.zoho_link,
               comments: (t.zoho_task_comments || []).map((c: any) => ({

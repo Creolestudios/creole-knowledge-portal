@@ -341,12 +341,10 @@ export async function runDailyZohoEvaluationCron(
             })()
           : '';
 
-        const isTargetDay = taskDateStr === targetDate || lastUpdatedDateStr === targetDate;
+        // Strictly evaluate tasks for the target date only
+        const isTargetDay = taskDateStr === targetDate;
         if (!isTargetDay) {
           continue;
-        }
-        if (taskDateStr !== targetDate && lastUpdatedDateStr === targetDate) {
-          taskDateStr = targetDate;
         }
 
         const plannedMins = extractPlannedMinutesFromTask(raw.duration, raw.work, raw.name);

@@ -181,6 +181,24 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
         }
         const rawTasks = Array.from(taskMap.values());
 
+        // Pre-load existing tasks from DB to preserve historical task_date and support incremental sync
+        const { data: existingDbTasks } = await supabaseAdmin
+          .from('zoho_tasks')
+          .select('zoho_task_id, task_date, last_modified_time, synced_at')
+          .eq('user_id', authUser.id);
+        const existingTaskDateMap = new Map<string, string>();
+        const existingTaskModMap = new Map<string, string>();
+        if (existingDbTasks) {
+          for (const edt of existingDbTasks) {
+            if (edt.zoho_task_id && edt.task_date) {
+              existingTaskDateMap.set(String(edt.zoho_task_id), edt.task_date);
+            }
+            if (edt.zoho_task_id && edt.last_modified_time) {
+              existingTaskModMap.set(String(edt.zoho_task_id), edt.last_modified_time);
+            }
+          }
+        }
+
         const taskItems: ZohoTaskItem[] = [];
         let doneTasks = 0;
         let pendingTasks = 0;
@@ -189,8 +207,9 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
         let scoreSum = 0;
 
         for (const raw of rawTasks) {
-          // Determine date in YYYY-MM-DD
-          let taskDateStr = '';
+          const taskId = String(raw.id_string || raw.id || '0');
+          // 1. Preserve original task_date if already recorded in DB
+          let taskDateStr = existingTaskDateMap.get(taskId) || '';
           if (raw.start_date) {
             const parts = raw.start_date.split('-');
             if (parts.length === 3) {
@@ -246,21 +265,17 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
               })()
             : '';
 
-          const isUpdatedThisWeek = Boolean(lastUpdatedStr && lastUpdatedStr >= weekStartStr && lastUpdatedStr <= weekEndStr);
+          // Fallback only if no date could be resolved from start_date, created_time, or title
+          if (!taskDateStr) {
+            taskDateStr = (raw.created_time_long ? formatDateYYYYMMDD(new Date(raw.created_time_long)) : '') ||
+                          lastUpdatedStr ||
+                          formatDateYYYYMMDD(now);
+          }
+
           const isTaskDateThisWeek = Boolean(taskDateStr && taskDateStr >= weekStartStr && taskDateStr <= weekEndStr);
 
-          // If task date is not resolved, fallback to last updated or created time
-          if (!taskDateStr) {
-            taskDateStr = lastUpdatedStr || (raw.created_time_long ? formatDateYYYYMMDD(new Date(raw.created_time_long)) : formatDateYYYYMMDD(now));
-          }
-
-          // If the task was actively updated this week, use the update date as its active work date
-          if (isUpdatedThisWeek && lastUpdatedStr) {
-            taskDateStr = lastUpdatedStr;
-          }
-
-          // Skip closed tasks that are outside this week and were not worked on this week
-          if (!isTaskDateThisWeek && !isUpdatedThisWeek && isDone) {
+          // Skip closed tasks that are outside this week
+          if (!isTaskDateThisWeek && isDone) {
             continue;
           }
 
@@ -298,7 +313,6 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           const taskDescription = cleanText(raw.description || raw.name);
           const projectName = cleanText(raw.project?.name || 'General Project');
           const projectId = String(raw.project?.id_string || raw.project?.id || '0');
-          const taskId = String(raw.id_string || raw.id || '0');
           const zohoLink = buildZohoTaskDeepLink(portalId, projectId, taskId);
 
           // Persist task to live Supabase zoho_tasks table FIRST (satisfies foreign key)
@@ -327,32 +341,51 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             console.warn(`[ZohoSync] zoho_tasks upsert error for ${taskId}:`, dbErr);
           }
 
-          // Fetch and persist comments for this task
+          // Incremental sync check: only re-fetch comments from Zoho API if task is new, modified since last sync, or forceRefresh is true
+          const lastModInDb = existingTaskModMap.get(taskId);
+          const taskLastUpdatedMillis = raw.last_updated_time_long || (raw.last_updated_time ? new Date(raw.last_updated_time).getTime() : 0);
+          const isModifiedSinceSync = !lastModInDb || (taskLastUpdatedMillis && taskLastUpdatedMillis > new Date(lastModInDb).getTime());
+
           let taskComments: Array<{ author: string; content: string; time: string }> = [];
 
           try {
-            const apiComments = await fetchZohoTaskComments(token, portalId, projectId, taskId);
-            if (apiComments.length > 0) {
-              console.log(`[ZohoSync] Task "${taskName}" (${taskDateStr}) has ${apiComments.length} comment(s):`, apiComments.map(c => c.author_name));
-              taskComments = apiComments.map((c) => ({
-                author: c.author_name,
-                content: c.content,
-                time: c.added_time,
-              }));
+            if (isModifiedSinceSync || forceRefresh) {
+              const apiComments = await fetchZohoTaskComments(token, portalId, projectId, taskId);
+              if (apiComments.length > 0) {
+                console.log(`[ZohoSync] Task "${taskName}" (${taskDateStr}) has ${apiComments.length} comment(s):`, apiComments.map(c => c.author_name));
+                taskComments = apiComments.map((c) => ({
+                  author: c.author_name,
+                  content: c.content,
+                  time: c.added_time,
+                }));
 
-              for (const c of apiComments) {
-                if (c.id) {
-                  await supabaseAdmin.from('zoho_task_comments').upsert(
-                    {
-                      zoho_comment_id: c.id,
-                      zoho_task_id: taskId,
-                      author_name: c.author_name,
-                      comment_content: c.content,
-                      comment_added_time: c.added_time,
-                    },
-                    { onConflict: 'zoho_comment_id' }
-                  );
+                for (const c of apiComments) {
+                  if (c.id) {
+                    await supabaseAdmin.from('zoho_task_comments').upsert(
+                      {
+                        zoho_comment_id: c.id,
+                        zoho_task_id: taskId,
+                        author_name: c.author_name,
+                        comment_content: c.content,
+                        comment_added_time: c.added_time,
+                      },
+                      { onConflict: 'zoho_comment_id' }
+                    );
+                  }
                 }
+              }
+            } else {
+              // Incremental cache hit: load existing comments from database for unchanged tasks
+              const { data: cachedComments } = await supabaseAdmin
+                .from('zoho_task_comments')
+                .select('*')
+                .eq('zoho_task_id', taskId);
+              if (cachedComments && cachedComments.length > 0) {
+                taskComments = cachedComments.map((c: any) => ({
+                  author: c.author_name,
+                  content: c.comment_content,
+                  time: c.comment_added_time,
+                }));
               }
             }
           } catch (commErr) {

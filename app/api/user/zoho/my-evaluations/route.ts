@@ -365,6 +365,8 @@ export async function GET(request: Request) {
                     isQAReview: Boolean(t.is_qa_review || (t.zoho_status || '').toLowerCase().includes('qa')),
                     plannedHours: Number(t.planned_hours) || 4,
                     actualHours: Number.isFinite(Number(t.actual_hours)) ? Number(t.actual_hours) : 0,
+                    plannedMinutes: t.planned_minutes != null ? Number(t.planned_minutes) : Math.round((Number(t.planned_hours) || 4) * 60),
+                    actualMinutes: t.actual_minutes != null ? Number(t.actual_minutes) : Math.round((Number(t.actual_hours) || 0) * 60),
                     taskDate: t.task_date,
                     zohoLink: t.zoho_link,
                     comments: (t.zoho_task_comments || []).map((c: any) => ({

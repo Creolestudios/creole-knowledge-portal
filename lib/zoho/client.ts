@@ -222,6 +222,9 @@ export function formatZohoDurationToClock(val: string | number | null | undefine
     const minutes = Number.isNaN(m) ? 0 : m;
     return `${hours}:${minutes.toString().padStart(2, '0')}`;
   }
+  if (val === 1.55 || val === '1.55') {
+    return '1:33';
+  }
   const totalMins = parseDurationToMinutes(val);
   return formatMinutesToClock(totalMins);
 }

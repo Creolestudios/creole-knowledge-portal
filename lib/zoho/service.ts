@@ -62,6 +62,8 @@ export interface ZohoTaskItem {
   isQAReview: boolean;
   plannedHours: number;
   actualHours: number;
+  plannedMinutes?: number;
+  actualMinutes?: number;
   taskDate: string;
   zohoLink: string;
   comments: { author: string; content: string; time: string }[];

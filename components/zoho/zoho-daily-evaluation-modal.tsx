@@ -59,11 +59,11 @@ export default function ZohoDailyEvaluationModal({
 
   // Aggregate daily time statistics
   const totalPlannedMins = day.tasks.reduce(
-    (acc, t) => acc + (parseDurationToMinutes(t.plannedHours) || 240),
+    (acc, t) => acc + (t.plannedMinutes != null ? t.plannedMinutes : parseDurationToMinutes(t.plannedHours) || 240),
     0
   );
   const totalActualMins = day.tasks.reduce(
-    (acc, t) => acc + (parseDurationToMinutes(t.actualHours) || 0),
+    (acc, t) => acc + (t.actualMinutes != null ? t.actualMinutes : parseDurationToMinutes(t.actualHours) || 0),
     0
   );
 
@@ -229,8 +229,8 @@ export default function ZohoDailyEvaluationModal({
 
               <div className="space-y-2.5 max-h-[420px] overflow-y-auto overflow-x-hidden pr-1">
                 {day.tasks.map((task) => {
-                  const taskActualClock = formatZohoDurationToClock(task.actualHours);
-                  const taskPlannedClock = formatZohoDurationToClock(task.plannedHours);
+                  const taskActualClock = task.actualMinutes != null ? formatMinutesToClock(task.actualMinutes) : formatZohoDurationToClock(task.actualHours);
+                  const taskPlannedClock = task.plannedMinutes != null ? formatMinutesToClock(task.plannedMinutes) : formatZohoDurationToClock(task.plannedHours);
                   const taskScore = task.evaluation?.overallScore ?? 8.0;
 
                   return (

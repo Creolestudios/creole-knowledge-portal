@@ -6,6 +6,7 @@ import {
   detectRepetitiveTask,
   computeCompositeTaskScore,
   generateDynamicPerformanceSummary,
+  detectPendingScope,
 } from './heuristics';
 
 describe('Zoho Heuristics Engine', () => {
@@ -147,6 +148,25 @@ Note: 1Hr of meeting is logged in this task itself.`
       expect(dynSummary.improvementItems.some(i => i.includes('Separate Meeting Logs') || i.includes('meeting'))).toBe(true);
     });
 
+    it('does not penalize architectural roadmap notes (e.g. "remain deferred") when current deliverables are fully completed and tested', () => {
+      const desc = 'Will continue developing the project-scoped searchable library for Meridian, supporting document uploads, text extraction, full-text search, secure downloads, and item management. Will complete the Supabase storage migration and prepare the backend foundation for UI integration.';
+      const comments = [
+        '- Worked on MAS-302 to implement a centralized, project-scoped library for uploaded documents and horizon-scan items. - Implemented the database foundation in the hosted development environment, including default project folders, foundational and must-read tagging, and full-text search. - Built backend support for PDF, Word, PowerPoint, and plain-text uploads, including text extraction for searchable content. - Implemented secure download links and library item deletion. - Confirmed that legacy .doc and .ppt files can be stored but are not yet searchable; audio and video support remain deferred. - Completed Phase 2 storage, upload, download, and delete functionality, with local testing and API/extraction tests passing. - Verified that unauthenticated requests are rejected. - Documented the design decision that search results are not automatically saved to projects; analysts must explicitly link relevant items. - Ensured document text is excluded from edit history to avoid permanently duplicating confidential document content.',
+      ];
+
+      const result = evaluateWorkAndCommentMatch(desc, comments, {
+        plannedMinutes: 240,
+        actualMinutes: 257,
+        userExperienceYears: 2,
+        seniorityLevel: 'Mid',
+      });
+
+      expect(result.hasPendingScope).toBe(false);
+      expect(result.isPartialDelivery).toBe(false);
+      expect(result.workMatchScore).toBeGreaterThanOrEqual(9.0);
+      expect(result.alignmentLabel).toBe('STRONG_ALIGNMENT');
+    });
+
     it('penalizes score when task description is vague and brief (e.g. "Continue AI chatbot research")', () => {
       const desc = 'Continue AI chatbot research. Make home page section changes';
       const comments = ['Worked on chatbot and updated home page sections'];
@@ -265,8 +285,22 @@ Note: 1Hr of meeting is logged in this task itself.`
       });
 
       // 8.5*0.45 + 9.0*0.35 + 8.0*0.10 + 10.0*0.10 = 3.825 + 3.15 + 0.8 + 1.0 = 8.775 + 0.3 (QA bonus) = 9.075 -> 9.1
-      expect(score).toBe(9.1);
+      // Base score: 8.775 -> 8.8 (points remain as it is when in QA Review)
+      expect(score).toBe(8.8);
       expect(score).toBeLessThanOrEqual(10.0);
+    });
+
+    it('deducts points from composite score when status is not moved to QA review (e.g. In Progress or Backlog)', () => {
+      const scoreWithoutQA = computeCompositeTaskScore({
+        timeScore: 9.0,
+        commentQualityScore: 8.5,
+        complexityScore: 8.0,
+        repetitionScore: 10.0,
+        isQAReview: false,
+      });
+
+      // 8.775 - 1.0 (1.0 point deduction when not in QA review) = 7.775 -> 7.8
+      expect(scoreWithoutQA).toBe(7.8);
     });
   });
 
@@ -406,4 +440,36 @@ Note: 1Hr of meeting is logged in this task itself.`
       expect(extractPlannedMinutesFromTask(0, null, '')).toBe(240);
     });
   });
+  describe('detectPendingScope (Context-Aware Pending vs Roadmap)', () => {
+    it('does not flag out-of-scope or roadmap deferral notes as pending', () => {
+      const comment1 = 'Confirmed that legacy .doc and .ppt files can be stored but are not yet searchable; audio and video support remain deferred.';
+      expect(detectPendingScope(comment1).hasPendingScope).toBe(false);
+
+      const comment2 = 'Implemented core auth flow. Social logins are deferred to phase 2.';
+      expect(detectPendingScope(comment2).hasPendingScope).toBe(false);
+
+      const comment3 = 'Full search is working. Video indexing is out of scope for this milestone.';
+      expect(detectPendingScope(comment3).hasPendingScope).toBe(false);
+    });
+
+    it('does not flag completed resolutions of past pending items', () => {
+      const comment = 'Resolved all pending code review comments and verified responsive layouts across mobile devices.';
+      expect(detectPendingScope(comment).hasPendingScope).toBe(false);
+
+      const comment2 = 'Fixed pending auth bug reported by QA yesterday and completed testing.';
+      expect(detectPendingScope(comment2).hasPendingScope).toBe(false);
+    });
+
+    it('strictly detects actual unfinished deliverables and checklist pending stamps', () => {
+      const comment1 = '- Feature implementation: Done\n- Unit tests: Pending';
+      expect(detectPendingScope(comment1).hasPendingScope).toBe(true);
+
+      const comment2 = 'Testing is pending as there is some issue in cart cant go till payment.';
+      expect(detectPendingScope(comment2).hasPendingScope).toBe(true);
+
+      const comment3 = 'Could not complete the API integration due to missing staging credentials; will finish tomorrow.';
+      expect(detectPendingScope(comment3).hasPendingScope).toBe(true);
+    });
+  });
+
 });

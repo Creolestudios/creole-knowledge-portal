@@ -3,7 +3,7 @@
 import React from 'react';
 import { ExternalLink, Clock, MessageSquare, CheckCircle, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
-import { formatZohoDurationToClock } from '@/lib/zoho/client';
+import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
 
 interface ZohoTaskCardProps {
   task: ZohoTaskItem;
@@ -15,8 +15,8 @@ export default function ZohoTaskCard({ task, onClick }: ZohoTaskCardProps) {
 
   // Time status color pill
   const getTimeBadge = () => {
-    const actualClock = formatZohoDurationToClock(task.actualHours);
-    const plannedClock = formatZohoDurationToClock(task.plannedHours);
+    const actualClock = task.actualMinutes != null ? formatMinutesToClock(task.actualMinutes) : formatZohoDurationToClock(task.actualHours);
+    const plannedClock = task.plannedMinutes != null ? formatMinutesToClock(task.plannedMinutes) : formatZohoDurationToClock(task.plannedHours);
 
     if (!evalData) {
       return (

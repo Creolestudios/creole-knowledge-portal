@@ -1,23 +1,84 @@
-# Zoho Task Evaluation — Exhaustive Real-World Test Cases & Examples Guide
+# Zoho Task Evaluation — Core Measurement Criteria & Real-World Test Cases Guide
 
-A comprehensive, non-repeating collection of 41 real-world test cases covering every permutation of developer experience levels, AI subscriptions, time variations, comment types, and task descriptions.
+An authoritative, comprehensive guide defining every measurement criterion in the Creole Knowledge Portal evaluation engine, followed by realistic real-world test cases covering every permutation of developer experience levels, AI subscriptions, time variations, comment types, and task descriptions.
 
-Zero mathematical calculations, zero pull request links, and zero markdown tables. Every scenario is written with realistic, multi-sentence technical descriptions.
 
 ---
 
-## 🔑 Key Engineering Principles
+## 📋 Core Measurement Criteria, Deductions & Buffers
 
-1. **Developers Do Development & Self-Testing Together**:
-   - We do **not** have dedicated QA testers. Every task is implemented and self-tested by the developer who built it.
-2. **Tracked Statuses ("In Progress" & "In QA Review")**:
-   - **In Progress**: Active ongoing work. Evaluates timelog discipline and daily incremental progress comments.
-   - **In QA Review**: When a developer finishes the feature and completes self-testing, moving the task to "In QA Review" confirms verification handoff and earns the +0.3 to +0.5 review bonus.
-3. **Early & Post-Delivery with Full vs. Less Accurate Comments**:
-   - **Early Delivery with Full Complete Comment**: Scoring ~**8.5 – 9.0 / 10**. High-quality technical commentary and self-testing prove full completion, waiving severe penalties.
-   - **Early Delivery with Less Accurate Comment**: Drops to ~**5.0 – 5.5 / 10** due to unverified rushing.
-   - **Post-Delivery (Overdue) with Full Complete Comment**: Scoring ~**8.0 – 8.5 / 10**. Detailed root cause analysis, blocker notes, and self-testing cushion the score despite time overrun.
-   - **Post-Delivery (Overdue) with Less Accurate Comment**: Drops to ~**5.0 – 5.5 / 10** because delay without technical explanation cannot be justified.
+Every task evaluated in the Creole Knowledge Portal is scored out of **10.0** against these strict, objective engineering criteria:
+
+### 1. Task Status Gate & QA Review Verification
+Creole Studios operates on a developer-led testing model.
+* **Moved to "In QA Review"**:
+  * **Result**: ✅ **0 Deduction (Full Base Marks Awarded)**.
+  * Moving a task to `In QA Review` proves the developer has completed development and executed self-testing verification.
+* **Left in "In Progress" or "Backlog"**:
+  * **Result**: ❌ **1.0 Point Deduction (-1.0 pt from Overall Score)**.
+  * If a task is closed or left in `In Progress` or `Backlog` at the end of the shift, 1.0 point is deducted because there was no formal verification handoff.
+  * **Individual Task Warning Displayed**:
+    > *"Status Not In QA Review: Task was left in 'In Progress' or 'Backlog' instead of transitioning to In QA Review upon completion. 1.0 point was deducted from the overall score. Ensure task is formally moved to In QA Review with self-testing verification notes."*
+
+---
+
+### 2. Time Adherence, Grace Buffers & Hour Gap Deductions
+* **A. Overtime Delivery Buffer (+5 Minutes)**:
+  * Up to **+5 minutes** over planned duration (e.g. `4:05 hrs` logged on a `4:00 hrs` ticket) is fully tolerated and receives **10.0 / 10** (`Within Buffer`).
+  * **Overtime Buffer Penalty**: As soon as actual time exceeds the +5m buffer, **2.0 points are cut** from the time score (dropping the base time score from 10.0 to 8.0), scaling down further with excessive late hours.
+* **B. Early Completion Buffer (-15 Minutes)**:
+  * Completing up to **-15 minutes** early (e.g. `3:45 hrs` logged on a `4:00 hrs` ticket) is considered on-time and receives **10.0 / 10** (`On Time`).
+  * **Early Gap Penalty**: Finishing earlier than the -15m buffer without documenting automated tests cuts **2.0 points** from the time score (`Unexpected Early`, dropping time score to 8.0 or lower).
+* **C. Zero Hours Logged (`Not Logged` / `0:00 hrs`)**:
+  * If a task has 0 hours logged in Zoho Projects, the time score is strictly **0.0 / 10**, pulling the composite score down significantly.
+
+---
+
+### 3. Work Description & Technical Comment Quality
+* **Substantive Technical Commentary (9.0 – 10.0 / 10)**:
+  * Comments detailing specific files modified, endpoints created, libraries configured, and self-testing results prove the work was completed.
+* **Checklist-Only Comments (Max 5.0 / 10 Cap)**:
+  * Comments that merely mirror the task checklist with status indicators (e.g. *"1. Setup DB - Done"*, *"2. API - Done"*) without explaining technical implementation are **strictly capped at 5.0 / 10**.
+* **Missing Task Description (Max 3.0 / 10 Cap)**:
+  * If a task description is completely empty in Zoho Projects, the work justification score is **strictly capped at 3.0 / 10**.
+* **Single-Word / Superficial Comments (Capped at 4.0 – 5.5 / 10)**:
+  * Logging only *"Done"*, *"Fixed"*, *"Pending"*, or *"WIP"* on multi-hour tasks fails the engineering audit trail.
+
+---
+
+### 4. Unfinished Scope vs. Architectural Roadmap Scope Boundaries
+* **Unfinished Deliverables (`PARTIAL_DELIVERY` — Max 5.2 / 10 Cap)**:
+  * If an extended duration task (3h to 8h) is closed with deliverables left incomplete (e.g. *"testing is pending"*, *"- Pending"*, *"issue in cart cant go till payment"*, *"remaining for tomorrow"*), the score is **capped at 5.2 / 10 maximum**.
+
+
+---
+
+### 5. Composite Scoring Formula (100% Total Weights)
+Every task score combines four weighted dimensions out of 10.0, followed by the QA Review status gate:
+* **Work Match & Technical Commentary**: `45%` weight (4.5 points)
+* **Time Adherence & Tolerance**: `35%` weight (3.5 points)
+* **Task Complexity**: `10%` weight (1.0 point)
+* **Originality & Non-Repetition**: `10%` weight (1.0 point)
+* **Status Gate**: Subtracts the Non-QA deduction (`-1.0 pt`) if the task is not in `In QA Review`.
+
+---
+
+### 6. AI Subscription Utilization & Velocity Benchmarking
+* Seniority (Junior, Mid-Level, Senior) and active AI subscriptions (GitHub Copilot, Cursor AI, Claude Pro, Antigravity Pro) calibrate velocity:
+  * Experienced developers with paid AI subscriptions are expected to produce higher velocity, deeper technical comments, and automated self-testing.
+  * Developers without paid AI tools are assessed fairly on manual excellence without AI-speed penalties.
+
+---
+
+### 7. Configurable Admin Criteria Dashboard
+All the thresholds above are dynamically customizable by Admins via the **"Evaluation Criteria"** button on the Main Dashboard:
+* Non-QA Review Deduction (default: `1.0` pt)
+* Overtime Grace Buffer (default: `5` mins) & Overtime Point Penalty (default: `2.0` pts)
+* Early Grace Buffer (default: `15` mins) & Early Gap Penalty (default: `2.0` pts)
+* Missing Description Cap (default: `3.0` / 10)
+* Checklist Comment Cap (default: `5.0` / 10)
+* Partial Delivery Cap (default: `5.2` / 10)
+* Weights in natural percentages: Work `45%`, Time `35%`, Complexity `10%`, Repetition `10%`.
 
 ---
 
@@ -52,7 +113,7 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 ---
 
 ### Case 03: Senior Engineer with Claude Pro Optimizing System Speed
-* **Developer Profile**: Senior Backend Engineer (6 years experience)
+* **Developer Profile**: Senior Backend Engineer (5 years experience)
 * **AI Subscription**: Claude Pro
 * **Timing**: Planned `6:00 hrs` | Logged `5:50 hrs` (On time)
 * **Status**: `In QA Review`
@@ -121,9 +182,67 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-## Category 2: Timing Variations & Overtime Permutations
+### Case 08: Architectural Roadmap Scope Boundary (Khush Shah Rule)
+* **Developer Profile**: Mid-Level Backend Developer (2.5 years experience)
+* **AI Subscription**: Antigravity Pro
+* **Timing**: Planned `4:00 hrs` | Logged `4:17 hrs` (+17 minutes overtime)
+* **Status**: `In QA Review`
+* **Task Description**:  
+  > "Will continue developing the project-scoped searchable library for Meridian, supporting document uploads, text extraction, full-text search, secure downloads, and item management. Will complete the Supabase storage migration and prepare the backend foundation for UI integration."
+* **Logged Comment**:  
+  > "Worked on MAS-302 to implement a centralized, project-scoped library for uploaded documents and horizon-scan items. Implemented the database foundation in the hosted development environment, including default project folders, foundational and must-read tagging, and full-text search. Built backend support for PDF, Word, PowerPoint, and plain-text uploads, including text extraction for searchable content. Implemented secure download links and library item deletion. Confirmed that legacy .doc and .ppt files can be stored but are not yet searchable; audio and video support remain deferred. Completed Phase 2 storage, upload, download, and delete functionality, with local testing and API/extraction tests passing."
+* **Score**: **9.0 / 10** (Time: 7.8 | Score: 10.0 / 10 Justified)
+* **Verdict**: The sentence *"audio and video support remain deferred"* documents architectural scope boundaries for upcoming sprints, not incomplete deliverables. Engine awards full **10.0 / 10** work justification score.
 
-### Case 08: Moderate Overtime (+25m) with Documented Blocker
+---
+
+## Category 2: Status Gate Violations (-1.0 pt Deduction for In Progress / Backlog)
+
+### Case 09: High Quality Work Left In Progress (Not Moved to In QA Review)
+* **Developer Profile**: Mid-Level Developer (3 years experience)
+* **AI Subscription**: Antigravity Pro
+* **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
+* **Status**: `In Progress` (Work completed but status not moved)
+* **Task Description**:  
+  > "Implement HMAC-SHA256 webhook signature verification for incoming Zoho Projects event webhooks on `/api/webhooks/zoho`. Verify incoming request signatures using constant-time crypto comparison against the shared webhook secret, reject requests with timestamps older than 5 minutes to prevent replay attacks, and return proper 401 Unauthorized responses for invalid payloads."
+* **Logged Comment**:  
+  > "Implemented constant-time crypto comparison in `lib/zoho/webhook-auth.ts`. Added unit tests for replay attacks and tampered payloads. Verification completed locally."
+* **Score**: **8.8 / 10** (Base 9.8 - 1.0 Deduction)
+* **Verdict**: Outstanding technical implementation and unit tests, but 1.0 point is deducted directly from the composite score because the task was left in `In Progress` instead of formally transitioning to `In QA Review`.
+
+---
+
+### Case 10: CRUD API Left In Progress Without Verification Handoff
+* **Developer Profile**: Mid-Level Developer (3 years experience)
+* **AI Subscription**: Cursor AI
+* **Timing**: Planned `3:00 hrs` | Logged `3:00 hrs` (On time)
+* **Status**: `In Progress`
+* **Task Description**:  
+  > "Build modular REST API endpoints to handle candidate interview feedback notes. Implement GET, POST, PUT, and soft-delete endpoints with pagination and sorting support. Add strict request validation using Zod schemas to validate required fields and sanitize text inputs."
+* **Logged Comment**:  
+  > "Implemented GET, POST, and DELETE routes in `app/api/notes/route.ts`. Added Zod schema validation for request payloads. Verified responses locally using mock interview payloads."
+* **Score**: **8.9 / 10** (Base 9.9 - 1.0 Deduction)
+* **Verdict**: Perfect technical execution and comments, but penalized by 1.0 point under Status Gate rules for failing to move to QA Review.
+
+---
+
+### Case 11: Junior Task Left in Backlog with Solid Comments
+* **Developer Profile**: Junior Developer (1 year experience)
+* **AI Subscription**: None
+* **Timing**: Planned `3:00 hrs` | Logged `3:00 hrs` (On time)
+* **Status**: `Backlog`
+* **Task Description**:  
+  > "Implement a responsive search filter on the admin candidate roster page with debounce hook, case-insensitive query matching, and empty state placeholder."
+* **Logged Comment**:  
+  > "Created custom delay hook in `hooks/use-debounce.ts` with unmount cleanup. Connected to search input and verified in network tab. Added unit tests."
+* **Score**: **8.5 / 10** (Base 9.5 - 1.0 Deduction)
+* **Verdict**: Left in `Backlog` status at daily cron run. Receives the -1.0 pt status deduction along with the coaching recommendation.
+
+---
+
+## Category 3: Time Overruns & Overtime Buffer Breaches (Beyond +5m)
+
+### Case 12: Moderate Overtime (+25m) with Documented Blocker
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: Cursor AI
 * **Timing**: Planned `4:00 hrs` | Logged `4:25 hrs` (+25 minutes overtime)
@@ -133,11 +252,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Google Cloud console had a redirect URL mismatch on staging which stalled testing for 20 minutes. Fixed redirect settings and verified login works. Unit tests passing for email domain check."
 * **Score**: **8.6 / 10**
-* **Verdict**: Multi-sentence enterprise spec (>55 words). Exceeding the 5-minute buffer incurs a minor time deduction, but documenting the blocker preserves comment marks.
+* **Verdict**: Exceeding the +5m buffer cuts 2.0 points from the time score (time drops to ~8.0), but documenting the technical blocker preserves comment quality.
 
 ---
 
-### Case 09: Moderate Overtime (+30m) Without Blocker Explanation
+### Case 13: Moderate Overtime (+30m) Without Blocker Explanation
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `2:00 hrs` | Logged `2:30 hrs` (+30 minutes overtime)
@@ -147,11 +266,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Finished cropping logic with Canvas API. Deployed."
 * **Score**: **7.2 / 10**
-* **Verdict**: Detailed description (>60 words), but 30 minutes overtime without explaining why it took longer, combined with a brief comment, lowers the score.
+* **Verdict**: 30 minutes overtime without explaining why it took longer, combined with a brief comment, incurs the buffer breach penalty and lower comment score.
 
 ---
 
-### Case 10: Heavy Overtime (+1h 45m) with Documented Third-Party Outage
+### Case 14: Heavy Overtime (+1h 45m) with Documented Third-Party Outage
 * **Developer Profile**: Senior Backend Developer (5 years experience)
 * **AI Subscription**: Cursor AI
 * **Timing**: Planned `4:00 hrs` | Logged `5:45 hrs` (+1h 45m overtime)
@@ -161,11 +280,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Encountered third-party email API sandbox outage causing 503 errors for 90 minutes. Monitored provider status page, added retry queue with exponential backoff in `lib/email-queue.ts`, and verified delivery once service recovered. All tests pass."
 * **Score**: **7.7 / 10**
-* **Verdict**: Comprehensive description (>55 words). Severe time overrun penalizes the time dimension, but documenting the third-party outage prevents a collapse in comment quality.
+* **Verdict**: Severe time overrun penalizes the time dimension, but documenting the third-party outage prevents a collapse in comment quality.
 
 ---
 
-### Case 11: Heavy Overtime (+1h 30m) Without Explanation
+### Case 15: Heavy Overtime (+1h 30m) Without Explanation
 * **Developer Profile**: Senior Developer (5 years experience)
 * **AI Subscription**: None
 * **Timing**: Planned `3:00 hrs` | Logged `4:30 hrs` (+1h 30m overtime)
@@ -175,11 +294,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Date range picker added and working."
 * **Score**: **6.8 / 10**
-* **Verdict**: Detailed description (>60 words), but a 50% overtime overrun with no technical justification or blocker note from a senior developer triggers a heavy time penalty.
+* **Verdict**: 50% overtime overrun with no technical justification or blocker note from a senior developer triggers a heavy time penalty.
 
 ---
 
-### Case 12: Extreme Overrun (Double Planned Time: 4h Planned / 8h Logged)
+### Case 16: Extreme Overrun (Double Planned Time: 4h Planned / 8h Logged)
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `4:00 hrs` | Logged `8:00 hrs` (+4h overtime / 200% time)
@@ -189,11 +308,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Took longer than expected due to CSS issues. Finally completed."
 * **Score**: **5.8 / 10**
-* **Verdict**: Multi-sentence feature spec (>60 words). Logging double the planned hours with only a vague generic reason heavily penalizes the time score.
+* **Verdict**: Logging double the planned hours with only a vague generic reason heavily penalizes the time score.
 
 ---
 
-### Case 13: Extreme Overrun (Triple Planned Time: 2h Planned / 6h Logged)
+### Case 17: Extreme Overrun (Triple Planned Time: 2h Planned / 6h Logged)
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: None
 * **Timing**: Planned `2:00 hrs` | Logged `6:00 hrs` (+4h overtime / 300% time)
@@ -203,11 +322,27 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Completed styling."
 * **Score**: **4.8 / 10**
-* **Verdict**: Detailed UI spec (>60 words). Taking 3x the estimated time without detailed technical blockers drops the score into the critical low zone.
+* **Verdict**: Taking 3x the estimated time without detailed technical blockers drops the score into the critical low zone.
 
 ---
 
-### Case 14: Unexpected Early Delivery (45m Early on 3h Task — Padded Estimate)
+## Category 4: Early Deliveries & Efficiency Permutations
+
+### Case 18: Fast Delivery (2h on 4h Task) With Complete Automated Test Suite
+* **Developer Profile**: Senior Developer (5 years experience)
+* **AI Subscription**: Antigravity Pro
+* **Timing**: Planned `4:00 hrs` | Logged `2:00 hrs` (2 hours early)
+* **Status**: `In QA Review`
+* **Task Description**:  
+  > "Implement strict server-side email validation and domain blocklist verification on candidate signup endpoints. Check email strings against standard RFC 5322 regex formatting, detect and reject disposable temporary email providers, verify MX domain records, and sanitize input against SQL injection. Return descriptive localized error messages when email addresses fail validation checks."
+* **Logged Comment**:  
+  > "Built validation utility in `lib/validators.ts`. Authored 14 automated unit tests covering disposable email domains, invalid TLDs, and boundary conditions. All 14 tests passing. Finished ahead of schedule due to existing regex library."
+* **Score**: **9.6 / 10**
+* **Verdict**: Early completion backed by an exhaustive automated test suite and clear explanation waives the early finish penalty.
+
+---
+
+### Case 19: Unexpected Early Delivery (45m Early on 3h Task — Padded Estimate)
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `3:00 hrs` | Logged `2:15 hrs` (45 minutes early)
@@ -217,41 +352,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Used Copilot to generate pagination controls in `components/pagination.tsx`. Tested with 120 items and confirmed page bounds work. Moving to QA Review."
 * **Score**: **7.8 / 10**
-* **Verdict**: Detailed pagination spec (>60 words). Finishing 45 minutes early indicates estimation padding, but solid comments keep the score moderate.
+* **Verdict**: Finishing 45 minutes early indicates estimation padding, but solid comments keep the score moderate.
 
 ---
 
-### Case 15: Severe Early Rush (1h on 4h Task) Without Test Proof
-* **Developer Profile**: Mid-Level Developer (3 years experience)
-* **AI Subscription**: Cursor AI
-* **Timing**: Planned `4:00 hrs` | Logged `1:00 hrs` (3 hours early)
-* **Status**: `In QA Review`
-* **Task Description**:  
-  > "Implement strict role-based access control (RBAC) middleware protecting 12 admin and evaluation API routes. Extract and verify bearer tokens or signed session cookies on incoming requests, validate user roles against the database cache, and block requests from non-admin accounts with 403 Forbidden responses. Ensure audit logs capture timestamp, user ID, route, and IP address for all unauthorized attempts."
-* **Logged Comment**:  
-  > "Used Cursor AI to write the rules quickly. Finished quickly."
-* **Score**: **5.5 / 10**
-* **Verdict**: Comprehensive security scope (>60 words). Triggers unverified early rush penalty because taking only 25% of planned time on security rules requires unit test verification.
-
----
-
-## Category 3: Early Deliveries & Efficiency Permutations
-
-### Case 16: Fast Delivery (2h on 4h Task) With Complete Automated Test Suite
-* **Developer Profile**: Senior Developer (6 years experience)
-* **AI Subscription**: Antigravity Pro
-* **Timing**: Planned `4:00 hrs` | Logged `2:00 hrs` (2 hours early)
-* **Status**: `In QA Review`
-* **Task Description**:  
-  > "Implement strict server-side email validation and domain blocklist verification on candidate signup endpoints. Check email strings against standard RFC 5322 regex formatting, detect and reject disposable temporary email providers, verify MX domain records, and sanitize input against SQL injection. Return descriptive localized error messages when email addresses fail validation checks."
-* **Logged Comment**:  
-  > "Built validation utility in `lib/validators.ts`. Authored 14 automated unit tests covering disposable email domains, invalid TLDs, and boundary conditions. All 14 tests passing. Finished ahead of schedule due to existing regex library."
-* **Score**: **9.6 / 10**
-* **Verdict**: Multi-requirement validation spec (>55 words). Early completion backed by an exhaustive automated test suite and clear explanation waives the early finish penalty.
-
----
-
-### Case 17: Half-Time Delivery (1.5h on 3h Task) With Basic Manual Test Note
+### Case 20: Half-Time Delivery (1.5h on 3h Task) With Basic Manual Test Note
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: None
 * **Timing**: Planned `3:00 hrs` | Logged `1:30 hrs` (1.5 hours early)
@@ -261,13 +366,27 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Added tooltips to badges in `Badge.tsx`. Manually hovered over all 4 badge types to verify text shows."
 * **Score**: **7.4 / 10**
-* **Verdict**: Detailed UI spec (>55 words). Finishing in half the planned time indicates over-estimation. Basic manual verification keeps the score above passing.
+* **Verdict**: Finishing in half the planned time indicates over-estimation. Basic manual verification keeps the score above passing.
 
 ---
 
-## Category 4: Single-Word & Status Comments ("Done", "Fixed", "Pending", "Not Done")
+### Case 21: Severe Early Rush (1h on 4h Task) Without Test Proof
+* **Developer Profile**: Mid-Level Developer (3 years experience)
+* **AI Subscription**: Cursor AI
+* **Timing**: Planned `4:00 hrs` | Logged `1:00 hrs` (3 hours early)
+* **Status**: `In QA Review`
+* **Task Description**:  
+  > "Implement strict role-based access control (RBAC) middleware protecting 12 admin and evaluation API routes. Extract and verify bearer tokens or signed session cookies on incoming requests, validate user roles against the database cache, and block requests from non-admin accounts with 403 Forbidden responses. Ensure audit logs capture timestamp, user ID, route, and IP address for all unauthorized attempts."
+* **Logged Comment**:  
+  > "Used Cursor AI to write the rules quickly. Finished quickly."
+* **Score**: **5.5 / 10**
+* **Verdict**: Triggers unverified early rush penalty because taking only 25% of planned time on security rules without unit tests is dangerous engineering practice.
 
-### Case 18: Single Word Comment: "Done" on 2-Hour Ticket
+---
+
+## Category 5: Single-Word & Status Comments ("Done", "Fixed", "Pending", "WIP")
+
+### Case 22: Single Word Comment: "Done" on 2-Hour Ticket
 * **Developer Profile**: Mid-Level Developer (2 years experience)
 * **AI Subscription**: None
 * **Timing**: Planned `2:00 hrs` | Logged `2:00 hrs` (On time)
@@ -277,11 +396,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Done."
 * **Score**: **6.1 / 10**
-* **Verdict**: Thorough security description (>60 words). Documented with only a single word ("Done"), which triggers a heavy superficial comment deduction (4.0/10 comment score).
+* **Verdict**: Documented with only a single word ("Done"), triggering a heavy superficial comment deduction (4.0/10 comment score).
 
 ---
 
-### Case 19: Single Word Comment: "Fixed" on 3-Hour Ticket
+### Case 23: Single Word Comment: "Fixed" on 3-Hour Ticket
 * **Developer Profile**: Mid-Level Developer (2 years experience)
 * **AI Subscription**: ChatGPT Plus
 * **Timing**: Planned `3:00 hrs` | Logged `3:00 hrs` (On time)
@@ -291,11 +410,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Fixed."
 * **Score**: **6.1 / 10**
-* **Verdict**: In-depth debugging scope (>60 words). Documented with only a single word ("Fixed") yields a heavy superficial comment penalty.
+* **Verdict**: Single word comment ("Fixed") yields a heavy superficial comment penalty on an in-depth debugging scope.
 
 ---
 
-### Case 20: Single Word Comment: "Pending" on 3-Hour Ticket
+### Case 24: Single Word Comment: "Pending" on 3-Hour Ticket
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: None
 * **Timing**: Planned `3:00 hrs` | Logged `3:00 hrs` (On time)
@@ -305,11 +424,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Pending."
 * **Score**: **5.5 / 10**
-* **Verdict**: Multi-step infrastructure spec (>55 words). Logging 3 hours with only "Pending" does not substantiate what was accomplished during those 3 hours.
+* **Verdict**: Logging 3 hours with only "Pending" does not substantiate what was accomplished during those 3 hours.
 
 ---
 
-### Case 21: Single Word Comment: "Not Done Yet" on 2-Hour Ticket
+### Case 25: Single Word Comment: "Not Done Yet" on 2-Hour Ticket
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `2:00 hrs` | Logged `2:00 hrs` (On time)
@@ -319,11 +438,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Not done yet."
 * **Score**: **5.4 / 10**
-* **Verdict**: Detailed form integration scope (>55 words). Lacks audit trail because it does not explain what progress was made or why the task could not be completed within the 2 hours.
+* **Verdict**: Fails audit trail requirements by not explaining what progress was achieved or why the task could not be completed within 2 hours.
 
 ---
 
-### Case 22: Single Word Comment: "WIP" / "Working On It" on 4-Hour Ticket
+### Case 26: Single Word Comment: "WIP" / "Working On It" on 4-Hour Ticket
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: None
 * **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
@@ -333,11 +452,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "WIP, working on it."
 * **Score**: **5.0 / 10**
-* **Verdict**: Detailed algorithm spec (>55 words). Logging half a day of work with only a 3-word placeholder comment gives zero technical visibility.
+* **Verdict**: Logging half a day of work with only a 3-word placeholder comment gives zero technical visibility.
 
 ---
 
-### Case 23: Detailed Explanation of "Pending" with Blocker Details
+### Case 27: Detailed Explanation of "Pending" with Blocker Details
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: Cursor AI
 * **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
@@ -347,12 +466,12 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Finished the API endpoint and CSV export in `app/api/export/route.ts`. Tested with 100 sample records. The PDF export is pending because Puppeteer font rendering fails on Linux staging container. Researching font packages."
 * **Score**: **8.9 / 10**
-* **Verdict**: Detailed PDF specification (>55 words). The word "pending" is fully supported when accompanied by the technical deliverable completed, files touched, and clear blocker explanation.
+* **Verdict**: The word "pending" is fully supported when accompanied by the technical deliverable completed, files touched, and clear blocker explanation.
 
 ---
 
-### Case 24: Senior Developer Explaining Partial Delivery with Deferred Scope
-* **Developer Profile**: Senior Developer (7 years experience)
+### Case 28: Senior Developer Explaining Partial Delivery with Deferred Scope
+* **Developer Profile**: Senior Developer (5 years experience)
 * **AI Subscription**: Claude Pro
 * **Timing**: Planned `5:00 hrs` | Logged `5:00 hrs` (On time)
 * **Status**: `In Progress`
@@ -361,13 +480,13 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Completed Authenticator app TOTP flow with QR code generation in `lib/auth/mfa.ts`. Verified enrollment and token verification. SMS OTP is deferred to tomorrow pending Twilio account phone number approval."
 * **Score**: **8.7 / 10**
-* **Verdict**: Comprehensive MFA spec (>50 words). Clear architectural update explaining exactly what phase is finished, which files are ready, and why SMS is deferred.
+* **Verdict**: Clear architectural update explaining exactly what phase is finished, which files are ready, and why SMS is deferred.
 
 ---
 
-## Category 5: Checklist Comments (Mirrored, Status Flags, and Novel Explanations)
+## Category 6: Checklist Comments (Mirrored Status Flags vs. Novel Explanations)
 
-### Case 25: Checklist Copy-Paste: Description Mirrored with "- Done"
+### Case 29: Checklist Copy-Paste: Description Mirrored with "- Done"
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
@@ -387,7 +506,7 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-### Case 26: Checklist with Mixed "Done", "Pending", and "Not Done"
+### Case 30: Checklist with Mixed "Done", "Pending", and "Not Done"
 * **Developer Profile**: Full Stack Developer (2 years experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
@@ -403,11 +522,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
   > 3. Write unit tests - Pending  
   > 4. Deploy to staging - Not done"
 * **Score**: **6.6 / 10**
-* **Verdict**: Flagged by checklist rules. Merely copying bullets with status tags without explaining what code was written or why items are pending receives a low comment mark (5.2/10).
+* **Verdict**: Flagged by checklist rules. Merely copying bullets with status tags without explaining what code was written or why items are pending receives a low comment mark (capped at 5.2/10).
 
 ---
 
-### Case 27: Checklist on Brief Description (<35 Words) with "- Done"
+### Case 31: Checklist on Brief Description (<35 Words) with "- Done"
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: None
 * **Timing**: Planned `2:00 hrs` | Logged `2:00 hrs` (On time)
@@ -423,7 +542,7 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-### Case 28: Checklist Augmented with Substantive Technical Explanation (>20 Words)
+### Case 32: Checklist Augmented with Substantive Technical Explanation (>20 Words)
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: Cursor AI
 * **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
@@ -442,9 +561,9 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-## Category 6: Description Variations (Brief, Vague, Missing, Repetitive, Off-Topic)
+## Category 7: Description Variations (Vague, Missing, Repetitive, Off-Topic)
 
-### Case 29: Vague Description + Superficial Comment ("Fix bug" / "Done and resolved")
+### Case 33: Vague Description + Superficial Comment ("Fix bug" / "Done and resolved")
 * **Developer Profile**: Mid-Level Developer (2 years experience)
 * **AI Subscription**: None
 * **Timing**: Planned `2:00 hrs` | Logged `2:00 hrs` (On time)
@@ -458,7 +577,7 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-### Case 30: Brief Description Rescued by Detailed Technical Comments
+### Case 34: Brief Description Rescued by Detailed Technical Comments
 * **Developer Profile**: Full Stack Developer (2 years experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `2:00 hrs` | Logged `2:00 hrs` (On time)
@@ -472,7 +591,7 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-### Case 31: Repetitive Task Scope in Same Project (>65% Similarity)
+### Case 35: Repetitive Task Scope in Same Project (>65% Similarity)
 * **Developer Profile**: Frontend Developer (2 years experience)
 * **AI Subscription**: None
 * **Timing**: Planned `2:00 hrs` | Logged `2:00 hrs` (On time)
@@ -486,7 +605,7 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-### Case 32: Repetitive Task + Overdue (+45m) + Vague Comment
+### Case 36: Repetitive Task + Overdue (+45m) + Vague Comment
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: None
 * **Timing**: Planned `1:00 hrs` | Logged `1:45 hrs` (+45m overtime)
@@ -500,7 +619,7 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-### Case 33: Missing Description but Detailed Progress Comments
+### Case 37: Missing Description but Detailed Progress Comments
 * **Developer Profile**: Full Stack Developer (2 years experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `3:00 hrs` | Logged `3:00 hrs` (On time)
@@ -510,11 +629,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Created `lib/zoho/cache.ts` with Redis TTL helper. Added error fallback when Redis connection drops. Verified unit tests in `cache.test.ts` passing."
 * **Score**: **7.1 / 10**
-* **Verdict**: Missing description triggers a scope penalty because work cannot be audited against assigned requirements. Detailed comments partially rescue the score.
+* **Verdict**: Missing description triggers a scope cap (3.0/10 work justification) because work cannot be audited against assigned requirements. Detailed comments partially rescue the overall composite score.
 
 ---
 
-### Case 34: Off-Topic Comment (Comment Work Unrelated to Assigned Scope)
+### Case 38: Off-Topic Comment (Comment Work Unrelated to Assigned Scope)
 * **Developer Profile**: Mid-Level Developer (2.5 years experience)
 * **AI Subscription**: ChatGPT Plus
 * **Timing**: Planned `3:00 hrs` | Logged `3:00 hrs` (On time)
@@ -528,10 +647,10 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 
 ---
 
-## Category 7: Seniority & AI Tool Expectations & Penalties
+## Category 8: Seniority & AI Tool Expectations & Penalties
 
-### Case 35: Senior Developer Providing Generic Comments (Missing Technical Depth)
-* **Developer Profile**: Senior Developer (7 years experience)
+### Case 39: Senior Developer Providing Generic Comments (Missing Technical Depth)
+* **Developer Profile**: Senior Developer (5 years experience)
 * **AI Subscription**: ChatGPT Plus
 * **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
 * **Status**: `In QA Review`
@@ -540,12 +659,12 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Optimized queries and updated pool settings. Everything works fine and moved to In QA Review."
 * **Score**: **7.6 / 10**
-* **Verdict**: Detailed database optimization spec (>50 words). A 7-year senior with ChatGPT Plus providing a 10-word generic comment without index details, execution plan changes, or edge case notes triggers a moderate alignment deduction.
+* **Verdict**: A 5-year senior with ChatGPT Plus providing a 10-word generic comment without index details, execution plan changes, or edge case notes triggers a moderate alignment deduction.
 
 ---
 
-### Case 36: Time-Inflated Task for AI-Equipped Senior Developer
-* **Developer Profile**: Senior Developer (6 years experience)
+### Case 40: Time-Inflated Task for AI-Equipped Senior Developer
+* **Developer Profile**: Senior Developer (5 years experience)
 * **AI Subscription**: Antigravity Pro & Cursor AI
 * **Timing**: Planned `4:00 hrs` | Logged `5:30 hrs` (+1h 30m overtime)
 * **Status**: `In QA Review`
@@ -554,41 +673,13 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Added column and updated user settings form."
 * **Score**: **5.1 / 10**
-* **Verdict**: Detailed column specification (>50 words). Triggers AI-tier time inflation. A senior engineer equipped with top-tier AI tools taking 5.5 hours for a single column and form checkbox without documented blockers.
+* **Verdict**: Triggers AI-tier time inflation penalty. A senior engineer equipped with top-tier AI tools taking 5.5 hours for a single column and form checkbox without documented blockers.
 
 ---
 
-### Case 37: Tech Lead with Premium Tools Logging Zero Comments
-* **Developer Profile**: Principal Architect / Tech Lead (8 years experience)
-* **AI Subscription**: Claude Pro & Cursor AI
-* **Timing**: Planned `6:00 hrs` | Logged `6:00 hrs` (On time)
-* **Status**: `In QA Review`
-* **Task Description**:  
-  > "Architect and implement a major database schema overhaul for the evaluation engine. Redesign evaluation tables to store multi-dimensional heuristic scores, cached task similarity vectors, and active AI subscription metadata. Provide automated forward migration scripts and safe rollback procedures with zero data loss on existing historical records."
-* **Logged Comment**:  
-  > *(Zero comments logged in Zoho Projects)*
-* **Score**: **4.2 / 10**
-* **Verdict**: Comprehensive architectural spec (>50 words). High seniority and premium AI subscriptions never waive the audit trail requirement. Automatically capped at failing grade.
+## Category 9: Zero Hours Logged & Critical Failing Combinations
 
----
-
-### Case 38: High Quality Work Left In Progress (Not Yet Transitioned to In QA Review)
-* **Developer Profile**: Mid-Level Developer (3 years experience)
-* **AI Subscription**: Antigravity Pro
-* **Timing**: Planned `4:00 hrs` | Logged `4:00 hrs` (On time)
-* **Status**: `In Progress` (Work completed but status not moved)
-* **Task Description**:  
-  > "Implement HMAC-SHA256 webhook signature verification for incoming Zoho Projects event webhooks on `/api/webhooks/zoho`. Verify incoming request signatures using constant-time crypto comparison against the shared webhook secret, reject requests with timestamps older than 5 minutes to prevent replay attacks, and return proper 401 Unauthorized responses for invalid payloads."
-* **Logged Comment**:  
-  > "Implemented constant-time crypto comparison in `lib/zoho/webhook-auth.ts`. Added unit tests for replay attacks and tampered payloads. Verification completed locally."
-* **Score**: **8.8 / 10**
-* **Verdict**: Detailed security spec (>50 words). High quality description and comments, but missed the +0.3 to +0.5 bonus by leaving the task in `In Progress` instead of formally transitioning to `In QA Review`.
-
----
-
-## Category 8: Zero Hours Logged & Critical Failing Combinations
-
-### Case 39: The Missing Comment Trap (Junior with Great Scope but 0 Comments)
+### Case 41: The Missing Comment Trap (Junior with Great Scope but 0 Comments)
 * **Developer Profile**: Junior Developer (1 year experience)
 * **AI Subscription**: GitHub Copilot
 * **Timing**: Planned `8:00 hrs` | Logged `8:15 hrs` (Punctual)
@@ -598,11 +689,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > *(Zero comments logged in Zoho Projects)*
 * **Score**: **4.5 / 10**
-* **Verdict**: Full multi-sentence spec (>60 words). Comments represent 45% of the evaluation. Without comments, there is zero technical audit trail. The system enforces an automatic cap of 4.5/10.
+* **Verdict**: Comments represent 45% of the evaluation. Without comments, there is zero technical audit trail. The system enforces an automatic cap of 4.5/10.
 
 ---
 
-### Case 40: Detailed Description & Comments BUT Zero Hours Logged (0:00)
+### Case 42: Detailed Description & Comments BUT Zero Hours Logged (0:00)
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: Claude Pro
 * **Timing**: Planned `3:00 hrs` | Logged **`0:00 hrs`** (Not Logged)
@@ -612,11 +703,11 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > "Built `lib/events/redis-bus.ts`. Added heartbeat ping every 15s to keep connections alive. Verified across two simulated worker processes. Unit tests passing."
 * **Score**: **4.9 / 10**
-* **Verdict**: Detailed real-time spec (>50 words). Time Adherence score drops to 0.0 / 10 because actual logged hours are 0. Even with great comments, unlogged hours cripple the composite score.
+* **Verdict**: Time Adherence score drops to 0.0 / 10 because actual logged hours are 0. Even with great comments, unlogged hours cripple the composite score.
 
 ---
 
-### Case 41: Absolute Worst-Case Combination
+### Case 43: Absolute Worst-Case Combination
 * **Developer Profile**: Mid-Level Developer (3 years experience)
 * **AI Subscription**: None
 * **Timing**: Planned `4:00 hrs` | Logged **`0:00 hrs`** (Not Logged)
@@ -626,5 +717,5 @@ Zero mathematical calculations, zero pull request links, and zero markdown table
 * **Logged Comment**:  
   > *(Zero comments logged in Zoho Projects)*
 * **Repetition**: Repeated 3 times in project
-* **Score**: **1.0 / 10**
-* **Verdict**: Triggers every single penalty in the engine: 0 hours logged, 0 comments, intentionally vague description, and repetitive scope. Hits the absolute minimum score floor.
+* **Score**: **0.0 / 10**
+* **Verdict**: Triggers every single penalty in the engine: 0 hours logged, 0 comments, intentionally vague description, repetitive scope, and left in Progress without QA review. Results in a complete zero score (0.0 / 10).

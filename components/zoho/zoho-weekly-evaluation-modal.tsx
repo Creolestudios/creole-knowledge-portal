@@ -17,6 +17,7 @@ import {
   Bot,
   Zap,
 } from 'lucide-react';
+import { formatMinutesToClock, formatZohoDurationToClock } from '@/lib/zoho/client';
 import { ZohoUserSummary, buildWeeklyPerformanceReports, WeeklyEvaluationReportItem } from '@/lib/zoho/service';
 
 export interface ZohoWeeklyEvaluationModalProps {
@@ -422,7 +423,7 @@ export default function ZohoWeeklyEvaluationModal({
                         </td>
                         <td className="py-3 px-3 text-zinc-500">{t.projectName}</td>
                         <td className="py-3 px-3 text-center font-bold text-zinc-700 dark:text-zinc-300">
-                          {t.actualHours}h / {t.plannedHours}h
+                          {t.actualMinutes != null ? formatMinutesToClock(t.actualMinutes) : formatZohoDurationToClock(t.actualHours)} hrs / {t.plannedMinutes != null ? formatMinutesToClock(t.plannedMinutes) : formatZohoDurationToClock(t.plannedHours)} hrs
                         </td>
                         <td className="py-3 px-3">
                           <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold">

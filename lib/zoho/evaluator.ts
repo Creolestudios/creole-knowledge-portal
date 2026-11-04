@@ -1,3 +1,4 @@
+import { getZohoEvaluationRules, type ZohoEvaluationRulesConfig } from './rules-store';
 import { GoogleGenAI, Type, Schema } from '@google/genai';
 import {
   calculateTimeAdherence,
@@ -122,7 +123,8 @@ function generateHeuristicEvaluation(
   input: TaskEvaluationInput,
   timeAdherence: TimeAdherenceResult,
   repetition: RepetitionCheckResult,
-  workMatch: WorkMatchResult
+  workMatch: WorkMatchResult,
+  rules?: ZohoEvaluationRulesConfig
 ): TaskEvaluationResult {
   const descLength = (input.taskDescription || '').trim().length;
   const complexityScore = descLength > 100 ? 8.5 : descLength > 30 ? 7.5 : 6.0;
@@ -133,6 +135,7 @@ function generateHeuristicEvaluation(
     complexityScore,
     repetitionScore: repetition.repetitionScore,
     isQAReview: input.isQAReview,
+    rules,
   });
 
   const strengths: string[] = [];
@@ -165,7 +168,7 @@ function generateHeuristicEvaluation(
   if (input.isQAReview) {
     strengths.push('Properly transitioned status to QA Review upon completion.');
   } else {
-    improvements.push('Ensure task is formally moved to QA Review with verification notes.');
+    improvements.push(`Status Not In QA Review: Task was left in "${input.zohoStatus || 'In Progress'}" instead of transitioning to In QA Review upon completion. 1.0 point was deducted from the overall score. Ensure task is formally moved to In QA Review with self-testing verification notes.`);
   }
 
   if (repetition.isRepetitive) {
@@ -215,11 +218,13 @@ function generateHeuristicEvaluation(
  */
 export async function evaluateZohoTask(
   input: TaskEvaluationInput,
-  options: { useAi?: boolean } = { useAi: true }
+  options: { useAi?: boolean; rules?: ZohoEvaluationRulesConfig } = { useAi: true }
 ): Promise<TaskEvaluationResult> {
+  const activeRules = options.rules || await getZohoEvaluationRules();
   const timeAdherence = calculateTimeAdherence(
     input.plannedMinutes,
-    input.actualMinutes
+    input.actualMinutes,
+    activeRules
   );
 
   const repetition = detectRepetitiveTask(
@@ -241,7 +246,7 @@ export async function evaluateZohoTask(
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!options.useAi || !apiKey) {
-    return generateHeuristicEvaluation(input, timeAdherence, repetition, workMatch);
+    return generateHeuristicEvaluation(input, timeAdherence, repetition, workMatch, activeRules);
   }
 
   try {
@@ -322,6 +327,7 @@ Return your evaluation strictly conforming to the requested JSON schema.
       complexityScore,
       repetitionScore: repetition.repetitionScore,
       isQAReview: input.isQAReview,
+      rules: activeRules,
     });
 
     const rawStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];

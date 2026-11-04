@@ -12,7 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
-import { formatZohoDurationToClock } from '@/lib/zoho/client';
+import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
 import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence } from '@/lib/zoho/heuristics';
 
 interface ZohoTaskModalProps {
@@ -233,11 +233,11 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
               <div className="grid grid-cols-2 gap-3 text-center">
                 <div className="border-r border-zinc-200/60 dark:border-zinc-800 pr-2">
                   <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Planned Time</div>
-                  <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">{formatZohoDurationToClock(task.plannedHours)} hrs</div>
+                  <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">{task.plannedMinutes != null ? formatMinutesToClock(task.plannedMinutes) : formatZohoDurationToClock(task.plannedHours)} hrs</div>
                 </div>
                 <div className="pl-2">
                   <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Actual Spent</div>
-                  <div className="text-sm font-black text-sky-600 dark:text-sky-400 mt-0.5">{formatZohoDurationToClock(task.actualHours)} hrs</div>
+                  <div className="text-sm font-black text-sky-600 dark:text-sky-400 mt-0.5">{task.actualMinutes != null ? formatMinutesToClock(task.actualMinutes) : formatZohoDurationToClock(task.actualHours)} hrs</div>
                 </div>
               </div>
             </div>

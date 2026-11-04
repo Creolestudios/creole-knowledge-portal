@@ -801,6 +801,9 @@ describe('Zoho Frontend Components', () => {
       expect(formatZohoDurationToClock('0')).toBe('0:00');
       expect(formatMinutesToClock(235)).toBe('3:55');
       expect(formatMinutesToClock(240)).toBe('4:00');
+      expect(formatMinutesToClock(93)).toBe('1:33');
+      expect(formatZohoDurationToClock(1.55)).toBe('1:33');
+      expect(formatZohoDurationToClock('1.55')).toBe('1:33');
     });
   });
 
