@@ -82,7 +82,7 @@ export default function ZohoDailyEvaluationModal({
       : 8.0;
 
   // Aggregate daily overall score
-  const overallDayScore = Number.isFinite(day.dayScore) && day.dayScore > 0
+  const overallDayScore = Number.isFinite(day.dayScore) && day.dayScore >= 0
     ? day.dayScore
     : Number((avgWorkJustification * 0.55 + timeAdherence.timeScore * 0.40).toFixed(1));
 

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
 import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
-import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence } from '@/lib/zoho/heuristics';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence, computeCompositeTaskScore } from '@/lib/zoho/heuristics';
 
 interface ZohoTaskModalProps {
   task: ZohoTaskItem | null;
@@ -83,7 +83,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       workMatchResult.alignmentLabel === 'OFF_TOPIC';
 
     // If task has precomputed evaluation from server, verify actual hours and comments match
-    if (task.evaluation && actualMins > 0 && !isChecklistOrVagueOrOffTopic && commentContents.length > 0) {
+    if (task.evaluation && !isChecklistOrVagueOrOffTopic) {
       return {
         ...task.evaluation,
         timeScore: timeAdh.timeScore,
@@ -97,11 +97,13 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
     const variance = timeAdh.timeVarianceMinutes;
     const workMatchScore = workMatchResult.workMatchScore;
 
-    const overallScore = Number((
-      workMatchScore * 0.55 +
-      timeScore * 0.40 +
-      (task.isQAReview ? 0.5 : 0)
-    ).toFixed(1));
+    const overallScore = computeCompositeTaskScore({
+      timeScore,
+      commentQualityScore: workMatchScore,
+      complexityScore: 8.0,
+      repetitionScore: 10.0,
+      isQAReview: task.isQAReview || task.zohoStatus.toLowerCase().includes('qa'),
+    });
 
     const dyn = generateDynamicPerformanceSummary({
       taskDescription: task.taskDescription || '',
@@ -136,6 +138,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       hasPendingScope: workMatchResult.hasPendingScope,
       isPartialDelivery: workMatchResult.isPartialDelivery,
       hasMeetingLogged: workMatchResult.hasMeetingLogged,
+      hasDocumentedBlockers: workMatchResult.hasDocumentedBlockers,
       aiModelUsed: 'engineering-rule-engine',
     };
   }, [task]);
@@ -353,9 +356,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                     className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none ${
                       !hasComments || Number(workMatchScore10) === 0
                         ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40'
-                        : evalData.isPartialDelivery || evalData.hasPendingScope
-                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-800/40'
-                        : Number(workMatchScore10) >= 8.5
+                        : Number(workMatchScore10) >= 8.0
                         ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/40'
                         : Number(workMatchScore10) >= 6.0
                         ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40'
@@ -364,9 +365,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                   >
                     {!hasComments || Number(workMatchScore10) === 0
                       ? 'No Comments'
-                      : evalData.isPartialDelivery || evalData.hasPendingScope
-                      ? 'Incomplete'
-                      : Number(workMatchScore10) >= 8.5
+                      : Number(workMatchScore10) >= 8.0
                       ? 'Justified'
                       : Number(workMatchScore10) >= 6.0
                       ? 'Partial'

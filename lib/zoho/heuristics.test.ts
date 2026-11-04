@@ -302,6 +302,17 @@ Note: 1Hr of meeting is logged in this task itself.`
       // 8.775 - 1.0 (1.0 point deduction when not in QA review) = 7.775 -> 7.8
       expect(scoreWithoutQA).toBe(7.8);
     });
+
+    it('returns 0.0 when both time and comments are zero (unlogged and no comments)', () => {
+      const unloggedScore = computeCompositeTaskScore({
+        timeScore: 0,
+        commentQualityScore: 0,
+        complexityScore: 6.0,
+        repetitionScore: 10.0,
+        isQAReview: false,
+      });
+      expect(unloggedScore).toBe(0.0);
+    });
   });
 
   describe('generateDynamicPerformanceSummary', () => {

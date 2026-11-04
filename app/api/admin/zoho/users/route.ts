@@ -226,7 +226,7 @@ export async function GET(request: Request) {
 
             const isStalePraise = raw?.summary_feedback && (
               workMatchScore < 7.0 ||
-              workMatchResult.hasPendingScope ||
+              (workMatchResult.hasPendingScope && !workMatchResult.hasDocumentedBlockers) ||
               workMatchResult.isChecklistComment ||
               workMatchResult.alignmentLabel === 'OFF_TOPIC' ||
               workMatchResult.alignmentLabel === 'PARTIAL_DELIVERY'

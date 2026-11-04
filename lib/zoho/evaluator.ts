@@ -311,7 +311,7 @@ Return your evaluation strictly conforming to the requested JSON schema.
     const hasComments = input.comments && input.comments.length > 0;
     const rawWorkMatch = hasComments && Number.isFinite(parsed.workMatchScore) ? parsed.workMatchScore : (hasComments ? workMatch.workMatchScore : 0);
     let workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : 0;
-    if (workMatch.isPartialDelivery || workMatch.hasPendingScope || workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {
+    if (workMatch.isPartialDelivery || (workMatch.hasPendingScope && !workMatch.hasDocumentedBlockers) || workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {
       workMatchScore = Math.min(workMatchScore, 5.5);
     }
 
@@ -334,7 +334,7 @@ Return your evaluation strictly conforming to the requested JSON schema.
     const rawImprovements = Array.isArray(parsed.improvements) ? parsed.improvements : [];
 
     // Ensure critical engineering heuristics are always surfaced in feedback
-    if (workMatch.hasPendingScope && !rawImprovements.some((i: string) => i.toLowerCase().includes('pending deliverables') || i.toLowerCase().includes('escalate blockers'))) {
+    if (workMatch.hasPendingScope && !workMatch.hasDocumentedBlockers && !rawImprovements.some((i: string) => i.toLowerCase().includes('pending deliverables') || i.toLowerCase().includes('escalate blockers'))) {
       rawImprovements.unshift('Work was logged with items explicitly marked "Pending" on an extended duration ticket. Fully complete and test deliverables within the allocated timeframe, or proactively escalate blockers during the day.');
     }
     if (workMatch.hasMeetingLogged && !rawImprovements.some((i: string) => i.toLowerCase().includes('meeting logs') || i.toLowerCase().includes('separate meeting'))) {

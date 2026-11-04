@@ -7,13 +7,20 @@ import type { ZohoEvaluationRulesConfig } from './rules-types';
 export function detectPendingScope(commentsText: string): {
   hasPendingScope: boolean;
   pendingOccurrences: number;
+  hasDocumentedBlockers: boolean;
 } {
   if (!commentsText || !commentsText.trim()) {
-    return { hasPendingScope: false, pendingOccurrences: 0 };
+    return { hasPendingScope: false, pendingOccurrences: 0, hasDocumentedBlockers: false };
   }
 
+  // Pre-process: insert boundary before next word if following a status keyword (Done, Pending, etc.)
+  const normalizedText = commentsText.replace(
+    /\b(Done|Pending|In Progress|Not Done)\b(?=[ \t]+[A-Z0-9])/g,
+    '$1\n'
+  );
+
   // Split into sentences / bullet segments by newline, semicolon, bullet dash/asterisk, or sentence terminator (. / ! / ?)
-  const segments = commentsText
+  const segments = normalizedText
     .split(/(?:\r?\n|;|\.\s+|[-*•]\s+)/)
     .map(s => s.trim())
     .filter(s => s.length > 0);
@@ -36,9 +43,13 @@ export function detectPendingScope(commentsText: string): {
   // Patterns indicating out-of-scope / future architectural roadmap notes or completed resolutions
   const roadmapOrResolvedPatterns = [
     /\b(?:remain\s+deferred|support\s+remain|deferred\s+to\s+(?:future|next|later|phase|sprint|release)|out\s+of\s+scope|client\s+deferred|deferred\s+by\s+client)\b/i,
+    /\b(?:which\s+i\s+implemented|implemented\s+with\s+code|implemented\s+by\s+me|already\s+implemented|is\s+implemented)\b/i,
+    /\b(?:pending\s+(?:points?|items?|tasks?)\s+are\s+due\s+to|due\s+to\s+(?:other\s+tasks?|blockers?|dependencies|client|gemstones|photos|credentials?|assets?)|dependent\s+on\s+(?:other\s+tasks?|client|key|assets?)|waiting\s+for\s+(?:client|key|assets?|photos?))\b/i,
     /\b(?:resolved|fixed|completed|cleared|addressed|closed|handled)\s+(?:all\s+)?(?:pending|deferred)\b/i,
     /\b(?:no|zero|without\s+any)\s+(?:pending|remaining)\b/i,
   ];
+
+  const hasDocumentedBlockers = /\b(?:pending\s+(?:points?|items?|tasks?)\s+are\s+due\s+to|due\s+to\s+(?:other\s+tasks?|blockers?|dependencies|client|gemstones|photos|credentials?|assets?)|dependent\s+on\s+(?:other\s+tasks?|client|key|assets?)|waiting\s+for\s+(?:client|key|assets?|photos?))\b/i.test(commentsText);
 
   let occurrences = 0;
 
@@ -52,12 +63,23 @@ export function detectPendingScope(commentsText: string): {
       continue;
     }
 
+    // If segment explicitly states it was implemented with code or already done
+    if (/\b(?:which\s+i\s+implemented|implemented\s+with\s+code|already\s+done)\b/i.test(segment)) {
+      continue;
+    }
+
+    // If segment is an explanation of why items are pending (blocker note)
+    if (/\b(?:due\s+to\s+other\s+tasks?|pending\s+points?\s+are\s+due\s+to)\b/i.test(segment)) {
+      continue;
+    }
+
     occurrences++;
   }
 
   return {
     hasPendingScope: occurrences > 0,
     pendingOccurrences: occurrences,
+    hasDocumentedBlockers,
   };
 }
 
@@ -113,6 +135,7 @@ export interface WorkMatchResult {
   pendingItemsCount?: number;
   hasMeetingLogged?: boolean;
   isPartialDelivery?: boolean;
+  hasDocumentedBlockers?: boolean;
   timeReasonableness?: TaskTimeReasonablenessResult;
 }
 
@@ -353,7 +376,7 @@ export function evaluateWorkAndCommentMatch(
   }
 
   // Detect pending deliverables or unfinished scope in comments using sentence context
-  const { hasPendingScope, pendingOccurrences } = detectPendingScope(combinedComments);
+  const { hasPendingScope, pendingOccurrences, hasDocumentedBlockers } = detectPendingScope(combinedComments);
 
   // Detect meeting hours logged inside development feature tickets
   const meetingPattern = /\b(?:\d+\s*(?:hr|hour|mins?|minutes?)\s*(?:of\s*)?meeting|meeting\s+is\s+logged|meeting\s+logged|logged\s+in\s+this\s+task\s+itself)\b/i;
@@ -482,7 +505,7 @@ export function evaluateWorkAndCommentMatch(
 
   const safePlannedMins = context?.plannedMinutes && context.plannedMinutes > 0 ? context.plannedMinutes : 240;
   const isHighPlannedDuration = typeof context?.plannedMinutes === 'number' && context.plannedMinutes >= 180;
-  const isPartialDelivery = Boolean(hasPendingScope && (isHighPlannedDuration || pendingOccurrences >= 2));
+  const isPartialDelivery = Boolean(hasPendingScope && (isHighPlannedDuration || pendingOccurrences >= 2) && !hasDocumentedBlockers);
 
   let baseScore = 7.5;
 
@@ -704,6 +727,11 @@ export function computeCompositeTaskScore(params: {
   const normComplexity = params.complexityScore > 10 ? params.complexityScore / 10 : params.complexityScore;
   const normRepetition = params.repetitionScore > 10 ? params.repetitionScore / 10 : params.repetitionScore;
 
+  // If no hours were logged and no progress comments were submitted, the task has zero recorded work
+  if (normTime === 0 && normComment === 0) {
+    return 0.0;
+  }
+
   // Base weights (Total = 1.0):
   // Work / Comment match: 45% (4.5 pts)
   // Time Adherence (±10m buffer): 35% (3.5 pts)
@@ -722,10 +750,10 @@ export function computeCompositeTaskScore(params: {
     normRepetition * wRepetition;
 
   if (!params.isQAReview) {
-    weighted = Math.max(1.0, weighted - nonQADeduction);
+    weighted = Math.max(0.0, weighted - nonQADeduction);
   }
 
-  return Number(Math.max(1.0, Math.min(10.0, weighted)).toFixed(1));
+  return Number(Math.max(0.0, Math.min(10.0, weighted)).toFixed(1));
 }
 
 export interface DynamicPerformanceSummary {
@@ -767,7 +795,7 @@ export function generateDynamicPerformanceSummary(params: {
   ];
   const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
 
-  const { hasPendingScope, pendingOccurrences } = detectPendingScope(combinedComments);
+  const { hasPendingScope, pendingOccurrences, hasDocumentedBlockers } = detectPendingScope(combinedComments);
 
   const meetingPattern = /\b(?:\d+\s*(?:hr|hour|mins?|minutes?)\s*(?:of\s*)?meeting|meeting\s+is\s+logged|meeting\s+logged|logged\s+in\s+this\s+task\s+itself)\b/i;
   const hasMeetingLogged = hasComments && meetingPattern.test(combinedComments);
@@ -870,7 +898,9 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 4. Actionable improvement points list for user to work on
   const improvementItems: string[] = [];
-  if (hasPendingScope) {
+  if (hasPendingScope && hasDocumentedBlockers) {
+    improvementItems.push('Coordinate Dependent Blockers: You documented that pending items are due to other tasks/dependencies. Coordinate closely with assigned owners on dependent tasks (e.g. assets, API keys, upstream deliverables) to verify end-to-end integration as soon as they are ready.');
+  } else if (hasPendingScope) {
     improvementItems.push('Resolve Pending Deliverables & Escalate Blockers: Work was logged with items explicitly marked "Pending" (e.g. testing pending or deferred scope) on an extended duration ticket. Fully complete and test deliverables within the allocated timeframe, or proactively escalate blockers to project leads during the day rather than closing tasks with pending items.');
   }
   if (hasMeetingLogged) {
