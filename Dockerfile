@@ -1,5 +1,10 @@
 # Production image for Next.js 15 App Router (standalone output).
-FROM node:20-alpine AS base
+#
+# Node 22 LTS, not 20: CVE-2026-111497 (Brotli decompression RCE, rated High)
+# is fixed in 22.23.4 / 24.22.1 / 26.12.1. The 20.x line is end-of-life and
+# will never receive the fix, so staying on it is not an option.
+# Verify after a rebuild with:  docker compose exec web node -v
+FROM node:22-alpine AS base
 
 FROM base AS deps
 RUN apk add --no-cache libc6-compat
