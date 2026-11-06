@@ -25,7 +25,8 @@ async function isAuthorized(req: Request): Promise<boolean> {
 }
 
 /**
- * Handles the daily 10:00 PM IST Zoho Evaluation Cron Trigger
+ * Handles the daily 10:00 PM IST Zoho Evaluation Cron Trigger (Mon-Fri)
+ * Schedule: 10:00 PM IST (16:30 UTC -> "30 16 * * 1-5")
  *
  * GET /api/cron/zoho-evaluation
  * POST /api/cron/zoho-evaluation

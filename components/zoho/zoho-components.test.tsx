@@ -11,7 +11,7 @@ import ZohoTaskModal from './zoho-task-modal';
 import ZohoDailyEvaluationModal from './zoho-daily-evaluation-modal';
 import ZohoWeeklyEvaluationModal from './zoho-weekly-evaluation-modal';
 import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
-import ZohoReportModal from './zoho-report-modal';
+import ZohoReportModal, { calculatePeriodCapacity } from './zoho-report-modal';
 import ZohoEvaluationManager from './zoho-evaluation-manager';
 import { ZohoTaskItem, ZohoUserSummary, getMockZohoData, buildWeeklyPerformanceReports } from '@/lib/zoho/service';
 
@@ -483,6 +483,156 @@ describe('Zoho Frontend Components', () => {
       const closeBtn = screen.getByText('Close Report');
       fireEvent.click(closeBtn);
       expect(onClose).toHaveBeenCalled();
+    });
+
+    it('scopes completion velocity and hours logged to the selected period rather than till-date totals', () => {
+      const userWithDiscrepancy: ZohoUserSummary = {
+        ...mockUser,
+        filterSummary: {
+          doneTasks: 1,
+          pendingTasks: 1,
+          delayedTasks: 0,
+          weeklyAvgScore: 80,
+          totalHoursLogged: 7.5,
+        },
+        tillDateSummary: {
+          doneTasks: 31,
+          pendingTasks: 1,
+          delayedTasks: 12,
+          weeklyAvgScore: 39,
+          totalHoursLogged: 288.5,
+        },
+        dailyEvaluations: [
+          {
+            date: '2026-10-27',
+            dayScore: 90,
+            summary: 'Completed 2 tasks',
+            tasks: [
+              {
+                id: 't-1',
+                zohoTaskId: 'z-1',
+                projectId: 'p-1',
+                projectName: 'Proj',
+                taskName: 'Task 1',
+                taskDescription: 'Desc 1',
+                zohoStatus: 'Closed',
+                isQAReview: false,
+                plannedHours: 4,
+                actualHours: 4,
+                taskDate: '2026-10-27',
+                zohoLink: '',
+                comments: [{ author: 'User', content: 'Done', time: '12:00' }],
+                evaluation: {
+                  overallScore: 90,
+                  timeScore: 100,
+                  workMatchScore: 90,
+                  commentQualityScore: 90,
+                  complexityScore: 80,
+                  repetitionScore: 100,
+                  timeVarianceMinutes: 0,
+                  timeAssessmentLabel: 'ON_TIME',
+                  isRepetitive: false,
+                  repetitionSimilarityPct: 0,
+                  matchedTaskId: null,
+                  summaryFeedback: 'Good job',
+                  strengths: ['Punctual'],
+                  improvements: [],
+                  aiModelUsed: 'gemini-2.5-flash',
+                },
+              },
+              {
+                id: 't-2',
+                zohoTaskId: 'z-2',
+                projectId: 'p-1',
+                projectName: 'Proj',
+                taskName: 'Task 2',
+                taskDescription: 'Desc 2',
+                zohoStatus: 'In Progress',
+                isQAReview: false,
+                plannedHours: 4,
+                actualHours: 3.5,
+                taskDate: '2026-10-27',
+                zohoLink: '',
+                comments: [],
+                evaluation: {
+                  overallScore: 70,
+                  timeScore: 80,
+                  workMatchScore: 60,
+                  commentQualityScore: 60,
+                  complexityScore: 80,
+                  repetitionScore: 100,
+                  timeVarianceMinutes: -30,
+                  timeAssessmentLabel: 'ON_TIME',
+                  isRepetitive: false,
+                  repetitionSimilarityPct: 0,
+                  matchedTaskId: null,
+                  summaryFeedback: 'Needs improvement',
+                  strengths: [],
+                  improvements: ['Add comments'],
+                  aiModelUsed: 'gemini-2.5-flash',
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      render(
+        <ZohoReportModal
+          isOpen={true}
+          user={userWithDiscrepancy}
+          filterType="week"
+          dateRangeText="26-10-2026 to 01-11-2026 (WEEK - 44)"
+          onClose={vi.fn()}
+        />
+      );
+
+      // Should show period hours: 7.5h / 40h planned capacity (NOT 288.5h) and task estimate 8h
+      expect(screen.getAllByText(/7.5h/).length).toBeGreaterThan(0);
+      expect(screen.getByText(/\/ 40h planned/)).toBeDefined();
+      expect(screen.getByText(/Est: 8h/)).toBeDefined();
+      expect(screen.queryByText(/288.5h/)).toBeNull();
+
+      // Completion Velocity should be 1 / 2 (50%), NOT 31 / 2 (1550%)
+      expect(screen.getByText(/1 \/ 2/)).toBeDefined();
+      expect(screen.getAllByText(/50%/).length).toBeGreaterThan(0);
+    });
+
+    it('calculates full-time capacity for 3 weeks as 120 hours and displays daily hours breakdown', () => {
+      // Test calculatePeriodCapacity helper directly
+      const weeklyCap = calculatePeriodCapacity('week');
+      expect(weeklyCap.capacityHours).toBe(40);
+      expect(weeklyCap.weeksCount).toBe(1);
+
+      const threeWeekRangeCap = calculatePeriodCapacity('range', '20-10-2026 to 05-11-2026');
+      expect(threeWeekRangeCap.capacityHours).toBe(120);
+      expect(threeWeekRangeCap.weeksCount).toBe(3);
+      expect(threeWeekRangeCap.label).toContain('3 full weeks × 40h/week = 120h capacity');
+
+      const monthCap = calculatePeriodCapacity('month');
+      expect(monthCap.capacityHours).toBe(160);
+
+      // Test ZohoReportModal renders 120h planned capacity and daily breakdown
+      render(
+        <ZohoReportModal
+          isOpen={true}
+          user={mockUser}
+          filterType="range"
+          dateRangeText="20-10-2026 to 05-11-2026"
+          startDate="2026-10-20"
+          endDate="2026-11-05"
+          onClose={vi.fn()}
+        />
+      );
+
+      // Verify 120h planned capacity is displayed
+      expect(screen.getByText(/\/ 120h planned/)).toBeDefined();
+      expect(screen.getAllByText(/3 full weeks × 40h\/week = 120h capacity/).length).toBeGreaterThan(0);
+
+      // Verify Daily Hours Spent Breakdown section is rendered
+      expect(screen.getByText(/Daily Hours Spent Breakdown/)).toBeDefined();
+      expect(screen.getAllByText(/Daily Standard Capacity:/).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/8.0h \/ day/).length).toBeGreaterThan(0);
     });
   });
 
@@ -1009,6 +1159,216 @@ describe('Zoho Frontend Components', () => {
       expect(doneCard?.textContent).toContain('0');
       const hoursCard = screen.getAllByText('Logged Hours')[0].parentElement?.parentElement;
       expect(hoursCard?.textContent).toContain('1.6h');
+    });
+
+    it('renders distinct In QA Review card separate from Done Tasks when user has QA review tasks', () => {
+      const qaUser: ZohoUserSummary = {
+        userId: 'u-qa',
+        email: 'qa.dev@creolestudios.com',
+        name: 'QA Dev',
+        role: 'Full Stack Developer',
+        yearsOfExperience: 3,
+        seniorityLevel: 'Mid',
+        aiSubscriptions: ['GitHub Copilot'],
+        tillDateSummary: {
+          doneTasks: 1,
+          qaReviewTasks: 3,
+          pendingTasks: 1,
+          delayedTasks: 0,
+          weeklyAvgScore: 85,
+          totalHoursLogged: 12.0,
+        },
+        dailyEvaluations: [
+          {
+            date: '2026-11-04',
+            dayScore: 8.5,
+            summary: 'Completed 4 tasks on 2026-11-04.',
+            tasks: [
+              {
+                id: 't-closed',
+                zohoTaskId: 'zt-closed',
+                projectId: 'p1',
+                projectName: 'CKP',
+                taskName: 'Production Hotfix',
+                taskDescription: 'Hotfix applied',
+                zohoStatus: 'Closed',
+                isQAReview: false,
+                plannedHours: 2,
+                actualHours: 2,
+                taskDate: '2026-11-04',
+                zohoLink: '',
+                comments: [],
+              },
+              {
+                id: 't-qa-1',
+                zohoTaskId: 'zt-qa1',
+                projectId: 'p1',
+                projectName: 'CKP',
+                taskName: 'Search Filter Implementation',
+                taskDescription: 'Search filter',
+                zohoStatus: 'In QA Review',
+                isQAReview: true,
+                plannedHours: 3,
+                actualHours: 3,
+                taskDate: '2026-11-04',
+                zohoLink: '',
+                comments: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      render(
+        <ZohoWeeklyEvaluationModal
+          user={qaUser}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Verify In QA Review card renders with count 3
+      const qaCard = screen.getAllByText('In QA Review')[0].parentElement?.parentElement;
+      expect(qaCard?.textContent).toContain('3');
+
+      // Verify Done Tasks card renders with count 1
+      const doneCard = screen.getAllByText('Done Tasks')[0].parentElement?.parentElement;
+      expect(doneCard?.textContent).toContain('1');
+
+      // Verify task progress shows both Done and In QA Review
+      expect(screen.getByText(/3 In QA Review/i)).toBeDefined();
+    });
+
+    it('shows all tasks by default in breakdown table and pops up a card with category tasks when clicking metric cards', () => {
+      const multiStatusUser: ZohoUserSummary = {
+        userId: 'u-filter',
+        email: 'filter.user@creolestudios.com',
+        name: 'Filter User',
+        role: 'Full Stack Developer',
+        yearsOfExperience: 3,
+        seniorityLevel: 'Mid',
+        aiSubscriptions: [],
+        tillDateSummary: {
+          doneTasks: 1,
+          qaReviewTasks: 1,
+          pendingTasks: 1,
+          delayedTasks: 1,
+          weeklyAvgScore: 80,
+          totalHoursLogged: 10,
+        },
+        dailyEvaluations: [
+          {
+            date: '2026-11-04',
+            dayScore: 8.0,
+            summary: '3 tasks',
+            tasks: [
+              {
+                id: 't-closed',
+                zohoTaskId: 'zt-1',
+                projectId: 'p1',
+                projectName: 'CKP',
+                taskName: 'Closed Feature',
+                taskDescription: 'Done',
+                zohoStatus: 'Closed',
+                isQAReview: false,
+                plannedHours: 2,
+                actualHours: 2,
+                taskDate: '2026-11-04',
+                zohoLink: '',
+                comments: [],
+              },
+              {
+                id: 't-qa',
+                zohoTaskId: 'zt-2',
+                projectId: 'p1',
+                projectName: 'CKP',
+                taskName: 'QA Ticket',
+                taskDescription: 'QA review',
+                zohoStatus: 'In QA Review',
+                isQAReview: true,
+                plannedHours: 3,
+                actualHours: 3,
+                taskDate: '2026-11-04',
+                zohoLink: '',
+                comments: [],
+              },
+              {
+                id: 't-delayed',
+                zohoTaskId: 'zt-3',
+                projectId: 'p1',
+                projectName: 'CKP',
+                taskName: 'Overdue Bugfix',
+                taskDescription: 'Delayed bugfix',
+                zohoStatus: 'In Progress',
+                isQAReview: false,
+                plannedHours: 2,
+                actualHours: 5,
+                taskDate: '2026-11-04',
+                zohoLink: '',
+                comments: [],
+                evaluation: {
+                  overallScore: 4.0,
+                  timeScore: 2.0,
+                  workMatchScore: 5.0,
+                  commentQualityScore: 5.0,
+                  complexityScore: 8.0,
+                  repetitionScore: 10.0,
+                  timeVarianceMinutes: 180,
+                  timeAssessmentLabel: 'OVERDUE',
+                  isRepetitive: false,
+                  repetitionSimilarityPct: 0,
+                  matchedTaskId: null,
+                  workMatchFeedback: 'Overdue',
+                  summaryFeedback: 'Overdue',
+                  whereLacked: 'Overdue',
+                  whereToImprove: 'Overdue',
+                  improvementItems: [],
+                  strengths: [],
+                  improvements: [],
+                  aiModelUsed: 'rule',
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      render(
+        <ZohoWeeklyEvaluationModal
+          user={multiStatusUser}
+          onClose={vi.fn()}
+        />
+      );
+
+      // Initially all 3 tasks are shown by default in the breakdown table
+      expect(screen.getByText('Closed Feature')).toBeDefined();
+      expect(screen.getByText('QA Ticket')).toBeDefined();
+      expect(screen.getByText('Overdue Bugfix')).toBeDefined();
+
+      // Click on "In QA Review" card -> opens popup card
+      const qaCard = screen.getAllByText('In QA Review')[0];
+      fireEvent.click(qaCard);
+
+      // Popup card opens with title and shows QA Ticket
+      expect(screen.getByText('In QA Review Tasks')).toBeDefined();
+      const popupDialog = screen.getByTestId('category-task-popup');
+      expect(popupDialog).toBeDefined();
+
+      // Close the popup card
+      const closePopupBtn = screen.getByTestId('close-popup-card-btn');
+      fireEvent.click(closePopupBtn);
+      expect(screen.queryByTestId('category-task-popup')).toBeNull();
+
+      // Click on "Delayed Tasks" card -> opens popup card with delayed tasks
+      const delayedCard = screen.getAllByText('Delayed Tasks')[0];
+      fireEvent.click(delayedCard);
+
+      expect(screen.getAllByText('Delayed Tasks').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByTestId('category-task-popup')).toBeDefined();
+
+      // Default breakdown table still displays all tasks in background while popup is open
+      expect(screen.getByText('Closed Feature')).toBeDefined();
+      expect(screen.getByText('QA Ticket')).toBeDefined();
+      expect(screen.getAllByText('Overdue Bugfix').length).toBe(2);
     });
   });
 });

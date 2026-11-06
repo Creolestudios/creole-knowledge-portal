@@ -68,7 +68,9 @@ function cleanText(str: string | null | undefined): string {
 }
 
 /**
- * Runs the dedicated daily 10 PM Zoho Evaluation Cron.
+ * Runs the dedicated daily Zoho Evaluation Cron.
+ * // Original Schedule: 10:00 PM IST (16:30 UTC -> "30 16 * * 1-5")
+ * // Testing Schedule: 12:05 PM IST (06:35 UTC -> "35 6 * * *")
  * Monday to Friday only (skips Saturday and Sunday unless allowWeekend is true).
  *
  * Steps:
@@ -403,13 +405,16 @@ export async function runDailyZohoEvaluationCron(
           }
         }
 
-        // Fetch all task comments
+        // Fetch all task comments (only if comments exist to respect Zoho 100 req/2min throttle)
         let apiComments: Array<{ author_name: string; content: string; added_time: string }> = [];
-        try {
-          apiComments = await fetchZohoTaskComments(token, portalId, projectId, taskId);
-          userCommentsCount += apiComments.length;
-        } catch (commErr) {
-          console.warn(`[ZohoCron] Task comments fetch warning for ${taskId}:`, commErr);
+        if (raw.is_comment_added !== false) {
+          try {
+            await new Promise((r) => setTimeout(r, 80));
+            apiComments = await fetchZohoTaskComments(token, portalId, projectId, taskId);
+            userCommentsCount += apiComments.length;
+          } catch (commErr) {
+            console.warn(`[ZohoCron] Task comments fetch warning for ${taskId}:`, commErr);
+          }
         }
 
         let dbTaskUuid: string | null = null;

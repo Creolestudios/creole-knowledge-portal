@@ -14,7 +14,8 @@ export interface ZohoEvaluationRulesConfig {
   zeroHoursLoggedScore: number; // default: 0.0 (score when 0 hours logged)
 
   // 3. Quality & Deliverable Caps
-  missingDescriptionCap: number; // default: 3.0 (score cap when description empty)
+  missingDescriptionCap: number; // default: 0.0 (score cap when description empty)
+  shortDescriptionDeduction: number; // default: 4.5 (points deducted from score when description <= 6 words)
   checklistCommentCap: number; // default: 5.0 (score cap when checklist comment)
   partialDeliveryCap: number; // default: 5.2 (score cap when deliverables pending)
 
@@ -36,7 +37,8 @@ export const DEFAULT_ZOHO_RULES: ZohoEvaluationRulesConfig = {
   overtime120mScore: 6.5,
   overtimeMaxScore: 5.0,
   zeroHoursLoggedScore: 0.0,
-  missingDescriptionCap: 3.0,
+  missingDescriptionCap: 0.0,
+  shortDescriptionDeduction: 4.5,
   checklistCommentCap: 5.0,
   partialDeliveryCap: 5.2,
   workMatchWeight: 0.45,

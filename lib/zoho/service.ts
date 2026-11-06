@@ -25,6 +25,7 @@ export interface ZohoUserSummary {
   dailyEmailEnabled?: boolean;
   filterSummary?: {
     doneTasks: number;
+    qaReviewTasks?: number;
     pendingTasks: number;
     delayedTasks: number;
     weeklyAvgScore: number;
@@ -32,6 +33,7 @@ export interface ZohoUserSummary {
   };
   tillDateSummary: {
     doneTasks: number;
+    qaReviewTasks?: number;
     pendingTasks: number;
     delayedTasks: number;
     weeklyAvgScore: number;
@@ -195,6 +197,7 @@ export interface WeeklyEvaluationReportItem {
   totalPlannedHours: number;
   totalActualHours: number;
   doneTasks: number;
+  qaReviewTasks?: number;
   inProgressTasks: number;
   delayedTasks: number;
   totalTasks: number;
@@ -265,6 +268,7 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
 
     const tasks = entry.tasks;
     let done = 0;
+    let qaReview = 0;
     let pending = 0;
     let delayed = 0;
     let plannedHours = 0;
@@ -278,8 +282,13 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
         actualHours += Number(t.actualHours) || 0;
 
         const st = (t.zohoStatus || '').toLowerCase();
-        if (st.includes('closed') || st.includes('done') || st.includes('completed') || t.isQAReview || st.includes('qa')) {
+        const isClosed = st.includes('closed') || st.includes('completed') || (st.includes('done') && !st.includes('qa'));
+        const isQA = Boolean(t.isQAReview || st.includes('qa') || st.includes('review'));
+
+        if (isClosed) {
           done++;
+        } else if (isQA) {
+          qaReview++;
         } else if (t.evaluation?.timeAssessmentLabel === 'OVERDUE') {
           delayed++;
         } else {
@@ -296,6 +305,7 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
       }
     } else {
       done = 0;
+      qaReview = 0;
       pending = 0;
       delayed = 0;
       actualHours = 0;
@@ -303,7 +313,7 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
       scoreSum = 0;
     }
 
-    const totalTasks = done + pending + delayed;
+    const totalTasks = done + qaReview + pending + delayed;
     const donePct = totalTasks > 0 ? Math.round((done / totalTasks) * 100) : 100;
     const repetitivenessPct = totalTasks > 0 ? Math.round((repetitiveCount / totalTasks) * 100) : 0;
     const hasActivity = actualHours > 0 || done > 0 || (tasks.length > 0 && tasks.some((t) => (t.evaluation?.overallScore ?? 0) > 0));
@@ -315,9 +325,9 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
     const aiTools = (user.aiSubscriptions || []).join(', ') || 'GitHub Copilot';
 
     // 3 Comprehensive Evaluative Paragraphs
-    const p1 = (actualHours === 0 && done === 0)
+    const p1 = (actualHours === 0 && done === 0 && qaReview === 0)
       ? `During Week ${entry.weekNumber} (${bounds.startDate} to ${bounds.endDate}), ${user.name || 'the engineer'} has ${totalTasks} assigned task(s) currently queued (${plannedHours.toFixed(1)}h planned), with 0.0h logged to date. Milestone pacing and velocity tracking will update as active development progresses.`
-      : `During Week ${entry.weekNumber} (${bounds.startDate} to ${bounds.endDate}), ${user.name || 'the engineer'} logged ${actualHours.toFixed(1)}h against ${plannedHours.toFixed(1)}h planned across ${totalTasks} assigned tasks, achieving a ${donePct}% completion rate (${done} of ${totalTasks} tasks completed). Milestone pacing maintained solid momentum across active project deliverables in Zoho Projects.`;
+      : `During Week ${entry.weekNumber} (${bounds.startDate} to ${bounds.endDate}), ${user.name || 'the engineer'} logged ${actualHours.toFixed(1)}h against ${plannedHours.toFixed(1)}h planned across ${totalTasks} assigned tasks (${done} Closed, ${qaReview} In QA Review, ${pending} In Progress). Milestone pacing maintained solid momentum across active project deliverables in Zoho Projects.`;
 
     const p2 = (actualHours === 0 && done === 0)
       ? `No hours or completed tasks have been logged yet for this week (overall weekly score: 0/100). Weekly scoring and performance commentary will automatically calculate as daily activity and progress logs are submitted.`
@@ -338,6 +348,7 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
       totalPlannedHours: Math.round(plannedHours * 10) / 10,
       totalActualHours: Math.round(actualHours * 10) / 10,
       doneTasks: done,
+      qaReviewTasks: qaReview,
       inProgressTasks: pending,
       delayedTasks: delayed,
       totalTasks,

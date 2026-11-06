@@ -135,6 +135,7 @@ function generateHeuristicEvaluation(
     complexityScore,
     repetitionScore: repetition.repetitionScore,
     isQAReview: input.isQAReview,
+    isBriefDescription: workMatch.isBriefDescription,
     rules,
   });
 
@@ -188,6 +189,13 @@ function generateHeuristicEvaluation(
     userExperienceYears: input.userExperienceYears,
     aiSubscriptions: input.aiSubscriptions,
     isQAReview: input.isQAReview,
+    complexityScore,
+    repetitionScore: repetition.repetitionScore,
+    isRepetitive: repetition.isRepetitive,
+    plannedMinutes: input.plannedMinutes || 0,
+    actualMinutes: input.actualMinutes || 0,
+    timeScore: timeAdherence.timeScore,
+    rules,
   });
 
   return {
@@ -311,8 +319,12 @@ Return your evaluation strictly conforming to the requested JSON schema.
     const hasComments = input.comments && input.comments.length > 0;
     const rawWorkMatch = hasComments && Number.isFinite(parsed.workMatchScore) ? parsed.workMatchScore : (hasComments ? workMatch.workMatchScore : 0);
     let workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : 0;
-    if (workMatch.isPartialDelivery || (workMatch.hasPendingScope && !workMatch.hasDocumentedBlockers) || workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {
+    if (workMatch.isMissingDescription) {
+      workMatchScore = 0.0;
+    } else if (workMatch.isPartialDelivery || (workMatch.hasPendingScope && !workMatch.hasDocumentedBlockers) || workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {
       workMatchScore = Math.min(workMatchScore, 5.5);
+    } else if (workMatch.isBriefDescription && workMatch.descriptionDeduction) {
+      workMatchScore = Math.max(1.0, workMatchScore - workMatch.descriptionDeduction);
     }
 
     const rawCommentQuality = Number.isFinite(parsed.commentQualityScore) ? parsed.commentQualityScore : workMatchScore;
@@ -327,6 +339,7 @@ Return your evaluation strictly conforming to the requested JSON schema.
       complexityScore,
       repetitionScore: repetition.repetitionScore,
       isQAReview: input.isQAReview,
+      isBriefDescription: workMatch.isBriefDescription,
       rules: activeRules,
     });
 
@@ -343,8 +356,11 @@ Return your evaluation strictly conforming to the requested JSON schema.
     if (workMatch.isChecklistComment && !rawImprovements.some((i: string) => i.toLowerCase().includes('status updates') || i.toLowerCase().includes('checklist'))) {
       rawImprovements.unshift('In Zoho task comments, substantiate your work with at least 40–50 words detailing specific technical implementation (what code was modified, packages upgraded, issues resolved, and verification findings) instead of repeating the task checklist with status markers like "done" or "pending".');
     }
-    if (workMatch.isBriefDescription && !rawImprovements.some((i: string) => i.toLowerCase().includes('comprehensive task scope') || i.toLowerCase().includes('detailed scope'))) {
-      rawImprovements.unshift('When creating or assigning tasks, document complete technical specifications, background context, and acceptance criteria (aim for at least 40–50 words of detailed scope rather than short summary bullets).');
+    if (workMatch.isMissingDescription && !rawImprovements.some((i: string) => i.toLowerCase().includes('missing task description'))) {
+      rawImprovements.unshift('Missing Task Description: Task description is completely missing in Zoho Projects. Score was set to 0.0/10. Ensure task descriptions have at least 40–50 words of clear requirements and acceptance criteria when creating or assigning work.');
+    } else if (workMatch.isBriefDescription && !rawImprovements.some((i: string) => i.toLowerCase().includes('comprehensive task scope') || i.toLowerCase().includes('detailed scope'))) {
+      const deductionText = `${(workMatch.descriptionDeduction || 5.0).toFixed(1)} points was deducted from the score`;
+      rawImprovements.unshift(`Define Comprehensive Task Scope: Task description was overly brief and lacked technical specifications or acceptance criteria. ${deductionText}. Ensure task descriptions are at least 40–50 words descriptive when creating or assigning work.`);
     }
     if (timeAdherence.assessmentLabel === 'NOT_LOGGED' && !rawImprovements.some((i: string) => i.toLowerCase().includes('not logged') || i.toLowerCase().includes('no hours'))) {
       rawImprovements.unshift('No hours were logged in Zoho Projects for this task. Ensure accurate timelogs are entered.');

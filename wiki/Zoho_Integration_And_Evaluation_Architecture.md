@@ -607,8 +607,9 @@ Administrators have granular, selective control over daily evaluation emails dir
      - **Explicit Design Rule**: Weekly throughput progress bars (`X / Y Tasks Done`) and `% Repetitive` indices are **NEVER shown in Daily Evaluation**; they belong exclusively in the Weekly Evaluation Hub.
 2. **Weekly Performance & Evaluation Report (`ZohoWeeklyEvaluationModal`)**:
    - Triggered via the prominent **`✨ Weekly Evaluation Report [XX/100]`** gradient button on the employee profile summary header (redundant secondary text links removed for visual simplicity).
-   - Houses the **5 Cumulative Add-On Cards**: Done Tasks, In Progress, Delayed Tasks, Logged Hours, and Overall Score (0–100 scale).
-   - Houses the **Weekly Task Completion Bar** (`X / Y Tasks Done` with segmented distribution).
+   - Houses the **6 Cumulative Add-On Cards**: Done Tasks (strictly Closed/Completed), In QA Review (submitted for QA testing), In Progress, Delayed Tasks, Logged Hours, and Overall Score (0–100 scale).
+   - **Task Status Separation**: `Done Tasks` strictly reflects tickets that have reached `Closed` or `Completed` state. Tasks currently undergoing quality audit are cleanly tracked under `In QA Review` (`qaReviewTasks`), eliminating ambiguity between code completion and final sign-off.
+   - Houses the **Weekly Task Completion Bar** (`X / Y Tasks Closed` with segmented distribution including In QA Review and In Progress counts).
    - Houses the **Weekly Repetitive Task Rate** (`% Repetitive`).
    - Houses the **3-Paragraph Executive Performance Summary** for This Week (Current Sprint).
    - Houses the **Continuous Week-Over-Week Append Timeline**: Past completed weeks append chronologically below the active sprint (`Week 44` $\rightarrow$ `Week 43` $\rightarrow$ `Week 42`), dynamically updating cumulative totals without replacing previous history.
@@ -694,5 +695,37 @@ Administrators have granular, selective control over daily evaluation emails dir
    - In `middleware.ts`, unauthenticated requests to `/dashboard/zoho-evaluation` preserve the target path in the login query parameter: `/?next=%2Fdashboard%2Fzoho-evaluation`.
    - `app/page.tsx` forwards `next` through OAuth redirects (`options.redirectTo`), and `app/auth/callback/route.ts` honors `next` so users land directly on their Zoho evaluation after completing authentication.
 
+### 12.5 Metric Card Task Popups & Task Status Separation
+1. **Separation of Done vs. In QA Review**:
+   - **Done Tasks**: Strictly isolated to closed or completed tickets (`status.includes('closed') || status.includes('completed')`).
+   - **In QA Review**: Tasks actively submitted for QA verification (`status.includes('qa') || status.includes('review') || task.isQAReview`).
+   - Prevents tickets awaiting quality assurance signoff from inflating the finalized completion count.
+2. **Dedicated Task Popups on Scorecard Cards**:
+   - The main **Evaluated Task Breakdown** table at the bottom of the modal by default always displays the complete, unfiltered list of all tracked tasks across evaluated weeks.
+   - When a user clicks any of the 4 cumulative metric cards (`DONE TASKS`, `IN QA REVIEW`, `IN PROGRESS`, `DELAYED TASKS`), a dedicated **popup card dialog** pops up in focus.
+   - The popup card features category-specific iconography, total task counter badges, contextual descriptions, and a scrollable table displaying the matching tasks with their actual/planned hours, Zoho status, and evaluation scores.
+   - Closing the popup card (via the `Close` button, top `X`, backdrop click, or `Escape` key) returns the user seamlessly to the report modal without disturbing the full breakdown list below.
 
+### 12.6 Dark Mode Contrast and UI Hover Architecture
+1. **Standardized Dark Surface Palette**:
+   - Eliminated non-standard / undefined Tailwind color shades (such as `zinc-750` and `zinc-850`) that previously caused fallback regressions where rows or buttons turned blinding white (`hover:bg-zinc-50`) in dark mode.
+   - Standardized interactive hover states to `dark:hover:bg-zinc-800/80` for user roster rows and `dark:hover:bg-zinc-700` for secondary utility buttons.
+   - Preserved high-contrast accessibility: hover states highlight user emails, action labels, and icons in Creole brand cyan (`#34c4f2`) while maintaining dark charcoal backgrounds and crisp text readability.
+
+### 12.7 Simplified Performance Metrics Naming
+1. **Plain-English Task Completion Ratio**:
+   - Replaced abstract jargon ("Completion Velocity") with direct, intuitive terminology: **"Tasks Completed"**.
+   - Displays clear ratio of genuinely finished tasks vs. total tasks given (`Completed / Given (Pct%)`), explicitly excluding tickets still under QA Review or actively In Progress.
+2. **Intuitive Delayed Tasks Metric**:
+   - Replaced technical jargon ("Schedule Adherence") with clear label: **"Delayed Tasks"**.
+   - Directly displays the count and proportion of tasks that exceeded their planned duration and time tolerance buffer.
+
+### 12.8 Decimal Years of Experience Support
+1. **Manual Decimal Entry in User Management**:
+   - In `components/user-management.tsx`, the "Years of Experience" input supports manual entry of decimal numbers (e.g. `2.5`, `3.5`, `0.5`) using `<input type="number" step="any" min="0">`.
+   - Form state handles intermediate string values during typing to prevent React controlled state from truncating decimal points or dropping trailing dots (`3.`).
+2. **Database & Auth Metadata Storage**:
+   - Migration `20261106000000_alter_years_of_experience_to_numeric.sql` alters `user_profiles.years_of_experience` to `NUMERIC(4, 1)`.
+   - `/api/admin/users` parses the experience value using `Number.parseFloat(...)` and synchronizes it into Supabase Auth `user_metadata` (schema-free float storage) with a defensive fallback for Postgres integer columns if migration has not yet executed.
+   - Evaluator heuristics, seniority tier resolution (`yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior'`), and user roster badges render the exact float value (e.g. `Mid (2.5 yrs)`).
 

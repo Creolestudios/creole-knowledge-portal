@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, Briefcase, Bot, ChevronRight, Award, CheckCircle2, Clock, Zap, AlertTriangle } from 'lucide-react';
+import { Sparkles, Briefcase, Bot, ChevronRight, Award, CheckCircle2, Clock, Zap, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 interface TillDateSummaryProps {
   userName?: string;
@@ -13,6 +13,7 @@ interface TillDateSummaryProps {
   hideProfileHeader?: boolean;
   filterSummary?: {
     doneTasks: number;
+    qaReviewTasks?: number;
     pendingTasks: number;
     delayedTasks: number;
     weeklyAvgScore: number;
@@ -20,6 +21,7 @@ interface TillDateSummaryProps {
   };
   summary: {
     doneTasks: number;
+    qaReviewTasks?: number;
     pendingTasks: number;
     delayedTasks: number;
     weeklyAvgScore: number;
@@ -65,6 +67,12 @@ export default function ZohoTillDateSummary({
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
               <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.doneTasks}</strong> Done Tasks
             </span>
+            {Boolean(displayFilter.qaReviewTasks && displayFilter.qaReviewTasks > 0) && (
+              <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+                <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.qaReviewTasks}</strong> In QA Review
+              </span>
+            )}
             <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
               <Clock className="w-3.5 h-3.5 text-amber-500" />
               <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.pendingTasks}</strong> In Progress
@@ -175,6 +183,12 @@ export default function ZohoTillDateSummary({
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
             <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.doneTasks}</strong> Done Tasks
           </span>
+          {Boolean(displayFilter.qaReviewTasks && displayFilter.qaReviewTasks > 0) && (
+            <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+              <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.qaReviewTasks}</strong> In QA Review
+            </span>
+          )}
           <span className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
             <Clock className="w-3.5 h-3.5 text-amber-500" />
             <strong className="text-zinc-900 dark:text-white font-bold">{displayFilter.pendingTasks}</strong> In Progress

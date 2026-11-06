@@ -177,14 +177,14 @@ Note: 1Hr of meeting is logged in this task itself.`
       expect(result.isBriefComment).toBe(true);
     });
 
-    it('strictly penalizes task score (capped at 3.0/10) when description is completely missing but comments exist', () => {
+    it('strictly gives 0.0 as score when description is completely missing even if comments exist', () => {
       const desc = '';
       const comments = [
         'Implemented the feature and resolved database query bottlenecks. All unit tests passing cleanly.',
       ];
 
       const result = evaluateWorkAndCommentMatch(desc, comments);
-      expect(result.workMatchScore).toBe(3.0);
+      expect(result.workMatchScore).toBe(0.0);
       expect(result.alignmentLabel).toBe('MISSING_TASK_DESCRIPTION');
       expect(result.isMissingDescription).toBe(true);
       expect(result.explanation).toContain('Task description is completely missing in Zoho Projects');
@@ -303,6 +303,21 @@ Note: 1Hr of meeting is logged in this task itself.`
       expect(scoreWithoutQA).toBe(7.8);
     });
 
+    it('does not deduct from composite overall score when task description is brief (deduction occurs on work score)', () => {
+      const scoreWithBrief = computeCompositeTaskScore({
+        timeScore: 9.0,
+        commentQualityScore: 8.5,
+        complexityScore: 8.0,
+        repetitionScore: 10.0,
+        isQAReview: true,
+        isBriefDescription: true,
+      });
+
+      // Deduction occurs on the Score (work match) directly, not from composite overall score
+      // 8.5*0.45 + 9.0*0.35 + 8.0*0.10 + 10.0*0.10 = 8.775 -> 8.8
+      expect(scoreWithBrief).toBe(8.8);
+    });
+
     it('returns 0.0 when both time and comments are zero (unlogged and no comments)', () => {
       const unloggedScore = computeCompositeTaskScore({
         timeScore: 0,
@@ -382,6 +397,34 @@ Note: 1Hr of meeting is logged in this task itself.`
       expect(summary.performanceSummary).not.toContain('40');
       expect(summary.whereLacked).not.toContain('40');
       expect(summary.whereToImprove).not.toContain('40');
+    });
+
+    it('flags completely missing description and informs user of 0.0 score', () => {
+      const summary = generateDynamicPerformanceSummary({
+        taskDescription: '',
+        comments: ['Created lib/zoho/cache.ts with Redis TTL helper. Added error fallback. Tests pass.'],
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: 0.0,
+        seniorityLevel: 'Mid',
+        userExperienceYears: 3,
+        complexityScore: 8.0,
+        repetitionScore: 10.0,
+      });
+
+      expect(summary.whereLacked).toContain('Task description was completely missing in Zoho Projects');
+      expect(summary.whereToImprove).toContain('Always provide clear task descriptions');
+      expect(summary.improvementItems.some((i) => i.includes('Missing Task Description') && i.includes('Score was set to 0.0/10'))).toBe(true);
+    });
+
+    it('deducts 4 to 5 points directly from Score when description is very short (e.g. 5 words)', () => {
+      const desc = 'Update user profile settings page.'; // 5 words
+      const comments = [
+        'Added multi-select dropdown for ai_subscriptions, added toggle for daily email digest, created Supabase schema migration 20261102_user_subs.sql, and validated inputs using Zod. Unit tests pass in profile.test.ts.',
+      ];
+      const result = evaluateWorkAndCommentMatch(desc, comments);
+      expect(result.isBriefDescription).toBe(true);
+      expect(result.descriptionDeduction).toBe(4.5);
+      expect(result.workMatchScore).toBe(5.5); // 10.0 - 4.5 = 5.5
     });
   });
 

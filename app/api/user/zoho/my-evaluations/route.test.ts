@@ -120,6 +120,6 @@ describe('User Zoho Evaluations API (/api/user/zoho/my-evaluations)', () => {
     expect(task.comments[0].author).toBe('John Doe');
     expect(task.comments[0].content).toBe('Tested the comments feature and confirmed working');
     expect(task.evaluation).toBeDefined();
-    expect(task.evaluation.overallScore).toBe(9.2);
+    expect(task.evaluation.overallScore).toBe(7.6);
   });
 });

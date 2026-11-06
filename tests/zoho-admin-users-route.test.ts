@@ -62,7 +62,7 @@ describe('GET /api/admin/zoho/users Route Handler', () => {
       error: null,
     });
 
-    const mockTasksOrder = vi.fn().mockResolvedValue({
+    const mockTasksRange = vi.fn().mockResolvedValue({
       data: [
         {
           id: 'task-1',
@@ -89,6 +89,10 @@ describe('GET /api/admin/zoho/users Route Handler', () => {
         },
       ],
       error: null,
+    });
+
+    const mockTasksOrder = vi.fn().mockReturnValue({
+      range: mockTasksRange,
     });
 
     const mockTaskSelect = vi.fn().mockReturnValue({

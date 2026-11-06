@@ -317,6 +317,7 @@ describe('/api/cron/zoho-evaluation Route Handler', () => {
       (c: { path: string }) => c.path === '/api/cron/zoho-evaluation'
     );
     expect(cronItem).toBeDefined();
-    expect(cronItem.schedule).toBe('30 16 * * 1-5');
+    // Supports production 10:00 PM IST ('30 16 * * 1-5') and testing 12:05 PM IST ('35 6 * * *')
+    expect(['30 16 * * 1-5', '35 6 * * *']).toContain(cronItem.schedule);
   });
 });

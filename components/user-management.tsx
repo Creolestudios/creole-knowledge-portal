@@ -62,7 +62,17 @@ export default function UserManagement() {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   // Form State
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    role: string;
+    current_role: string;
+    years_of_experience: number | string;
+    primary_tech_stack: string[];
+    secondary_tech_stack: string[];
+    future_interests: string;
+    ai_subscriptions: string[];
+    senior_emails: string[];
+    daily_email_enabled: boolean;
+  }>({
     role: 'user',
     current_role: '',
     years_of_experience: 0,
@@ -191,7 +201,7 @@ export default function UserManagement() {
     setFormData({
       role: user.role || 'user',
       current_role: user.current_role || '',
-      years_of_experience: user.years_of_experience || 0,
+      years_of_experience: user.years_of_experience !== null && user.years_of_experience !== undefined ? user.years_of_experience : 0,
       primary_tech_stack: user.primary_tech_stack || [],
       secondary_tech_stack: user.secondary_tech_stack || [],
       future_interests: user.future_interests || '',
@@ -212,6 +222,11 @@ export default function UserManagement() {
     setSaving(true);
     
     try {
+      const parsedYears = formData.years_of_experience === '' || formData.years_of_experience === null || formData.years_of_experience === undefined
+        ? 0
+        : Number.parseFloat(String(formData.years_of_experience));
+      const finalYears = Number.isNaN(parsedYears) || parsedYears < 0 ? 0 : parsedYears;
+
       const res = await fetch('/api/admin/users', {
         method: 'PUT',
         headers: {
@@ -222,7 +237,7 @@ export default function UserManagement() {
           email: selectedUser.email,
           role: formData.role,
           current_role: formData.current_role,
-          years_of_experience: formData.years_of_experience,
+          years_of_experience: finalYears,
           primary_tech_stack: formData.primary_tech_stack,
           secondary_tech_stack: formData.secondary_tech_stack,
           future_interests: formData.future_interests,
@@ -736,9 +751,13 @@ export default function UserManagement() {
                       </label>
                       <input 
                         type="number"
+                        step="any"
                         min="0"
                         value={formData.years_of_experience}
-                        onChange={(e) => setFormData({ ...formData, years_of_experience: Number.parseInt(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData({ ...formData, years_of_experience: val === '' ? 0 : val });
+                        }}
                         className="w-full px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#34c4f2]/20 focus:border-[#34c4f2] text-zinc-900 dark:text-white transition-all font-mono"
                       />
                     </div>

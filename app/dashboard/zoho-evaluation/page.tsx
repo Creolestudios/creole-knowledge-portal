@@ -189,9 +189,9 @@ function MyZohoEvaluationContent() {
               </div>
             ) : (
               <div className="space-y-4">
-                {data.dailyEvaluations.map((day) => (
+                {data.dailyEvaluations.map((day, dIdx) => (
                   <div
-                    key={day.date}
+                    key={`${day.date}-${dIdx}`}
                     className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-xs space-y-4"
                   >
                     {/* Day Header - Task Date & Daily Evaluation Button */}
@@ -214,16 +214,16 @@ function MyZohoEvaluationContent() {
                         <Sparkles className="w-3.5 h-3.5 text-purple-500 group-hover:scale-110 transition-transform" />
                         <span>Daily Evaluation</span>
                         <span className="font-black px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200">
-                          {day.dayScore.toFixed(1)}/10
+                          {(day.dayScore > 10 ? day.dayScore / 10 : day.dayScore).toFixed(1)}/10
                         </span>
                       </button>
                     </div>
 
                     {/* Tasks for this day - Only Project Name and Task Title */}
                     <div className="space-y-2">
-                      {day.tasks.map((task) => (
+                      {day.tasks.map((task, tIdx) => (
                         <div
-                          key={task.id}
+                          key={`${task.id || task.zohoTaskId || task.taskName}-${tIdx}`}
                           className="p-3 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-100 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all flex items-center justify-between gap-3"
                         >
                           <div className="flex-1 min-w-0 flex items-center gap-2.5">

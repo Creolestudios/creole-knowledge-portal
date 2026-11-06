@@ -1,9 +1,139 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Printer, Award, Clock, CheckCircle2, AlertTriangle, FileText, Bot, Users, BarChart3, RefreshCw, History } from 'lucide-react';
+import { X, Printer, Award, Clock, CheckCircle2, AlertTriangle, FileText, Bot, Users, BarChart3, RefreshCw } from 'lucide-react';
 import { formatMinutesToClock, formatZohoDurationToClock } from '@/lib/zoho/client';
-import { ZohoUserSummary, buildWeeklyPerformanceReports } from '@/lib/zoho/service';
+import { ZohoUserSummary } from '@/lib/zoho/service';
+
+export interface PeriodCapacityInfo {
+  capacityHours: number;
+  weeksCount: number;
+  workingDaysCount: number;
+  label: string;
+}
+
+/**
+ * Calculates standard full-time capacity hours for a given period:
+ * - 1 week: 40 hours (5 working days x 8h/day)
+ * - Custom range: Number of full/partial calendar weeks spanned x 40h/week (or 8h/working day)
+ * - Month: Working days x 8h/day (or ~160h standard 4-week capacity)
+ */
+export function calculatePeriodCapacity(
+  filterType: string,
+  dateRangeText?: string,
+  startDate?: string,
+  endDate?: string
+): PeriodCapacityInfo {
+  // 1. Explicit weekly filter: exactly 1 full week = 40h standard capacity
+  if (filterType === 'week') {
+    return {
+      capacityHours: 40,
+      weeksCount: 1,
+      workingDaysCount: 5,
+      label: '1 full week × 40h/week = 40h capacity',
+    };
+  }
+
+  // 2. Parse dates if not passed directly
+  let start = startDate;
+  let end = endDate;
+
+  if ((!start || !end) && dateRangeText) {
+    // Check for DD-MM-YYYY (e.g. "20-10-2026 to 05-11-2026")
+    const ddmmyyyyMatches = dateRangeText.match(/(\d{2})[-/](\d{2})[-/](\d{4})/g);
+    if (ddmmyyyyMatches && ddmmyyyyMatches.length >= 2) {
+      const toIso = (s: string) => {
+        const parts = s.split(/[-/]/);
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      };
+      start = toIso(ddmmyyyyMatches[0]);
+      end = toIso(ddmmyyyyMatches[1]);
+    } else {
+      const yyyymmddMatches = dateRangeText.match(/(\d{4})[-/](\d{2})[-/](\d{2})/g);
+      if (yyyymmddMatches && yyyymmddMatches.length >= 2) {
+        start = yyyymmddMatches[0];
+        end = yyyymmddMatches[1];
+      }
+    }
+  }
+
+  // 3. Explicit monthly filter
+  if (filterType === 'month') {
+    if (start && end) {
+      const s = new Date(start);
+      const e = new Date(end);
+      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
+        let workDays = 0;
+        const cur = new Date(s);
+        while (cur <= e) {
+          const dayOfWeek = cur.getDay();
+          if (dayOfWeek !== 0 && dayOfWeek !== 6) workDays++;
+          cur.setDate(cur.getDate() + 1);
+        }
+        const cap = workDays * 8;
+        return {
+          capacityHours: cap,
+          weeksCount: Math.max(1, Math.round(workDays / 5)),
+          workingDaysCount: workDays,
+          label: `${workDays} working days @ 8h/day = ${cap}h capacity`,
+        };
+      }
+    }
+    return {
+      capacityHours: 160,
+      weeksCount: 4,
+      workingDaysCount: 20,
+      label: '4 full weeks × 40h/week = 160h capacity',
+    };
+  }
+
+  // 4. Custom range or general calculation
+  if (start && end) {
+    const s = new Date(start);
+    const e = new Date(end);
+    if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime())) {
+      let workDays = 0;
+      const cur = new Date(s);
+      while (cur <= e) {
+        const dayOfWeek = cur.getDay();
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) workDays++;
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      // Monday of start week
+      const startDay = s.getDay();
+      const diffToMonday = startDay === 0 ? -6 : 1 - startDay;
+      const startMonday = new Date(s);
+      startMonday.setDate(s.getDate() + diffToMonday);
+      startMonday.setHours(0, 0, 0, 0);
+
+      // Sunday of end week
+      const endDay = e.getDay();
+      const diffToSunday = endDay === 0 ? 0 : 7 - endDay;
+      const endSunday = new Date(e);
+      endSunday.setDate(e.getDate() + diffToSunday);
+      endSunday.setHours(23, 59, 59, 999);
+
+      const daysSpanned = Math.round((endSunday.getTime() - startMonday.getTime()) / (24 * 60 * 60 * 1000));
+      const weeksCount = Math.max(1, Math.round(daysSpanned / 7));
+      const capacityHours = weeksCount * 40;
+
+      return {
+        capacityHours,
+        weeksCount,
+        workingDaysCount: workDays,
+        label: `${weeksCount} full week${weeksCount > 1 ? 's' : ''} × 40h/week = ${capacityHours}h capacity`,
+      };
+    }
+  }
+
+  return {
+    capacityHours: 40,
+    weeksCount: 1,
+    workingDaysCount: 5,
+    label: '1 full week × 40h/week = 40h capacity',
+  };
+}
 
 interface ZohoReportModalProps {
   isOpen?: boolean;
@@ -11,6 +141,8 @@ interface ZohoReportModalProps {
   users?: ZohoUserSummary[];
   filterType: string;
   dateRangeText?: string;
+  startDate?: string;
+  endDate?: string;
   onClose: () => void;
 }
 
@@ -20,6 +152,8 @@ export default function ZohoReportModal({
   users = [],
   filterType,
   dateRangeText,
+  startDate,
+  endDate,
   onClose,
 }: ZohoReportModalProps) {
   // If multiple users passed, allow selecting one to drill down, or default to all
@@ -60,12 +194,58 @@ export default function ZohoReportModal({
   };
 
   // Aggregate stats for multi-user report
-  const totalTasksDone = effectiveUsers.reduce((sum, u) => sum + (u.tillDateSummary?.doneTasks || 0), 0);
-  const totalTasksPending = effectiveUsers.reduce((sum, u) => sum + (u.tillDateSummary?.pendingTasks || 0), 0);
-  const totalTasksDelayed = effectiveUsers.reduce((sum, u) => sum + (u.tillDateSummary?.delayedTasks || 0), 0);
-  const totalHoursLogged = Math.round(effectiveUsers.reduce((sum, u) => sum + (u.tillDateSummary?.totalHoursLogged || 0), 0) * 10) / 10;
+  const totalTasksDone = effectiveUsers.reduce((sum, u) => {
+    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    if (tasks.length > 0) {
+      return sum + tasks.filter((t) => {
+        const s = (t.zohoStatus || '').toLowerCase();
+        return s.includes('closed') || s.includes('completed') || (s.includes('done') && !s.includes('qa'));
+      }).length;
+    }
+    return sum + (u.filterSummary?.doneTasks ?? u.tillDateSummary?.doneTasks ?? 0);
+  }, 0);
+
+  const totalTasksPending = effectiveUsers.reduce((sum, u) => {
+    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    if (tasks.length > 0) {
+      return sum + tasks.filter((t) => {
+        const s = (t.zohoStatus || '').toLowerCase();
+        const isClosed = s.includes('closed') || s.includes('completed') || (s.includes('done') && !s.includes('qa'));
+        const isQA = t.isQAReview || s.includes('qa') || s.includes('review');
+        return !isClosed && !isQA;
+      }).length;
+    }
+    return sum + (u.filterSummary?.pendingTasks ?? u.tillDateSummary?.pendingTasks ?? 0);
+  }, 0);
+
+  const totalTasksDelayed = effectiveUsers.reduce((sum, u) => {
+    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    if (tasks.length > 0) {
+      return sum + tasks.filter((t) => t.evaluation?.timeAssessmentLabel === 'OVERDUE').length;
+    }
+    return sum + (u.filterSummary?.delayedTasks ?? u.tillDateSummary?.delayedTasks ?? 0);
+  }, 0);
+
+  const totalHoursLogged = Math.round(effectiveUsers.reduce((sum, u) => {
+    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    if (tasks.length > 0) {
+      return sum + tasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0);
+    }
+    return sum + (u.filterSummary?.totalHoursLogged ?? u.tillDateSummary?.totalHoursLogged ?? 0);
+  }, 0) * 10) / 10;
+
   const avgTeamScore = Math.round(
-    effectiveUsers.reduce((sum, u) => sum + (u.tillDateSummary?.weeklyAvgScore || 0), 0) / (effectiveUsers.length || 1)
+    effectiveUsers.reduce((sum, u) => {
+      const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+      if (tasks.length > 0) {
+        const scored = tasks.filter((t) => t.evaluation?.overallScore != null);
+        if (scored.length > 0) {
+          const avg = scored.reduce((s, t) => s + (Number(t.evaluation?.overallScore) || 0), 0) / scored.length;
+          return sum + (avg <= 10 ? Math.round(avg * 10) : Math.round(avg));
+        }
+      }
+      return sum + (u.filterSummary?.weeklyAvgScore ?? u.tillDateSummary?.weeklyAvgScore ?? 85);
+    }, 0) / (effectiveUsers.length || 1)
   );
 
   return (
@@ -186,35 +366,61 @@ export default function ZohoReportModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                      {effectiveUsers.map((u) => (
-                        <tr
-                          key={u.userId}
-                          onClick={() => setActiveDrilldownUser(u)}
-                          className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
-                        >
-                          <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-white">
-                            {u.email}
-                          </td>
-                          <td className="py-3 px-3 text-zinc-500">{u.role}</td>
-                          <td className="py-3 px-3 text-center font-bold text-purple-600 dark:text-purple-400">
-                            {u.tillDateSummary?.weeklyAvgScore ?? 85}
-                          </td>
-                          <td className="py-3 px-3 text-center text-emerald-600 font-bold">
-                            {u.tillDateSummary?.doneTasks ?? 0}
-                          </td>
-                          <td className="py-3 px-3 text-center text-rose-500 font-bold">
-                            {u.tillDateSummary?.delayedTasks ?? 0}
-                          </td>
-                          <td className="py-3 px-3 text-center font-bold text-[#34c4f2]">
-                            {u.tillDateSummary?.totalHoursLogged ?? 0}h
-                          </td>
-                          <td className="py-3 px-3 text-right">
-                            <span className="text-[11px] font-bold text-[#34c4f2] hover:underline">
-                              Inspect Tasks →
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
+                      {effectiveUsers.map((u) => {
+                        const uTasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+                        const uDone = uTasks.length > 0
+                          ? uTasks.filter((t) => {
+                              const s = (t.zohoStatus || '').toLowerCase();
+                              return s.includes('closed') || s.includes('completed') || (s.includes('done') && !s.includes('qa'));
+                            }).length
+                          : (u.filterSummary?.doneTasks ?? u.tillDateSummary?.doneTasks ?? 0);
+                        const uDelayed = uTasks.length > 0
+                          ? uTasks.filter((t) => t.evaluation?.timeAssessmentLabel === 'OVERDUE').length
+                          : (u.filterSummary?.delayedTasks ?? u.tillDateSummary?.delayedTasks ?? 0);
+                        const uHours = uTasks.length > 0
+                          ? Math.round(uTasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0) * 10) / 10
+                          : (u.filterSummary?.totalHoursLogged ?? u.tillDateSummary?.totalHoursLogged ?? 0);
+                        const uScore = (() => {
+                          if (uTasks.length > 0) {
+                            const scored = uTasks.filter((t) => t.evaluation?.overallScore != null);
+                            if (scored.length > 0) {
+                              const avg = scored.reduce((sum, t) => sum + (Number(t.evaluation?.overallScore) || 0), 0) / scored.length;
+                              return avg <= 10 ? Math.round(avg * 10) : Math.round(avg);
+                            }
+                          }
+                          return u.filterSummary?.weeklyAvgScore ?? u.tillDateSummary?.weeklyAvgScore ?? 85;
+                        })();
+
+                        return (
+                          <tr
+                            key={u.userId}
+                            onClick={() => setActiveDrilldownUser(u)}
+                            className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 cursor-pointer transition-colors"
+                          >
+                            <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-white">
+                              {u.email}
+                            </td>
+                            <td className="py-3 px-3 text-zinc-500">{u.role}</td>
+                            <td className="py-3 px-3 text-center font-bold text-purple-600 dark:text-purple-400">
+                              {uScore}
+                            </td>
+                            <td className="py-3 px-3 text-center text-emerald-600 font-bold">
+                              {uDone}
+                            </td>
+                            <td className="py-3 px-3 text-center text-rose-500 font-bold">
+                              {uDelayed}
+                            </td>
+                            <td className="py-3 px-3 text-center font-bold text-[#34c4f2]">
+                              {uHours}h
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <span className="text-[11px] font-bold text-[#34c4f2] hover:underline">
+                                Inspect Tasks →
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -242,34 +448,71 @@ export default function ZohoReportModal({
                 const periodTitle = dateRangeText ? `Evaluation Report: ${dateRangeText}` : `${periodBadge}`;
 
                 const allPeriodTasks = singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || [];
-                const periodDoneTasks = singleUser.tillDateSummary?.doneTasks ?? allPeriodTasks.filter((t) => {
-                  const s = (t.zohoStatus || '').toLowerCase();
-                  return s.includes('closed') || s.includes('done') || s.includes('completed') || t.isQAReview;
-                }).length;
-                const periodPendingTasks = singleUser.tillDateSummary?.pendingTasks ?? allPeriodTasks.filter((t) => {
-                  const s = (t.zohoStatus || '').toLowerCase();
-                  return !s.includes('closed') && !s.includes('done') && !s.includes('completed') && !t.isQAReview;
-                }).length;
-                const periodDelayedTasks = singleUser.tillDateSummary?.delayedTasks ?? allPeriodTasks.filter((t) => t.evaluation?.timeAssessmentLabel === 'OVERDUE').length;
-                const periodTotalTasks = allPeriodTasks.length > 0 ? allPeriodTasks.length : (periodDoneTasks + periodPendingTasks);
 
-                const periodActualHours = singleUser.tillDateSummary?.totalHoursLogged ?? Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0) * 10) / 10;
-                const periodPlannedHours = Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.plannedHours) || 0), 0) * 10) / 10 || Math.round(periodActualHours * 10) / 10;
+                const periodDoneTasks = allPeriodTasks.length > 0
+                  ? allPeriodTasks.filter((t) => {
+                      const s = (t.zohoStatus || '').toLowerCase();
+                      return s.includes('closed') || s.includes('completed') || (s.includes('done') && !s.includes('qa'));
+                    }).length
+                  : (singleUser.filterSummary?.doneTasks ?? 0);
 
-                const periodDonePct = periodTotalTasks > 0 ? Math.round((periodDoneTasks / periodTotalTasks) * 100) : 100;
-                const rawScore = singleUser.tillDateSummary?.weeklyAvgScore ?? 88;
-                const periodOverallScore = rawScore <= 10 ? Math.round(rawScore * 10) : Math.round(rawScore);
+                const periodQATasks = allPeriodTasks.length > 0
+                  ? allPeriodTasks.filter((t) => {
+                      const s = (t.zohoStatus || '').toLowerCase();
+                      return !s.includes('closed') && !s.includes('completed') && (t.isQAReview || s.includes('qa') || s.includes('review'));
+                    }).length
+                  : (singleUser.filterSummary?.qaReviewTasks ?? 0);
+
+                const periodPendingTasks = allPeriodTasks.length > 0
+                  ? allPeriodTasks.filter((t) => {
+                      const s = (t.zohoStatus || '').toLowerCase();
+                      const isClosed = s.includes('closed') || s.includes('completed') || (s.includes('done') && !s.includes('qa'));
+                      const isQA = t.isQAReview || s.includes('qa') || s.includes('review');
+                      return !isClosed && !isQA;
+                    }).length
+                  : (singleUser.filterSummary?.pendingTasks ?? 0);
+
+                const periodDelayedTasks = allPeriodTasks.length > 0
+                  ? allPeriodTasks.filter((t) => t.evaluation?.timeAssessmentLabel === 'OVERDUE').length
+                  : (singleUser.filterSummary?.delayedTasks ?? 0);
+
+                const periodTotalTasks = allPeriodTasks.length > 0
+                  ? allPeriodTasks.length
+                  : (periodDoneTasks + periodQATasks + periodPendingTasks);
+
+                const periodActualHours = allPeriodTasks.length > 0
+                  ? Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0) * 10) / 10
+                  : (singleUser.filterSummary?.totalHoursLogged ?? 0);
+
+                const periodCapacityInfo = calculatePeriodCapacity(filterType, dateRangeText, startDate, endDate);
+                const periodPlannedHours = periodCapacityInfo.capacityHours;
+                const periodTaskEstimates = allPeriodTasks.length > 0
+                  ? Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.plannedHours) || 0), 0) * 10) / 10
+                  : 0;
+
+                const periodDonePct = periodTotalTasks > 0 ? Math.min(100, Math.round((periodDoneTasks / periodTotalTasks) * 100)) : 100;
+
+                let periodOverallScore = 88;
+                if (allPeriodTasks.length > 0) {
+                  const scoredTasks = allPeriodTasks.filter((t) => t.evaluation?.overallScore != null);
+                  if (scoredTasks.length > 0) {
+                    const avgScore = scoredTasks.reduce((sum, t) => sum + (Number(t.evaluation?.overallScore) || 0), 0) / scoredTasks.length;
+                    periodOverallScore = avgScore <= 10 ? Math.round(avgScore * 10) : Math.round(avgScore);
+                  } else if (singleUser.filterSummary?.weeklyAvgScore != null) {
+                    periodOverallScore = singleUser.filterSummary.weeklyAvgScore;
+                  }
+                } else if (singleUser.filterSummary?.weeklyAvgScore != null) {
+                  periodOverallScore = singleUser.filterSummary.weeklyAvgScore;
+                }
 
                 const documentedTasksCount = allPeriodTasks.filter((t) => t.comments && t.comments.length > 0).length;
+                const capacityUtilizationPct = Math.round((periodActualHours / (periodPlannedHours || 1)) * 100);
 
                 const summaryParagraphs = [
-                  `During the evaluated period (${dateRangeText || filterType.toUpperCase()}), ${singleUser.name || singleUser.email} logged ${periodActualHours}h across ${periodTotalTasks} task(s). ${periodDoneTasks} task(s) were successfully completed, while ${periodDelayedTasks} task(s) encountered schedule variance past the permitted tolerance buffer. Overall performance velocity attained ${periodOverallScore}/100.`,
+                  `During the evaluated period (${dateRangeText || filterType.toUpperCase()}), ${singleUser.name || singleUser.email} logged ${periodActualHours}h out of ${periodPlannedHours}h standard planned capacity (${capacityUtilizationPct}% capacity utilization) across ${periodTotalTasks} task(s). ${periodDoneTasks} task(s) were successfully completed, while ${periodDelayedTasks} task(s) encountered schedule variance past the permitted tolerance buffer. Overall performance velocity attained ${periodOverallScore}/100.`,
                   `Audit of technical work evidence shows that ${documentedTasksCount} of ${allPeriodTasks.length || 1} task(s) have documented comments in Zoho Projects. Logging clear implementation details and test verification notes before task closure provides traceability and validates actual logged time against initial estimates.`,
                   `Recommendations for ${singleUser.name || 'this developer'} (${singleUser.role || 'Developer'}${singleUser.seniorityLevel ? ` • ${singleUser.seniorityLevel}` : ''}): ${singleUser.aiSubscriptions && singleUser.aiSubscriptions.length > 0 ? `Actively leverage subscribed AI tools (${singleUser.aiSubscriptions.join(', ')}) to assist with test verification and automated documentation.` : 'Incorporate automated test validation prior to task completion.'} Maintain close estimation fidelity within the +5m buffer to prevent overdue flags.`,
                 ];
-
-                const weeklyReports = isWeeklyFilter ? buildWeeklyPerformanceReports(singleUser) : [];
-                const pastWeeks = weeklyReports.slice(1);
 
                 return (
                   <div className="space-y-6">
@@ -286,7 +529,7 @@ export default function ZohoReportModal({
                             </h4>
                           </div>
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                            Performance audit combining time adherence, comment verification, and task completion velocity
+                            Performance audit combining time adherence, comment verification, and task completion
                           </p>
                         </div>
 
@@ -299,31 +542,56 @@ export default function ZohoReportModal({
                         </div>
                       </div>
 
-                      {/* Metrics Row: Hours, Completion Velocity, Delayed Tasks */}
+                      {/* Metrics Row: Hours, Tasks Completed, Delayed Tasks */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Hours Logged</span>
-                          <div className="text-xl font-black text-[#34c4f2] mt-0.5">
-                            {periodActualHours}h
-                            {periodPlannedHours > 0 && (
-                              <span className="text-xs text-zinc-400 font-normal"> / {periodPlannedHours}h planned</span>
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Hours Logged</span>
+                            <div className="text-xl font-black text-[#34c4f2] mt-0.5">
+                              {periodActualHours}h
+                              {periodPlannedHours > 0 && (
+                                <span className="text-xs text-zinc-400 font-normal"> / {periodPlannedHours}h planned</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5 pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
+                            <span className="truncate">{periodCapacityInfo.label}</span>
+                            {periodTaskEstimates > 0 && (
+                              <span className="text-zinc-400 shrink-0 ml-1.5" title="Sum of individual Zoho task initial estimates">
+                                Est: {periodTaskEstimates}h
+                              </span>
                             )}
                           </div>
                         </div>
 
-                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Completion Velocity</span>
-                          <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
-                            {periodDoneTasks} / {periodTotalTasks}
-                            <span className="text-xs text-zinc-400 font-normal"> ({periodDonePct}%)</span>
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Tasks Completed</span>
+                            <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                              {periodDoneTasks} / {periodTotalTasks}
+                              <span className="text-xs text-zinc-400 font-normal"> ({periodDonePct}%)</span>
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5 pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
+                            <span className="truncate">{periodDoneTasks} Completed of {periodTotalTasks} Given</span>
+                            {periodQATasks > 0 && (
+                              <span className="text-blue-500 font-medium shrink-0 ml-1">({periodQATasks} in QA)</span>
+                            )}
                           </div>
                         </div>
 
-                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800">
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Schedule Adherence</span>
-                          <div className="text-xl font-black text-rose-500 mt-0.5">
-                            {periodDelayedTasks}
-                            <span className="text-xs text-zinc-400 font-normal"> delayed past buffer</span>
+                        <div className="p-3.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Delayed Tasks</span>
+                            <div className="text-xl font-black text-rose-500 mt-0.5">
+                              {periodDelayedTasks}
+                              <span className="text-xs text-zinc-400 font-normal"> of {periodTotalTasks} tasks</span>
+                            </div>
+                          </div>
+                          <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5 pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80">
+                            <span className="truncate">
+                              {periodDelayedTasks > 0 ? `${periodDelayedTasks} exceeded time buffer` : 'All tasks delivered on time'}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -333,7 +601,7 @@ export default function ZohoReportModal({
                         <div className="flex items-center justify-between text-xs">
                           <span className="font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5">
                             <BarChart3 className="w-3.5 h-3.5 text-emerald-500" />
-                            Task Breakdown: {periodDoneTasks} Done • {periodPendingTasks} In Progress • {periodDelayedTasks} Delayed
+                            Task Breakdown: {periodDoneTasks} Done • {periodQATasks} In QA Review • {periodPendingTasks} In Progress • {periodDelayedTasks} Delayed
                           </span>
                           <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                             {periodDonePct}% Completed
@@ -342,6 +610,12 @@ export default function ZohoReportModal({
                         <div className="w-full h-2.5 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden flex">
                           {periodDonePct > 0 && (
                             <div style={{ width: `${periodDonePct}%` }} className="bg-emerald-500 h-full transition-all" />
+                          )}
+                          {periodQATasks > 0 && (
+                            <div
+                              style={{ width: `${Math.round((periodQATasks / (periodTotalTasks || 1)) * 100)}%` }}
+                              className="bg-blue-500 h-full transition-all"
+                            />
                           )}
                           {periodPendingTasks > 0 && (
                             <div
@@ -371,57 +645,196 @@ export default function ZohoReportModal({
                         ))}
                       </div>
                     </div>
+                  </div>
+                );
+              })()}
 
-                    {/* APPENDED PREVIOUS WEEKS (When in weekly mode) */}
-                    {isWeeklyFilter && pastWeeks.length > 0 && (
-                      <div className="space-y-3 pt-2">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                            <History className="w-3.5 h-3.5 text-zinc-400" />
-                            Appended Performance History ({pastWeeks.length} Previous Week{pastWeeks.length === 1 ? '' : 's'})
-                          </h4>
-                          <span className="text-[11px] text-zinc-400">
-                            Rolling multi-week record automatically updated
-                          </span>
-                        </div>
+              {/* Daily Hours Spent Breakdown */}
+              {(() => {
+                const allPeriodTasks = singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+                const dailyList = (() => {
+                  if (singleUser.dailyEvaluations && singleUser.dailyEvaluations.length > 0) {
+                    return [...singleUser.dailyEvaluations].sort((a, b) => b.date.localeCompare(a.date));
+                  }
+                  const dayMap = new Map<string, typeof allPeriodTasks>();
+                  for (const t of allPeriodTasks) {
+                    const d = t.taskDate || 'Undated';
+                    if (!dayMap.has(d)) dayMap.set(d, []);
+                    dayMap.get(d)!.push(t);
+                  }
+                  return Array.from(dayMap.entries())
+                    .map(([date, tasks]) => {
+                      const scoreSum = tasks.reduce((sum, it) => sum + (it.evaluation?.overallScore || 0), 0);
+                      const dayScore = tasks.length > 0 ? Math.round((scoreSum / tasks.length) * 10) / 10 : 8.5;
+                      return {
+                        date,
+                        dayScore,
+                        summary: `Completed ${tasks.length} task(s) on ${date}`,
+                        tasks,
+                      };
+                    })
+                    .sort((a, b) => b.date.localeCompare(a.date));
+                })();
 
-                        <div className="space-y-3">
-                          {pastWeeks.map((pw) => (
-                            <div
-                              key={pw.weekNumber}
-                              className="p-5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 space-y-3"
-                            >
-                              <div className="flex items-center justify-between pb-2 border-b border-zinc-200/70 dark:border-zinc-700/70">
-                                <div>
-                                  <span className="text-xs font-bold text-zinc-900 dark:text-white">
-                                    {pw.label}
-                                  </span>
-                                  <span className="text-[11px] text-zinc-500 ml-2">
-                                    • {pw.totalActualHours}h logged • {pw.repetitivenessPct}% Repetitive
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                                    {pw.doneTasks}/{pw.totalTasks} Done
-                                  </span>
-                                  <span className="text-sm font-black text-purple-600 dark:text-purple-400">
-                                    {pw.overallScore}/100
-                                  </span>
-                                </div>
-                              </div>
+                const periodActualHours = allPeriodTasks.length > 0
+                  ? Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0) * 10) / 10
+                  : (singleUser.filterSummary?.totalHoursLogged ?? 0);
 
-                              <div className="space-y-1.5 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
-                                {pw.summaryParagraphs.map((para, idx) => (
-                                  <p key={idx} className="p-2 rounded-lg bg-white/70 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/50">
-                                    {para}
-                                  </p>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                const periodCap = calculatePeriodCapacity(filterType, dateRangeText, startDate, endDate);
+                const periodTotalTasks = allPeriodTasks.length > 0
+                  ? allPeriodTasks.length
+                  : (singleUser.filterSummary?.doneTasks ?? 0) + (singleUser.filterSummary?.pendingTasks ?? 0);
+
+                let periodScore = 88;
+                if (allPeriodTasks.length > 0) {
+                  const scoredTasks = allPeriodTasks.filter((t) => t.evaluation?.overallScore != null);
+                  if (scoredTasks.length > 0) {
+                    const avgScore = scoredTasks.reduce((sum, t) => sum + (Number(t.evaluation?.overallScore) || 0), 0) / scoredTasks.length;
+                    periodScore = avgScore <= 10 ? Math.round(avgScore * 10) : Math.round(avgScore);
+                  } else if (singleUser.filterSummary?.weeklyAvgScore != null) {
+                    periodScore = singleUser.filterSummary.weeklyAvgScore;
+                  }
+                } else if (singleUser.filterSummary?.weeklyAvgScore != null) {
+                  periodScore = singleUser.filterSummary.weeklyAvgScore;
+                }
+
+                return (
+                  <div className="space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-[#34c4f2]" />
+                        Daily Hours Spent Breakdown ({dailyList.length} Active Days)
+                      </h4>
+                      <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
+                        Daily Standard Capacity: <strong className="text-zinc-700 dark:text-zinc-300">8.0h / day</strong> ({periodCap.label})
+                      </span>
+                    </div>
+
+                    <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-2xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 text-[10px] uppercase font-bold tracking-wider">
+                            <tr>
+                              <th className="py-2.5 px-4">Date</th>
+                              <th className="py-2.5 px-3 text-center">Hours Spent</th>
+                              <th className="py-2.5 px-3 text-center">Daily Capacity (8h)</th>
+                              <th className="py-2.5 px-3">Progress</th>
+                              <th className="py-2.5 px-3 text-center">Tasks</th>
+                              <th className="py-2.5 px-3 text-right">Day Score</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                            {dailyList.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="py-4 text-center text-zinc-400">
+                                  No daily activity recorded for this period
+                                </td>
+                              </tr>
+                            ) : (
+                              dailyList.map((day) => {
+                                const dayHours = Math.round(day.tasks.reduce((sum, t) => sum + (Number(t.actualHours) || 0), 0) * 10) / 10;
+                                const dayTarget = 8.0;
+                                const dayPct = Math.round((dayHours / dayTarget) * 100);
+                                const dayVariance = Math.round((dayHours - dayTarget) * 10) / 10;
+                                const isOvertime = dayVariance > 0;
+                                const isUndertime = dayVariance < -0.5;
+
+                                const dateObj = new Date(day.date);
+                                const dateLabel = !Number.isNaN(dateObj.getTime())
+                                  ? dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+                                  : day.date;
+
+                                return (
+                                  <tr key={day.date} className="hover:bg-zinc-50/70 dark:hover:bg-zinc-800/40 transition-colors">
+                                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-white whitespace-nowrap">
+                                      <div>{dateLabel}</div>
+                                      <div className="text-[10px] font-normal text-zinc-400">{day.date}</div>
+                                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-normal mt-0.5 line-clamp-1 max-w-[280px]">
+                                        {day.tasks.map((t) => t.taskName).join(' • ')}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                                      <span className="font-black text-sm text-[#34c4f2]">{dayHours}h</span>
+                                      <span className="text-[10px] text-zinc-400 font-normal"> spent</span>
+                                    </td>
+                                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                                      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                                        {dayHours} / {dayTarget}h
+                                      </span>
+                                      <div className={`text-[10px] font-bold ${
+                                        isOvertime
+                                          ? 'text-amber-500'
+                                          : isUndertime
+                                          ? 'text-zinc-400'
+                                          : 'text-emerald-500'
+                                      }`}>
+                                        {isOvertime ? `+${dayVariance}h overtime` : isUndertime ? `${dayVariance}h undertime` : 'Target reached (8h)'}
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-3 min-w-[140px]">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex-1 h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                                          <div
+                                            style={{ width: `${Math.min(100, dayPct)}%` }}
+                                            className={`h-full rounded-full transition-all ${
+                                              dayPct >= 100
+                                                ? 'bg-emerald-500'
+                                                : dayPct >= 75
+                                                ? 'bg-[#34c4f2]'
+                                                : dayPct >= 50
+                                                ? 'bg-amber-400'
+                                                : 'bg-rose-400'
+                                            }`}
+                                          />
+                                        </div>
+                                        <span className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 shrink-0 w-9 text-right">
+                                          {dayPct}%
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                                      <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[11px] font-bold text-zinc-700 dark:text-zinc-300">
+                                        {day.tasks.length} task{day.tasks.length !== 1 ? 's' : ''}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 text-right whitespace-nowrap">
+                                      <span className="font-black text-purple-600 dark:text-purple-400">
+                                        {day.dayScore.toFixed(1)}
+                                      </span>
+                                      <span className="text-[10px] text-zinc-400">/10</span>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                          {dailyList.length > 0 && (
+                            <tfoot className="bg-zinc-50 dark:bg-zinc-800/50 font-bold border-t border-zinc-200 dark:border-zinc-800 text-[11px]">
+                              <tr>
+                                <td className="py-2.5 px-4 text-zinc-900 dark:text-white">
+                                  Total Across {dailyList.length} Active Day{dailyList.length !== 1 ? 's' : ''}
+                                </td>
+                                <td className="py-2.5 px-3 text-center text-[#34c4f2] font-black text-xs">
+                                  {periodActualHours}h
+                                </td>
+                                <td className="py-2.5 px-3 text-center text-zinc-600 dark:text-zinc-400">
+                                  Target: {periodCap.capacityHours}h ({periodCap.weeksCount} wk{periodCap.weeksCount > 1 ? 's' : ''})
+                                </td>
+                                <td className="py-2.5 px-3 text-xs text-emerald-600 dark:text-emerald-400">
+                                  {Math.round((periodActualHours / (periodCap.capacityHours || 1)) * 100)}% Capacity Used
+                                </td>
+                                <td className="py-2.5 px-3 text-center text-zinc-600 dark:text-zinc-400">
+                                  {periodTotalTasks} tasks
+                                </td>
+                                <td className="py-2.5 px-3 text-right text-purple-600 dark:text-purple-400 font-black">
+                                  {periodScore}/100
+                                </td>
+                              </tr>
+                            </tfoot>
+                          )}
+                        </table>
                       </div>
-                    )}
+                    </div>
                   </div>
                 );
               })()}

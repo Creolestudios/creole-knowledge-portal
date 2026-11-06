@@ -76,9 +76,14 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
     });
 
     const isChecklistOrVagueOrOffTopic =
+      workMatchResult.isMissingDescription ||
+      workMatchResult.isBriefDescription ||
+      (workMatchResult.descriptionDeduction !== undefined && workMatchResult.descriptionDeduction > 0) ||
       workMatchResult.isChecklistComment ||
       workMatchResult.hasPendingScope ||
       workMatchResult.alignmentLabel === 'PARTIAL_DELIVERY' ||
+      workMatchResult.alignmentLabel === 'PARTIAL_ALIGNMENT' ||
+      workMatchResult.alignmentLabel === 'MISSING_TASK_DESCRIPTION' ||
       (workMatchResult.isBriefDescription && workMatchResult.isBriefComment) ||
       workMatchResult.alignmentLabel === 'OFF_TOPIC';
 
@@ -110,7 +115,16 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       comments: commentContents,
       timeAssessmentLabel,
       workMatchScore,
+      seniorityLevel: (task as any).seniorityLevel,
+      userExperienceYears: (task as any).yearsOfExperience,
+      aiSubscriptions: (task as any).aiSubscriptions,
       isQAReview: task.isQAReview || task.zohoStatus.toLowerCase().includes('qa'),
+      complexityScore: task.evaluation?.complexityScore ?? 8.0,
+      repetitionScore: task.evaluation?.repetitionScore ?? 10.0,
+      isRepetitive: task.evaluation?.isRepetitive,
+      plannedMinutes: plannedMins,
+      actualMinutes: actualMins,
+      timeScore,
     });
 
     return {
@@ -152,6 +166,13 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
   };
 
   const hasComments = Boolean(task?.comments && task.comments.length > 0);
+  const cleanTaskDesc = (task?.taskDescription || '').trim();
+  const isNoDescription =
+    !cleanTaskDesc ||
+    cleanTaskDesc.toLowerCase() === 'no description provided' ||
+    cleanTaskDesc.toLowerCase() === 'no description provided.' ||
+    cleanTaskDesc.toLowerCase() === 'no description provided in zoho projects.' ||
+    cleanTaskDesc.toLowerCase() === 'no description provided in zoho projects';
   const overallScore10 = evalData ? format10(evalData.overallScore) : null;
   const timeScore10 = evalData ? format10(evalData.timeScore) : null;
   const workMatchScore10 = evalData ? format10(evalData.workMatchScore || evalData.commentQualityScore) : null;
@@ -354,7 +375,9 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                   </span>
                   <span
                     className={`text-[9px] font-bold px-1.5 py-0.5 rounded leading-none ${
-                      !hasComments || Number(workMatchScore10) === 0
+                      isNoDescription
+                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40'
+                        : !hasComments || Number(workMatchScore10) === 0
                         ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200/60 dark:border-rose-800/40'
                         : Number(workMatchScore10) >= 8.0
                         ? 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200/60 dark:border-purple-800/40'
@@ -363,7 +386,9 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
                         : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40'
                     }`}
                   >
-                    {!hasComments || Number(workMatchScore10) === 0
+                    {isNoDescription
+                      ? 'No Description'
+                      : !hasComments || Number(workMatchScore10) === 0
                       ? 'No Comments'
                       : Number(workMatchScore10) >= 8.0
                       ? 'Justified'

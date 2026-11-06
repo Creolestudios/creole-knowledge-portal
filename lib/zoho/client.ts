@@ -513,7 +513,19 @@ export async function fetchZohoTaskComments(
         headers: { Authorization: `Zoho-oauthtoken ${token}` },
       }
     );
-    if (!res.ok) return [];
+    if (!res.ok) {
+      if (res.status === 400 || res.status === 429) {
+        try {
+          const errText = await res.text();
+          if (errText.includes('URL_ROLLING_THROTTLES_LIMIT_EXCEEDED') || errText.includes('100 requests')) {
+            console.warn(`[ZohoClient] URL rolling throttle limit exceeded on task ${taskId}. Zoho rate limit active.`);
+          }
+        } catch {
+          // ignore error text parsing
+        }
+      }
+      return [];
+    }
     const text = await res.text();
     const trimmed = (text || '').trim();
     if (!trimmed || (!trimmed.startsWith('{') && !trimmed.startsWith('['))) return [];

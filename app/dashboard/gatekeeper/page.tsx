@@ -508,7 +508,7 @@ export default function GatekeeperPage() {
                             setActiveQuizSubmission(null);
                             setActiveTab('history');
                           }}
-                          className="px-6 py-3 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-850 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                          className="px-6 py-3 bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-white dark:text-zinc-900 text-xs font-bold rounded-xl transition-all cursor-pointer"
                         >
                           Back to Submissions
                         </button>

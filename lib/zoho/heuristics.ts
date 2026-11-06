@@ -125,12 +125,14 @@ export interface TaskTimeReasonablenessResult {
 
 export interface WorkMatchResult {
   workMatchScore: number; // 0 - 10
-  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED' | 'MISSING_TASK_DESCRIPTION' | 'OFF_TOPIC' | 'PARTIAL_DELIVERY';
+  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED' | 'MISSING_TASK_DESCRIPTION' | 'OFF_TOPIC' | 'PARTIAL_DELIVERY' | 'PARTIAL_ALIGNMENT';
   explanation: string;
   isBriefDescription?: boolean;
   isChecklistComment?: boolean;
   isBriefComment?: boolean;
+  isConciseEvidenceComment?: boolean;
   isMissingDescription?: boolean;
+  descriptionDeduction?: number;
   hasPendingScope?: boolean;
   pendingItemsCount?: number;
   hasMeetingLogged?: boolean;
@@ -340,9 +342,16 @@ export function evaluateWorkAndCommentMatch(
     aiSubscriptions?: string[];
     plannedMinutes?: number;
     actualMinutes?: number;
+    rules?: Partial<ZohoEvaluationRulesConfig>;
   }
 ): WorkMatchResult {
-  const cleanDesc = (taskDescription || '').trim();
+  const rawDesc = (taskDescription || '').trim();
+  const isNoDescPlaceholder =
+    rawDesc.toLowerCase() === 'no description provided' ||
+    rawDesc.toLowerCase() === 'no description provided.' ||
+    rawDesc.toLowerCase() === 'no description provided in zoho projects.' ||
+    rawDesc.toLowerCase() === 'no description provided in zoho projects';
+  const cleanDesc = isNoDescPlaceholder ? '' : rawDesc;
   const cleanComments = (comments || []).filter(c => Boolean(c && c.trim().length > 0));
 
   if (!cleanComments || cleanComments.length === 0) {
@@ -360,15 +369,22 @@ export function evaluateWorkAndCommentMatch(
   const descWords = cleanDesc ? cleanDesc.split(/\s+/).filter(Boolean) : [];
   const commentWords = combinedComments ? combinedComments.split(/\s+/).filter(Boolean) : [];
 
-  const isBriefDescription = descWords.length < 20;
+  const isBriefDescription = descWords.length > 0 && descWords.length < 40;
   const isBriefComment = commentWords.length < 10;
+  // When task description specifies detailed multi-feature requirements (>= 35 words),
+  // but comment is concise (<= 24 words, 1-2 lines), the comment is according to the task
+  // but lacks full descriptive depth. Score must be kept between 7.0 and 7.5.
+  const isConciseEvidenceComment = descWords.length >= 35 && commentWords.length <= 24 && !isBriefComment;
 
   if (!cleanDesc) {
+    const missingCap = context?.rules?.missingDescriptionCap ?? 0.0;
     return {
-      workMatchScore: 3.0,
+      workMatchScore: missingCap,
       alignmentLabel: 'MISSING_TASK_DESCRIPTION',
       isMissingDescription: true,
-      explanation: 'Task description is completely missing in Zoho Projects. Work justification score is strictly capped at 3.0/10.',
+      explanation: missingCap === 0.0
+        ? 'Task description is completely missing in Zoho Projects. Without a task description, work completed cannot be substantiated against assigned scope. Score is set to 0.0/10.'
+        : `Task description is completely missing in Zoho Projects. Work justification score is strictly capped at ${missingCap.toFixed(1)}/10.`,
       isBriefDescription: true,
       isChecklistComment: false,
       isBriefComment,
@@ -537,7 +553,11 @@ export function evaluateWorkAndCommentMatch(
     // Vague/brief description combined with brief comment lacks substantive context
     baseScore = 5.5;
   } else if (hasStrongTechnicalEvidence && !hasPendingScope) {
-    baseScore = 9.0 + Math.min(1.0, actionHits * 0.3);
+    if (isConciseEvidenceComment) {
+      baseScore = 7.2; // Keep between 7.0 and 7.5 when comment is according to task but completed in 1-2 lines
+    } else {
+      baseScore = 9.0 + Math.min(1.0, actionHits * 0.3);
+    }
   } else if (isBriefDescription || isBriefComment) {
     baseScore = 6.2;
   } else if (topicMatches >= 2 || overallSimilarity >= 0.15) {
@@ -573,6 +593,24 @@ export function evaluateWorkAndCommentMatch(
     baseScore = Math.min(5.5, baseScore);
   } else if (isChecklistComment) {
     baseScore = Math.min(5.2, baseScore);
+  } else if (isConciseEvidenceComment && !isOffTopic && !isWeakTopicalMatch) {
+    // Keep between 7.0 and 7.5 when comment is according to task but completed in short words/lines
+    baseScore = Math.min(7.5, Math.max(7.0, baseScore));
+  }
+
+  // Deduct 4 to 5 points directly from Score if description is very short (<= 6 words, like Case 34),
+  // or 0.5 points if moderately brief (< 35 words)
+  const shortPenalty = context?.rules?.shortDescriptionDeduction ?? 4.5;
+  const descPenalty = !cleanDesc || descWords.length === 0
+    ? 0
+    : descWords.length <= 6
+    ? shortPenalty
+    : descWords.length < 35
+    ? 0.5
+    : 0;
+
+  if (descPenalty > 0 && cleanDesc) {
+    baseScore = Math.max(1.0, baseScore - descPenalty);
   }
 
   const finalScore = Number(Math.min(10.0, Math.max(1.0, baseScore)).toFixed(1));
@@ -584,6 +622,8 @@ export function evaluateWorkAndCommentMatch(
   } else if (isPartialDelivery) {
     const plannedHrs = Math.round((safePlannedMins / 60) * 10) / 10;
     explanation = `Key deliverables were left pending or unverified (e.g. testing pending, uncompleted sections) despite ${plannedHrs}h allocated${expTag}. High-duration tasks must be fully completed and verified or blockers escalated earlier.`;
+  } else if (isConciseEvidenceComment) {
+    explanation = `Progress comment is relevant and confirms technical implementation, but is brief (${commentWords.length} words) relative to the detailed multi-requirement scope. Calibrated score to ${finalScore}/10 (Partial).`;
   } else if (isWeakTopicalMatch) {
     explanation = `Comments show weak topical alignment with the assigned task scope${expTag}. Progress notes should directly address the assigned features and deliverables.`;
   } else if (timeReasonableness && timeReasonableness.velocityLabel === 'TIME_INFLATED_FOR_AI_TIER') {
@@ -604,6 +644,8 @@ export function evaluateWorkAndCommentMatch(
     ? 'PARTIAL_DELIVERY'
     : isChecklistComment
     ? 'WEAK_ALIGNMENT'
+    : isConciseEvidenceComment
+    ? 'PARTIAL_ALIGNMENT'
     : finalScore >= 8.5
     ? 'STRONG_ALIGNMENT'
     : finalScore >= 7.0
@@ -617,6 +659,8 @@ export function evaluateWorkAndCommentMatch(
     isBriefDescription,
     isChecklistComment,
     isBriefComment,
+    isConciseEvidenceComment,
+    descriptionDeduction: descPenalty,
     hasPendingScope,
     pendingItemsCount: pendingOccurrences,
     hasMeetingLogged,
@@ -720,6 +764,7 @@ export function computeCompositeTaskScore(params: {
   complexityScore: number;
   repetitionScore: number;
   isQAReview: boolean;
+  isBriefDescription?: boolean;
   rules?: Partial<ZohoEvaluationRulesConfig>;
 }): number {
   const normTime = params.timeScore > 10 ? params.timeScore / 10 : params.timeScore;
@@ -776,14 +821,29 @@ export function generateDynamicPerformanceSummary(params: {
   userExperienceYears?: number;
   aiSubscriptions?: string[];
   isQAReview?: boolean;
+  complexityScore?: number;
+  repetitionScore?: number;
+  isRepetitive?: boolean;
+  plannedMinutes?: number;
+  actualMinutes?: number;
+  timeScore?: number;
+  rules?: Partial<ZohoEvaluationRulesConfig>;
 }): DynamicPerformanceSummary {
   const hasComments = params.comments && params.comments.length > 0;
   const isSenior = (params.userExperienceYears || 0) >= 3 || (params.seniorityLevel || '').toLowerCase().includes('senior') || (params.seniorityLevel || '').toLowerCase().includes('lead');
   const aiTools = params.aiSubscriptions && params.aiSubscriptions.length > 0 ? params.aiSubscriptions.join(', ') : '';
 
   // Analyze description and comment depth
-  const descWords = (params.taskDescription || '').trim().split(/\s+/).filter(Boolean);
-  const isBriefDescription = descWords.length > 0 && descWords.length < 35;
+  const rawDesc = (params.taskDescription || '').trim();
+  const isNoDescPlaceholder =
+    rawDesc.toLowerCase() === 'no description provided' ||
+    rawDesc.toLowerCase() === 'no description provided.' ||
+    rawDesc.toLowerCase() === 'no description provided in zoho projects.' ||
+    rawDesc.toLowerCase() === 'no description provided in zoho projects';
+  const cleanTaskDesc = isNoDescPlaceholder ? '' : rawDesc;
+  const descWords = cleanTaskDesc ? cleanTaskDesc.split(/\s+/).filter(Boolean) : [];
+  const isMissingDescription = descWords.length === 0;
+  const isBriefDescription = descWords.length > 0 && descWords.length < 40;
 
   const combinedComments = (params.comments || []).join(' ').trim();
   const commentWords = combinedComments.split(/\s+/).filter(Boolean);
@@ -898,41 +958,94 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 4. Actionable improvement points list for user to work on
   const improvementItems: string[] = [];
+
+  // --- OVERALL SCORE DEDUCTION AUDIT (Complexity, Repetition, Status Gate) ---
+
+  // 1. Status Gate Deduction (-1.0 pt from overall score)
+  if (params.isQAReview === false) {
+    improvementItems.push(
+      'Status Not Moved to In QA Review: Task was left in "In Progress" or "Backlog" instead of transitioning to In QA Review upon completion. 1.0 point was deducted from the overall score. Ensure task is formally moved to In QA Review with self-testing verification notes.'
+    );
+  }
+
+  // 2. Missing or Brief Task Description Guidance & Deductions
+  const shortPenalty = params.rules?.shortDescriptionDeduction ?? 4.5;
+  const missingCap = params.rules?.missingDescriptionCap ?? 0.0;
+  const descPenalty = !cleanTaskDesc || descWords.length === 0
+    ? 0
+    : descWords.length <= 6
+    ? shortPenalty
+    : descWords.length < 35
+    ? 0.5
+    : 0;
+
+  if (isMissingDescription) {
+    improvementItems.push(
+      `Missing Task Description: Task description is completely missing in Zoho Projects. Score was set to ${missingCap.toFixed(1)}/10. Ensure task descriptions have at least 40–50 words of clear requirements and acceptance criteria when creating or assigning work.`
+    );
+  } else if (isBriefDescription) {
+    improvementItems.push(
+      `Define Comprehensive Task Scope: Task description was overly brief (${descWords.length} words) and lacked technical specifications or acceptance criteria. ${descPenalty.toFixed(1)} points was deducted from the score. Ensure task descriptions are at least 40–50 words descriptive when creating or assigning work.`
+    );
+  }
+
+  // 3. Task Complexity & Velocity Calibration (overall complexity weight)
+  if (params.complexityScore !== undefined && params.complexityScore < 10.0) {
+    const expStr = params.seniorityLevel ? ` for a ${params.seniorityLevel}` : '';
+    improvementItems.push(
+      `Task Complexity & Velocity Calibration: This task represents standard/moderate complexity (${params.complexityScore.toFixed(1)}/10)${expStr}. Routine tasks of this complexity should be completed in lesser time, or expanded into deeper architecture, to achieve full complexity marks.`
+    );
+  }
+
+  // 3. Repetitive Scope Deduction (overall originality weight)
+  if (params.isRepetitive || (params.repetitionScore !== undefined && params.repetitionScore < 10.0)) {
+    improvementItems.push(
+      'Repetitive Task Scope: High similarity (>60%) detected against previously completed tickets in this project. Seek to build reusable shared abstractions or achieve faster velocity on recurring patterns to earn full originality score.'
+    );
+  }
+
+  // --- CONTEXTUAL WORK & TIME IMPROVEMENT GUIDANCE (Clean, without mentioning raw point math) ---
+
   if (hasPendingScope && hasDocumentedBlockers) {
-    improvementItems.push('Coordinate Dependent Blockers: You documented that pending items are due to other tasks/dependencies. Coordinate closely with assigned owners on dependent tasks (e.g. assets, API keys, upstream deliverables) to verify end-to-end integration as soon as they are ready.');
+    improvementItems.push('Coordinate Dependent Blockers: You documented that Pending items are due to other tasks/dependencies. Coordinate closely with assigned owners on dependent tasks (e.g. assets, API keys, upstream deliverables) to verify end-to-end integration as soon as they are ready.');
   } else if (hasPendingScope) {
     improvementItems.push('Resolve Pending Deliverables & Escalate Blockers: Work was logged with items explicitly marked "Pending" (e.g. testing pending or deferred scope) on an extended duration ticket. Fully complete and test deliverables within the allocated timeframe, or proactively escalate blockers to project leads during the day rather than closing tasks with pending items.');
   }
+
   if (hasMeetingLogged) {
     improvementItems.push('Separate Meeting Logs from Development Tasks: Record non-development activities such as internal or client meetings (e.g. 1 hour logged) under dedicated administrative/meeting tasks in Zoho Projects rather than commingling meeting hours inside technical feature tickets.');
   }
+
   if (isChecklistComment) {
     improvementItems.push('Explain Work Done Beyond Status Updates: In Zoho task comments, substantiate your work with at least 40–50 words detailing specific technical implementation (what code was modified, packages upgraded, issues resolved, and verification findings) instead of repeating the task checklist with status markers like "done" or "pending".');
   }
-  if (isBriefDescription && (isChecklistComment || params.workMatchScore < 7.0)) {
-    improvementItems.push('Define Comprehensive Task Scope: When creating or assigning tasks, document complete technical specifications, background context, and acceptance criteria (aim for at least 40–50 words of detailed scope rather than short summary bullets).');
-  }
+
   if (isBriefComment && !isChecklistComment && params.workMatchScore < 7.0) {
     improvementItems.push('Substantiate Execution in Comments: Detail specific code modifications, configurations changed, and QA verification outcomes in depth (target 40–50 words explaining the technical implementation corresponding to each task requirement).');
+  } else if (!isChecklistComment && !isBriefDescription && descWords.length >= 35 && commentWords.length <= 24) {
+    improvementItems.push('Substantiate Complete Scope in Comments: While basic implementation was logged, key specifications from the task description were not detailed in the comment. Aim for 40–50 words explaining how each requirement was implemented and verified.');
   }
+
   if (params.timeAssessmentLabel === 'NOT_LOGGED') {
     improvementItems.push('Log Task Hours in Zoho: Make sure to record accurate billable or non-billable timelog entries for completed or ongoing work.');
   }
+
   if (!hasComments) {
     improvementItems.push('Log Technical Progress Comments: Always post a concise comment in Zoho detailing files changed, architecture decisions, and verification steps.');
   }
+
   if (params.timeAssessmentLabel === 'OVERDUE') {
     improvementItems.push('Time Tolerance & Blocker Escalation: Flag dependencies or roadblocks early in comments to keep delivery within the +5m buffer.');
   }
+
   if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
     improvementItems.push('Calibrate Estimation & Expand Testing: Ensure early completions include exhaustive automated test suites and edge case coverage.');
   }
+
   if (aiTools) {
     improvementItems.push(`Leverage AI Subscriptions (${aiTools}): Utilize AI coding assistants for automated unit test authoring and commit message generation.`);
   }
-  if (!params.isQAReview) {
-    improvementItems.push('Status Not Moved to In QA Review: Task was left in "In Progress" or "Backlog" instead of transitioning to In QA Review upon completion. 1.0 point was deducted from the overall score. Ensure task is formally moved to In QA Review with self-testing verification notes.');
-  }
+
   if (improvementItems.length === 0) {
     improvementItems.push('Continue maintaining high-quality commit summaries and structured technical comments on upcoming milestones.');
   }

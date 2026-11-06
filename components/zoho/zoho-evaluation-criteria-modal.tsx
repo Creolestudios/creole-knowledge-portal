@@ -389,7 +389,7 @@ export function ZohoEvaluationCriteriaModal({
                           Missing Task Description
                         </span>
                         <span className="text-[10px] text-zinc-500 block">
-                          Max score allowed when description is empty
+                          Max score allowed when description is empty (0.0 gives zero score)
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
@@ -397,7 +397,7 @@ export function ZohoEvaluationCriteriaModal({
                         <input
                           type="number"
                           step="0.5"
-                          min="1.0"
+                          min="0.0"
                           max="10.0"
                           value={rules.missingDescriptionCap}
                           onChange={(e) =>
@@ -406,6 +406,33 @@ export function ZohoEvaluationCriteriaModal({
                           className="w-16 px-2 py-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded text-center font-black text-zinc-900 dark:text-white text-xs"
                         />
                         <span className="text-zinc-400 font-semibold text-[11px]">/ 10</span>
+                      </div>
+                    </div>
+
+                    {/* Short Description Penalty */}
+                    <div className="p-2.5 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200/70 dark:border-zinc-800 flex items-center justify-between gap-3">
+                      <div>
+                        <span className="font-bold text-zinc-800 dark:text-zinc-200 text-xs block">
+                          Very Short Description (≤ 6 words)
+                        </span>
+                        <span className="text-[10px] text-zinc-500 block">
+                          Points deducted directly from Score for 1-line descriptions
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-[11px] text-rose-500 font-bold">-</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0.0"
+                          max="10.0"
+                          value={rules.shortDescriptionDeduction ?? 4.5}
+                          onChange={(e) =>
+                            setRules({ ...rules, shortDescriptionDeduction: parseFloat(e.target.value) || 0 })
+                          }
+                          className="w-16 px-2 py-1 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded text-center font-black text-zinc-900 dark:text-white text-xs"
+                        />
+                        <span className="text-zinc-400 font-semibold text-[11px]">pts</span>
                       </div>
                     </div>
 
@@ -571,7 +598,7 @@ export function ZohoEvaluationCriteriaModal({
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-750 transition-colors cursor-pointer"
+              className="text-xs font-bold px-3.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
             >
               Cancel
             </button>

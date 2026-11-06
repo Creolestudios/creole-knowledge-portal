@@ -108,18 +108,35 @@ export async function GET(request: Request) {
       // 3. Fetch all tasks from zoho_tasks table in Supabase
       let dbTasks: any[] = [];
       try {
-        const { data: taskData, error: taskErr } = await supabaseAdmin
-          .from('zoho_tasks')
-          .select(`
-            *,
-            zoho_task_comments (*),
-            zoho_task_evaluations (*)
-          `)
-          .order('task_date', { ascending: false });
-        if (!taskErr && taskData) {
-          dbTasks = taskData;
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+        while (hasMore) {
+          const { data: batch, error: taskErr } = await supabaseAdmin
+            .from('zoho_tasks')
+            .select(`
+              *,
+              zoho_task_comments (*),
+              zoho_task_evaluations (*)
+            `)
+            .order('task_date', { ascending: false })
+            .range(from, from + pageSize - 1);
+          if (taskErr) {
+            console.warn('[Admin Zoho Users API] Could not fetch zoho_tasks batch:', taskErr);
+            break;
+          }
+          if (batch && batch.length > 0) {
+            dbTasks.push(...batch);
+            if (batch.length < pageSize) {
+              hasMore = false;
+            } else {
+              from += pageSize;
+            }
+          } else {
+            hasMore = false;
+          }
         }
-      } catch (taskErr) {
+            } catch (taskErr) {
         console.warn('[Admin Zoho Users API] Could not fetch zoho_tasks:', taskErr);
       }
 
@@ -195,6 +212,7 @@ export async function GET(request: Request) {
               plannedMinutes: plannedMins,
               actualMinutes: actualMins,
               taskName: t.task_name,
+              rules: activeRules,
             });
 
             const workMatchScore = workMatchResult.workMatchScore;
@@ -222,6 +240,12 @@ export async function GET(request: Request) {
               userExperienceYears: yearsOfExp,
               aiSubscriptions,
               isQAReview: t.is_qa_review,
+              complexityScore,
+              repetitionScore,
+              plannedMinutes: plannedMins,
+              actualMinutes: actualMins,
+              timeScore,
+              rules: activeRules,
             });
 
             const isStalePraise = raw?.summary_feedback && (
@@ -290,6 +314,7 @@ export async function GET(request: Request) {
           const mappedUpToDateTasks = upToDateDbTasks.map(buildTaskItemWithEvaluation);
 
           let tillDateDone = 0;
+          let tillDateQAReview = 0;
           let tillDatePending = 0;
           let tillDateDelayed = 0;
           let tillDateTotalHours = 0;
@@ -306,8 +331,13 @@ export async function GET(request: Request) {
             if (item.evaluation?.timeAssessmentLabel === 'OVERDUE') tillDateDelayed++;
 
             const st = (item.zohoStatus || '').toLowerCase();
-            if (st === 'closed' || st === 'done' || st.includes('completed') || item.isQAReview) {
+            const isClosed = st.includes('closed') || st.includes('completed') || (st.includes('done') && !st.includes('qa'));
+            const isQA = Boolean(item.isQAReview || st.includes('qa') || st.includes('review'));
+
+            if (isClosed) {
               tillDateDone++;
+            } else if (isQA) {
+              tillDateQAReview++;
             } else {
               tillDatePending++;
             }
@@ -328,6 +358,7 @@ export async function GET(request: Request) {
           const activeTasks = mappedUpToDateTasks.filter((t) => t.taskDate >= dateRange.start && t.taskDate <= dateRange.end);
 
           let activeDone = 0;
+          let activeQAReview = 0;
           let activePending = 0;
           let activeDelayed = 0;
           let activeTotalHours = 0;
@@ -344,8 +375,13 @@ export async function GET(request: Request) {
             if (item.evaluation?.timeAssessmentLabel === 'OVERDUE') activeDelayed++;
 
             const st = (item.zohoStatus || '').toLowerCase();
-            if (st === 'closed' || st === 'done' || st.includes('completed') || item.isQAReview) {
+            const isClosed = st.includes('closed') || st.includes('completed') || (st.includes('done') && !st.includes('qa'));
+            const isQA = Boolean(item.isQAReview || st.includes('qa') || st.includes('review'));
+
+            if (isClosed) {
               activeDone++;
+            } else if (isQA) {
+              activeQAReview++;
             } else {
               activePending++;
             }
@@ -364,6 +400,7 @@ export async function GET(request: Request) {
 
           const filterSummary = {
             doneTasks: activeDone,
+            qaReviewTasks: activeQAReview,
             pendingTasks: activePending,
             delayedTasks: activeDelayed,
             weeklyAvgScore: activeTasks.length > 0 ? Math.min(100, Math.round((activeScoreSum / activeTasks.length) * 10)) : 0,
@@ -372,6 +409,7 @@ export async function GET(request: Request) {
 
           const tillDateSummary = {
             doneTasks: tillDateDone,
+            qaReviewTasks: tillDateQAReview,
             pendingTasks: tillDatePending,
             delayedTasks: tillDateDelayed,
             weeklyAvgScore: mappedUpToDateTasks.length > 0 ? Math.min(100, Math.round((tillDateScoreSum / mappedUpToDateTasks.length) * 10)) : 88,
@@ -396,6 +434,20 @@ export async function GET(request: Request) {
         });
       } else {
         userSummaries = getMockZohoData();
+      }
+    }
+
+    // Append test dataset users for evaluation testing without modifying existing Zoho fetching logic
+    // Enabled in development, preview, or when includeTestCases=true (disabled during automated vitest runs)
+    if (searchParams.get('includeTestCases') === 'true') {
+      try {
+        const { getTestDatasetUsers } = await import('@/lib/mock/zoho-test-dataset');
+        const testUsers = getTestDatasetUsers(dateRange);
+        if (testUsers && testUsers.length > 0) {
+          userSummaries = [...userSummaries, ...testUsers];
+        }
+      } catch {
+        // Ignored if test dataset file is removed
       }
     }
 

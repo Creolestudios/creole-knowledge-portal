@@ -167,6 +167,36 @@ describe('UserManagement', () => {
     });
   });
 
+  it('allows entering decimal years of experience manually and sends float in PUT payload', async () => {
+    let putPayload: any = null;
+    global.fetch = vi.fn().mockImplementation((_url: string, opts?: any) => {
+      if (opts?.method === 'PUT') {
+        putPayload = JSON.parse(opts.body);
+        return Promise.resolve({ ok: true, json: async () => ({ success: true }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => sampleUsers });
+    });
+
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+    fireEvent.click(screen.getByText('complete@creolestudios.com'));
+    await waitFor(() => screen.getByText('Edit User Profile'));
+
+    const expInput = screen.getByDisplayValue('3');
+    expect(expInput).toHaveAttribute('type', 'number');
+    expect(expInput).toHaveAttribute('step', 'any');
+
+    fireEvent.change(expInput, { target: { value: '3.5' } });
+    expect(expInput).toHaveValue(3.5);
+
+    fireEvent.click(screen.getByRole('button', { name: /Save Profile/i }));
+
+    await waitFor(() => {
+      expect(putPayload).toBeTruthy();
+    });
+    expect(putPayload.years_of_experience).toBe(3.5);
+  });
+
   it('shows an error toast when saving fails', async () => {
     global.fetch = vi.fn().mockImplementation((_url: string, opts?: any) => {
       if (opts?.method === 'PUT') {

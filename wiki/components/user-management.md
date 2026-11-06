@@ -21,6 +21,7 @@ The `UserManagement` component provides administrators with an interface to list
 
 - Retrieves the complete list of system users and profiles by hitting `/api/admin/users` (GET request).
 - Calculates user profile completeness based on whether the user has set their `years_of_experience` and added at least one tag to their `primary_tech_stack`.
+- Supports manual decimal values for `years_of_experience` (e.g. `2.5`, `3.5`, `0.5`) with `<input type="number" step="any" min="0">` and floating-point persistence.
 - Implements text-based search filtering. The input query checks against user email records and `future_interests` descriptions.
 
 ### 2. Tag-Based Tech Stack Editor

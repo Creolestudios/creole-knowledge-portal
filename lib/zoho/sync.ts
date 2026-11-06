@@ -199,6 +199,21 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           }
         }
 
+        // Pre-load tasks that already have cached comments in DB
+        const existingTaskIds = Array.from(existingTaskDateMap.keys());
+        const tasksWithCommentsInDb = new Set<string>();
+        if (existingTaskIds.length > 0) {
+          const { data: existingComments } = await supabaseAdmin
+            .from('zoho_task_comments')
+            .select('zoho_task_id')
+            .in('zoho_task_id', existingTaskIds);
+          if (existingComments) {
+            for (const ec of existingComments) {
+              if (ec.zoho_task_id) tasksWithCommentsInDb.add(String(ec.zoho_task_id));
+            }
+          }
+        }
+
         const taskItems: ZohoTaskItem[] = [];
         let doneTasks = 0;
         let pendingTasks = 0;
@@ -345,11 +360,13 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           const lastModInDb = existingTaskModMap.get(taskId);
           const taskLastUpdatedMillis = raw.last_updated_time_long || (raw.last_updated_time ? new Date(raw.last_updated_time).getTime() : 0);
           const isModifiedSinceSync = !lastModInDb || (taskLastUpdatedMillis && taskLastUpdatedMillis > new Date(lastModInDb).getTime());
+          const hasNoCommentsInDb = !tasksWithCommentsInDb.has(taskId);
 
           let taskComments: Array<{ author: string; content: string; time: string }> = [];
 
           try {
-            if (isModifiedSinceSync || forceRefresh) {
+            if (raw.is_comment_added !== false && (isModifiedSinceSync || forceRefresh || hasNoCommentsInDb)) {
+              await new Promise((r) => setTimeout(r, 80));
               const apiComments = await fetchZohoTaskComments(token, portalId, projectId, taskId);
               if (apiComments.length > 0) {
                 console.log(`[ZohoSync] Task "${taskName}" (${taskDateStr}) has ${apiComments.length} comment(s):`, apiComments.map(c => c.author_name));

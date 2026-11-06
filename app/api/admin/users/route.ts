@@ -24,6 +24,10 @@ export async function GET() {
         const metaSubscriptions = (authUser.user_metadata as Record<string, unknown> | undefined)?.ai_subscriptions;
         const metaSeniorEmails = (authUser.user_metadata as Record<string, unknown> | undefined)?.senior_emails;
         const metaDailyEmail = (authUser.user_metadata as Record<string, unknown> | undefined)?.daily_email_enabled;
+        const metaYearsOfExp = (authUser.user_metadata as Record<string, unknown> | undefined)?.years_of_experience;
+        const yearsOfExp = typeof metaYearsOfExp === 'number'
+          ? metaYearsOfExp
+          : (profile.years_of_experience !== undefined && profile.years_of_experience !== null ? Number(profile.years_of_experience) : null);
         const dailyEmailEnabled =
           profile.daily_email_enabled !== undefined
             ? Boolean(profile.daily_email_enabled)
@@ -41,7 +45,7 @@ export async function GET() {
           email: authUser.email,
           role: profile.role || 'user',
           current_role: profile.current_role || '',
-          years_of_experience: profile.years_of_experience || null,
+          years_of_experience: yearsOfExp,
           current_tech_stack: profile.current_tech_stack || [],
           primary_tech_stack: profile.primary_tech_stack || [],
           secondary_tech_stack: profile.secondary_tech_stack || [],
@@ -95,6 +99,9 @@ export async function PUT(request: Request) {
           .filter((item: string) => Boolean(item))
       : [];
     const isDailyEmailEnabled = daily_email_enabled !== undefined ? Boolean(daily_email_enabled) : true;
+    const parsedYearsOfExp = years_of_experience !== undefined && years_of_experience !== null && years_of_experience !== ''
+      ? Number.parseFloat(String(years_of_experience))
+      : 0;
 
     // 1. Persist in Supabase Auth user_metadata (schema-free, resilient to database migrations)
     try {
@@ -103,6 +110,7 @@ export async function PUT(request: Request) {
       await supabaseAdmin.auth.admin.updateUserById(user_id, {
         user_metadata: {
           ...existingMeta,
+          years_of_experience: parsedYearsOfExp,
           ai_subscriptions: subscriptionsList,
           senior_emails: seniorEmailsList,
           daily_email_enabled: isDailyEmailEnabled,
@@ -118,7 +126,7 @@ export async function PUT(request: Request) {
       email,
       role: role || 'user',
       current_role,
-      years_of_experience,
+      years_of_experience: parsedYearsOfExp,
       primary_tech_stack,
       secondary_tech_stack,
       future_interests,
@@ -139,7 +147,25 @@ export async function PUT(request: Request) {
       .select('*')
       .single();
 
-    // 4. Fallback if new columns have not been added to user_profiles table yet
+    // 4. Fallback if integer column throws 22P02 on float input
+    if (result.error && (result.error.code === '22P02' || result.error.message?.includes('integer'))) {
+      console.warn('user_profiles.years_of_experience is INTEGER in DB, upserting rounded value while user_metadata retains float:', parsedYearsOfExp);
+      result = await supabaseAdmin
+        .from('user_profiles')
+        .upsert({
+          ...basePayload,
+          years_of_experience: Math.round(parsedYearsOfExp),
+          ai_subscriptions: subscriptionsList,
+          senior_emails: seniorEmailsList,
+          daily_email_enabled: isDailyEmailEnabled,
+        }, {
+          onConflict: 'user_id',
+        })
+        .select('*')
+        .single();
+    }
+
+    // 5. Fallback if new columns have not been added to user_profiles table yet
     if (result.error && (
       result.error.message?.includes('ai_subscriptions') ||
       result.error.message?.includes('senior_emails') ||
@@ -147,9 +173,13 @@ export async function PUT(request: Request) {
       result.error.code === 'PGRST204'
     )) {
       console.warn('ai_subscriptions, senior_emails, or daily_email_enabled column not found in user_profiles table, retrying upsert with fallback');
+      const safePayload = {
+        ...basePayload,
+        years_of_experience: Math.round(parsedYearsOfExp),
+      };
       result = await supabaseAdmin
         .from('user_profiles')
-        .upsert(basePayload, {
+        .upsert(safePayload, {
           onConflict: 'user_id',
         })
         .select('*')
@@ -163,6 +193,7 @@ export async function PUT(request: Request) {
 
     const responseData = {
       ...result.data,
+      years_of_experience: parsedYearsOfExp,
       ai_subscriptions: result.data?.ai_subscriptions || subscriptionsList,
       senior_emails: result.data?.senior_emails || seniorEmailsList,
       daily_email_enabled: result.data?.daily_email_enabled !== undefined ? result.data.daily_email_enabled : isDailyEmailEnabled,

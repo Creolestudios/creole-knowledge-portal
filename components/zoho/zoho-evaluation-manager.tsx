@@ -263,7 +263,7 @@ export default function ZohoEvaluationManager() {
               <button
                 type="button"
                 onClick={() => setShowCriteriaModal(true)}
-                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
+                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 shrink-0"
                 title="Configure global evaluation criteria, tolerances, and scoring rules"
               >
                 <Sliders className="w-3.5 h-3.5 text-[#34c4f2]" />
@@ -274,7 +274,7 @@ export default function ZohoEvaluationManager() {
                 type="button"
                 onClick={handleSyncFromZoho}
                 disabled={isSyncing}
-                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 shrink-0"
+                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 shrink-0"
                 title="Synchronize real-time tasks, descriptions, and hours from Zoho Projects"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-[#34c4f2] ${isSyncing ? 'animate-spin' : ''}`} />
@@ -319,7 +319,7 @@ export default function ZohoEvaluationManager() {
                 return (
                   <div
                     key={u.userId}
-                    className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-850 transition-colors group cursor-pointer"
+                    className="w-full flex items-center justify-between p-4 px-5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/80 transition-colors group cursor-pointer"
                     onClick={() => handleSelectUser(u)}
                   >
                     <div className="flex items-center gap-3">
@@ -465,7 +465,7 @@ export default function ZohoEvaluationManager() {
                 type="button"
                 onClick={handleSyncFromZoho}
                 disabled={isSyncing}
-                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-750 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60"
+                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700/80 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60"
                 title="Synchronize latest tasks from Zoho Projects"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-[#34c4f2] ${isSyncing ? 'animate-spin' : ''}`} />
@@ -558,9 +558,9 @@ export default function ZohoEvaluationManager() {
             </div>
           ) : (
             <div className="space-y-4">
-              {selectedUser.dailyEvaluations.map((day) => (
+              {selectedUser.dailyEvaluations.map((day, dIdx) => (
                 <div
-                  key={day.date}
+                  key={`${day.date}-${dIdx}`}
                   className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-xs space-y-4"
                 >
                   {/* Day Header - Task Date & Daily Evaluation Button */}
@@ -589,16 +589,16 @@ export default function ZohoEvaluationManager() {
                       <Sparkles className="w-3.5 h-3.5 text-purple-500 group-hover:scale-110 transition-transform" />
                       <span>Daily Evaluation</span>
                       <span className="font-black px-1.5 py-0.5 rounded bg-purple-100 dark:bg-purple-900/60 text-purple-800 dark:text-purple-200">
-                        {day.dayScore.toFixed(1)}/10
+                        {(day.dayScore > 10 ? day.dayScore / 10 : day.dayScore).toFixed(1)}/10
                       </span>
                     </button>
                   </div>
 
                   {/* Tasks for this day - Only Project Name and Task Title */}
                   <div className="space-y-2">
-                    {day.tasks.map((task) => (
+                    {day.tasks.map((task, tIdx) => (
                       <div
-                        key={task.id}
+                        key={`${task.id || task.zohoTaskId || task.taskName}-${tIdx}`}
                         className="p-3 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/30 border border-zinc-100 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all flex items-center justify-between gap-3"
                       >
                         <div className="flex-1 min-w-0 flex items-center gap-2.5">
@@ -669,6 +669,8 @@ export default function ZohoEvaluationManager() {
           user={selectedUser}
           filterType={dateSelection.type}
           dateRangeText={dateSelection.label}
+          startDate={dateSelection.startDate}
+          endDate={dateSelection.endDate}
           onClose={() => setShowReport(false)}
         />
       )}
