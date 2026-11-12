@@ -490,6 +490,10 @@ export default function ZohoReportModal({
                   ? Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.plannedHours) || 0), 0) * 10) / 10
                   : 0;
 
+                // Time estimated calculated on the basis of the time given to the assigned tasks (e.g. 4 hrs etc.)
+                const periodEstimatedHours = periodTaskEstimates > 0 ? periodTaskEstimates : periodPlannedHours;
+                const taskEstimationAdherencePct = Math.round((periodActualHours / (periodEstimatedHours || 1)) * 100);
+
                 const periodDonePct = periodTotalTasks > 0 ? Math.min(100, Math.round((periodDoneTasks / periodTotalTasks) * 100)) : 100;
 
                 let periodOverallScore = 88;
@@ -509,7 +513,7 @@ export default function ZohoReportModal({
                 const capacityUtilizationPct = Math.round((periodActualHours / (periodPlannedHours || 1)) * 100);
 
                 const summaryParagraphs = [
-                  `During the evaluated period (${dateRangeText || filterType.toUpperCase()}), ${singleUser.name || singleUser.email} logged ${periodActualHours}h out of ${periodPlannedHours}h standard planned capacity (${capacityUtilizationPct}% capacity utilization) across ${periodTotalTasks} task(s). ${periodDoneTasks} task(s) were successfully completed, while ${periodDelayedTasks} task(s) encountered schedule variance past the permitted tolerance buffer. Overall performance velocity attained ${periodOverallScore}/100.`,
+                  `During the evaluated period (${dateRangeText || filterType.toUpperCase()}), ${singleUser.name || singleUser.email} logged ${periodActualHours}h against ${periodEstimatedHours}h estimated task time across ${periodTotalTasks} task(s) (${taskEstimationAdherencePct}% estimate pacing, standard capacity: ${periodPlannedHours}h). ${periodDoneTasks} task(s) were successfully completed, while ${periodDelayedTasks} task(s) encountered schedule variance past the permitted tolerance buffer. Overall performance velocity attained ${periodOverallScore}/100.`,
                   `Audit of technical work evidence shows that ${documentedTasksCount} of ${allPeriodTasks.length || 1} task(s) have documented comments in Zoho Projects. Logging clear implementation details and test verification notes before task closure provides traceability and validates actual logged time against initial estimates.`,
                   `Recommendations for ${singleUser.name || 'this developer'} (${singleUser.role || 'Developer'}${singleUser.seniorityLevel ? ` • ${singleUser.seniorityLevel}` : ''}): ${singleUser.aiSubscriptions && singleUser.aiSubscriptions.length > 0 ? `Actively leverage subscribed AI tools (${singleUser.aiSubscriptions.join(', ')}) to assist with test verification and automated documentation.` : 'Incorporate automated test validation prior to task completion.'} Maintain close estimation fidelity within the +5m buffer to prevent overdue flags.`,
                 ];
@@ -549,13 +553,13 @@ export default function ZohoReportModal({
                             <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Hours Logged</span>
                             <div className="text-xl font-black text-[#34c4f2] mt-0.5">
                               {periodActualHours}h
-                              {periodPlannedHours > 0 && (
-                                <span className="text-xs text-zinc-400 font-normal"> / {periodPlannedHours}h planned</span>
+                              {periodEstimatedHours > 0 && (
+                                <span className="text-xs text-zinc-400 font-normal"> / {periodEstimatedHours}h {periodTaskEstimates > 0 ? 'estimated' : 'planned'}</span>
                               )}
                             </div>
                           </div>
                           <div className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5 pt-1.5 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between">
-                            <span className="truncate">{periodCapacityInfo.label}</span>
+                            <span className="truncate">{periodCapacityInfo.label} (/ {periodPlannedHours}h planned)</span>
                             {periodTaskEstimates > 0 && (
                               <span className="text-zinc-400 shrink-0 ml-1.5" title="Sum of individual Zoho task initial estimates">
                                 Est: {periodTaskEstimates}h
