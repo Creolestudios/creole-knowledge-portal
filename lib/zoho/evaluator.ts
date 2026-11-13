@@ -1,5 +1,6 @@
 import { getZohoEvaluationRules, type ZohoEvaluationRulesConfig } from './rules-store';
 import { GoogleGenAI, Type, Schema } from '@google/genai';
+import type { PullRequestEvidence } from '../github/pr-types';
 import {
   calculateTimeAdherence,
   detectRepetitiveTask,
@@ -25,6 +26,10 @@ export interface TaskEvaluationInput {
   seniorityLevel: string;
   aiSubscriptions: string[];
   historicalTasks?: HistoricalTask[];
+  userEmail?: string;
+  userName?: string;
+  githubUsername?: string | null;
+  prEvidence?: PullRequestEvidence[];
 }
 
 export interface TaskEvaluationResult {
@@ -47,6 +52,7 @@ export interface TaskEvaluationResult {
   strengths: string[];
   improvements: string[];
   aiModelUsed: string;
+  prEvidence?: PullRequestEvidence[];
 }
 
 export interface DayEvaluationSummary {
@@ -218,6 +224,7 @@ function generateHeuristicEvaluation(
     strengths,
     improvements,
     aiModelUsed: 'rule-engine-fallback',
+    prEvidence: input.prEvidence,
   };
 }
 
@@ -240,7 +247,8 @@ export async function evaluateZohoTask(
     input.taskDescription,
     input.historicalTasks || []
   );
-  const workMatch = evaluateWorkAndCommentMatch(
+
+  const workMatch = evaluateWorkAndCommentMatch(
     input.taskDescription,
     input.comments || [],
     {
@@ -249,6 +257,7 @@ export async function evaluateZohoTask(
       aiSubscriptions: input.aiSubscriptions,
       plannedMinutes: input.plannedMinutes,
       actualMinutes: input.actualMinutes,
+      prEvidence: input.prEvidence,
     }
   );
 
@@ -302,6 +311,12 @@ TASK CONTEXT:
 - Comments / Progress Updates:
 ${input.comments && input.comments.length > 0 ? input.comments.map((c, i) => `  ${i + 1}. ${c}`).join('\n') : '  No comments logged'}
 
+${input.prEvidence && input.prEvidence.length > 0 ? `
+=== AUDITED CODE EVIDENCE (PULL REQUESTS) ===
+${input.prEvidence.map(p => `- PR #${p.prNumber} (${p.url}): ${p.verificationStatus} - ${p.verificationMessage}`).join('\n')}
+Note: If a verified PR is present, award high marks (8.5 - 10.0) if the code changes align with the task description. If a PR was authored by another developer (COWORKER_PR) or is empty (EMPTY_PR), heavily penalize the work justification score and flag it in whereLacked.
+=============================================
+` : ''}
 Return your evaluation strictly conforming to the requested JSON schema.
 `;
 
@@ -384,6 +399,7 @@ Return your evaluation strictly conforming to the requested JSON schema.
       userExperienceYears: input.userExperienceYears,
       aiSubscriptions: input.aiSubscriptions,
       isQAReview: input.isQAReview,
+      prEvidence: input.prEvidence,
     });
 
     return {
@@ -406,6 +422,7 @@ Return your evaluation strictly conforming to the requested JSON schema.
       strengths: rawStrengths,
       improvements: rawImprovements,
       aiModelUsed: 'gemini-2.5-flash',
+      prEvidence: input.prEvidence,
     };
   } catch (error) {
     console.warn('[evaluateZohoTask] Gemini API failed, falling back to rule engine:', error);

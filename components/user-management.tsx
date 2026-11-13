@@ -56,6 +56,7 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
   const [saving, setSaving] = useState(false);
   const [deletingUser, setDeletingUser] = useState<UserProfile | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -403,10 +404,25 @@ export default function UserManagement() {
     });
   };
 
-  const filteredUsers = users.filter(u => 
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.future_interests?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredUsers = users
+    .filter((u) => {
+      if (roleFilter === 'admin' && u.role !== 'admin') return false;
+      if (roleFilter === 'user' && u.role === 'admin') return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        const matchEmail = u.email?.toLowerCase().includes(q);
+        const matchInterests = u.future_interests?.toLowerCase().includes(q);
+        const matchRole = u.current_role?.toLowerCase().includes(q);
+        const matchExp = u.years_of_experience !== null && u.years_of_experience !== undefined && `${u.years_of_experience}`.includes(q);
+        return Boolean(matchEmail || matchInterests || matchRole || matchExp);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const emailA = (a.email || '').toLowerCase();
+      const emailB = (b.email || '').toLowerCase();
+      return emailA.localeCompare(emailB);
+    });
 
   const totalUsersCount = users.length;
   const totalAdminsCount = users.filter((u) => u.role === 'admin').length;
@@ -475,8 +491,17 @@ export default function UserManagement() {
           >
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-150 dark:border-zinc-800 pb-6">
               <div>
-                <h2 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">All Users</h2>
-                <p className="text-zinc-500 dark:text-zinc-400 text-sm">Click on a user to view and manage their profile details.</p>
+                <div className="flex items-center gap-2.5">
+                  <h2 className="text-2xl font-black text-zinc-900 dark:text-white tracking-tight">All Users</h2>
+                  {roleFilter !== 'all' && (
+                    <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
+                      {roleFilter === 'admin' ? 'Admins only' : 'Regular users only'} ({filteredUsers.length})
+                    </span>
+                  )}
+                </div>
+                <p className="text-zinc-500 dark:text-zinc-400 text-sm">
+                  Click on a user to view and manage their profile details. Showing {filteredUsers.length} in alphabetical order.
+                </p>
               </div>
               <div className="relative w-full md:w-80">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
@@ -492,47 +517,110 @@ export default function UserManagement() {
 
             {/* User Statistics Overview */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center gap-4 transition-colors">
-                <div className="w-12 h-12 rounded-xl bg-[#34c4f2]/10 text-[#1b7393] dark:text-[#34c4f2] flex items-center justify-center flex-shrink-0">
-                  <Users className="w-6 h-6" />
+              <button
+                type="button"
+                onClick={() => setRoleFilter('all')}
+                data-testid="filter-total-users-btn"
+                aria-pressed={roleFilter === 'all'}
+                className={`rounded-2xl p-5 border shadow-xs flex items-center justify-between text-left transition-all cursor-pointer ${
+                  roleFilter === 'all'
+                    ? 'bg-[#34c4f2]/10 border-[#34c4f2] ring-2 ring-[#34c4f2]/20 dark:bg-[#34c4f2]/15'
+                    : 'bg-white dark:bg-[#1e1e1e] border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
+                    roleFilter === 'all'
+                      ? 'bg-[#34c4f2] text-zinc-900'
+                      : 'bg-[#34c4f2]/10 text-[#1b7393] dark:text-[#34c4f2]'
+                  }`}>
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="total-users-count">
+                      {totalUsersCount}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
+                      Total Users
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="total-users-count">
-                    {totalUsersCount}
-                  </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
-                    Total Users
-                  </p>
-                </div>
-              </div>
+                {roleFilter === 'all' && (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#34c4f2] text-zinc-900">
+                    Active
+                  </span>
+                )}
+              </button>
 
-              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center gap-4 transition-colors">
-                <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300 flex items-center justify-center flex-shrink-0">
-                  <ShieldCheck className="w-6 h-6" />
+              <button
+                type="button"
+                onClick={() => setRoleFilter((prev) => (prev === 'admin' ? 'all' : 'admin'))}
+                data-testid="filter-total-admins-btn"
+                aria-pressed={roleFilter === 'admin'}
+                className={`rounded-2xl p-5 border shadow-xs flex items-center justify-between text-left transition-all cursor-pointer ${
+                  roleFilter === 'admin'
+                    ? 'bg-purple-50 dark:bg-purple-950/30 border-purple-500 ring-2 ring-purple-500/20'
+                    : 'bg-white dark:bg-[#1e1e1e] border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
+                    roleFilter === 'admin'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300'
+                  }`}>
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="total-admins-count">
+                      {totalAdminsCount}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
+                      Total Admins
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="total-admins-count">
-                    {totalAdminsCount}
-                  </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
-                    Total Admins
-                  </p>
-                </div>
-              </div>
+                {roleFilter === 'admin' && (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-600 text-white">
+                    Active
+                  </span>
+                )}
+              </button>
 
-              <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-5 border border-zinc-200 dark:border-zinc-800 shadow-xs flex items-center gap-4 transition-colors">
-                <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300 flex items-center justify-center flex-shrink-0">
-                  <User className="w-6 h-6" />
+              <button
+                type="button"
+                onClick={() => setRoleFilter((prev) => (prev === 'user' ? 'all' : 'user'))}
+                data-testid="filter-regular-users-btn"
+                aria-pressed={roleFilter === 'user'}
+                className={`rounded-2xl p-5 border shadow-xs flex items-center justify-between text-left transition-all cursor-pointer ${
+                  roleFilter === 'user'
+                    ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-500 ring-2 ring-blue-500/20'
+                    : 'bg-white dark:bg-[#1e1e1e] border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
+                    roleFilter === 'user'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-300'
+                  }`}>
+                    <User className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="regular-users-count">
+                      {regularUsersCount}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
+                      Regular Users
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-2xl font-black text-zinc-900 dark:text-white" data-testid="regular-users-count">
-                    {regularUsersCount}
-                  </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 font-bold uppercase tracking-wider">
-                    Regular Users
-                  </p>
-                </div>
-              </div>
+                {roleFilter === 'user' && (
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-blue-600 text-white">
+                    Active
+                  </span>
+                )}
+              </button>
             </div>
 
             <div className="grid grid-cols-1 gap-3">
@@ -540,6 +628,15 @@ export default function UserManagement() {
                 <div className="text-center py-20 bg-zinc-50 dark:bg-zinc-900/40 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800">
                   <User className="w-12 h-12 text-zinc-300 dark:text-zinc-600 mx-auto mb-4" />
                   <p className="text-zinc-500 dark:text-zinc-400 font-medium tracking-tight">No users found</p>
+                  {roleFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => setRoleFilter('all')}
+                      className="mt-3 text-xs font-bold text-[#34c4f2] hover:underline cursor-pointer"
+                    >
+                      Clear filter (view all users)
+                    </button>
+                  )}
                 </div>
               ) : (
                 filteredUsers.map((user) => {
@@ -562,7 +659,23 @@ export default function UserManagement() {
                           <User size={24} />
                         </div>
                         <div>
-                          <p className="font-bold text-zinc-900 dark:text-white group-hover:text-[#34c4f2] transition-colors">{user.email}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p data-testid="user-email-text" className="font-bold text-zinc-900 dark:text-white group-hover:text-[#34c4f2] transition-colors">
+                              {user.email}
+                            </p>
+                            <span
+                              data-testid="user-experience-badge"
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                                user.years_of_experience !== null && user.years_of_experience !== undefined && user.years_of_experience > 0
+                                  ? 'bg-[#34c4f2]/10 text-[#0284c7] dark:text-[#34c4f2] border-[#34c4f2]/25'
+                                  : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700/60'
+                              }`}
+                            >
+                              {user.years_of_experience !== null && user.years_of_experience !== undefined
+                                ? `${user.years_of_experience} ${user.years_of_experience === 1 ? 'yr exp' : 'yrs exp'}`
+                                : '0 yrs exp'}
+                            </span>
+                          </div>
                           <div className="flex items-center gap-2 mt-1">
                             <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded border ${
                               complete 

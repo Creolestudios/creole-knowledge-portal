@@ -8,6 +8,7 @@ import {
   formatUserName,
   ZohoUserSummary,
   ZohoTaskItem,
+  isRefreshmentTask,
 } from '@/lib/zoho/service';
 import { getLiveZohoSummariesWithFilter } from '@/lib/zoho/sync';
 import {
@@ -141,7 +142,14 @@ export async function GET(request: Request) {
             (meta.full_name as string) || (meta.name as string) || (profile?.name as string)
           );
           const role = (profile?.current_role as string) || 'Developer';
-          const yearsOfExp = (profile?.years_of_experience as number) ?? 2;
+          const metaYears = typeof meta.years_of_experience === 'number'
+            ? meta.years_of_experience
+            : (meta.years_of_experience !== undefined && meta.years_of_experience !== null && meta.years_of_experience !== ''
+                ? Number.parseFloat(String(meta.years_of_experience))
+                : null);
+          const yearsOfExp = (metaYears !== null && !Number.isNaN(metaYears) && metaYears >= 0)
+            ? metaYears
+            : (profile?.years_of_experience != null ? Number(profile.years_of_experience) : 2);
           const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
           const profileSubs = Array.isArray(profile?.ai_subscriptions) && profile.ai_subscriptions.length > 0
             ? profile.ai_subscriptions
@@ -258,7 +266,8 @@ export async function GET(request: Request) {
           };
 
           // 1. All tasks from beginning of history up to today (true cumulative Till-Date)
-          const mappedUpToDateTasks = dbTasks.map(buildTaskItemWithEvaluation);
+          const validDbTasks = dbTasks.filter((t: any) => !isRefreshmentTask(t.task_name, t.task_description));
+          const mappedUpToDateTasks = validDbTasks.map(buildTaskItemWithEvaluation);
 
           let tillDateDone = 0;
           let tillDateQAReview = 0;

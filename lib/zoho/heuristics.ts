@@ -1,4 +1,5 @@
 import type { ZohoEvaluationRulesConfig } from './rules-types';
+import type { PullRequestEvidence } from '../github/pr-types';
 /**
  * Analyzes whole-sentence context to accurately identify actual pending deliverables,
  * while preventing false penalties on roadmap boundaries ("audio and video support remain deferred")
@@ -139,6 +140,9 @@ export interface WorkMatchResult {
   isPartialDelivery?: boolean;
   hasDocumentedBlockers?: boolean;
   timeReasonableness?: TaskTimeReasonablenessResult;
+  hasVerifiedPr?: boolean;
+  hasCoworkerPr?: boolean;
+  prFeedback?: string;
 }
 
 /**
@@ -343,6 +347,7 @@ export function evaluateWorkAndCommentMatch(
     plannedMinutes?: number;
     actualMinutes?: number;
     rules?: Partial<ZohoEvaluationRulesConfig>;
+    prEvidence?: PullRequestEvidence[];
   }
 ): WorkMatchResult {
   const rawDesc = (taskDescription || '').trim();
@@ -598,6 +603,27 @@ export function evaluateWorkAndCommentMatch(
     baseScore = Math.min(7.5, Math.max(7.0, baseScore));
   }
 
+  // 6. PR Proof-of-Work Evaluation
+  const prList = context?.prEvidence || [];
+  const verifiedPr = prList.find((p) => p.verificationStatus === 'VERIFIED');
+  const coworkerPr = prList.find((p) => p.verificationStatus === 'COWORKER_PR');
+  const emptyPr = prList.find((p) => p.verificationStatus === 'EMPTY_PR');
+
+  let prFeedback = '';
+  if (coworkerPr) {
+    baseScore = Math.min(baseScore, 4.0);
+    prFeedback = `PR #${coworkerPr.prNumber} provided was authored by another developer (${coworkerPr.authorLogin || 'coworker'}). Proof of work rejected.`;
+  } else if (emptyPr) {
+    baseScore = Math.min(baseScore, 5.0);
+    prFeedback = `PR #${emptyPr.prNumber} contains zero code additions or modified files.`;
+  } else if (verifiedPr) {
+    if (!isOffTopic && !isPartialDelivery) {
+      baseScore = Math.min(10.0, Math.max(baseScore, 9.2) + 0.3);
+    }
+    const commitPart = verifiedPr.userCommitCount ? `${verifiedPr.userCommitCount} commit(s), ` : '';
+    prFeedback = `Verified code deliverable in PR #${verifiedPr.prNumber} (${commitPart}+${verifiedPr.additions || 0} lines in ${verifiedPr.changedFiles || 0} files).`;
+  }
+
   // Deduct 4 to 5 points directly from Score if description is very short (<= 6 words, like Case 34),
   // or 0.5 points if moderately brief (< 35 words)
   const shortPenalty = context?.rules?.shortDescriptionDeduction ?? 4.5;
@@ -617,7 +643,9 @@ export function evaluateWorkAndCommentMatch(
   const expTag = context?.seniorityLevel ? ` for a ${context.seniorityLevel} developer (${context.userExperienceYears || 2} yrs)` : '';
 
   let explanation = '';
-  if (isOffTopic) {
+  if (coworkerPr) {
+    explanation = prFeedback;
+  } else if (isOffTopic) {
     explanation = `Comments do not topically align with the assigned task description or requirements${expTag}. Progress notes must directly substantiate the specific deliverable.`;
   } else if (isPartialDelivery) {
     const plannedHrs = Math.round((safePlannedMins / 60) * 10) / 10;
@@ -636,6 +664,10 @@ export function evaluateWorkAndCommentMatch(
     explanation = `Task description and progress updates are brief and lack substantive implementation context${expTag}.`;
   } else {
     explanation = `Comments partially explain the task description${expTag}.`;
+  }
+
+  if (verifiedPr && !coworkerPr) {
+    explanation = `${explanation} ${prFeedback}`.trim();
   }
 
   const alignmentLabel = isOffTopic
@@ -666,6 +698,9 @@ export function evaluateWorkAndCommentMatch(
     hasMeetingLogged,
     isPartialDelivery,
     timeReasonableness,
+    hasVerifiedPr: Boolean(verifiedPr),
+    hasCoworkerPr: Boolean(coworkerPr),
+    prFeedback: prFeedback || undefined,
   };
 }
 
@@ -828,6 +863,7 @@ export function generateDynamicPerformanceSummary(params: {
   actualMinutes?: number;
   timeScore?: number;
   rules?: Partial<ZohoEvaluationRulesConfig>;
+  prEvidence?: PullRequestEvidence[];
 }): DynamicPerformanceSummary {
   const hasComments = params.comments && params.comments.length > 0;
   const isSenior = (params.userExperienceYears || 0) >= 3 || (params.seniorityLevel || '').toLowerCase().includes('senior') || (params.seniorityLevel || '').toLowerCase().includes('lead');
@@ -904,11 +940,22 @@ export function generateDynamicPerformanceSummary(params: {
     lines.push(`Without technical verification notes, there is no audit trail to justify the time spent against the assigned description.`);
     lines.push(`For a ${params.seniorityLevel || 'developer'}, documenting pull requests, unit tests, and QA status is essential for accountability.`);
   }
+  const verifiedPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'VERIFIED');
+  const coworkerPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'COWORKER_PR');
+  const emptyPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'EMPTY_PR');
+
+  if (verifiedPr) {
+    lines.push(`Work evidence substantiated: PR #${verifiedPr.prNumber} verified (+${verifiedPr.additions || 0} lines in ${verifiedPr.changedFiles || 0} files).`);
+  }
   const performanceSummary = lines.join('\n');
 
   // 2. Where User Lacked (Specific gap in execution/commenting/timing)
   let whereLacked = '';
-  if (!params.taskDescription || params.taskDescription.trim().length === 0) {
+  if (coworkerPr) {
+    whereLacked = `PR link provided (#${coworkerPr.prNumber}) was authored by another developer (${coworkerPr.authorLogin || 'coworker'}) with 0 commits found for your account.`;
+  } else if (emptyPr) {
+    whereLacked = `PR #${emptyPr.prNumber} contained zero code changes or modified files.`;
+  } else if (!params.taskDescription || params.taskDescription.trim().length === 0) {
     whereLacked = 'Task description was completely missing in Zoho Projects, preventing verification of work completed against any defined scope or acceptance criteria.';
   } else if (params.timeAssessmentLabel === 'NOT_LOGGED') {
     whereLacked = 'No actual hours were logged in Zoho Projects for this task.';
@@ -959,7 +1006,18 @@ export function generateDynamicPerformanceSummary(params: {
   // 4. Actionable improvement points list for user to work on
   const improvementItems: string[] = [];
 
-  // --- OVERALL SCORE DEDUCTION AUDIT (Complexity, Repetition, Status Gate) ---
+  // --- OVERALL SCORE DEDUCTION AUDIT (Complexity, Repetition, Status Gate, PR Evidence) ---
+
+  // 0. PR Evidence Audit
+  if (coworkerPr) {
+    improvementItems.push(
+      `Verify PR Authorship: PR #${coworkerPr.prNumber} was authored by another developer (${coworkerPr.authorLogin || 'coworker'}) with 0 commits found for your account. Always provide your own PR or commit evidence in Zoho comments.`
+    );
+  } else if (emptyPr) {
+    improvementItems.push(
+      `PR #${emptyPr.prNumber} contains zero code additions or modified files. Ensure substantive code changes are committed and pushed before referencing PRs in comments.`
+    );
+  }
 
   // 1. Status Gate Deduction (-1.0 pt from overall score)
   if (params.isQAReview === false) {

@@ -13,7 +13,7 @@ import ZohoWeeklyEvaluationModal from './zoho-weekly-evaluation-modal';
 import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
 import ZohoReportModal, { calculatePeriodCapacity } from './zoho-report-modal';
 import ZohoEvaluationManager from './zoho-evaluation-manager';
-import { ZohoTaskItem, ZohoUserSummary, getMockZohoData, buildWeeklyPerformanceReports } from '@/lib/zoho/service';
+import { ZohoTaskItem, ZohoUserSummary, getMockZohoData, buildWeeklyPerformanceReports, isRefreshmentTask } from '@/lib/zoho/service';
 
 describe('Zoho Frontend Components', () => {
   describe('ZohoFilterBar', () => {
@@ -1369,6 +1369,196 @@ describe('Zoho Frontend Components', () => {
       expect(screen.getByText('Closed Feature')).toBeDefined();
       expect(screen.getByText('QA Ticket')).toBeDefined();
       expect(screen.getAllByText('Overdue Bugfix').length).toBe(2);
+    });
+  });
+
+  describe('isRefreshmentTask helper & Break Exclusions', () => {
+    it('accurately identifies refreshment and break tasks while preserving technical tasks', () => {
+      // Should match refreshment / break variations
+      expect(isRefreshmentTask('Refreshment')).toBe(true);
+      expect(isRefreshmentTask('refreshment')).toBe(true);
+      expect(isRefreshmentTask('Refreshments')).toBe(true);
+      expect(isRefreshmentTask('Refreshment Break')).toBe(true);
+      expect(isRefreshmentTask('Daily Refreshment (15 mins)')).toBe(true);
+      expect(isRefreshmentTask('Tea Break')).toBe(true);
+      expect(isRefreshmentTask('Coffee Break')).toBe(true);
+      expect(isRefreshmentTask('Lunch Break')).toBe(true);
+      expect(isRefreshmentTask('Personal Break')).toBe(true);
+
+      // Description fallback when task name is empty
+      expect(isRefreshmentTask('', 'Team refreshment break')).toBe(true);
+
+      // Should NOT match technical tasks containing "refresh"
+      expect(isRefreshmentTask('OAuth Token Refresh Endpoint')).toBe(false);
+      expect(isRefreshmentTask('Implement Cache Refresh Mechanism')).toBe(false);
+      expect(isRefreshmentTask('Fix Page Refresh on Navigation')).toBe(false);
+      expect(isRefreshmentTask('Update User Dashboard', 'Added token refresh logic')).toBe(false);
+      expect(isRefreshmentTask('Libraries')).toBe(false);
+      expect(isRefreshmentTask(null, null)).toBe(false);
+      expect(isRefreshmentTask(undefined, undefined)).toBe(false);
+    });
+
+    it('excludes refreshment tasks from ZohoWeeklyEvaluationModal and Done Tasks popup', () => {
+      const userWithRefreshment: ZohoUserSummary = {
+        userId: 'u-refreshment-test',
+        email: 'dev@creolestudios.com',
+        name: 'Dev Tester',
+        role: 'Developer',
+        yearsOfExperience: 3,
+        seniorityLevel: 'Mid',
+        aiSubscriptions: [],
+        tillDateSummary: {
+          doneTasks: 1,
+          pendingTasks: 0,
+          delayedTasks: 0,
+          weeklyAvgScore: 90,
+          totalHoursLogged: 4,
+        },
+        dailyEvaluations: [
+          {
+            date: '2026-10-25',
+            dayScore: 9.0,
+            summary: 'Completed feature',
+            tasks: [
+              {
+                id: 'task-real-1',
+                zohoTaskId: 'z-real-1',
+                projectId: 'p1',
+                projectName: 'CKP Portal',
+                taskName: 'Implement Eye Movement Tracking',
+                taskDescription: 'Eye movement tracking for interview proctoring',
+                zohoStatus: 'Completed',
+                isQAReview: false,
+                plannedHours: 4,
+                actualHours: 4,
+                taskDate: '2026-10-25',
+                zohoLink: 'https://projects.zoho.com',
+                comments: [],
+                evaluation: {
+                  overallScore: 9.0,
+                  timeScore: 10,
+                  commentQualityScore: 9,
+                  complexityScore: 8,
+                  repetitionScore: 10,
+                  timeVarianceMinutes: 0,
+                  timeAssessmentLabel: 'ON_TIME',
+                  isRepetitive: false,
+                  repetitionSimilarityPct: 0,
+                  matchedTaskId: null,
+                  summaryFeedback: 'Good work',
+                  strengths: [],
+                  improvements: [],
+                  aiModelUsed: 'rule',
+                },
+              },
+              {
+                id: 'task-refreshment-1',
+                zohoTaskId: 'z-refresh-1',
+                projectId: 'p1',
+                projectName: 'Internal',
+                taskName: 'Refreshment Break',
+                taskDescription: 'Daily tea/refreshment break',
+                zohoStatus: 'Completed',
+                isQAReview: false,
+                plannedHours: 0.5,
+                actualHours: 0.5,
+                taskDate: '2026-10-25',
+                zohoLink: 'https://projects.zoho.com',
+                comments: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      render(<ZohoWeeklyEvaluationModal user={userWithRefreshment} onClose={vi.fn()} />);
+
+      // The real task should be displayed
+      expect(screen.getByText('Implement Eye Movement Tracking')).toBeDefined();
+
+      // The refreshment task must NOT be displayed
+      expect(screen.queryByText('Refreshment Break')).toBeNull();
+
+      // Click "Done Tasks" card to open category popup
+      const doneCard = screen.getAllByText('Done Tasks')[0];
+      fireEvent.click(doneCard);
+
+      // Inside popup modal, "Implement Eye Movement Tracking" is present, "Refreshment Break" is not
+      expect(screen.getByTestId('category-task-popup')).toBeDefined();
+      expect(screen.getAllByText('Implement Eye Movement Tracking').length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText('Refreshment Break')).toBeNull();
+    });
+
+    it('excludes refreshment tasks from ZohoReportModal period calculations', () => {
+      const userWithRefreshment: ZohoUserSummary = {
+        userId: 'u-report-refreshment-test',
+        email: 'reportdev@creolestudios.com',
+        name: 'Report Dev',
+        role: 'Developer',
+        yearsOfExperience: 3,
+        seniorityLevel: 'Mid',
+        aiSubscriptions: [],
+        tillDateSummary: {
+          doneTasks: 1,
+          pendingTasks: 0,
+          delayedTasks: 0,
+          weeklyAvgScore: 90,
+          totalHoursLogged: 4,
+        },
+        dailyEvaluations: [
+          {
+            date: '2026-10-25',
+            dayScore: 9.0,
+            summary: 'Completed feature',
+            tasks: [
+              {
+                id: 'task-valid-code',
+                zohoTaskId: 'z-val-1',
+                projectId: 'p1',
+                projectName: 'CKP Portal',
+                taskName: 'Implement Code Security Check',
+                taskDescription: 'Security check implementation',
+                zohoStatus: 'Completed',
+                isQAReview: false,
+                plannedHours: 4,
+                actualHours: 4,
+                taskDate: '2026-10-25',
+                zohoLink: 'https://projects.zoho.com',
+                comments: [],
+              },
+              {
+                id: 'task-break-1',
+                zohoTaskId: 'z-break-1',
+                projectId: 'p1',
+                projectName: 'Internal',
+                taskName: 'Refreshment',
+                taskDescription: 'Evening refreshment',
+                zohoStatus: 'Completed',
+                isQAReview: false,
+                plannedHours: 0.5,
+                actualHours: 0.5,
+                taskDate: '2026-10-25',
+                zohoLink: 'https://projects.zoho.com',
+                comments: [],
+              },
+            ],
+          },
+        ],
+      };
+
+      render(
+        <ZohoReportModal
+          user={userWithRefreshment}
+          filterType="week"
+          onClose={vi.fn()}
+        />
+      );
+
+      // Should display the real task
+      expect(screen.getByText('Implement Code Security Check')).toBeDefined();
+
+      // Refreshment should NOT be rendered in the report task table
+      expect(screen.queryByText('Evening refreshment')).toBeNull();
     });
   });
 });

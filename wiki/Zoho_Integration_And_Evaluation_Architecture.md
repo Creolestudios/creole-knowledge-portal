@@ -720,12 +720,16 @@ Administrators have granular, selective control over daily evaluation emails dir
    - Replaced technical jargon ("Schedule Adherence") with clear label: **"Delayed Tasks"**.
    - Directly displays the count and proportion of tasks that exceeded their planned duration and time tolerance buffer.
 
-### 12.8 Decimal Years of Experience Support
+### 12.8 Decimal Years of Experience Support & Unified Resolution
 1. **Manual Decimal Entry in User Management**:
    - In `components/user-management.tsx`, the "Years of Experience" input supports manual entry of decimal numbers (e.g. `2.5`, `3.5`, `0.5`) using `<input type="number" step="any" min="0">`.
    - Form state handles intermediate string values during typing to prevent React controlled state from truncating decimal points or dropping trailing dots (`3.`).
 2. **Database & Auth Metadata Storage**:
    - Migration `20261106000000_alter_years_of_experience_to_numeric.sql` alters `user_profiles.years_of_experience` to `NUMERIC(4, 1)`.
    - `/api/admin/users` parses the experience value using `Number.parseFloat(...)` and synchronizes it into Supabase Auth `user_metadata` (schema-free float storage) with a defensive fallback for Postgres integer columns if migration has not yet executed.
-   - Evaluator heuristics, seniority tier resolution (`yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior'`), and user roster badges render the exact float value (e.g. `Mid (2.5 yrs)`).
+3. **Unified Resolution Across All Zoho Evaluation Endpoints**:
+   - All evaluation pipelines (`/api/admin/zoho/users`, `/api/user/zoho/my-evaluations`, `/api/admin/zoho/send-digest-email`, `/api/admin/zoho/send-evaluation-email`, `lib/zoho/cron.ts`, `lib/zoho/sync.ts`) check `authUser.user_metadata.years_of_experience` first before falling back to `user_profiles.years_of_experience`.
+   - Eliminates display discrepancies between Admin Console Users tab and Zoho Evaluation tab, ensuring both consistently show the exact decimal experience (e.g. `Mid (3.5 yrs)`).
+4. **Refreshment & Break Task Exclusion**:
+   - Tasks identified as breaks, tea/coffee time, or company refreshment entries (e.g. "Tea Break", "Snacks", "Lunch") via `isRefreshmentTask(...)` are automatically excluded from performance evaluations and velocity rollups.
 

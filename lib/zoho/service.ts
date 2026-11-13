@@ -13,6 +13,18 @@ export function buildZohoTaskDeepLink(
   return `https://projects.zoho.com/portal/${safePortal}#taskdetail/${projectId}/${taskId}`;
 }
 
+/**
+ * Checks if a task is a refreshment or break task that should not be evaluated or counted as a project work task.
+ * Matches terms like 'refreshment', 'refreshments', 'refreshment break', 'tea break', 'coffee break', 'lunch break', 'personal break'.
+ */
+export function isRefreshmentTask(taskName?: string | null, taskDescription?: string | null): boolean {
+  if (!taskName && !taskDescription) return false;
+  const name = (taskName || '').toLowerCase().trim();
+  const desc = (taskDescription || '').toLowerCase().trim();
+  const pattern = /\b(refreshments?|tea\s*break|coffee\s*break|lunch\s*break|personal\s*break)\b/i;
+  return pattern.test(name) || (name === '' && pattern.test(desc));
+}
+
 export interface ZohoUserSummary {
   userId: string;
   email: string;
@@ -234,7 +246,9 @@ export function buildWeeklyPerformanceReports(user: ZohoUserSummary): WeeklyEval
   const currentWeekNum = getISOWeekNumber(now);
   const currentYear = now.getFullYear();
 
-  const allTasks: ZohoTaskItem[] = (user.allDailyEvaluationsUpToDate || user.dailyEvaluations || []).flatMap((d) => d.tasks || []);
+  const allTasks: ZohoTaskItem[] = (user.allDailyEvaluationsUpToDate || user.dailyEvaluations || [])
+    .flatMap((d) => d.tasks || [])
+    .filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
   const weekMap = new Map<string, { weekNumber: number; year: number; tasks: ZohoTaskItem[] }>();
 
   for (const t of allTasks) {

@@ -209,36 +209,36 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
         return `
           <tr style="background-color: ${rowBg}; border-bottom: 1px solid #e2e8f0;">
             <!-- Column 1: Only User Email -->
-            <td style="padding: 12px 14px; vertical-align: top; font-size: 12.5px; color: #0f172a; font-weight: 600;">
+            <td width="23%" style="width: 23%; padding: 10px 12px; vertical-align: top; font-size: 11px; color: #0f172a; font-weight: 600; word-break: break-word; overflow-wrap: anywhere; line-height: 1.35;">
               ${escapeHtml(user.userEmail)}
             </td>
 
             <!-- Column 2: Total Added Tasks for Today -->
-            <td align="center" style="padding: 12px 8px; vertical-align: top; font-size: 13.5px; font-weight: 800; color: #0f172a;">
+            <td width="9%" align="center" style="width: 9%; padding: 10px 4px; vertical-align: top; font-size: 13px; font-weight: 800; color: #0f172a;">
               ${user.totalTasks}
             </td>
 
             <!-- Column 3: Both Task Statuses -->
-            <td align="center" style="padding: 12px 8px; vertical-align: top;">
+            <td width="13%" align="center" style="width: 13%; padding: 10px 4px; vertical-align: top;">
               ${taskStatusesHtml}
             </td>
 
             <!-- Column 4: Total Logged Hours -->
-            <td align="center" style="padding: 12px 8px; vertical-align: top; font-size: 12.5px; white-space: nowrap;">
-              <strong style="color: #0284c7; font-weight: 800; font-size: 13px;">${user.totalActualHours.toFixed(1)}h</strong>
+            <td width="10%" align="center" style="width: 10%; padding: 10px 4px; vertical-align: top; font-size: 12px; white-space: nowrap;">
+              <strong style="color: #0284c7; font-weight: 800; font-size: 12.5px;">${user.totalActualHours.toFixed(1)}h</strong>
             </td>
 
             <!-- Column 5: Only Total Score (No text badge) -->
-            <td align="center" style="padding: 12px 8px; vertical-align: top; white-space: nowrap;">
-              <span style="display: inline-block; font-size: 13px; font-weight: 900; color: ${scoreBadge.text}; background-color: ${scoreBadge.bg}; border: 1px solid ${scoreBadge.border}; padding: 3px 9px; border-radius: 6px;">
+            <td width="10%" align="center" style="width: 10%; padding: 10px 4px; vertical-align: top; white-space: nowrap;">
+              <span style="display: inline-block; font-size: 12px; font-weight: 900; color: ${scoreBadge.text}; background-color: ${scoreBadge.bg}; border: 1px solid ${scoreBadge.border}; padding: 2px 7px; border-radius: 5px;">
                 ${userNormScore}/10
               </span>
             </td>
 
             <!-- Column 6: Evaluation Summary To The Point (3-4 bullet pointers) -->
-            <td style="padding: 10px 14px; vertical-align: top; font-size: 11.5px; color: #334155; line-height: 1.45;">
-              <ul style="margin: 0; padding-left: 14px; list-style-type: disc;">
-                ${pointers.map((p) => `<li style="margin-bottom: 3px;">${renderPointerHtml(p)}</li>`).join('')}
+            <td width="35%" style="width: 35%; padding: 10px 14px; vertical-align: top; font-size: 11px; color: #334155; line-height: 1.45; word-break: break-word; overflow-wrap: break-word;">
+              <ul style="margin: 0; padding-left: 14px; list-style-type: disc; word-break: break-word; overflow-wrap: break-word;">
+                ${pointers.map((p) => `<li style="margin-bottom: 3px; word-break: break-word; overflow-wrap: break-word;">${renderPointerHtml(p)}</li>`).join('')}
               </ul>
             </td>
           </tr>
@@ -252,23 +252,65 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(subject)}</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #0f172a;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    table {
+      border-spacing: 0;
+    }
+    @page {
+      size: A4 portrait;
+      margin: 8mm 6mm;
+    }
+    @media print {
+      body {
+        background-color: #ffffff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .digest-body-table {
+        padding: 0 !important;
+        background-color: #ffffff !important;
+      }
+      .digest-card {
+        max-width: 100% !important;
+        width: 100% !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+      }
+      .digest-data-table {
+        width: 100% !important;
+        table-layout: fixed !important;
+      }
+    }
+  </style>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.5;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 24px 8px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="digest-body-table" style="background-color: #f1f5f9; padding: 18px 8px; width: 100%;">
     <tr>
       <td align="center">
         <!-- Main Container -->
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 980px; background-color: #ffffff; border-radius: 16px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08);">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="digest-card" style="max-width: 820px; width: 100%; background-color: #ffffff; border-radius: 14px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08); table-layout: fixed;">
           
           <!-- Branded Executive Banner -->
           <tr>
-            <td style="background-color: #09090b; padding: 24px 32px; border-bottom: 3px solid #34c4f2;">
+            <td style="background-color: #09090b; padding: 20px 24px; border-bottom: 3px solid #34c4f2;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <td>
                     <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; color: #34c4f2; font-weight: 800;">Creole Knowledge Portal</span>
-                    <h1 style="margin: 4px 0 0 0; font-size: 22px; font-weight: 900; color: #ffffff; letter-spacing: -0.01em;">Executive Daily Team Zoho Digest</h1>
-                    <p style="margin: 5px 0 0 0; font-size: 13px; color: #a1a1aa;">Target Date: <strong>${escapeHtml(payload.date)}</strong></p>
+                    <h1 style="margin: 4px 0 0 0; font-size: 20px; font-weight: 900; color: #ffffff; letter-spacing: -0.01em;">Executive Daily Team Zoho Digest</h1>
+                    <p style="margin: 4px 0 0 0; font-size: 12.5px; color: #a1a1aa;">Target Date: <strong>${escapeHtml(payload.date)}</strong></p>
                   </td>
                 </tr>
               </table>
@@ -277,11 +319,11 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
 
           <!-- Main Table Section -->
           <tr>
-            <td style="padding: 24px 32px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 14px;">
+            <td style="padding: 18px 18px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
                 <tr>
                   <td>
-                    <h3 style="margin: 0; font-size: 13.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.06em;">
+                    <h3 style="margin: 0; font-size: 13px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em;">
                       Team Members Performance Summary (${payload.users.length})
                     </h3>
                   </td>
@@ -291,15 +333,15 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
                 </tr>
               </table>
               
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; width: 100%;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="digest-data-table" style="border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; width: 100%; table-layout: fixed;">
                 <thead>
                   <tr style="background-color: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
-                    <th style="padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em;">User Email</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Total Tasks</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Task Status</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Logged Hours</th>
-                    <th style="padding: 12px 8px; text-align: center; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; white-space: nowrap;">Total Score</th>
-                    <th style="padding: 12px 14px; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; min-width: 220px;">Evaluation Summary</th>
+                    <th width="23%" style="width: 23%; padding: 10px 12px; text-align: left; font-size: 10px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; vertical-align: middle;">User Email</th>
+                    <th width="9%" style="width: 9%; padding: 10px 4px; text-align: center; font-size: 10px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.03em; vertical-align: middle; line-height: 1.3;">Total Tasks</th>
+                    <th width="13%" style="width: 13%; padding: 10px 4px; text-align: center; font-size: 10px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.03em; vertical-align: middle; line-height: 1.3;">Task Status</th>
+                    <th width="10%" style="width: 10%; padding: 10px 4px; text-align: center; font-size: 10px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.03em; vertical-align: middle; line-height: 1.3;">Logged Hours</th>
+                    <th width="10%" style="width: 10%; padding: 10px 4px; text-align: center; font-size: 10px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.03em; vertical-align: middle; line-height: 1.3;">Total Score</th>
+                    <th width="35%" style="width: 35%; padding: 10px 14px; text-align: left; font-size: 10px; text-transform: uppercase; color: #475569; font-weight: 800; letter-spacing: 0.04em; vertical-align: middle;">Evaluation Summary</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -311,11 +353,11 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
 
           <!-- Portal CTA Action Button -->
           <tr>
-            <td align="center" style="padding: 0 32px 28px 32px;">
+            <td align="center" style="padding: 0 18px 22px 18px;">
               <table role="presentation" cellpadding="0" cellspacing="0">
                 <tr>
-                  <td align="center" style="background-color: #34c4f2; border-radius: 10px; box-shadow: 0 4px 12px rgba(52, 196, 242, 0.35);">
-                    <a href="${evaluationLink}" style="display: inline-block; color: #09090b; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; text-decoration: none; padding: 13px 30px;">
+                  <td align="center" style="background-color: #34c4f2; border-radius: 8px; box-shadow: 0 4px 12px rgba(52, 196, 242, 0.35);">
+                    <a href="${evaluationLink}" style="display: inline-block; color: #09090b; font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; text-decoration: none; padding: 12px 26px;">
                       Open Zoho Evaluation Manager in Admin Portal &rarr;
                     </a>
                   </td>
@@ -326,7 +368,7 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
 
           <!-- Footer Information -->
           <tr>
-            <td style="background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+            <td style="background-color: #f8fafc; padding: 16px 20px; border-top: 1px solid #e2e8f0; text-align: center;">
               <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.5;">
                 This consolidated team digest is delivered daily at 10:00 PM IST to authorized Administrators and Managers configured in the Creole Knowledge Portal.
               </p>

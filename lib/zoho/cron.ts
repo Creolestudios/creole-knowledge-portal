@@ -1,3 +1,4 @@
+import { extractPrUrls, batchVerifyPrUrls, type PullRequestEvidence } from '../github';
 import { supabaseAdmin } from '../supabase/admin';
 import {
   getZohoAccessToken,
@@ -11,7 +12,7 @@ import {
   extractPlannedMinutesFromTask,
 } from './client';
 import { evaluateZohoTask } from './evaluator';
-import { formatDateYYYYMMDD, formatUserName } from './service';
+import { formatDateYYYYMMDD, formatUserName, isRefreshmentTask } from './service';
 import { sendDailyEvaluationEmail, sendDailyDigestEmail } from '../email/service';
 import { getDigestRecipientEmails } from './digest-recipients-store';
 import type { TaskEmailItem, DailyEvaluationEmailPayload } from '../email/templates/daily-evaluation-email';
@@ -173,7 +174,14 @@ export async function runDailyZohoEvaluationCron(
         authUser.email || '',
         (meta.full_name as string) || (meta.name as string) || (profile?.name as string)
       );
-      const yearsOfExp = (profile?.years_of_experience as number) ?? 2;
+      const metaYears = typeof meta.years_of_experience === 'number'
+        ? meta.years_of_experience
+        : (meta.years_of_experience !== undefined && meta.years_of_experience !== null && meta.years_of_experience !== ''
+            ? Number.parseFloat(String(meta.years_of_experience))
+            : null);
+      const yearsOfExp = (metaYears !== null && !Number.isNaN(metaYears) && metaYears >= 0)
+        ? metaYears
+        : (profile?.years_of_experience != null ? Number(profile.years_of_experience) : 2);
       const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
       const profileSubs = Array.isArray(profile?.ai_subscriptions) && profile.ai_subscriptions.length > 0
         ? profile.ai_subscriptions
@@ -343,6 +351,11 @@ export async function runDailyZohoEvaluationCron(
             })()
           : '';
 
+        // Skip refreshment and non-work break entries
+        if (isRefreshmentTask(raw.name, raw.description)) {
+          continue;
+        }
+
         // Strictly evaluate tasks for the target date only
         const isTargetDay = taskDateStr === targetDate;
         if (!isTargetDay) {
@@ -469,6 +482,22 @@ export async function runDailyZohoEvaluationCron(
           }
         }
 
+        // Extract & verify GitHub PR links from task comments
+        const commentContents = apiComments.map((c) => c.content);
+        const prUrls = extractPrUrls(commentContents);
+        let prEvidence: PullRequestEvidence[] = [];
+        if (prUrls.length > 0) {
+          try {
+            prEvidence = await batchVerifyPrUrls(prUrls, {
+              userEmail: email,
+              userName: fullName,
+              githubUsername: (profile as any)?.github_username || null,
+            });
+          } catch (prErr) {
+            console.warn(`[ZohoCron] PR verification warning for task ${taskId}:`, prErr);
+          }
+        }
+
         // Run full evaluation engine
         const evalResult = await evaluateZohoTask(
           {
@@ -483,6 +512,10 @@ export async function runDailyZohoEvaluationCron(
             userExperienceYears: yearsOfExp,
             seniorityLevel,
             aiSubscriptions,
+            userEmail: email,
+            userName: fullName,
+            githubUsername: (profile as any)?.github_username || null,
+            prEvidence,
           },
           { useAi: false }
         );
@@ -505,6 +538,7 @@ export async function runDailyZohoEvaluationCron(
           whereLacked: evalResult.whereLacked,
           whereToImprove: evalResult.whereToImprove,
           improvementItems: evalResult.improvementItems,
+          prEvidence: evalResult.prEvidence || prEvidence,
         });
 
         if (Array.isArray(evalResult.strengths)) {
@@ -535,6 +569,7 @@ export async function runDailyZohoEvaluationCron(
               strengths: evalResult.strengths,
               improvements: evalResult.improvements,
               ai_model_used: evalResult.aiModelUsed,
+              pr_evidence: evalResult.prEvidence || prEvidence,
             });
             totalEvaluationsCreated++;
           } catch (evalErr) {

@@ -1,3 +1,4 @@
+import type { PullRequestEvidence } from '@/lib/github/pr-types';
 export interface TaskEmailItem {
   taskName: string;
   projectName: string;
@@ -13,6 +14,7 @@ export interface TaskEmailItem {
   whereToImprove?: string;
   improvementItems?: string[];
   zohoLink?: string;
+  prEvidence?: PullRequestEvidence[];
 }
 
 export interface DailyEvaluationEmailPayload {
@@ -177,6 +179,11 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
                       <span style="display: inline-block; font-size: 9.5px; font-weight: 700; color: ${timeBadge.text}; background-color: ${timeBadge.bg}; border: 1px solid ${timeBadge.border}; padding: 1px 6px; border-radius: 4px;">
                         ${timeBadge.label}
                       </span>
+                      ${task.prEvidence && task.prEvidence.length > 0 ? task.prEvidence.map(p => `
+                        <a href="${escapeHtml(p.url)}" target="_blank" style="text-decoration:none; display: inline-block; font-size: 9.5px; font-weight: 700; color: ${p.verificationStatus === 'VERIFIED' ? '#15803d' : '#b91c1c'}; background-color: ${p.verificationStatus === 'VERIFIED' ? '#f0fdf4' : '#fef2f2'}; border: 1px solid ${p.verificationStatus === 'VERIFIED' ? '#bbf7d0' : '#fecaca'}; padding: 1px 6px; border-radius: 4px; margin-left: 6px;">
+                          ${p.verificationStatus === 'VERIFIED' ? '✓ PR #' + p.prNumber : '✕ PR #' + p.prNumber}
+                        </a>
+                      `).join('') : ''}
                       ${workMatchScore ? `
                         <span style="margin-left: 8px; font-size: 10.5px; color: #64748b;">
                           Work Justification: <strong style="color: #7c3aed;">${workMatchScore}/10</strong>
@@ -206,12 +213,14 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
         `;
       }).join('');
 
-  const strengthsListHtml = payload.strengths.length > 0
-    ? payload.strengths.map(s => `<li style="margin-bottom: 2px;">${escapeHtml(s)}</li>`).join('')
+  const safeStrengths = Array.isArray(payload.strengths) ? payload.strengths : [];
+  const strengthsListHtml = safeStrengths.length > 0
+    ? safeStrengths.map(s => `<li style="margin-bottom: 2px;">${escapeHtml(s)}</li>`).join('')
     : '<li>Consistent execution and delivery against assigned tasks.</li>';
 
-  const improvementsListHtml = payload.improvements.length > 0
-    ? payload.improvements.map(i => `<li style="margin-bottom: 2px;">${escapeHtml(i)}</li>`).join('')
+  const safeImprovements = Array.isArray(payload.improvements) ? payload.improvements : [];
+  const improvementsListHtml = safeImprovements.length > 0
+    ? safeImprovements.map(i => `<li style="margin-bottom: 2px;">${escapeHtml(i)}</li>`).join('')
     : '<li>Continue logging timely work progress and updates regularly.</li>';
 
   const html = `
@@ -371,10 +380,10 @@ Cumulative Time Activity:
 - Tasks Evaluated: ${payload.taskCount} (Done: ${payload.doneTasks}, Delayed/Gap: ${payload.delayedTasks}, QA: ${payload.qaTasks})
 
 Key Accomplishments:
-${payload.strengths.map(s => `- ${s}`).join('\n')}
+${safeStrengths.map(s => `- ${s}`).join('\n')}
 
 Areas for Improvement:
-${payload.improvements.map(i => `- ${i}`).join('\n')}
+${safeImprovements.map(i => `- ${i}`).join('\n')}
 
 Tasks Evaluated:
 ${payload.tasks.map(t => {

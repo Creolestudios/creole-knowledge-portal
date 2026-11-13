@@ -21,6 +21,7 @@ import {
   formatDateYYYYMMDD,
   formatUserName,
   buildSampleUserSummary,
+  isRefreshmentTask,
 } from './service';
 
 // In-memory cache for live synced data across requests
@@ -133,7 +134,14 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
         (meta.full_name as string) || (meta.name as string) || (profile?.name as string)
       );
       const userRole = (profile?.current_role as string) || 'Developer';
-      const yearsOfExp = (profile?.years_of_experience as number) ?? 2;
+      const metaYears = typeof meta.years_of_experience === 'number'
+        ? meta.years_of_experience
+        : (meta.years_of_experience !== undefined && meta.years_of_experience !== null && meta.years_of_experience !== ''
+            ? Number.parseFloat(String(meta.years_of_experience))
+            : null);
+      const yearsOfExp = (metaYears !== null && !Number.isNaN(metaYears) && metaYears >= 0)
+        ? metaYears
+        : (profile?.years_of_experience != null ? Number(profile.years_of_experience) : 2);
       const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
       const profileSubs = Array.isArray(profile?.ai_subscriptions) && profile.ai_subscriptions.length > 0
         ? profile.ai_subscriptions
@@ -285,6 +293,11 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
             taskDateStr = (raw.created_time_long ? formatDateYYYYMMDD(new Date(raw.created_time_long)) : '') ||
                           lastUpdatedStr ||
                           formatDateYYYYMMDD(now);
+          }
+
+          // Skip refreshment and non-work break entries
+          if (isRefreshmentTask(raw.name, raw.description)) {
+            continue;
           }
 
           const isTaskDateThisWeek = Boolean(taskDateStr && taskDateStr >= weekStartStr && taskDateStr <= weekEndStr);

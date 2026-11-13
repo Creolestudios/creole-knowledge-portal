@@ -82,6 +82,57 @@ describe('UserManagement', () => {
     expect(screen.getByTestId('regular-users-count')).toHaveTextContent('2');
   });
 
+  it('filters by Total Users, Total Admins, and Regular Users in alphabetical order when clicking count cards', async () => {
+    const mixedUsers = [
+      { user_id: '1', email: 'zara@creolestudios.com', role: 'user', primary_tech_stack: [] },
+      { user_id: '2', email: 'bobby.admin@creolestudios.com', role: 'admin', primary_tech_stack: [] },
+      { user_id: '3', email: 'alice@creolestudios.com', role: 'user', primary_tech_stack: [] },
+      { user_id: '4', email: 'adam.admin@creolestudios.com', role: 'admin', primary_tech_stack: [] },
+    ];
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => mixedUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('alice@creolestudios.com'));
+
+    // 1. Initial State: All users displayed in alphabetical order (adam, alice, bobby, zara)
+    const initialEmails = screen.getAllByTestId('user-email-text').map((el) => el.textContent);
+    expect(initialEmails).toEqual([
+      'adam.admin@creolestudios.com',
+      'alice@creolestudios.com',
+      'bobby.admin@creolestudios.com',
+      'zara@creolestudios.com',
+    ]);
+
+    // 2. Click "Total Admins" card -> only admins in alphabetical order (adam, bobby)
+    fireEvent.click(screen.getByTestId('filter-total-admins-btn'));
+    const adminEmails = screen.getAllByTestId('user-email-text').map((el) => el.textContent);
+    expect(adminEmails).toEqual([
+      'adam.admin@creolestudios.com',
+      'bobby.admin@creolestudios.com',
+    ]);
+    expect(screen.queryByText('alice@creolestudios.com')).not.toBeInTheDocument();
+    expect(screen.queryByText('zara@creolestudios.com')).not.toBeInTheDocument();
+
+    // 3. Click "Regular Users" card -> only regular users in alphabetical order (alice, zara)
+    fireEvent.click(screen.getByTestId('filter-regular-users-btn'));
+    const regularEmails = screen.getAllByTestId('user-email-text').map((el) => el.textContent);
+    expect(regularEmails).toEqual([
+      'alice@creolestudios.com',
+      'zara@creolestudios.com',
+    ]);
+    expect(screen.queryByText('adam.admin@creolestudios.com')).not.toBeInTheDocument();
+    expect(screen.queryByText('bobby.admin@creolestudios.com')).not.toBeInTheDocument();
+
+    // 4. Click "Total Users" card -> returns to all users in alphabetical order
+    fireEvent.click(screen.getByTestId('filter-total-users-btn'));
+    const restoredEmails = screen.getAllByTestId('user-email-text').map((el) => el.textContent);
+    expect(restoredEmails).toEqual([
+      'adam.admin@creolestudios.com',
+      'alice@creolestudios.com',
+      'bobby.admin@creolestudios.com',
+      'zara@creolestudios.com',
+    ]);
+  });
+
   it('shows an error toast when the initial fetch fails', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: false });
     render(<UserManagement />);
@@ -195,6 +246,21 @@ describe('UserManagement', () => {
       expect(putPayload).toBeTruthy();
     });
     expect(putPayload.years_of_experience).toBe(3.5);
+  });
+
+  it('displays user experience badge beside user email on user cards', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => sampleUsers });
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    const expBadges = screen.getAllByTestId('user-experience-badge');
+    expect(expBadges.length).toBe(sampleUsers.length);
+    // complete@creolestudios.com (3 yrs exp)
+    expect(expBadges[0].textContent).toBe('3 yrs exp');
+    // incomplete@creolestudios.com (0 yrs exp)
+    expect(expBadges[1].textContent).toBe('0 yrs exp');
+    // partial@creolestudios.com (null -> 0 yrs exp)
+    expect(expBadges[2].textContent).toBe('0 yrs exp');
   });
 
   it('shows an error toast when saving fails', async () => {

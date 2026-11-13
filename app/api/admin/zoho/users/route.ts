@@ -7,6 +7,7 @@ import {
   ZohoTaskItem,
   formatUserName,
   buildSampleUserSummary,
+  isRefreshmentTask,
 } from '@/lib/zoho/service';
 import { getLiveZohoSummariesWithFilter } from '@/lib/zoho/sync';
 import { parseDurationToMinutes } from '@/lib/zoho/client';
@@ -160,7 +161,14 @@ export async function GET(request: Request) {
             (meta.full_name as string) || (meta.name as string) || (profile?.name as string)
           );
           const role = (profile?.current_role as string) || 'Developer';
-          const yearsOfExp = (profile?.years_of_experience as number) ?? 2;
+          const metaYears = typeof meta.years_of_experience === 'number'
+            ? meta.years_of_experience
+            : (meta.years_of_experience !== undefined && meta.years_of_experience !== null && meta.years_of_experience !== ''
+                ? Number.parseFloat(String(meta.years_of_experience))
+                : null);
+          const yearsOfExp = (metaYears !== null && !Number.isNaN(metaYears) && metaYears >= 0)
+            ? metaYears
+            : (profile?.years_of_experience != null ? Number(profile.years_of_experience) : 2);
           const seniorityLevel = yearsOfExp >= 5 ? 'Senior' : yearsOfExp >= 2 ? 'Mid' : 'Junior';
 
           // Robust AI Subscriptions extraction from profile, user_metadata, and mapping
@@ -189,8 +197,11 @@ export async function GET(request: Request) {
           const mappedZohoEmail = (mapping?.zoho_user_email || '').toLowerCase().trim();
           const userDbTasks = dbTasks.filter((t) => {
             const taskEmail = (t.user_email || '').toLowerCase().trim();
-            return (t.user_id && t.user_id === authUser.id) ||
+            const isUser = (t.user_id && t.user_id === authUser.id) ||
                    (taskEmail && (taskEmail === email || taskEmail === mappedZohoEmail));
+            if (!isUser) return false;
+            if (isRefreshmentTask(t.task_name, t.task_description)) return false;
+            return true;
           });
 
           // Helper to build a unified ZohoTaskItem with authoritative strict evaluation

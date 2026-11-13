@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { X, Printer, Award, Clock, CheckCircle2, AlertTriangle, FileText, Bot, Users, BarChart3, RefreshCw } from 'lucide-react';
 import { formatMinutesToClock, formatZohoDurationToClock } from '@/lib/zoho/client';
-import { ZohoUserSummary } from '@/lib/zoho/service';
+import { ZohoUserSummary, isRefreshmentTask } from '@/lib/zoho/service';
 
 export interface PeriodCapacityInfo {
   capacityHours: number;
@@ -195,7 +195,7 @@ export default function ZohoReportModal({
 
   // Aggregate stats for multi-user report
   const totalTasksDone = effectiveUsers.reduce((sum, u) => {
-    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    const tasks = (u.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
     if (tasks.length > 0) {
       return sum + tasks.filter((t) => {
         const s = (t.zohoStatus || '').toLowerCase();
@@ -206,7 +206,7 @@ export default function ZohoReportModal({
   }, 0);
 
   const totalTasksPending = effectiveUsers.reduce((sum, u) => {
-    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    const tasks = (u.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
     if (tasks.length > 0) {
       return sum + tasks.filter((t) => {
         const s = (t.zohoStatus || '').toLowerCase();
@@ -219,7 +219,7 @@ export default function ZohoReportModal({
   }, 0);
 
   const totalTasksDelayed = effectiveUsers.reduce((sum, u) => {
-    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    const tasks = (u.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
     if (tasks.length > 0) {
       return sum + tasks.filter((t) => t.evaluation?.timeAssessmentLabel === 'OVERDUE').length;
     }
@@ -227,7 +227,7 @@ export default function ZohoReportModal({
   }, 0);
 
   const totalHoursLogged = Math.round(effectiveUsers.reduce((sum, u) => {
-    const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+    const tasks = (u.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
     if (tasks.length > 0) {
       return sum + tasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0);
     }
@@ -236,7 +236,7 @@ export default function ZohoReportModal({
 
   const avgTeamScore = Math.round(
     effectiveUsers.reduce((sum, u) => {
-      const tasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+      const tasks = (u.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
       if (tasks.length > 0) {
         const scored = tasks.filter((t) => t.evaluation?.overallScore != null);
         if (scored.length > 0) {
@@ -367,7 +367,7 @@ export default function ZohoReportModal({
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                       {effectiveUsers.map((u) => {
-                        const uTasks = u.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+                        const uTasks = (u.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
                         const uDone = uTasks.length > 0
                           ? uTasks.filter((t) => {
                               const s = (t.zohoStatus || '').toLowerCase();
@@ -447,7 +447,7 @@ export default function ZohoReportModal({
                 const periodBadge = filterType === 'month' ? 'MONTHLY EVALUATION' : filterType === 'range' ? 'CUSTOM RANGE EVALUATION' : 'WEEKLY EVALUATION';
                 const periodTitle = dateRangeText ? `Evaluation Report: ${dateRangeText}` : `${periodBadge}`;
 
-                const allPeriodTasks = singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+                const allPeriodTasks = (singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
 
                 const periodDoneTasks = allPeriodTasks.length > 0
                   ? allPeriodTasks.filter((t) => {
@@ -655,7 +655,7 @@ export default function ZohoReportModal({
 
               {/* Daily Hours Spent Breakdown */}
               {(() => {
-                const allPeriodTasks = singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || [];
+                const allPeriodTasks = (singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
                 const dailyList = (() => {
                   if (singleUser.dailyEvaluations && singleUser.dailyEvaluations.length > 0) {
                     return [...singleUser.dailyEvaluations].sort((a, b) => b.date.localeCompare(a.date));

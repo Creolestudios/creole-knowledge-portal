@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireAdminUser } from '@/lib/supabase/admin';
-import { resolveDateFilterRange, getMockZohoData, ZohoUserSummary } from '@/lib/zoho/service';
+import { resolveDateFilterRange, getMockZohoData, ZohoUserSummary, isRefreshmentTask } from '@/lib/zoho/service';
 
 export async function GET(request: Request) {
   try {
@@ -33,7 +33,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const allTasks = targetUser.dailyEvaluations.flatMap(d => d.tasks);
+    const allTasks = targetUser.dailyEvaluations
+      .flatMap(d => d.tasks)
+      .filter(t => !isRefreshmentTask(t.taskName, t.taskDescription));
     let onTimeCount = 0;
     let overrunToleratedCount = 0;
     let unexpectedEarlyCount = 0;

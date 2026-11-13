@@ -123,5 +123,61 @@ describe('GET /api/admin/zoho/users Route Handler', () => {
     expect(task.evaluation.workMatchFeedback).toBeDefined();
     expect(task.evaluation.overallScore).toBeGreaterThan(0);
   });
+
+  it('correctly uses fractional years_of_experience from user_metadata over rounded integer in user_profiles', async () => {
+    mockRequireAdminUser.mockResolvedValue({ userId: 'admin-123' });
+
+    mockListUsers.mockResolvedValue({
+      data: {
+        users: [
+          {
+            id: 'user-varun',
+            email: 'varun.panchal@creolestudios.com',
+            last_sign_in_at: '2026-11-12T10:00:00Z',
+            user_metadata: {
+              full_name: 'Varun Panchal',
+              years_of_experience: 3.5,
+            },
+          },
+        ],
+      },
+      error: null,
+    });
+
+    const mockProfileSelect = vi.fn().mockResolvedValue({
+      data: [
+        {
+          user_id: 'user-varun',
+          email: 'varun.panchal@creolestudios.com',
+          role: 'developer',
+          years_of_experience: 4, // Integer column rounded in DB
+        },
+      ],
+      error: null,
+    });
+
+    const mockTasksRange = vi.fn().mockResolvedValue({ data: [], error: null });
+    const mockTasksOrder = vi.fn().mockReturnValue({ range: mockTasksRange });
+    const mockTaskSelect = vi.fn().mockReturnValue({ order: mockTasksOrder });
+
+    mockFrom.mockImplementation((tableName: string) => {
+      if (tableName === 'user_profiles') {
+        return { select: mockProfileSelect };
+      }
+      if (tableName === 'zoho_tasks') {
+        return { select: mockTaskSelect };
+      }
+      return { select: vi.fn().mockResolvedValue({ data: [], error: null }) };
+    });
+
+    const request = new Request('http://localhost:3000/api/admin/zoho/users?type=week&startDate=2026-11-09&endDate=2026-11-15');
+    const response = await GET(request);
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.users.length).toBe(1);
+    expect(body.users[0].yearsOfExperience).toBe(3.5);
+    expect(body.users[0].seniorityLevel).toBe('Mid');
+  });
 });
 
