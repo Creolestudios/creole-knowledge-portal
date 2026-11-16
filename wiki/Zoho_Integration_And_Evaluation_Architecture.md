@@ -733,3 +733,14 @@ Administrators have granular, selective control over daily evaluation emails dir
 4. **Refreshment & Break Task Exclusion**:
    - Tasks identified as breaks, tea/coffee time, or company refreshment entries (e.g. "Tea Break", "Snacks", "Lunch") via `isRefreshmentTask(...)` are automatically excluded from performance evaluations and velocity rollups.
 
+### 12.9 Unified Date → Tasks Evaluation Report Hierarchy (`ZohoReportModal`)
+1. **Single Cohesive Date-by-Date Structure**:
+   - In `components/zoho/zoho-report-modal.tsx`, eliminated the disconnected two-table format (which previously showed a daily hours summary with cramped truncated task names, followed by a flat task table with no dates).
+   - Replaced with a unified **Date → Tasks** layout: each evaluated day has an independent card displaying:
+     - **Date Header Bar**: Formatted date (`Wed, 07 Oct 2026`), ISO date badge (`[2026-10-07]`), daily task count, hours logged vs. 8h capacity, overtime/undertime variance, miniature progress bar, and authoritative Day Score (`/ 10`).
+     - **Nested Task Table**: Renders the complete task details for that date: Task Name with clickable Zoho Projects link icon (`↗`), Project Name pill, Actual vs. Planned hours (`formatMinutesToClock`), live Zoho status badge, and individual task score with color-coding.
+2. **Total Rollup Summary Bar**:
+   - Renders a clean consolidated rollup at the bottom showing total active days, total actual hours logged, target period capacity hours, capacity utilization percentage, and composite period score.
+3. **Print & PDF Optimization**:
+   - Structured with `break-inside-avoid` on daily cards to prevent awkward breaks across pages during print and PDF generation.
+

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Printer, Award, Clock, CheckCircle2, AlertTriangle, FileText, Bot, Users, BarChart3, RefreshCw } from 'lucide-react';
+import { X, Printer, Award, Clock, CheckCircle2, AlertTriangle, FileText, Bot, Users, BarChart3, RefreshCw, Calendar, ExternalLink } from 'lucide-react';
 import { formatMinutesToClock, formatZohoDurationToClock } from '@/lib/zoho/client';
 import { ZohoUserSummary, isRefreshmentTask } from '@/lib/zoho/service';
 
@@ -653,32 +653,58 @@ export default function ZohoReportModal({
                 );
               })()}
 
-              {/* Daily Hours Spent Breakdown */}
+              {/* Daily Hours Spent Breakdown & Evaluated Task Log */}
               {(() => {
                 const allPeriodTasks = (singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
-                const dailyList = (() => {
-                  if (singleUser.dailyEvaluations && singleUser.dailyEvaluations.length > 0) {
-                    return [...singleUser.dailyEvaluations].sort((a, b) => b.date.localeCompare(a.date));
+
+                // Group all period tasks by date cleanly
+                const dayMap = new Map<string, { date: string; dayScore: number; tasks: typeof allPeriodTasks }>();
+
+                if (singleUser.dailyEvaluations && singleUser.dailyEvaluations.length > 0) {
+                  for (const day of singleUser.dailyEvaluations) {
+                    const validTasks = (day.tasks || []).filter((t) => !isRefreshmentTask(t.taskName, t.taskDescription));
+                    if (validTasks.length > 0) {
+                      dayMap.set(day.date, {
+                        date: day.date,
+                        dayScore: day.dayScore > 10 ? day.dayScore / 10 : day.dayScore,
+                        tasks: validTasks,
+                      });
+                    }
                   }
-                  const dayMap = new Map<string, typeof allPeriodTasks>();
-                  for (const t of allPeriodTasks) {
-                    const d = t.taskDate || 'Undated';
-                    if (!dayMap.has(d)) dayMap.set(d, []);
-                    dayMap.get(d)!.push(t);
+                }
+
+                // Ensure all period tasks are mapped
+                for (const t of allPeriodTasks) {
+                  const d = t.taskDate || 'Undated';
+                  if (!dayMap.has(d)) {
+                    dayMap.set(d, {
+                      date: d,
+                      dayScore: 8.5,
+                      tasks: [t],
+                    });
+                  } else {
+                    const existing = dayMap.get(d)!;
+                    const alreadyExists = existing.tasks.some(
+                      (it) => (it.id && it.id === t.id) || (it.zohoTaskId && it.zohoTaskId === t.zohoTaskId) || it.taskName === t.taskName
+                    );
+                    if (!alreadyExists) {
+                      existing.tasks.push(t);
+                    }
                   }
-                  return Array.from(dayMap.entries())
-                    .map(([date, tasks]) => {
-                      const scoreSum = tasks.reduce((sum, it) => sum + (it.evaluation?.overallScore || 0), 0);
-                      const dayScore = tasks.length > 0 ? Math.round((scoreSum / tasks.length) * 10) / 10 : 8.5;
-                      return {
-                        date,
-                        dayScore,
-                        summary: `Completed ${tasks.length} task(s) on ${date}`,
-                        tasks,
-                      };
-                    })
-                    .sort((a, b) => b.date.localeCompare(a.date));
-                })();
+                }
+
+                const dailyList = Array.from(dayMap.values())
+                  .map((group) => {
+                    const scored = group.tasks.filter((t) => t.evaluation?.overallScore != null);
+                    const dayScore = scored.length > 0
+                      ? Math.round((scored.reduce((sum, t) => sum + Number(t.evaluation!.overallScore), 0) / scored.length) * 10) / 10
+                      : group.dayScore;
+                    return {
+                      ...group,
+                      dayScore,
+                    };
+                  })
+                  .sort((a, b) => b.date.localeCompare(a.date));
 
                 const periodActualHours = allPeriodTasks.length > 0
                   ? Math.round(allPeriodTasks.reduce((s, t) => s + (Number(t.actualHours) || 0), 0) * 10) / 10
@@ -703,196 +729,221 @@ export default function ZohoReportModal({
                 }
 
                 return (
-                  <div className="space-y-3">
+                  <div className="space-y-4">
+                    {/* Header */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                         <Clock className="w-3.5 h-3.5 text-[#34c4f2]" />
-                        Daily Hours Spent Breakdown ({dailyList.length} Active Days)
+                        Daily Hours Spent Breakdown & Task Log ({dailyList.length} Active Days • {allPeriodTasks.length} Tasks)
                       </h4>
                       <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
                         Daily Standard Capacity: <strong className="text-zinc-700 dark:text-zinc-300">8.0h / day</strong> ({periodCap.label})
                       </span>
                     </div>
 
-                    <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-2xs">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead className="bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-400 text-[10px] uppercase font-bold tracking-wider">
-                            <tr>
-                              <th className="py-2.5 px-4">Date</th>
-                              <th className="py-2.5 px-3 text-center">Hours Spent</th>
-                              <th className="py-2.5 px-3 text-center">Daily Capacity (8h)</th>
-                              <th className="py-2.5 px-3">Progress</th>
-                              <th className="py-2.5 px-3 text-center">Tasks</th>
-                              <th className="py-2.5 px-3 text-right">Day Score</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                            {dailyList.length === 0 ? (
-                              <tr>
-                                <td colSpan={6} className="py-4 text-center text-zinc-400">
-                                  No daily activity recorded for this period
-                                </td>
-                              </tr>
-                            ) : (
-                              dailyList.map((day) => {
-                                const dayHours = Math.round(day.tasks.reduce((sum, t) => sum + (Number(t.actualHours) || 0), 0) * 10) / 10;
-                                const dayTarget = 8.0;
-                                const dayPct = Math.round((dayHours / dayTarget) * 100);
-                                const dayVariance = Math.round((dayHours - dayTarget) * 10) / 10;
-                                const isOvertime = dayVariance > 0;
-                                const isUndertime = dayVariance < -0.5;
-
-                                const dateObj = new Date(day.date);
-                                const dateLabel = !Number.isNaN(dateObj.getTime())
-                                  ? dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
-                                  : day.date;
-
-                                return (
-                                  <tr key={day.date} className="hover:bg-zinc-50/70 dark:hover:bg-zinc-800/40 transition-colors">
-                                    <td className="py-3 px-4 font-bold text-zinc-900 dark:text-white whitespace-nowrap">
-                                      <div>{dateLabel}</div>
-                                      <div className="text-[10px] font-normal text-zinc-400">{day.date}</div>
-                                      <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-normal mt-0.5 line-clamp-1 max-w-[280px]">
-                                        {day.tasks.map((t) => t.taskName).join(' • ')}
-                                      </div>
-                                    </td>
-                                    <td className="py-3 px-3 text-center whitespace-nowrap">
-                                      <span className="font-black text-sm text-[#34c4f2]">{dayHours}h</span>
-                                      <span className="text-[10px] text-zinc-400 font-normal"> spent</span>
-                                    </td>
-                                    <td className="py-3 px-3 text-center whitespace-nowrap">
-                                      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                                        {dayHours} / {dayTarget}h
-                                      </span>
-                                      <div className={`text-[10px] font-bold ${
-                                        isOvertime
-                                          ? 'text-amber-500'
-                                          : isUndertime
-                                          ? 'text-zinc-400'
-                                          : 'text-emerald-500'
-                                      }`}>
-                                        {isOvertime ? `+${dayVariance}h overtime` : isUndertime ? `${dayVariance}h undertime` : 'Target reached (8h)'}
-                                      </div>
-                                    </td>
-                                    <td className="py-3 px-3 min-w-[140px]">
-                                      <div className="flex items-center gap-2">
-                                        <div className="flex-1 h-2 rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
-                                          <div
-                                            style={{ width: `${Math.min(100, dayPct)}%` }}
-                                            className={`h-full rounded-full transition-all ${
-                                              dayPct >= 100
-                                                ? 'bg-emerald-500'
-                                                : dayPct >= 75
-                                                ? 'bg-[#34c4f2]'
-                                                : dayPct >= 50
-                                                ? 'bg-amber-400'
-                                                : 'bg-rose-400'
-                                            }`}
-                                          />
-                                        </div>
-                                        <span className="text-[11px] font-bold text-zinc-600 dark:text-zinc-300 shrink-0 w-9 text-right">
-                                          {dayPct}%
-                                        </span>
-                                      </div>
-                                    </td>
-                                    <td className="py-3 px-3 text-center whitespace-nowrap">
-                                      <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[11px] font-bold text-zinc-700 dark:text-zinc-300">
-                                        {day.tasks.length} task{day.tasks.length !== 1 ? 's' : ''}
-                                      </span>
-                                    </td>
-                                    <td className="py-3 px-3 text-right whitespace-nowrap">
-                                      <span className="font-black text-purple-600 dark:text-purple-400">
-                                        {day.dayScore.toFixed(1)}
-                                      </span>
-                                      <span className="text-[10px] text-zinc-400">/10</span>
-                                    </td>
-                                  </tr>
-                                );
-                              })
-                            )}
-                          </tbody>
-                          {dailyList.length > 0 && (
-                            <tfoot className="bg-zinc-50 dark:bg-zinc-800/50 font-bold border-t border-zinc-200 dark:border-zinc-800 text-[11px]">
-                              <tr>
-                                <td className="py-2.5 px-4 text-zinc-900 dark:text-white">
-                                  Total Across {dailyList.length} Active Day{dailyList.length !== 1 ? 's' : ''}
-                                </td>
-                                <td className="py-2.5 px-3 text-center text-[#34c4f2] font-black text-xs">
-                                  {periodActualHours}h
-                                </td>
-                                <td className="py-2.5 px-3 text-center text-zinc-600 dark:text-zinc-400">
-                                  Target: {periodCap.capacityHours}h ({periodCap.weeksCount} wk{periodCap.weeksCount > 1 ? 's' : ''})
-                                </td>
-                                <td className="py-2.5 px-3 text-xs text-emerald-600 dark:text-emerald-400">
-                                  {Math.round((periodActualHours / (periodCap.capacityHours || 1)) * 100)}% Capacity Used
-                                </td>
-                                <td className="py-2.5 px-3 text-center text-zinc-600 dark:text-zinc-400">
-                                  {periodTotalTasks} tasks
-                                </td>
-                                <td className="py-2.5 px-3 text-right text-purple-600 dark:text-purple-400 font-black">
-                                  {periodScore}/100
-                                </td>
-                              </tr>
-                            </tfoot>
-                          )}
-                        </table>
+                    {/* Date-by-Date Cards */}
+                    {dailyList.length === 0 ? (
+                      <div className="p-8 text-center text-xs text-zinc-400 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-white dark:bg-zinc-900">
+                        No daily activity or tasks recorded for this period
                       </div>
-                    </div>
-                  </div>
-                );
-              })()}
+                    ) : (
+                      <div className="space-y-3.5">
+                        {dailyList.map((day) => {
+                          const dayHours = Math.round(day.tasks.reduce((sum, t) => sum + (Number(t.actualHours) || 0), 0) * 10) / 10;
+                          const dayTarget = 8.0;
+                          const dayPct = Math.round((dayHours / dayTarget) * 100);
+                          const dayVariance = Math.round((dayHours - dayTarget) * 10) / 10;
+                          const isOvertime = dayVariance > 0;
+                          const isUndertime = dayVariance < -0.5;
 
-              {/* Task Log Details Table */}
-              {(() => {
-                const allTasks = singleUser.dailyEvaluations?.flatMap((d) => d.tasks) || [];
-                return (
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                      Evaluated Task Breakdown ({allTasks.length})
-                    </h4>
-                    <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-[10px] uppercase font-bold tracking-wider">
-                          <tr>
-                            <th className="py-2.5 px-4">Task Name</th>
-                            <th className="py-2.5 px-3">Project</th>
-                            <th className="py-2.5 px-3 text-center">Hours (Act/Plan)</th>
-                            <th className="py-2.5 px-3">Status</th>
-                            <th className="py-2.5 px-3 text-right">Score</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                          {allTasks.length === 0 ? (
-                            <tr>
-                              <td colSpan={5} className="py-4 text-center text-zinc-400">
-                                No tasks found in selected date period
-                              </td>
-                            </tr>
-                          ) : (
-                            allTasks.map((t) => (
-                              <tr key={t.id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40">
-                                <td className="py-3 px-4 font-semibold text-zinc-900 dark:text-white">
-                                  {t.taskName}
-                                </td>
-                                <td className="py-3 px-3 text-zinc-500">{t.projectName}</td>
-                                <td className="py-3 px-3 text-center font-bold text-zinc-700 dark:text-zinc-300">
-                                  {t.actualMinutes != null ? formatMinutesToClock(t.actualMinutes) : formatZohoDurationToClock(t.actualHours)} hrs / {t.plannedMinutes != null ? formatMinutesToClock(t.plannedMinutes) : formatZohoDurationToClock(t.plannedHours)} hrs
-                                </td>
-                                <td className="py-3 px-3">
-                                  <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold">
-                                    {t.zohoStatus}
+                          const dateObj = new Date(day.date);
+                          const dateLabel = !Number.isNaN(dateObj.getTime())
+                            ? dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
+                            : day.date;
+
+                          return (
+                            <div
+                              key={day.date}
+                              className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-2xs transition-all hover:border-zinc-300 dark:hover:border-zinc-700 break-inside-avoid"
+                            >
+                              {/* Date Header Row */}
+                              <div className="bg-zinc-50 dark:bg-zinc-800/60 p-3.5 px-4 border-b border-zinc-200 dark:border-zinc-800/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                {/* Left: Calendar Icon + Date + Date Badge + Task Count */}
+                                <div className="flex items-center gap-2.5 flex-wrap">
+                                  <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-[#34c4f2] flex items-center justify-center font-bold text-xs shrink-0">
+                                    <Calendar className="w-4 h-4" />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-zinc-900 dark:text-white tracking-tight">
+                                      {dateLabel}
+                                    </span>
+                                    {day.date !== 'Undated' && (
+                                      <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 bg-white dark:bg-zinc-900 px-2 py-0.5 rounded border border-zinc-200 dark:border-zinc-700/80">
+                                        {day.date}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-zinc-200/70 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                                    {day.tasks.length} {day.tasks.length === 1 ? 'task' : 'tasks'}
                                   </span>
-                                </td>
-                                <td className="py-3 px-3 text-right font-black text-purple-600 dark:text-purple-400">
-                                  {t.evaluation?.overallScore || 'N/A'}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                                </div>
+
+                                {/* Right: Hours Spent, Variance, Progress Bar, Day Score */}
+                                <div className="flex items-center gap-4 flex-wrap">
+                                  <div className="text-right">
+                                    <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                                      <span className="text-[#34c4f2] font-black">{dayHours}h</span>
+                                      <span className="text-zinc-400 font-normal"> / {dayTarget}h spent</span>
+                                    </div>
+                                    <div className={`text-[10px] font-bold ${
+                                      isOvertime
+                                        ? 'text-amber-500'
+                                        : isUndertime
+                                        ? 'text-zinc-400'
+                                        : 'text-emerald-500'
+                                    }`}>
+                                      {isOvertime ? `+${dayVariance}h overtime` : isUndertime ? `${dayVariance}h undertime` : 'Target reached (8h)'}
+                                    </div>
+                                  </div>
+
+                                  <div className="w-20 hidden sm:flex flex-col gap-1">
+                                    <div className="h-1.5 w-full rounded-full bg-zinc-200 dark:bg-zinc-700 overflow-hidden">
+                                      <div
+                                        style={{ width: `${Math.min(100, dayPct)}%` }}
+                                        className={`h-full rounded-full ${
+                                          dayPct >= 100
+                                            ? 'bg-emerald-500'
+                                            : dayPct >= 75
+                                            ? 'bg-[#34c4f2]'
+                                            : dayPct >= 50
+                                            ? 'bg-amber-400'
+                                            : 'bg-rose-400'
+                                        }`}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] font-bold text-zinc-500 text-right">{dayPct}%</span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 pl-3 border-l border-zinc-200 dark:border-zinc-700/80">
+                                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Day Score:</span>
+                                    <span className="px-2 py-0.5 rounded-md font-black text-xs bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800/60">
+                                      {day.dayScore.toFixed(1)} / 10
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Tasks Table for This Day */}
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-zinc-100/70 dark:bg-zinc-800/40 text-zinc-500 dark:text-zinc-400 text-[10px] uppercase font-bold tracking-wider border-b border-zinc-100 dark:border-zinc-800">
+                                    <tr>
+                                      <th className="py-2 px-4">Task Name</th>
+                                      <th className="py-2 px-3">Project</th>
+                                      <th className="py-2 px-3 text-center">Hours (Act / Plan)</th>
+                                      <th className="py-2 px-3">Status</th>
+                                      <th className="py-2 px-3 text-right">Score</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+                                    {day.tasks.map((t, tIdx) => {
+                                      const scoreNum = Number(t.evaluation?.overallScore);
+                                      const hasScore = t.evaluation?.overallScore != null && !Number.isNaN(scoreNum);
+                                      const scoreColor = hasScore
+                                        ? scoreNum >= 8
+                                          ? 'text-emerald-600 dark:text-emerald-400'
+                                          : scoreNum >= 5
+                                          ? 'text-amber-500 dark:text-amber-400'
+                                          : 'text-rose-500 dark:text-rose-400'
+                                        : 'text-zinc-400';
+
+                                      return (
+                                        <tr
+                                          key={`${t.id || t.zohoTaskId || t.taskName}-${day.date}-${tIdx}`}
+                                          className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors group"
+                                        >
+                                          <td className="py-2.5 px-4 font-semibold text-zinc-900 dark:text-white">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="group-hover:text-[#34c4f2] transition-colors leading-snug">
+                                                {t.taskName}
+                                              </span>
+                                              {t.zohoLink && (
+                                                <a
+                                                  href={t.zohoLink}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="p-0.5 text-zinc-400 hover:text-[#34c4f2] transition-colors shrink-0"
+                                                  title="Open in Zoho Projects"
+                                                >
+                                                  <ExternalLink className="w-3.5 h-3.5" />
+                                                </a>
+                                              )}
+                                            </div>
+                                          </td>
+                                          <td className="py-2.5 px-3">
+                                            <span className="px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800/80 text-zinc-600 dark:text-zinc-300 font-medium text-[11px] border border-zinc-200/60 dark:border-zinc-700/60 whitespace-nowrap">
+                                              {t.projectName}
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-center font-bold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">
+                                            {t.actualMinutes != null ? formatMinutesToClock(t.actualMinutes) : formatZohoDurationToClock(t.actualHours)} hrs / {t.plannedMinutes != null ? formatMinutesToClock(t.plannedMinutes) : formatZohoDurationToClock(t.plannedHours)} hrs
+                                          </td>
+                                          <td className="py-2.5 px-3 whitespace-nowrap">
+                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                              (t.zohoStatus || '').toLowerCase().includes('closed') || (t.zohoStatus || '').toLowerCase().includes('completed')
+                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                                                : (t.zohoStatus || '').toLowerCase().includes('qa') || t.isQAReview
+                                                ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/60'
+                                                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700/60'
+                                            }`}>
+                                              {t.zohoStatus}
+                                            </span>
+                                          </td>
+                                          <td className="py-2.5 px-3 text-right whitespace-nowrap">
+                                            <span className={`font-black text-xs ${scoreColor}`}>
+                                              {hasScore ? scoreNum.toFixed(1) : 'N/A'}
+                                            </span>
+                                            {hasScore && <span className="text-[10px] text-zinc-400"> / 10</span>}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Total Summary Footer */}
+                    {dailyList.length > 0 && (
+                      <div className="p-3.5 px-4 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-bold">
+                        <div className="flex items-center gap-2 text-zinc-900 dark:text-white">
+                          <Clock className="w-4 h-4 text-[#34c4f2]" />
+                          <span>Total Across {dailyList.length} Active Day{dailyList.length !== 1 ? 's' : ''}</span>
+                          <span className="text-zinc-400 font-normal">({allPeriodTasks.length} tasks evaluated)</span>
+                        </div>
+                        <div className="flex items-center gap-4 flex-wrap text-xs">
+                          <span className="text-[#34c4f2] font-black text-sm">
+                            {periodActualHours}h logged
+                          </span>
+                          <span className="text-zinc-400">•</span>
+                          <span className="text-zinc-600 dark:text-zinc-300 font-medium">
+                            Target: {periodCap.capacityHours}h ({periodCap.weeksCount} wk{periodCap.weeksCount > 1 ? 's' : ''})
+                          </span>
+                          <span className="text-zinc-400">•</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">
+                            {Math.round((periodActualHours / (periodCap.capacityHours || 1)) * 100)}% Capacity Used
+                          </span>
+                          <span className="text-zinc-400">•</span>
+                          <span className="text-purple-600 dark:text-purple-400 font-black">
+                            Overall Score: {periodScore}/100
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}

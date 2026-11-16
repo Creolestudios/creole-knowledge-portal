@@ -634,6 +634,38 @@ describe('Zoho Frontend Components', () => {
       expect(screen.getAllByText(/Daily Standard Capacity:/).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/8.0h \/ day/).length).toBeGreaterThan(0);
     });
+
+    it('renders unified Date -> Tasks hierarchy showing date header, tasks with all info, and total rollup footer', () => {
+      render(
+        <ZohoReportModal
+          isOpen={true}
+          user={mockUser}
+          filterType="week"
+          onClose={vi.fn()}
+        />
+      );
+
+      // Verify header with active days and tasks count
+      expect(screen.getByText(/Daily Hours Spent Breakdown & Task Log/)).toBeDefined();
+
+      // Verify date badges are displayed
+      const taskDates = mockUser.dailyEvaluations.map((d) => d.date);
+      for (const d of taskDates) {
+        expect(screen.getAllByText(d).length).toBeGreaterThan(0);
+      }
+
+      // Verify tasks for those dates are rendered under their date cards with full info
+      const allTasks = mockUser.dailyEvaluations.flatMap((d) => d.tasks);
+      for (const t of allTasks) {
+        expect(screen.getAllByText(t.taskName).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(t.projectName).length).toBeGreaterThan(0);
+      }
+
+      // Verify Total Across Active Days rollup footer is rendered
+      expect(screen.getByText(/Total Across/)).toBeDefined();
+      expect(screen.getAllByText(/logged/).length).toBeGreaterThan(0);
+      expect(screen.getByText(/Capacity Used/)).toBeDefined();
+    });
   });
 
   describe('ZohoEvaluationManager', () => {

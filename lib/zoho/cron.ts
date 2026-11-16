@@ -482,21 +482,8 @@ export async function runDailyZohoEvaluationCron(
           }
         }
 
-        // Extract & verify GitHub PR links from task comments
-        const commentContents = apiComments.map((c) => c.content);
-        const prUrls = extractPrUrls(commentContents);
-        let prEvidence: PullRequestEvidence[] = [];
-        if (prUrls.length > 0) {
-          try {
-            prEvidence = await batchVerifyPrUrls(prUrls, {
-              userEmail: email,
-              userName: fullName,
-              githubUsername: (profile as any)?.github_username || null,
-            });
-          } catch (prErr) {
-            console.warn(`[ZohoCron] PR verification warning for task ${taskId}:`, prErr);
-          }
-        }
+        // GitHub PR verification avoided for now
+        const prEvidence: PullRequestEvidence[] = [];
 
         // Run full evaluation engine
         const evalResult = await evaluateZohoTask(
