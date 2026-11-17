@@ -22,6 +22,7 @@ vi.mock('@/lib/supabase/admin', () => ({
         return {
           update: vi.fn().mockReturnValue({
             eq: (...args: any[]) => mockFromUpdate(...args),
+            neq: (...args: any[]) => mockFromUpdate(...args),
           }),
           select: vi.fn().mockReturnValue(mockFromSelect()),
         };
@@ -118,6 +119,48 @@ describe('PATCH /api/admin/zoho/users/daily-email', () => {
         role: 'developer',
         daily_email_enabled: false,
       },
+    });
+  });
+
+  it('validates required fields for bulk update', async () => {
+    const req = new Request('http://localhost/api/admin/zoho/users/daily-email', {
+      method: 'PATCH',
+      body: JSON.stringify({ all: true }), // missing enabled
+    });
+
+    const res = await dailyEmailPatch(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain('enabled (boolean) is required');
+  });
+
+  it('successfully bulk updates all users combinely', async () => {
+    mockListUsers.mockResolvedValue({
+      data: {
+        users: [
+          { id: 'u1', user_metadata: { role: 'dev' } },
+          { id: 'u2', user_metadata: { role: 'qa' } },
+        ],
+      },
+    });
+
+    const req = new Request('http://localhost/api/admin/zoho/users/daily-email', {
+      method: 'PATCH',
+      body: JSON.stringify({ all: true, enabled: false }),
+    });
+
+    const res = await dailyEmailPatch(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.all).toBe(true);
+    expect(body.dailyEmailEnabled).toBe(false);
+
+    expect(mockUpdateUserById).toHaveBeenCalledWith('u1', {
+      user_metadata: { role: 'dev', daily_email_enabled: false },
+    });
+    expect(mockUpdateUserById).toHaveBeenCalledWith('u2', {
+      user_metadata: { role: 'qa', daily_email_enabled: false },
     });
   });
 });

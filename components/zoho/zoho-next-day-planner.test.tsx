@@ -214,4 +214,38 @@ describe('ZohoNextDayPlanner Component', () => {
     // Verify task list portion does not contain any edit buttons (strictly read-only)
     expect(screen.queryByRole('button', { name: /Edit task/i })).toBeNull();
   });
+
+  it('allows user to click Bullet List button to insert bullet point in description', () => {
+    render(<ZohoNextDayPlanner userName="Srushti Amin" userEmail="srushti@creolestudios.com" />);
+
+    const bulletBtn = screen.getByRole('button', { name: /Bullet List/i });
+    fireEvent.click(bulletBtn);
+
+    const descTextarea = screen.getByPlaceholderText(/Describe acceptance criteria/i) as HTMLTextAreaElement;
+    expect(descTextarea.value).toContain('• ');
+  });
+
+  it('opens task details modal card on click and closes when clicking cross X', () => {
+    render(<ZohoNextDayPlanner userName="Srushti Amin" userEmail="srushti@creolestudios.com" />);
+
+    const input = screen.getByPlaceholderText(/Implement user profile picture upload/i);
+    fireEvent.change(input, { target: { value: VALID_DB_TITLE } });
+    const descInput = screen.getByPlaceholderText(/Describe acceptance criteria/i);
+    fireEvent.change(descInput, { target: { value: VALID_DB_DESC_40_WORDS } });
+    const addButton = screen.getByRole('button', { name: /Add Task/i });
+    fireEvent.click(addButton);
+
+    // Click the task item to open the details modal
+    fireEvent.click(screen.getByText(VALID_DB_TITLE));
+
+    // Verify modal contains full deliverable scope
+    expect(screen.getByText(/Full Deliverables & Technical Scope/i)).toBeDefined();
+
+    // Click the close cross button
+    const closeBtn = screen.getByRole('button', { name: /Close task details/i });
+    fireEvent.click(closeBtn);
+
+    // Verify modal is closed
+    expect(screen.queryByText(/Full Deliverables & Technical Scope/i)).toBeNull();
+  });
 });

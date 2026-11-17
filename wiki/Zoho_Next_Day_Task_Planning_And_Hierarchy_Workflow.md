@@ -60,53 +60,58 @@ flowchart TD
 
 ---
 
-## 🌳 3. The 3-Tier Zoho Task Hierarchy
+## 🌳 3. The 4-Tier Zoho Task Hierarchy
 
-In Creole Studios' active Zoho Projects, tasks follow a structured 3-tier hierarchy representing project milestones, developer hour budgets, and daily work items.
+In Creole Studios' active Zoho Projects, tasks follow a structured 4-tier hierarchy representing project milestones, admin containers, unassigned developer hour budgets, and daily work items.
 
 ```mermaid
 graph TD
-    Main["📁 Level 1: Weekly Main Task (Admin Created)<br/>Name: W47-site development and testing ( priya 10, krunal 10, others 20 )<br/>id: 1892000000099001 | parent_id: null"]
+    Main["📁 Level 1: Weekly Main Task (Admin Created)<br/>Name: W47 - Sample tasks added by CKP... (Srushti 14, Priya 6)<br/>Owner: Admin (e.g. Senil Shah)"]
 
-    subgraph "Level 2: Sub-Tasks (Budget & User Buckets)"
-        Sub_Priya["👤 priya 10<br/>id: 1892000000099002<br/>parent_id: 1892000000099001"]
-        Sub_Krunal["👤 krunal 10<br/>id: 1892000000099003<br/>parent_id: 1892000000099001"]
-        Sub_Others["👥 others 20<br/>id: 1892000000099004<br/>parent_id: 1892000000099001"]
+    subgraph "Level 2: Admin Placeholder Task"
+        Placeholder["📦 Planned Tasks - W47<br/>Owner: Admin (e.g. Senil Shah)<br/>Status: Backlog (Admin-only status transitions)"]
     end
 
-    subgraph "Level 3: Work Tasks & Checklist (Portal Created)"
-        Check_Priya["✅ Priya Checklist Task<br/>parent_id: 1892000000099002<br/>person_responsible: Priya (Status restricted)"]
-        Task_Priya["📝 Priya's Task: Fix profile upload bug [3.0 hrs]<br/>parent_id: 1892000000099002<br/>person_responsible: Priya Zoho ID"]
-        Task_Krunal["📝 Krunal's Task: Optimize SQL queries [4.0 hrs]<br/>parent_id: 1892000000099003<br/>person_responsible: Krunal Zoho ID"]
-        Task_Aman["📝 Aman's Task: Setup test runner [2.5 hrs]<br/>parent_id: 1892000000099004<br/>person_responsible: Aman Zoho ID"]
+    subgraph "Level 3: User Named Subtasks (Hour Buckets)"
+        Sub_Srushti["👤 Srushti 40<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
+        Sub_Priya["👤 Priya 16<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
+        Sub_Others["👥 others 20<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
     end
 
-    Main --> Sub_Priya
-    Main --> Sub_Krunal
-    Main --> Sub_Others
+    subgraph "Level 4: Developer Work Tasks (Portal Ingested)"
+        Task_Srushti["📝 Zoho Automatic Task Creation... [8.0 hrs]<br/>Owner: Srushti Amin (Zoho User ID)<br/>Timesheet Trackable"]
+        Task_Priya["📝 Priya's Task: Fix profile upload bug [3.0 hrs]<br/>Owner: Priya (Zoho User ID)"]
+        Task_Others["📝 Aman's Task: Setup test runner [2.5 hrs]<br/>Owner: Aman (Zoho User ID)"]
+    end
 
-    Sub_Priya --> Check_Priya
+    Main --> Placeholder
+    Placeholder --> Sub_Srushti
+    Placeholder --> Sub_Priya
+    Placeholder --> Sub_Others
+
+    Sub_Srushti --> Task_Srushti
     Sub_Priya --> Task_Priya
-    Sub_Krunal --> Task_Krunal
-    Sub_Others --> Task_Aman
+    Sub_Others --> Task_Others
 
     classDef main fill:#0f766e,stroke:#2dd4bf,stroke-width:2px,color:#fff;
+    classDef placeholder fill:#0284c7,stroke:#38bdf8,stroke-width:2px,color:#fff;
     classDef sub fill:#4338ca,stroke:#818cf8,stroke-width:2px,color:#fff;
     classDef task fill:#854d0e,stroke:#facc15,stroke-width:2px,color:#fff;
 
     class Main main;
-    class Sub_Priya,Sub_Krunal,Sub_Others sub;
-    class Check_Priya,Task_Priya,Task_Krunal,Task_Aman task;
+    class Placeholder placeholder;
+    class Sub_Srushti,Sub_Priya,Sub_Others sub;
+    class Task_Srushti,Task_Priya,Task_Others task;
 ```
 
 ### Hierarchy Breakdown:
 
-| Level | Name / Format | Creator | `parent_id` | Role / Function |
-|---|---|---|---|---|
-| **Level 1** | `W{WeekNumber}-{Description} ( {user1} {hrs1}, ... )` | Admin (Manual in Zoho) | `null` | Weekly container representing sprint/milestone and budgeted hours. |
-| **Level 2** | User bucket (e.g., `priya 10`, `krunal 10`) or `others 20` | Admin / Monday Cron | Level 1 Task ID | Groups developer hours and organizes Level 3 tasks. |
-| **Level 3A** | `Checklist - [User Name]` | Monday Cron | Level 2 Subtask ID | Dedicated checklist item. Status updates restricted to assigned developer. |
-| **Level 3B** | `[Task Title] - [User Name] - [X.X hr]` | CKP Cron (9 AM Mon / 10 PM Daily) | Level 2 Subtask ID | Actual daily work items with estimated duration and assigned developer. |
+| Level | Name / Format | Creator | `parent_id` | Assignee (`person_responsible`) | Role / Function |
+|---|---|---|---|---|---|
+| **Level 1** | `W{WeekNumber}-{Description}` | Admin | `null` | **Admin** (e.g. Senil Shah) | Weekly container representing sprint/milestone. |
+| **Level 2** | `Planned Tasks - W{WeekNumber}` | CKP Cron / Admin | Level 1 Task ID | **Admin** | Admin placeholder container. Status default is `Backlog` (admin-only status updates). |
+| **Level 3** | User bucket (e.g., `Srushti 40`, `Priya 16`, `others 20`) | CKP Cron / Admin | Level 2 Placeholder ID | **UNASSIGNED** (`null`) | Hour-budget container grouping developer work. Automatically parsed from parent title breakdown (e.g. `(srushti 40, priya 16)`) or general hours. Remains unassigned. |
+| **Level 4** | `[Task Title] [X.X hrs]` | CKP Cron (9 AM Mon / 10 PM Daily) | Level 3 Subtask ID | **Respective Developer** | Actual daily work items with duration, assigned to developer. |
 
 ---
 
@@ -137,14 +142,14 @@ Even if Aman's task is nested under `others 20`, the Zoho task creation payload 
   "name": "Setup automated CI runner [2.5 hrs]",
   "parent_id": "1892000000099004",
   "person_responsible": "aman_zoho_user_id",
-  "duration": "02:30",
-  "start_date": "11-17-2026"
+  "duration": "02:30"
 }
 ```
 **Why this matters**:
-* Setting `person_responsible` ensures the task appears on Aman's personal timesheet in Zoho.
+* Setting `person_responsible` ensures the task appears on Aman's personal timesheet in Zoho, and only Aman receives the native Zoho task assignment email.
+* Start and End dates are intentionally omitted so they display as `-` (unrestricted date window) in Zoho Projects and in email notifications.
 * It enables CKP to evaluate Aman's individual performance during the 10:00 PM evaluation cron.
-* It keeps the project's overall `others 20` budget organized in Zoho.
+* It keeps the project's overall budget organized in Zoho without sending unwanted notification emails to other team members.
 
 ---
 

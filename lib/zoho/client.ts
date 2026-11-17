@@ -428,6 +428,31 @@ export async function fetchZohoPortalProjects(
 }
 
 /**
+ * Fetches only the projects assigned/associated to a specific Zoho user
+ */
+export async function fetchZohoUserProjects(
+  token: string,
+  portalId: string,
+  zohoUserId: string
+): Promise<ZohoProjectRaw[]> {
+  try {
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const res = await fetch(`${apiBase}/portal/${portalId}/users/${zohoUserId}/projects/`, {
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    });
+    if (!res.ok) {
+      console.warn(`[ZohoClient] Failed to fetch user projects for ${zohoUserId}: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return data.associated_projects || data.projects || [];
+  } catch (err) {
+    console.error(`[ZohoClient] fetchZohoUserProjects error for ${zohoUserId}:`, err);
+    return [];
+  }
+}
+
+/**
  * Fetches tasks assigned to a specific Zoho user
  */
 export async function fetchZohoUserTasks(
@@ -656,7 +681,14 @@ export async function fetchZohoTaskSubtasks(
       console.warn(`[ZohoClient] Failed to fetch subtasks for task ${parentTaskId}: ${res.status}`);
       return [];
     }
-    const data = await res.json();
+    if (res.status === 204) {
+      return [];
+    }
+    const text = await res.text();
+    if (!text || !text.trim()) {
+      return [];
+    }
+    const data = JSON.parse(text);
     const subtasks = data.tasks || data.subtasks || [];
     return subtasks.map((st: any) => ({
       id: String(st.id || st.id_string || ''),
@@ -674,9 +706,13 @@ export interface CreateZohoTaskPayload {
   description?: string;
   person_responsible?: string;
   duration?: string; // e.g. "04:00"
+  duration_type?: string; // e.g. "hrs" or "days"
+  work?: string; // e.g. "04:00"
+  work_type?: string; // e.g. "work_hours"
   start_date?: string; // e.g. "11-17-2026"
   end_date?: string;
   parent_id?: string; // Level 2 Subtask ID (User Bucket)
+  status?: string; // e.g. "Backlog"
 }
 
 /**
@@ -690,18 +726,28 @@ export async function createZohoTask(
 ): Promise<{ success: boolean; taskId?: string; link?: string; error?: string }> {
   try {
     const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const targetEndpoint = payload.parent_id
+      ? `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${payload.parent_id}/subtasks/`
+      : `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/`;
+
     const params = new URLSearchParams();
     params.set('name', payload.name);
     if (payload.description) params.set('description', payload.description);
     if (payload.person_responsible) params.set('person_responsible', payload.person_responsible);
     if (payload.duration) params.set('duration', payload.duration);
+    if (payload.duration_type) params.set('duration_type', payload.duration_type);
+    if (payload.work) params.set('work', payload.work);
+    if (payload.work_type) params.set('work_type', payload.work_type);
     if (payload.start_date) params.set('start_date', payload.start_date);
     if (payload.end_date) params.set('end_date', payload.end_date);
-    if (payload.parent_id) params.set('parent_id', payload.parent_id);
-
-    const targetEndpoint = payload.parent_id
-      ? `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${payload.parent_id}/subtasks/`
-      : `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/`;
+    // Only pass parent_id in body if targeting main /tasks/ endpoint
+    if (payload.parent_id && !targetEndpoint.includes('/subtasks/')) {
+      params.set('parent_id', payload.parent_id);
+    }
+    // Only pass status if numeric custom status ID (string names like 'Backlog' cause Zoho 400 code 6500)
+    if (payload.status && /^\d+$/.test(payload.status)) {
+      params.set('custom_status_id', payload.status);
+    }
 
     const res = await fetch(targetEndpoint, {
       method: 'POST',

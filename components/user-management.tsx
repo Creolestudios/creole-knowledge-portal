@@ -96,6 +96,7 @@ export default function UserManagement() {
   const [digestEmailInput, setDigestEmailInput] = useState('');
   const [digestEmailError, setDigestEmailError] = useState('');
   const [addingDigestEmail, setAddingDigestEmail] = useState(false);
+  const [togglingAllDailyEmail, setTogglingAllDailyEmail] = useState(false);
 
   const supabase = createClient();
 
@@ -195,6 +196,38 @@ export default function UserManagement() {
     }, 0);
     return () => clearTimeout(timer);
   }, [fetchUsers, fetchDigestRecipients]);
+
+  const handleToggleAllDailyEmail = async (enabled: boolean) => {
+    setTogglingAllDailyEmail(true);
+    const previousUsers = [...users];
+    setUsers((prev) => prev.map((u) => ({ ...u, daily_email_enabled: enabled })));
+
+    try {
+      const res = await fetch('/api/admin/zoho/users/daily-email', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true, enabled }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to update daily email setting for all users');
+      }
+
+      setToast({
+        message: `Daily evaluation email ${enabled ? 'enabled' : 'disabled'} for all users`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 3000);
+    } catch (err: unknown) {
+      setUsers(previousUsers);
+      const msg = err instanceof Error ? err.message : String(err);
+      setToast({ message: msg, type: 'error' });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setTogglingAllDailyEmail(false);
+    }
+  };
 
   const handleUserClick = (user: UserProfile) => {
     setSelectedUser(user);
@@ -411,6 +444,7 @@ export default function UserManagement() {
   const totalUsersCount = users.length;
   const totalAdminsCount = users.filter((u) => u.role === 'admin').length;
   const regularUsersCount = users.filter((u) => u.role !== 'admin').length;
+  const isAllDailyEmailEnabled = users.length > 0 && users.every((u) => u.daily_email_enabled !== false);
 
   const isProfileComplete = (user: UserProfile) => {
     return user.years_of_experience !== null && user.primary_tech_stack?.length > 0;
@@ -535,6 +569,65 @@ export default function UserManagement() {
               </div>
             </div>
 
+            {/* Common Master Toggle: Enable / Disable Daily Email for all users combinely */}
+            <div
+              className="bg-white dark:bg-[#1e1e1e] rounded-2xl p-4 sm:p-5 border border-zinc-200 dark:border-zinc-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors"
+              data-testid="master-daily-email-card"
+            >
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
+                    isAllDailyEmailEnabled
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+                      : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500'
+                  }`}
+                >
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-zinc-900 dark:text-white">
+                      10 PM Daily Evaluation Email (All Users)
+                    </span>
+                    <span
+                      data-testid="master-daily-email-badge"
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                        isAllDailyEmailEnabled
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40'
+                          : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700'
+                      }`}
+                    >
+                      {isAllDailyEmailEnabled ? 'All Enabled' : 'Disabled'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    Common control to enable or disable automated 10 PM evaluation emails for all users combinely.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 self-end sm:self-auto">
+                <button
+                  type="button"
+                  data-testid="master-daily-email-toggle-btn"
+                  onClick={() => void handleToggleAllDailyEmail(!isAllDailyEmailEnabled)}
+                  disabled={togglingAllDailyEmail || users.length === 0}
+                  className={`px-4 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isAllDailyEmailEnabled
+                      ? 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-950/40 dark:text-red-300 dark:hover:bg-red-900/60 border border-red-200 dark:border-red-800/50'
+                      : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20'
+                  }`}
+                >
+                  <Mail size={14} />
+                  {togglingAllDailyEmail
+                    ? 'Updating...'
+                    : isAllDailyEmailEnabled
+                    ? 'Disable Email for All Users'
+                    : 'Enable Email for All Users'}
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 gap-3">
               {filteredUsers.length === 0 ? (
                 <div className="text-center py-20 bg-zinc-50 dark:bg-zinc-900/40 rounded-3xl border border-dashed border-zinc-200 dark:border-zinc-800">
@@ -622,22 +715,6 @@ export default function UserManagement() {
                               ))}
                             </div>
                           )}
-
-                          <div className="flex items-center gap-1.5 mt-1.5">
-                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                              <Mail size={11} className={user.daily_email_enabled !== false ? 'text-emerald-500' : 'text-zinc-400'} />
-                              10 PM Mail:
-                            </span>
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-                                user.daily_email_enabled !== false
-                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40'
-                                  : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700'
-                              }`}
-                            >
-                              {user.daily_email_enabled !== false ? 'Active' : 'Disabled'}
-                            </span>
-                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

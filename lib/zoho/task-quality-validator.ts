@@ -136,11 +136,11 @@ export interface TaskQualityResult {
 export const MIN_DESCRIPTION_WORDS = 40;
 
 /**
- * Counts words by splitting on whitespace sequences
+ * Counts words by splitting on whitespace sequences, ignoring standalone bullet markers (•, -, *)
  */
 export function countWords(text: string): number {
   if (!text || !text.trim()) return 0;
-  return text.trim().split(/\s+/).filter(Boolean).length;
+  return text.trim().split(/\s+/).filter((w) => /[a-zA-Z0-9]/.test(w)).length;
 }
 
 /**

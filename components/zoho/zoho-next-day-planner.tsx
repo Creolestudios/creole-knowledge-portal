@@ -17,6 +17,7 @@ import {
   Search,
   X,
   Check,
+  List,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -157,12 +158,76 @@ export default function ZohoNextDayPlanner({
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [projectSearchQuery, setProjectSearchQuery] = useState('');
 
+  // Selected task to view full details in a modal card
+  const [viewingTask, setViewingTask] = useState<PlannedTaskItem | null>(null);
+
   const nextWorkingDay = useMemo(() => getNextWorkingDayIST(), []);
   const storageKey = `ckp_planned_tasks_${nextWorkingDay.dateStr}_${userEmail || 'default'}`;
 
   // Click outside listener for dropdowns
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const taskDropdownRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleInsertBullet = () => {
+    const textarea = descriptionRef.current;
+    if (!textarea) {
+      setDescription((prev) => (prev ? `${prev}\n• ` : '• '));
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = description;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+
+    const needsNewline = start > 0 && !before.endsWith('\n');
+    const bulletText = needsNewline ? '\n• ' : '• ';
+    const updated = before + bulletText + after;
+    setDescription(updated);
+
+    setTimeout(() => {
+      textarea.focus();
+      const nextPos = start + bulletText.length;
+      textarea.setSelectionRange(nextPos, nextPos);
+    }, 0);
+  };
+
+  const handleDescriptionKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      const textarea = e.currentTarget;
+      const pos = textarea.selectionStart;
+      const text = textarea.value;
+      const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+      const currentLine = text.substring(lineStart, pos);
+
+      // Check if current line starts with a bullet marker (• or -)
+      const bulletMatch = currentLine.match(/^(\s*)([•\-])\s+/);
+      if (bulletMatch) {
+        // If line is just the bullet marker, clear it on enter
+        if (currentLine.trim() === '•' || currentLine.trim() === '-') {
+          e.preventDefault();
+          const newText = text.substring(0, lineStart) + text.substring(pos);
+          setDescription(newText);
+          setTimeout(() => {
+            textarea.setSelectionRange(lineStart, lineStart);
+          }, 0);
+          return;
+        }
+
+        e.preventDefault();
+        const indent = bulletMatch[1];
+        const marker = bulletMatch[2];
+        const nextBullet = `\n${indent}${marker} `;
+        const newText = text.substring(0, pos) + nextBullet + text.substring(pos);
+        setDescription(newText);
+        setTimeout(() => {
+          textarea.setSelectionRange(pos + nextBullet.length, pos + nextBullet.length);
+        }, 0);
+      }
+    }
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -806,9 +871,21 @@ export default function ZohoNextDayPlanner({
             {/* Task Description & Deliverables Input */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between flex-wrap gap-1">
-                <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1">
-                  Task Description & Technical Scope <span className="text-rose-500 font-bold">*</span>
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                    Task Description & Technical Scope <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleInsertBullet}
+                    disabled={cutoffStatus.isLocked}
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 px-2 py-0.5 rounded-lg bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200/50 dark:border-teal-800/50 transition-colors cursor-pointer disabled:opacity-50"
+                    title="Insert bullet point (•) into description"
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    <span>Bullet List (•)</span>
+                  </button>
+                </div>
                 <div className="flex items-center gap-2">
                   <span
                     className={cn(
@@ -831,13 +908,15 @@ export default function ZohoNextDayPlanner({
                 </div>
               </div>
               <textarea
+                ref={descriptionRef}
                 disabled={cutoffStatus.isLocked}
                 required
                 rows={3}
-                placeholder="Describe acceptance criteria, endpoints/components to modify, PR scope, or QA testing notes (minimum 40 words required)..."
+                placeholder="Describe acceptance criteria, endpoints/components to modify, PR scope, or QA testing notes (minimum 40 words required, use bullet points with • or click 'Bullet List')..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 resize-y min-h-[64px]"
+                onKeyDown={handleDescriptionKeyDown}
+                className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 resize-y min-h-[72px]"
               />
 
               {/* Description Word Count Guidance Note */}
@@ -936,15 +1015,17 @@ export default function ZohoNextDayPlanner({
                 {tasks.map((item, index) => (
                   <div
                     key={item.id}
-                    className="p-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-800/40 flex items-center justify-between gap-3 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
+                    onClick={() => setViewingTask(item)}
+                    className="p-3.5 rounded-2xl border border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-800/40 flex items-center justify-between gap-3 hover:border-teal-500/50 hover:bg-zinc-100/90 dark:hover:bg-zinc-800/80 transition-all cursor-pointer group/row"
+                    title="Click to view full task details"
                   >
-                    <div className="flex items-start gap-3 min-w-0">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
                       <div className="w-6 h-6 rounded-lg bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                         {index + 1}
                       </div>
-                      <div className="min-w-0 space-y-0.5">
+                      <div className="min-w-0 space-y-0.5 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-xs font-bold text-zinc-900 dark:text-white truncate">
+                          <p className="text-xs font-bold text-zinc-900 dark:text-white truncate group-hover/row:text-teal-600 dark:group-hover/row:text-teal-400 transition-colors">
                             {item.taskTitle}
                           </p>
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-zinc-200 dark:bg-zinc-700/60 text-zinc-700 dark:text-zinc-300">
@@ -952,7 +1033,10 @@ export default function ZohoNextDayPlanner({
                           </span>
                         </div>
                         {item.description && (
-                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-1">
+                          <p
+                            title={item.description}
+                            className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-1"
+                          >
                             {item.description}
                           </p>
                         )}
@@ -967,7 +1051,10 @@ export default function ZohoNextDayPlanner({
                       {!cutoffStatus.isLocked && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteTask(item.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTask(item.id);
+                          }}
                           className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors cursor-pointer"
                           aria-label={`Delete task ${item.taskTitle}`}
                         >
@@ -979,6 +1066,68 @@ export default function ZohoNextDayPlanner({
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Full Task Details Modal Card (Opens on click, closes on cross X or backdrop) */}
+      {viewingTask && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150"
+          onClick={() => setViewingTask(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-zinc-900 text-white border border-zinc-700/80 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-4 border-b border-zinc-800 flex items-start justify-between gap-3 bg-zinc-900/90">
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-teal-500/20 text-teal-300 border border-teal-500/30">
+                    {viewingTask.projectName}
+                  </span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300">
+                    {viewingTask.plannedHours.toFixed(1)} hrs
+                  </span>
+                </div>
+                <h3 className="text-sm sm:text-base font-bold text-white break-words">
+                  {viewingTask.taskTitle}
+                </h3>
+              </div>
+
+              {/* Close Button Cross (X) */}
+              <button
+                type="button"
+                onClick={() => setViewingTask(null)}
+                className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer shrink-0"
+                aria-label="Close task details"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: Description */}
+            <div className="p-4 space-y-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-teal-400 uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Full Deliverables & Technical Scope</span>
+              </div>
+              <div className="text-xs text-zinc-200 leading-relaxed whitespace-pre-wrap max-h-80 overflow-y-auto pr-2 bg-zinc-950/70 p-3.5 rounded-xl border border-zinc-800/80 select-text">
+                {viewingTask.description || 'No description provided.'}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-4 py-3 border-t border-zinc-800 flex justify-end bg-zinc-900/90">
+              <button
+                type="button"
+                onClick={() => setViewingTask(null)}
+                className="px-4 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-white transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

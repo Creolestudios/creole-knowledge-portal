@@ -74,8 +74,18 @@ lib/data/db.json
 # Pulumi stack backups (may contain old-account secrets)
 *.old-account.bak
 
+# Scratch scripts and temporary test files
+scratch/
+reports/
+*.pdf
+
 # Pulumi stack backups (may contain old-account secrets)
 *.old-account.bak
+
+# Scratch scripts and temporary test files
+scratch/
+reports/
+*.pdf
 
 # Claude Code Harness (local-only)
 .claude/
@@ -84,3 +94,8 @@ lib/data/db.json
 lib/data/db.json
 # Pulumi stack backups (may contain old-account secrets)
 *.old-account.bak
+
+# Scratch scripts and temporary test files
+scratch/
+reports/
+*.pdf

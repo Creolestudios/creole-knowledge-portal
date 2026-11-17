@@ -10,9 +10,59 @@ export async function PATCH(request: Request) {
     }
 
     const body = await request.json();
-    const { userId, enabled } = body;
+    const { userId, enabled, all } = body;
 
-    if (!userId || typeof enabled !== 'boolean') {
+    const isBulk = Boolean(all || userId === 'all');
+
+    if (!isBulk) {
+      if (!userId || typeof enabled !== 'boolean') {
+        return NextResponse.json(
+          { error: 'userId (string) and enabled (boolean) are required' },
+          { status: 400 }
+        );
+      }
+    } else if (typeof enabled !== 'boolean') {
+      return NextResponse.json(
+        { error: 'enabled (boolean) is required' },
+        { status: 400 }
+      );
+    }
+
+    // Bulk update for all users combinely
+    if (isBulk) {
+      try {
+        await supabaseAdmin
+          .from('user_profiles')
+          .update({ daily_email_enabled: enabled, updated_at: new Date().toISOString() })
+          .neq('user_id', '00000000-0000-0000-0000-000000000000');
+      } catch (dbErr) {
+        console.warn('[daily-email] user_profiles bulk update fallback:', dbErr);
+      }
+
+      try {
+        const { data: usersData } = await supabaseAdmin.auth.admin.listUsers();
+        for (const u of usersData?.users || []) {
+          const existingMeta = (u.user_metadata as Record<string, unknown> | undefined) || {};
+          await supabaseAdmin.auth.admin.updateUserById(u.id, {
+            user_metadata: {
+              ...existingMeta,
+              daily_email_enabled: enabled,
+            },
+          });
+        }
+      } catch (authErr) {
+        console.warn('[daily-email] auth bulk update fallback:', authErr);
+      }
+
+      return NextResponse.json({
+        success: true,
+        all: true,
+        dailyEmailEnabled: enabled,
+        message: `Daily evaluation email notification ${enabled ? 'enabled' : 'disabled'} for all users.`,
+      });
+    }
+
+    if (!userId) {
       return NextResponse.json(
         { error: 'userId (string) and enabled (boolean) are required' },
         { status: 400 }

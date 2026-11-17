@@ -19,6 +19,9 @@ ALTER TABLE public.zoho_tasks
 ALTER TABLE public.zoho_tasks 
     ADD COLUMN IF NOT EXISTS planned_bucket_subtask_id TEXT;
 
+ALTER TABLE public.zoho_tasks 
+    ADD COLUMN IF NOT EXISTS planned_placeholder_task_id TEXT;
+
 -- 3. Composite index for fast querying of planned & queued tasks
 CREATE INDEX IF NOT EXISTS idx_zoho_tasks_user_date_sync 
 ON public.zoho_tasks(user_id, task_date, sync_status);
