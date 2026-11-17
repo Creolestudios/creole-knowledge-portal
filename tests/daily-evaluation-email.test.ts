@@ -85,6 +85,47 @@ describe('Daily Evaluation Email Generator', () => {
     expect(result.html).toContain('Consistent execution and delivery against assigned tasks.');
     expect(result.html).toContain('Continue logging timely work progress and updates regularly.');
   });
+
+  it('renders task improvementItems as a structured bulleted list in HTML and plain text capped at 5 items', () => {
+    const payloadWithImprovements = {
+      ...samplePayload,
+      tasks: [
+        {
+          taskName: 'Website Responsive Testing',
+          projectName: 'SOLAR CRM',
+          plannedHours: 4.0,
+          actualHours: 2.6,
+          status: 'In Progress',
+          timeAssessmentLabel: 'UNEXPECTED_EARLY',
+          score: 28,
+          feedback: 'Early completion gap without sufficient test coverage.',
+          improvementItems: [
+            'Status Not Moved to In QA Review: Move completed task to "In QA Review" with testing notes to keep status up to date.',
+            'Time Limit & Adherence: Finish within planned time limit or flag roadblocks early in comments.',
+            'Task Complexity & Velocity Calibration: Complete routine tasks faster or add deeper implementation details.',
+            'Log Technical Progress Comments: Post a concise comment in Zoho detailing files changed and verification steps.',
+            'Calibrate Estimation & Expand Testing: Align planned hours with scope or add automated unit test coverage.',
+            'Excess 6th item that should be sliced off',
+          ],
+        },
+      ],
+    };
+
+    const result = generateDailyEvaluationEmail(payloadWithImprovements);
+
+    // Verify HTML renders <ul> list with <li> elements
+    expect(result.html).toContain('💡 Key Areas for Improvement:');
+    expect(result.html).toContain('<ul style="margin: 0; padding-left: 16px; font-size: 11px; color: #7c2d12; line-height: 1.4;">');
+    expect(result.html).toContain('<li style="margin-bottom: 3px;">Status Not Moved to In QA Review: Move completed task to &quot;In QA Review&quot; with testing notes to keep status up to date.</li>');
+    expect(result.html).toContain('<li style="margin-bottom: 3px;">Time Limit &amp; Adherence: Finish within planned time limit or flag roadblocks early in comments.</li>');
+    // Ensure 6th item was sliced off to keep max 5 points
+    expect(result.html).not.toContain('Excess 6th item');
+
+    // Verify plain text renders bulleted lines
+    expect(result.text).toContain('Improvements:');
+    expect(result.text).toContain('    - Status Not Moved to In QA Review: Move completed task to "In QA Review" with testing notes to keep status up to date.');
+    expect(result.text).not.toContain('Excess 6th item');
+  });
 });
 
 describe('sendDailyEvaluationEmail Service', () => {

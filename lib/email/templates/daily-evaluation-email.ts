@@ -200,11 +200,15 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
                   </div>
                 ` : ''}
 
-                <!-- Actionable Improvement (Compact) -->
+                <!-- Actionable Improvement (List format, max 4-5 items) -->
                 ${task.improvementItems && task.improvementItems.length > 0 ? `
-                  <div style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 4px; padding: 6px 10px; margin-top: 6px; font-size: 11px; color: #92400e; line-height: 1.35;">
-                    <strong style="color: #b45309; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.04em;">Improvement:</strong>
-                    ${task.improvementItems.map(item => escapeHtml(item)).join(' &bull; ')}
+                  <div style="background-color: #fffbeb; border: 1px solid #fed7aa; border-radius: 6px; padding: 8px 12px; margin-top: 6px; font-size: 11px; color: #92400e; line-height: 1.4;">
+                    <strong style="display: block; color: #b45309; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.04em; margin-bottom: 4px;">
+                      💡 Key Areas for Improvement:
+                    </strong>
+                    <ul style="margin: 0; padding-left: 16px; font-size: 11px; color: #7c2d12; line-height: 1.4;">
+                      ${task.improvementItems.slice(0, 5).map(item => `<li style="margin-bottom: 3px;">${escapeHtml(item)}</li>`).join('')}
+                    </ul>
                   </div>
                 ` : ''}
               </td>
@@ -388,9 +392,11 @@ ${safeImprovements.map(i => `- ${i}`).join('\n')}
 Tasks Evaluated:
 ${payload.tasks.map(t => {
   const tScore = t.score > 10 ? (t.score / 10).toFixed(1) : t.score.toFixed(1);
+  const taskImprovements = t.improvementItems && t.improvementItems.length > 0
+    ? `\n  Improvements:\n${t.improvementItems.slice(0, 5).map(i => `    - ${i}`).join('\n')}`
+    : '';
   return `• [${t.projectName}] ${t.taskName} (${t.actualHours}h/${t.plannedHours}h) - Score: ${tScore}/10 | Tolerance: ${t.timeAssessmentLabel}
-  Summary: ${t.feedback || 'None'}
-  ${t.improvementItems && t.improvementItems.length > 0 ? `Improvements: ${t.improvementItems.join('; ')}` : ''}`;
+  Summary: ${t.feedback || 'None'}${taskImprovements}`;
 }).join('\n\n')}
 
 View complete interactive report: ${evaluationLink}

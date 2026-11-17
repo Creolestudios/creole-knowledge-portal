@@ -1011,18 +1011,18 @@ export function generateDynamicPerformanceSummary(params: {
   // 0. PR Evidence Audit
   if (coworkerPr) {
     improvementItems.push(
-      `Verify PR Authorship: PR #${coworkerPr.prNumber} was authored by another developer (${coworkerPr.authorLogin || 'coworker'}) with 0 commits found for your account. Always provide your own PR or commit evidence in Zoho comments.`
+      `Verify PR Authorship: PR #${coworkerPr.prNumber} was authored by another developer (${coworkerPr.authorLogin || 'coworker'}). Link your own PR or commit evidence.`
     );
   } else if (emptyPr) {
     improvementItems.push(
-      `PR #${emptyPr.prNumber} contains zero code additions or modified files. Ensure substantive code changes are committed and pushed before referencing PRs in comments.`
+      `Push Code to PR: PR #${emptyPr.prNumber} contains no changes. Commit and push code before referencing in comments.`
     );
   }
 
   // 1. Status Gate Deduction (-1.0 pt from overall score)
   if (params.isQAReview === false) {
     improvementItems.push(
-      'Status Not Moved to In QA Review: Task was left in "In Progress" or "Backlog" instead of transitioning to In QA Review upon completion. 1.0 point was deducted from the overall score. Ensure task is formally moved to In QA Review with self-testing verification notes.'
+      'Status Not Moved to In QA Review: Move completed task to "In QA Review" with testing notes to keep status up to date.'
     );
   }
 
@@ -1039,69 +1039,68 @@ export function generateDynamicPerformanceSummary(params: {
 
   if (isMissingDescription) {
     improvementItems.push(
-      `Missing Task Description: Task description is completely missing in Zoho Projects. Score was set to ${missingCap.toFixed(1)}/10. Ensure task descriptions have at least 40–50 words of clear requirements and acceptance criteria when creating or assigning work.`
+      `Missing Task Description: Task description is completely missing in Zoho Projects. Score was set to ${missingCap.toFixed(1)}/10. Add clear requirements (40–50 words).`
     );
   } else if (isBriefDescription) {
     improvementItems.push(
-      `Define Comprehensive Task Scope: Task description was overly brief (${descWords.length} words) and lacked technical specifications or acceptance criteria. ${descPenalty.toFixed(1)} points was deducted from the score. Ensure task descriptions are at least 40–50 words descriptive when creating or assigning work.`
+      `Define Comprehensive Task Scope: Task description was overly brief (${descWords.length} words); ${descPenalty.toFixed(1)} points was deducted from the score. Add clear specifications (40–50 words).`
     );
   }
 
   // 3. Task Complexity & Velocity Calibration (overall complexity weight)
   if (params.complexityScore !== undefined && params.complexityScore < 10.0) {
-    const expStr = params.seniorityLevel ? ` for a ${params.seniorityLevel}` : '';
     improvementItems.push(
-      `Task Complexity & Velocity Calibration: This task represents standard/moderate complexity (${params.complexityScore.toFixed(1)}/10)${expStr}. Routine tasks of this complexity should be completed in lesser time, or expanded into deeper architecture, to achieve full complexity marks.`
+      'Task Complexity & Velocity Calibration: Complete routine tasks faster or add deeper implementation details.'
     );
   }
 
   // 3. Repetitive Scope Deduction (overall originality weight)
   if (params.isRepetitive || (params.repetitionScore !== undefined && params.repetitionScore < 10.0)) {
     improvementItems.push(
-      'Repetitive Task Scope: High similarity (>60%) detected against previously completed tickets in this project. Seek to build reusable shared abstractions or achieve faster velocity on recurring patterns to earn full originality score.'
+      'Avoid Repetitive Scope: High repetition (>60%) detected. Build reusable components instead of duplicating tasks.'
     );
   }
 
-  // --- CONTEXTUAL WORK & TIME IMPROVEMENT GUIDANCE (Clean, without mentioning raw point math) ---
+  // --- CONTEXTUAL WORK & TIME IMPROVEMENT GUIDANCE (Clean & User-Friendly) ---
 
   if (hasPendingScope && hasDocumentedBlockers) {
-    improvementItems.push('Coordinate Dependent Blockers: You documented that Pending items are due to other tasks/dependencies. Coordinate closely with assigned owners on dependent tasks (e.g. assets, API keys, upstream deliverables) to verify end-to-end integration as soon as they are ready.');
+    improvementItems.push('Coordinate Dependent Blockers: Follow up with owners of blocking dependencies to verify integration early.');
   } else if (hasPendingScope) {
-    improvementItems.push('Resolve Pending Deliverables & Escalate Blockers: Work was logged with items explicitly marked "Pending" (e.g. testing pending or deferred scope) on an extended duration ticket. Fully complete and test deliverables within the allocated timeframe, or proactively escalate blockers to project leads during the day rather than closing tasks with pending items.');
+    improvementItems.push('Resolve Pending Deliverables & Escalate Blockers: Complete all items or escalate blockers before closing tasks.');
   }
 
   if (hasMeetingLogged) {
-    improvementItems.push('Separate Meeting Logs from Development Tasks: Record non-development activities such as internal or client meetings (e.g. 1 hour logged) under dedicated administrative/meeting tasks in Zoho Projects rather than commingling meeting hours inside technical feature tickets.');
+    improvementItems.push('Separate Meeting Logs from Development Tasks: Record meeting hours under administrative tasks, not dev tickets.');
   }
 
   if (isChecklistComment) {
-    improvementItems.push('Explain Work Done Beyond Status Updates: In Zoho task comments, substantiate your work with at least 40–50 words detailing specific technical implementation (what code was modified, packages upgraded, issues resolved, and verification findings) instead of repeating the task checklist with status markers like "done" or "pending".');
+    improvementItems.push('Explain Work Done Beyond Status Updates: Detail code changes and test results (aim for 40–50 words) rather than just status marks like "done".');
   }
 
   if (isBriefComment && !isChecklistComment && params.workMatchScore < 7.0) {
-    improvementItems.push('Substantiate Execution in Comments: Detail specific code modifications, configurations changed, and QA verification outcomes in depth (target 40–50 words explaining the technical implementation corresponding to each task requirement).');
+    improvementItems.push('Substantiate Execution in Comments: Detail code modifications and test verification steps (target 40–50 words).');
   } else if (!isChecklistComment && !isBriefDescription && descWords.length >= 35 && commentWords.length <= 24) {
-    improvementItems.push('Substantiate Complete Scope in Comments: While basic implementation was logged, key specifications from the task description were not detailed in the comment. Aim for 40–50 words explaining how each requirement was implemented and verified.');
+    improvementItems.push('Substantiate Complete Scope in Comments: Detail how key specifications were implemented and verified (aim for 40–50 words).');
   }
 
   if (params.timeAssessmentLabel === 'NOT_LOGGED') {
-    improvementItems.push('Log Task Hours in Zoho: Make sure to record accurate billable or non-billable timelog entries for completed or ongoing work.');
+    improvementItems.push('Log Task Hours in Zoho: Record billable/non-billable hours in Zoho timelogs daily.');
   }
 
   if (!hasComments) {
-    improvementItems.push('Log Technical Progress Comments: Always post a concise comment in Zoho detailing files changed, architecture decisions, and verification steps.');
+    improvementItems.push('Log Technical Progress Comments: Post a concise comment in Zoho detailing files changed and verification steps.');
   }
 
   if (params.timeAssessmentLabel === 'OVERDUE') {
-    improvementItems.push('Time Tolerance & Blocker Escalation: Flag dependencies or roadblocks early in comments to keep delivery within the +5m buffer.');
+    improvementItems.push('Time Limit & Adherence: Finish within planned time limit or flag roadblocks early in comments.');
   }
 
   if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
-    improvementItems.push('Calibrate Estimation & Expand Testing: Ensure early completions include exhaustive automated test suites and edge case coverage.');
+    improvementItems.push('Calibrate Estimation & Expand Testing: Align planned hours with scope or add automated unit test coverage.');
   }
 
   if (aiTools) {
-    improvementItems.push(`Leverage AI Subscriptions (${aiTools}): Utilize AI coding assistants for automated unit test authoring and commit message generation.`);
+    improvementItems.push(`Leverage AI Subscriptions (${aiTools}): Use AI tools to accelerate unit testing and commit notes.`);
   }
 
   if (improvementItems.length === 0) {
@@ -1112,7 +1111,7 @@ export function generateDynamicPerformanceSummary(params: {
     performanceSummary,
     whereLacked,
     whereToImprove,
-    improvementItems,
+    improvementItems: improvementItems.slice(0, 5),
   };
 }
 

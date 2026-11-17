@@ -645,7 +645,7 @@ Administrators have granular, selective control over daily evaluation emails dir
      - **4-Card Metric Grid**: Planned Time (`8:00 hrs`), Actual Spent (`8:00 hrs`), Completed Tasks (`3 / 3`), and Day Score.
      - **Streamlined Metric Presentation**: Removed redundant text summary banner to eliminate duplication with the 4-card metric grid above.
      - **Key Accomplishments & Areas for Improvement**: Side-by-side green and amber callout cards with clear bullet lists.
-     - **Structured Task Cards**: Each task rendered in its own bounded card featuring project badge, clock duration (`⏱ 4:00 hrs / 4:00 hrs`), Zoho status pill, task score (`/10`), adherence tolerance strip, performance evaluation note, and actionable improvement bullets.
+     - **Structured Task Cards**: Each task rendered in its own bounded card featuring project badge, clock duration (`⏱ 4:00 hrs / 4:00 hrs`), Zoho status pill, task score (`/10`), adherence tolerance strip, performance evaluation note, and concise actionable improvement bullet list (capped at 4–5 short, direct pointers in user-friendly language).
 2. **100% Email Client Compatibility**:
    - Built exclusively with nested HTML tables (`<table role="presentation">`) and inline styles.
    - Eliminates unsupported CSS flexbox and grid, preventing layout breakage and text squishing in Gmail Web, Gmail Mobile, Apple Mail, and Outlook.
