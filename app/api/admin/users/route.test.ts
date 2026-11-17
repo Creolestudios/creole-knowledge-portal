@@ -93,6 +93,7 @@ describe('PUT /api/admin/users', () => {
         ai_subscriptions: ['GitHub Copilot'],
         senior_emails: [],
         daily_email_enabled: true,
+        years_of_experience: 0,
       },
     });
   });
