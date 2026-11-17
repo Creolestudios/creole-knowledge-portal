@@ -131,9 +131,9 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
   it('renders period filter, read-only indicator, and task list grouped by date matching screenshot', async () => {
     render(<MyZohoEvaluationPage />);
 
-    // Header & Read Only indicator
+    // Header
     expect(screen.getByText('My Zoho Task Evaluations')).toBeDefined();
-    expect(screen.getByText('Read Only')).toBeDefined();
+    expect(screen.queryByText('Read Only')).toBeNull();
 
     // Wait for user evaluation data to load
     await waitFor(() => {

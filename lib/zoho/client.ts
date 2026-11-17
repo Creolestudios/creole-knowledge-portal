@@ -34,6 +34,13 @@ export interface ZohoUserRaw {
   active?: boolean;
 }
 
+export interface ZohoProjectRaw {
+  id: string | number;
+  id_string?: string;
+  name: string;
+  status?: string;
+}
+
 export interface ZohoTimeLog {
   id: string;
   hours: number;
@@ -395,6 +402,32 @@ export async function fetchZohoPortalUsers(
 }
 
 /**
+ * Fetches all active projects in the Zoho Projects portal
+ */
+export async function fetchZohoPortalProjects(
+  token: string,
+  portalId: string,
+  status: string = 'active'
+): Promise<ZohoProjectRaw[]> {
+  try {
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const statusParam = status ? `?status=${encodeURIComponent(status)}` : '';
+    const res = await fetch(`${apiBase}/portal/${portalId}/projects/${statusParam}`, {
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    });
+    if (!res.ok) {
+      console.warn(`[ZohoClient] Failed to fetch portal projects: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return data.projects || [];
+  } catch (err) {
+    console.error('[ZohoClient] fetchZohoPortalProjects error:', err);
+    return [];
+  }
+}
+
+/**
  * Fetches tasks assigned to a specific Zoho user
  */
 export async function fetchZohoUserTasks(
@@ -571,4 +604,135 @@ export async function fetchZohoTaskComments(
     return [];
   }
 }
+
+/**
+ * Fetches top-level tasks for a given Zoho project
+ */
+export async function fetchZohoProjectTasks(
+  token: string,
+  portalId: string,
+  projectId: string,
+  status: string = 'all'
+): Promise<any[]> {
+  try {
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const statusParam = status ? `&status=${encodeURIComponent(status)}` : '';
+    const res = await fetch(
+      `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/?range=100${statusParam}`,
+      {
+        headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      }
+    );
+    if (!res.ok) {
+      console.warn(`[ZohoClient] Failed to fetch project tasks for project ${projectId}: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return data.tasks || [];
+  } catch (err) {
+    console.error(`[ZohoClient] fetchZohoProjectTasks error for ${projectId}:`, err);
+    return [];
+  }
+}
+
+/**
+ * Fetches subtasks nested under a specific Zoho parent task
+ */
+export async function fetchZohoTaskSubtasks(
+  token: string,
+  portalId: string,
+  projectId: string,
+  parentTaskId: string
+): Promise<Array<{ id: string; id_string: string; name: string }>> {
+  try {
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const res = await fetch(
+      `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${parentTaskId}/subtasks/`,
+      {
+        headers: { Authorization: `Zoho-oauthtoken ${token}` },
+      }
+    );
+    if (!res.ok) {
+      console.warn(`[ZohoClient] Failed to fetch subtasks for task ${parentTaskId}: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    const subtasks = data.tasks || data.subtasks || [];
+    return subtasks.map((st: any) => ({
+      id: String(st.id || st.id_string || ''),
+      id_string: String(st.id_string || st.id || ''),
+      name: String(st.name || '').trim(),
+    }));
+  } catch (err) {
+    console.error(`[ZohoClient] fetchZohoTaskSubtasks error for ${parentTaskId}:`, err);
+    return [];
+  }
+}
+
+export interface CreateZohoTaskPayload {
+  name: string;
+  description?: string;
+  person_responsible?: string;
+  duration?: string; // e.g. "04:00"
+  start_date?: string; // e.g. "11-17-2026"
+  end_date?: string;
+  parent_id?: string; // Level 2 Subtask ID (User Bucket)
+}
+
+/**
+ * Creates a new task or subtask in Zoho Projects
+ */
+export async function createZohoTask(
+  token: string,
+  portalId: string,
+  projectId: string,
+  payload: CreateZohoTaskPayload
+): Promise<{ success: boolean; taskId?: string; link?: string; error?: string }> {
+  try {
+    const apiBase = process.env.ZOHO_API_BASE_URL || 'https://projectsapi.zoho.in/restapi';
+    const params = new URLSearchParams();
+    params.set('name', payload.name);
+    if (payload.description) params.set('description', payload.description);
+    if (payload.person_responsible) params.set('person_responsible', payload.person_responsible);
+    if (payload.duration) params.set('duration', payload.duration);
+    if (payload.start_date) params.set('start_date', payload.start_date);
+    if (payload.end_date) params.set('end_date', payload.end_date);
+    if (payload.parent_id) params.set('parent_id', payload.parent_id);
+
+    const targetEndpoint = payload.parent_id
+      ? `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${payload.parent_id}/subtasks/`
+      : `${apiBase}/portal/${portalId}/projects/${projectId}/tasks/`;
+
+    const res = await fetch(targetEndpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Zoho-oauthtoken ${token}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.warn(`[ZohoClient] Failed to create Zoho task in project ${projectId}: ${res.status}`, errText);
+      return { success: false, error: `Zoho API ${res.status}: ${errText}` };
+    }
+
+    const data = await res.json();
+    const createdTask = data.tasks?.[0] || data.task || data;
+    const taskId = String(createdTask.id_string || createdTask.id || '');
+    const link = buildZohoTaskDeepLink(portalId, projectId, taskId);
+
+    return {
+      success: true,
+      taskId,
+      link,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[ZohoClient] createZohoTask error for project ${projectId}:`, message);
+    return { success: false, error: message };
+  }
+}
+
 

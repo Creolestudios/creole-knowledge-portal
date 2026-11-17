@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Calendar,
-  Lock,
   ExternalLink,
   Sparkles,
   ArrowLeft,
@@ -14,6 +13,7 @@ import DashboardShell from '@/components/dashboard/DashboardShell';
 import LogoutButton from '@/components/logout-button';
 import ZohoDateFilterPicker, { DateRangeSelection } from '@/components/zoho/zoho-date-filter-picker';
 import ZohoTillDateSummary from '@/components/zoho/zoho-till-date-summary';
+import ZohoNextDayPlanner from '@/components/zoho/zoho-next-day-planner';
 import ZohoTaskModal from '@/components/zoho/zoho-task-modal';
 import ZohoDailyEvaluationModal from '@/components/zoho/zoho-daily-evaluation-modal';
 import ZohoWeeklyEvaluationModal from '@/components/zoho/zoho-weekly-evaluation-modal';
@@ -126,9 +126,6 @@ function MyZohoEvaluationContent() {
                 <h1 className="text-xl font-bold text-zinc-900 dark:text-white">
                   My Zoho Task Evaluations
                 </h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
-                  <Lock className="w-3 h-3" /> Read Only
-                </span>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 Personal daily task performance, AI coaching summaries, and time adherence records
@@ -136,6 +133,12 @@ function MyZohoEvaluationContent() {
             </div>
           </div>
         </div>
+
+        {/* Next-Day Task Planner Card */}
+        <ZohoNextDayPlanner
+          userName={data?.name || profile?.current_role || user?.email?.split('@')[0] || 'Developer'}
+          userEmail={data?.email || user?.email || ''}
+        />
 
         {loading && !data ? (
           <div className="p-16 text-center text-xs text-zinc-400 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl animate-pulse space-y-3">
