@@ -27,6 +27,8 @@ import {
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import type { UserProfileSchema } from '@/types/contracts';
 
+const ZOHO_ACTIVE_VIEW_STORAGE_KEY = 'ckp_zoho_active_view';
+
 export default function MyZohoEvaluationPage() {
   return (
     <React.Suspense
@@ -52,6 +54,43 @@ function MyZohoEvaluationContent() {
   const [activeDailyEval, setActiveDailyEval] = useState<any | null>(null);
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Switch tabs and persist selection both in URL searchParams and localStorage for page refresh
+  const handleViewChange = useCallback((view: 'planner' | 'evaluation') => {
+    setActiveView(view);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(ZOHO_ACTIVE_VIEW_STORAGE_KEY, view);
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', view);
+        window.history.replaceState(null, '', url.pathname + url.search);
+      }
+    } catch (e) {
+      console.warn('[MyZohoEvaluationPage] Failed to persist active view:', e);
+    }
+  }, []);
+
+  // Restore active view on initial mount if saved in localStorage and not explicitly in URL
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const urlView = searchParams?.get('view');
+        if (urlView === 'evaluation' || urlView === 'planner') {
+          localStorage.setItem(ZOHO_ACTIVE_VIEW_STORAGE_KEY, urlView);
+        } else {
+          const savedView = localStorage.getItem(ZOHO_ACTIVE_VIEW_STORAGE_KEY);
+          if (savedView === 'evaluation' || savedView === 'planner') {
+            setActiveView(savedView);
+            const url = new URL(window.location.href);
+            url.searchParams.set('view', savedView);
+            window.history.replaceState(null, '', url.pathname + url.search);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[MyZohoEvaluationPage] Failed to restore active view:', e);
+    }
+  }, [searchParams]);
 
   // Default week filter matching admin dashboard
   const [dateSelection, setDateSelection] = useState<DateRangeSelection>(getDefaultWeekSelection);
@@ -142,7 +181,7 @@ function MyZohoEvaluationContent() {
           <div className="inline-flex items-center p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 shadow-xs">
             <button
               type="button"
-              onClick={() => setActiveView('planner')}
+              onClick={() => handleViewChange('planner')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeView === 'planner'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
@@ -154,7 +193,7 @@ function MyZohoEvaluationContent() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveView('evaluation')}
+              onClick={() => handleViewChange('evaluation')}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeView === 'evaluation'
                   ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'

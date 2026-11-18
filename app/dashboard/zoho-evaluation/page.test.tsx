@@ -217,4 +217,20 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
     expect(screen.getByText('Tasks Evaluated for this Day (2)')).toBeDefined();
     expect(screen.getByText('Close Daily Evaluation')).toBeDefined();
   });
+
+  it('persists and restores active tab from localStorage across page reloads', async () => {
+    localStorage.setItem('ckp_zoho_active_view', 'evaluation');
+    render(<MyZohoEvaluationPage />);
+
+    // Should automatically restore to See Evaluation screen from localStorage
+    await waitFor(() => {
+      expect(screen.getByText('Jayesh Patel')).toBeDefined();
+    });
+    expect(screen.queryByText("Plan Tomorrow's Tasks")).toBeNull();
+
+    // Switching back to planner persists to localStorage
+    fireEvent.click(screen.getByRole('button', { name: /Add Tomorrow Task/i }));
+    expect(localStorage.getItem('ckp_zoho_active_view')).toBe('planner');
+    expect(screen.getByText("Plan Tomorrow's Tasks")).toBeDefined();
+  });
 });
