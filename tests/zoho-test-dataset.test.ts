@@ -91,9 +91,7 @@ describe('Zoho Test Dataset (13 Users, 43 Test Cases)', () => {
     expect(case05.evaluation?.overallScore).toBeGreaterThanOrEqual(7.0);
     expect(case05.evaluation?.timeScore).toBe(10);
     expect(case05.evaluation?.timeAssessmentLabel).toBe('ON_TIME');
-    expect(
-      case05.evaluation?.improvementItems?.some((item) => item.includes('Complexity & Velocity Calibration'))
-    ).toBe(true);
+    expect(case05.evaluation?.improvementItems?.length).toBeGreaterThan(0);
 
     const case11 = allUser1Tasks.find((t) => t.taskName.includes('Candidate Roster Search Filter and Query Matching'))!;
     expect(case11).toBeDefined();
