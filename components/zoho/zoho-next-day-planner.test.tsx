@@ -98,9 +98,9 @@ describe('ZohoNextDayPlanner Component', () => {
     const descInput = screen.getByPlaceholderText(/Describe acceptance criteria/i);
     fireEvent.change(descInput, { target: { value: VALID_DESC_40_WORDS } });
 
-    // Click 2h quick chip
-    const twoHourChip = screen.getByText('2h');
-    fireEvent.click(twoHourChip);
+    // Set planned hours via numeric input
+    const hoursInput = screen.getByRole('spinbutton');
+    fireEvent.change(hoursInput, { target: { value: '2' } });
 
     const addButton = screen.getByRole('button', { name: /Add Task/i });
     fireEvent.click(addButton);
@@ -201,7 +201,8 @@ describe('ZohoNextDayPlanner Component', () => {
     fireEvent.change(screen.getByPlaceholderText(/Implement user profile picture upload/i), {
       target: { value: updatedTitle },
     });
-    fireEvent.click(screen.getByText('6h'));
+    const hoursInput = screen.getByRole('spinbutton');
+    fireEvent.change(hoursInput, { target: { value: '6' } });
 
     // Submit update
     fireEvent.click(updateButton);

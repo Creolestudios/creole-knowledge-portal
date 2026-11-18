@@ -38,6 +38,7 @@ export function isPlaceholderTaskName(name: string): boolean {
   if (!name) return false;
   const clean = name.trim().toLowerCase();
   return (
+    clean.startsWith('placeholder task') ||
     clean.startsWith('planned tasks') ||
     clean.includes('placeholder') ||
     clean.includes('tasks container') ||
@@ -381,10 +382,9 @@ export async function syncQueuedPlannedTasks(
           let placeholderTaskId = placeholder ? String(placeholder.id_string || placeholder.id) : undefined;
 
           if (!placeholderTaskId && !dryRun) {
-            // Create Level 2 Placeholder Task directly under Level 1 Main Task FIRST
+            // Create Level 2 Placeholder Task directly under Level 1 Main Task FIRST (strictly Unassigned)
             const placeholderRes = await createZohoTask(token, portalId, projectId, {
-              name: `Planned Tasks - ${weekPrefix}`,
-              person_responsible: adminId || undefined,
+              name: `Placeholder Task - ${weekPrefix}`,
               parent_id: mainTaskId,
             });
             if (placeholderRes.success && placeholderRes.taskId) {
@@ -392,7 +392,7 @@ export async function syncQueuedPlannedTasks(
               l1Subtasks.push({
                 id: placeholderRes.taskId,
                 id_string: placeholderRes.taskId,
-                name: `Planned Tasks - ${weekPrefix}`,
+                name: `Placeholder Task - ${weekPrefix}`,
               });
             }
           }

@@ -68,8 +68,8 @@ In Creole Studios' active Zoho Projects, tasks follow a structured 4-tier hierar
 graph TD
     Main["📁 Level 1: Weekly Main Task (Admin Created)<br/>Name: W47 - Sample tasks added by CKP... (Srushti 14, Priya 6)<br/>Owner: Admin (e.g. Senil Shah)"]
 
-    subgraph "Level 2: Admin Placeholder Task"
-        Placeholder["📦 Planned Tasks - W47<br/>Owner: Admin (e.g. Senil Shah)<br/>Status: Backlog (Admin-only status transitions)"]
+    subgraph "Level 2: Placeholder Task"
+        Placeholder["📦 Placeholder Task - W47<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
     end
 
     subgraph "Level 3: User Named Subtasks (Hour Buckets)"
@@ -109,7 +109,7 @@ graph TD
 | Level | Name / Format | Creator | `parent_id` | Assignee (`person_responsible`) | Role / Function |
 |---|---|---|---|---|---|
 | **Level 1** | `W{WeekNumber}-{Description}` | Admin | `null` | **Admin** (e.g. Senil Shah) | Weekly container representing sprint/milestone. |
-| **Level 2** | `Planned Tasks - W{WeekNumber}` | CKP Cron / Admin | Level 1 Task ID | **Admin** | Admin placeholder container. Status default is `Backlog` (admin-only status updates). |
+| **Level 2** | `Placeholder Task - W{WeekNumber}` | CKP Cron / Admin | Level 1 Task ID | **UNASSIGNED** (`null`) | Placeholder container. Status default is `Backlog`. Strictly unassigned. |
 | **Level 3** | User bucket (e.g., `Srushti 40`, `Priya 16`, `others 20`) | CKP Cron / Admin | Level 2 Placeholder ID | **UNASSIGNED** (`null`) | Hour-budget container grouping developer work. Automatically parsed from parent title breakdown (e.g. `(srushti 40, priya 16)`) or general hours. Remains unassigned. |
 | **Level 4** | `[Task Title] [X.X hrs]` | CKP Cron (9 AM Mon / 10 PM Daily) | Level 3 Subtask ID | **Respective Developer** | Actual daily work items with duration, assigned to developer. |
 

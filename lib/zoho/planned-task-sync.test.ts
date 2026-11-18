@@ -42,6 +42,7 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
     });
 
     it('identifies placeholder container task names accurately', () => {
+      expect(isPlaceholderTaskName('Placeholder Task - W47')).toBe(true);
       expect(isPlaceholderTaskName('Planned Tasks - W47')).toBe(true);
       expect(isPlaceholderTaskName('Planned Tasks Container - W47')).toBe(true);
       expect(isPlaceholderTaskName('Admin Tasks Container')).toBe(true);
@@ -232,9 +233,9 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
       expect(createdTasks.length).toBe(4);
 
       const placeholderTask = createdTasks[0];
-      expect(placeholderTask.name).toContain('Planned Tasks - W47');
+      expect(placeholderTask.name).toContain('Placeholder Task - W47');
       expect(placeholderTask.parent_id).toBe('main-task-1');
-      expect(placeholderTask.person_responsible).toBe('admin-senil-100'); // Assigned to Admin!
+      expect(placeholderTask.person_responsible).toBeUndefined(); // Strictly UNASSIGNED!
 
       // Srushti bucket created directly under Main Task (alongside Placeholder)
       const srushtiSubtask = createdTasks[1];

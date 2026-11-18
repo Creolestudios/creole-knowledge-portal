@@ -131,8 +131,6 @@ const DEFAULT_PROJECT_OPTIONS: ProjectOption[] = [
   { id: 'client_portal', name: 'Client Portal Dashboard' },
 ];
 
-const QUICK_HOURS = [1.0, 2.0, 3.0, 4.0, 6.0, 8.0];
-
 export default function ZohoNextDayPlanner({
   userName = 'there',
   userEmail = '',
@@ -948,35 +946,7 @@ export default function ZohoNextDayPlanner({
               )}
             </div>
 
-            {/* Quick Hours Preset Chips & Optional Notes */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Quick Hours:</span>
-                {QUICK_HOURS.map((hr) => (
-                  <button
-                    key={hr}
-                    type="button"
-                    disabled={cutoffStatus.isLocked}
-                    onClick={() => setPlannedHours(hr)}
-                    className={cn(
-                      'text-[10px] font-bold px-2 py-0.5 rounded-lg border transition-all cursor-pointer disabled:cursor-not-allowed',
-                      plannedHours === hr
-                        ? 'bg-teal-500/20 border-teal-500/40 text-teal-700 dark:text-teal-300'
-                        : 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300'
-                    )}
-                  >
-                    {hr}h
-                  </button>
-                ))}
-              </div>
 
-              <div className="text-[11px] text-zinc-400 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-teal-500" />
-                <span>
-                  Target folder: <span className="font-semibold text-zinc-700 dark:text-zinc-300">{firstName.toLowerCase()} bucket</span> (or others)
-                </span>
-              </div>
-            </div>
           </form>
 
           {/* List of Planned Tasks for Tomorrow - STRICTLY READ-ONLY (no edit controls in list) */}
