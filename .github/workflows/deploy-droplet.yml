@@ -29,6 +29,7 @@ on:
       - "public/**"
       - "shared/**"
       - "middleware.ts"
+      - "instrumentation.ts"
       - "next.config.ts"
       - "package.json"
       - "package-lock.json"

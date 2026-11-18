@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/cron/monday-task-dispatch",
-      "schedule": "20 12 * * *"
+      "schedule": "0 13 * * *"
     },
     {
       "path": "/api/cron/zoho-evaluation",
