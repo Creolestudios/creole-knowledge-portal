@@ -141,7 +141,6 @@ export default function ZohoNextDayPlanner({
   const [projectOptions, setProjectOptions] = useState<ProjectOption[]>(DEFAULT_PROJECT_OPTIONS);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectName, setProjectName] = useState(DEFAULT_PROJECT_OPTIONS[0].name);
-  const [customProject, setCustomProject] = useState('');
   const [taskTitle, setTaskTitle] = useState('');
   const [plannedHours, setPlannedHours] = useState<number>(4.0);
   const [description, setDescription] = useState('');
@@ -374,8 +373,7 @@ export default function ZohoNextDayPlanner({
     if (projMatch) {
       setProjectName(projMatch.name);
     } else {
-      setProjectName('__custom__');
-      setCustomProject(task.projectName);
+      setProjectName(task.projectName);
     }
 
     setIsTaskSelectOpen(false);
@@ -400,10 +398,9 @@ export default function ZohoNextDayPlanner({
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!qualityResult.isValid || plannedHours <= 0) return;
-    if (projectName === '__custom__' && !customProject.trim()) return;
     if (cutoffStatus.isLocked) return;
 
-    const selectedProj = projectName === '__custom__' ? customProject.trim() : projectName;
+    const selectedProj = projectName;
     const selectedProjObj = projectOptions.find((p) => p.name === selectedProj);
 
     // EDIT/UPDATE TASK MODE
@@ -703,9 +700,7 @@ export default function ZohoNextDayPlanner({
                     aria-label="Select target project"
                   >
                     <span className="truncate">
-                      {projectName === '__custom__'
-                        ? customProject || '+ Enter Custom Project'
-                        : projectName}
+                      {projectName}
                     </span>
                     <div className="flex items-center gap-1 shrink-0 text-zinc-400">
                       <Search className="w-3.5 h-3.5" />
@@ -756,36 +751,10 @@ export default function ZohoNextDayPlanner({
                             </button>
                           ))
                         )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProjectName('__custom__');
-                            setIsProjectDropdownOpen(false);
-                            setProjectSearchQuery('');
-                          }}
-                          className={cn(
-                            'w-full text-left px-2.5 py-1.5 rounded-lg text-xs border-t border-zinc-100 dark:border-zinc-800 mt-1 text-teal-600 dark:text-teal-400 hover:bg-teal-500/10 font-semibold cursor-pointer',
-                            projectName === '__custom__' && 'bg-teal-500/10'
-                          )}
-                        >
-                          + Enter Custom Project Name
-                        </button>
                       </div>
                     </div>
                   )}
                 </div>
-
-                {projectName === '__custom__' && (
-                  <input
-                    type="text"
-                    disabled={cutoffStatus.isLocked}
-                    required
-                    placeholder="Enter project name..."
-                    value={customProject}
-                    onChange={(e) => setCustomProject(e.target.value)}
-                    className="w-full text-xs mt-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                )}
               </div>
 
               {/* Task Title */}
@@ -835,7 +804,6 @@ export default function ZohoNextDayPlanner({
                     disabled={
                       cutoffStatus.isLocked ||
                       !qualityResult.isValid ||
-                      (projectName === '__custom__' && !customProject.trim()) ||
                       plannedHours <= 0
                     }
                     title={
