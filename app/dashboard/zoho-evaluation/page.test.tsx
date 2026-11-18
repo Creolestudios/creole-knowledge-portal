@@ -128,12 +128,19 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
     });
   });
 
-  it('renders period filter, read-only indicator, and task list grouped by date matching screenshot', async () => {
+  it('renders sub-tabs (Add Tomorrow Task and See Evaluation) and displays evaluation view when clicking See Evaluation', async () => {
     render(<MyZohoEvaluationPage />);
 
-    // Header & Read Only indicator
-    expect(screen.getByText('My Zoho Task Evaluations')).toBeDefined();
-    expect(screen.getByText('Read Only')).toBeDefined();
+    // Header & Sub-Tabs
+    expect(screen.getByRole('heading', { level: 1, name: 'Zoho' })).toBeDefined();
+    expect(screen.getByRole('button', { name: /Add Tomorrow Task/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /See Evaluation/i })).toBeDefined();
+
+    // Default tab is Add Tomorrow Task (showing Plan Tomorrow's Tasks)
+    expect(screen.getByText("Plan Tomorrow's Tasks")).toBeDefined();
+
+    // Switch to See Evaluation tab
+    fireEvent.click(screen.getByRole('button', { name: /See Evaluation/i }));
 
     // Wait for user evaluation data to load
     await waitFor(() => {
@@ -164,6 +171,9 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
   it('opens task evaluation popup when clicking a task and removes Zoho link in popup for user', async () => {
     render(<MyZohoEvaluationPage />);
 
+    // Switch to See Evaluation tab
+    fireEvent.click(screen.getByRole('button', { name: /See Evaluation/i }));
+
     await waitFor(() => {
       expect(screen.getByText('User-Wise Daily Task Evaluation & Analysis')).toBeDefined();
     });
@@ -187,6 +197,9 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
 
   it('opens daily evaluation popup when clicking Daily Evaluation button beside date header', async () => {
     render(<MyZohoEvaluationPage />);
+
+    // Switch to See Evaluation tab
+    fireEvent.click(screen.getByRole('button', { name: /See Evaluation/i }));
 
     await waitFor(() => {
       expect(screen.getByText('2026-10-30')).toBeDefined();

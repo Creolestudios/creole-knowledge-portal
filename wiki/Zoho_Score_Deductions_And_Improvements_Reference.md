@@ -40,8 +40,10 @@ To get the highest ratings and positive feedback on your daily evaluations, foll
 
 ### How Does the Improvement Criteria Work?
 * **Identifies Gaps**: If a comment only copies a checklist, if deliverables are marked pending without explaining why, or if a task ran overdue, the system detects these patterns.
+* **Domain & Task-Type Awareness**: Distinguishes software feature coding from DevOps, infrastructure, server upgrades, and research. Operational logs with package versions and service statuses are recognized as full technical proof without inappropriate demands for unit tests or APIs.
+* **Positive Testing Recognition**: When testing or verification notes are explicitly provided, it is acknowledged as an accomplishment. If testing is not applicable or not mentioned, no penalty or negative remark is added.
 * **Gives Actionable Coaching**: In the **"Where to Improve"** section, it highlights friendly, practical suggestions explaining exactly what to do next time (e.g. writing deeper technical comments, moving tickets to QA Review, or escalating dependencies).
-* **Adapts to You**: It takes into account your experience level and subscribed AI tools (Cursor, Copilot, Claude Pro) to ensure expectations are balanced, fair, and designed to accelerate your engineering growth.
+* **AI Subscriptions**: Having an active AI subscription (e.g. Antigravity, GitHub Copilot) is never listed as a weakness. AI acceleration is only suggested when a task is genuinely overdue to help recover velocity.
 
 ---
 
@@ -61,6 +63,14 @@ Every task is evaluated on a **0.0 to 10.0 scale**. Below are 10 clear examples 
   * ✅ **Zero Deductions**: Time was perfectly within tolerance.
   * ✅ **Full Work Marks**: Detailed requirements matched with concrete technical code changes and automated testing.
   * ✅ **QA Review Gate Passed**: Task formally transitioned to QA Review.
+
+#### Example 1B: Infrastructure & Server Upgrades (Score: 9.5 / 10)
+* **Setup**: Planned: 4h | Logged: 3h 59m (On-Time) | Status: `In QA Review`.
+* **Description**: Ubuntu OS upgrade, PHP upgrade to 8.5.12, and Apache restore.
+* **Comment**: Detailed technical log confirming server OS upgrade from Ubuntu 23.10 to 24.04.5 LTS, PHP 8.5.12 with extensions installed, and Apache module restoration verified.
+* **Why Full Marks Awarded**:
+  * ✅ **Domain Context Respected**: Infrastructure, DevOps, and OS upgrade tasks do not have REST APIs or unit test suites. A clear, granular log of package versions, service restarts, and configuration steps is fully justifiable.
+  * ✅ **Zero Unwarranted Critiques**: No inappropriate demands for "APIs or unit tests". Full credit awarded for operational excellence.
 
 ---
 

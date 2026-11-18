@@ -13,6 +13,7 @@ import {
 } from './client';
 import { evaluateZohoTask } from './evaluator';
 import { formatDateYYYYMMDD, formatUserName, isRefreshmentTask } from './service';
+import { syncQueuedPlannedTasks } from './planned-task-sync';
 import { sendDailyEvaluationEmail, sendDailyDigestEmail } from '../email/service';
 import { getDigestRecipientEmails } from './digest-recipients-store';
 import type { TaskEmailItem, DailyEvaluationEmailPayload } from '../email/templates/daily-evaluation-email';
@@ -556,7 +557,6 @@ export async function runDailyZohoEvaluationCron(
               strengths: evalResult.strengths,
               improvements: evalResult.improvements,
               ai_model_used: evalResult.aiModelUsed,
-              pr_evidence: evalResult.prEvidence || prEvidence,
             });
             totalEvaluationsCreated++;
           } catch (evalErr) {
@@ -716,6 +716,29 @@ export async function runDailyZohoEvaluationCron(
       } catch (dErr) {
         console.warn('[ZohoCron] Daily digest dispatch to admins failed:', dErr);
       }
+    }
+
+    // Phase 2: Ingest queued tasks planned for tomorrow (Monday to Thursday nights)
+    // Friday night tasks remain queued for Monday 9:00 AM Cron
+    try {
+      const [y, m, d] = targetDate.split('-').map(Number);
+      const currentDateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+      const dayOfWeek = currentDateObj.getUTCDay(); // 1: Mon, ..., 4: Thu, 5: Fri
+
+      if (dayOfWeek >= 1 && dayOfWeek <= 4) {
+        const nextDayObj = new Date(currentDateObj.getTime() + 86400000);
+        const ny = nextDayObj.getUTCFullYear();
+        const nm = String(nextDayObj.getUTCMonth() + 1).padStart(2, '0');
+        const nd = String(nextDayObj.getUTCDate()).padStart(2, '0');
+        const tomorrowDateStr = `${ny}-${nm}-${nd}`;
+
+        console.log(`[ZohoCron] Ingesting next-day planned tasks for ${tomorrowDateStr}...`);
+        await syncQueuedPlannedTasks(tomorrowDateStr, { dryRun });
+      } else if (dayOfWeek === 5) {
+        console.log('[ZohoCron] Friday night: Next-day tasks remain queued for the Monday 9:00 AM cron.');
+      }
+    } catch (syncErr) {
+      console.warn('[ZohoCron] Next-day planned tasks sync encountered warning:', syncErr);
     }
 
     return {

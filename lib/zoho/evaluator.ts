@@ -313,7 +313,7 @@ ${input.comments && input.comments.length > 0 ? input.comments.map((c, i) => `  
 
 ${input.prEvidence && input.prEvidence.length > 0 ? `
 === AUDITED CODE EVIDENCE (PULL REQUESTS) ===
-${input.prEvidence.map(p => `- PR #${p.prNumber} (${p.url}): ${p.verificationStatus} - ${p.verificationMessage}`).join('\n')}
+${input.prEvidence.map(p => `- PR #${p.prNumber} (${p.url}): ${p.verificationStatus}`).join('\n')}
 Note: If a verified PR is present, award high marks (8.5 - 10.0) if the code changes align with the task description. If a PR was authored by another developer (COWORKER_PR) or is empty (EMPTY_PR), heavily penalize the work justification score and flag it in whereLacked.
 =============================================
 ` : ''}

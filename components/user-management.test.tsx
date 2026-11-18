@@ -547,4 +547,44 @@ describe('UserManagement', () => {
     });
     expect(putPayload.senior_emails).toEqual(['pm@creolestudios.com', 'cto@creolestudios.com']);
   });
+
+  it('renders common master daily email switch and triggers bulk toggle API', async () => {
+    let patchPayload: any = null;
+    global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/admin/zoho/digest-recipients')) {
+        return Promise.resolve({ ok: true, json: async () => ({ data: [] }) });
+      }
+      if (url.includes('/api/admin/zoho/users/daily-email') && init?.method === 'PATCH') {
+        patchPayload = JSON.parse(init.body as string);
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            all: true,
+            dailyEmailEnabled: patchPayload.enabled,
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => sampleUsers });
+    });
+
+    render(<UserManagement />);
+    await waitFor(() => screen.getByText('complete@creolestudios.com'));
+
+    // Verify master toggle card is present
+    expect(screen.getByTestId('master-daily-email-card')).toBeInTheDocument();
+    expect(screen.getByText('10 PM Daily Evaluation Email (All Users)')).toBeInTheDocument();
+
+    // Verify toggle button exists and click it
+    const toggleBtn = screen.getByTestId('master-daily-email-toggle-btn');
+    expect(toggleBtn).toBeInTheDocument();
+
+    fireEvent.click(toggleBtn);
+
+    await waitFor(() => {
+      expect(patchPayload).toBeTruthy();
+    });
+    expect(patchPayload.all).toBe(true);
+    expect(typeof patchPayload.enabled).toBe('boolean');
+  });
 });

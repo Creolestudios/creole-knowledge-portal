@@ -526,4 +526,110 @@ Note: 1Hr of meeting is logged in this task itself.`
     });
   });
 
+  describe('Task Category, Testing Recognition & AI Subscription Improvements', () => {
+    it('properly evaluates server OS and infrastructure upgrade tasks without demanding APIs or unit tests', () => {
+      const summary = generateDynamicPerformanceSummary({
+        taskDescription: 'Reviewed the Ubuntu OS upgrade requirements for GANP, as an OS upgrade is required before moving to the newer PHP version. Planned PHP upgrade from 8.3 to 8.5.12.',
+        comments: [
+          'Reviewed and completed the required OS and PHP upgrade activities for GANP and Animal Kingdom. Upgraded the server OS from Ubuntu 23.10 to Ubuntu 24.04.5 LTS, installed PHP 8.5.12 with required extensions, and restored Apache using the PHP 8.5 module. Also updated WordPress core to 7.1.4.'
+        ],
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: 8.8,
+        seniorityLevel: 'Senior',
+        userExperienceYears: 5,
+        aiSubscriptions: ['Antigravity Free'],
+        isQAReview: true,
+        complexityScore: 8.0,
+      });
+
+      expect(summary.performanceSummary).toContain('Infrastructure upgrade activities were successfully executed');
+      expect(summary.performanceSummary).toContain('operational steps, environment versions, and service verification');
+      expect(summary.performanceSummary).not.toContain('code changes, APIs, or test coverage');
+      expect(summary.improvementItems).not.toContain('Leverage AI Subscriptions (Antigravity Free): Accelerate implementation, debugging, and verification to stay within planned sprint timelines.');
+      expect(summary.improvementItems).not.toContain('Task Complexity & Velocity Calibration: Complete routine tasks faster or add deeper implementation details.');
+    });
+
+    it('positively recognizes explicit testing and validation notes in comments', () => {
+      const summary = generateDynamicPerformanceSummary({
+        taskDescription: 'Implement user password reset flow with secure token validation',
+        comments: ['Developed the reset token verification endpoint. Verified and smoke tested password update flow on staging server.'],
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: 8.5,
+        seniorityLevel: 'Mid',
+        userExperienceYears: 3,
+        isQAReview: true,
+      });
+
+      expect(summary.performanceSummary).toContain('Task execution substantiated with verified testing and validation notes.');
+    });
+
+    it('does not penalize or demand testing if testing is not mentioned', () => {
+      const summary = generateDynamicPerformanceSummary({
+        taskDescription: 'Configure webhook receiver endpoint and verify signature headers',
+        comments: ['Implemented HMAC signature validation and payload logging in webhook service handler.'],
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: 7.5,
+        seniorityLevel: 'Senior',
+        userExperienceYears: 5,
+        isQAReview: true,
+      });
+
+      // Retains experience-based guidance without demanding unit tests or APIs
+      expect(summary.performanceSummary).toContain('Given 5+ years of engineering experience, deeper documentation on implementation details and architectural context is expected.');
+      expect(summary.performanceSummary).not.toContain('APIs, or test coverage');
+
+      // Improvement items do not demand testing or unit test coverage
+      const testingDemand = summary.improvementItems.find(i => /unit test|test coverage/i.test(i));
+      expect(testingDemand).toBeUndefined();
+    });
+
+    it('omits AI subscription from improvement items when task is on time, but includes it when genuinely overdue', () => {
+      const onTimeSummary = generateDynamicPerformanceSummary({
+        taskDescription: 'Optimize SQL queries on dashboard analytics',
+        comments: ['Added composite indexes on user_id and task_date. Query time reduced from 450ms to 28ms.'],
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: 9.0,
+        seniorityLevel: 'Senior',
+        userExperienceYears: 6,
+        aiSubscriptions: ['GitHub Copilot'],
+        isQAReview: true,
+      });
+
+      const onTimeAiImprovement = onTimeSummary.improvementItems.find(i => i.includes('Leverage AI Subscriptions'));
+      expect(onTimeAiImprovement).toBeUndefined();
+
+      const overdueSummary = generateDynamicPerformanceSummary({
+        taskDescription: 'Optimize SQL queries on dashboard analytics',
+        comments: ['Struggled with index locks and deadlocks during live migration.'],
+        timeAssessmentLabel: 'OVERDUE',
+        workMatchScore: 6.5,
+        seniorityLevel: 'Senior',
+        userExperienceYears: 6,
+        aiSubscriptions: ['GitHub Copilot'],
+        isQAReview: true,
+      });
+
+      const overdueAiImprovement = overdueSummary.improvementItems.find(i => i.includes('Leverage AI Subscriptions (GitHub Copilot)'));
+      expect(overdueAiImprovement).toBeDefined();
+    });
+
+    it('does not mention or demand pull requests when no PR is provided', () => {
+      const summary = generateDynamicPerformanceSummary({
+        taskDescription: 'Investigate memory leak in WebSocket connection pool',
+        comments: ['Profiled heap snapshots and identified unclosed event listeners in worker pool.'],
+        timeAssessmentLabel: 'ON_TIME',
+        workMatchScore: 8.0,
+        seniorityLevel: 'Senior',
+        userExperienceYears: 5,
+        isQAReview: true,
+      });
+
+      expect(summary.performanceSummary).not.toContain('pull request');
+      expect(summary.whereLacked).not.toContain('PR references');
+      expect(summary.whereToImprove).not.toContain('link pull requests');
+      const prImprovement = summary.improvementItems.find(i => /pull request|\bPR\b/i.test(i));
+      expect(prImprovement).toBeUndefined();
+    });
+  });
+
 });

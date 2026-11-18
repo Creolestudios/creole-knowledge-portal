@@ -571,6 +571,21 @@ export function evaluateWorkAndCommentMatch(
     baseScore = 6.8;
   }
 
+  // Recognize DevOps / Infrastructure / Server maintenance scope when detailed technical steps are logged
+  const isInfraOrDevOps = /\b(ubuntu|linux|server|os upgrade|infra|devops|apache|nginx|php upgrade|mysql|postgres|ssl|certbot|docker|deployment|migration|sysadmin)\b/i.test(
+    `${cleanDesc} ${combinedComments}`
+  );
+  if (isInfraOrDevOps && technicalExplanationWords.length >= 18 && !hasPendingScope && !isOffTopic && !isWeakTopicalMatch) {
+    baseScore = Math.max(baseScore, 9.0);
+  }
+
+  // Positive score reinforcement if testing/verification was explicitly documented
+  const testingMentionRegex = /\b(tested|testing|test(?:s|ed)?\s+(?:on|in|with|via)|verified|verification|smoke test(?:ed)?|checked on (?:staging|local|server|live)|restored and verified|qa tested|validation|tested properly)\b/i;
+  const hasTestingMentioned = cleanComments.length > 0 && testingMentionRegex.test(combinedComments);
+  if (hasTestingMentioned && baseScore >= 7.0 && !isPartialDelivery && !isOffTopic) {
+    baseScore = Math.min(10.0, baseScore + 0.2);
+  }
+
   // 5. Dynamic Time Reasonableness check based on Experience + AI Subscription
   const timeReasonableness = (context?.plannedMinutes && context?.actualMinutes)
     ? calculateDynamicTaskTimeReasonableness({
@@ -913,12 +928,28 @@ export function generateDynamicPerformanceSummary(params: {
   const technicalExplanationWords = nonDescWords.filter(w => !statusStopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
   const isChecklistComment = hasComments && ((hasChecklistMarkers && technicalExplanationWords.length < 18) || (totalStamps >= 2 && technicalExplanationWords.length < 25));
 
+  // Detect task category and testing/validation mentions
+  const testingMentionRegex = /\b(tested|testing|test(?:s|ed)?\s+(?:on|in|with|via)|verified|verification|smoke test(?:ed)?|checked on (?:staging|local|server|live)|restored and verified|qa tested|validation|tested properly)\b/i;
+  const hasTestingMentioned = hasComments && testingMentionRegex.test(combinedComments);
+
+  const isInfraOrDevOps = /\b(ubuntu|linux|server|os upgrade|infra|devops|apache|nginx|php upgrade|mysql|postgres|ssl|certbot|docker|deployment|migration|sysadmin)\b/i.test(
+    `${cleanTaskDesc} ${combinedComments}`
+  );
+
   // 1. Performance Summary
   const lines: string[] = [];
   if (hasPendingScope && params.workMatchScore < 7.0) {
     lines.push(`Task was recorded with deliverables left pending or unverified at the end of the planned duration.`);
     lines.push(`While partial progress was noted, closing extended duration tasks with pending deliverables or unresolved testing does not meet engineering completion standards.`);
     lines.push(`For a ${params.seniorityLevel || 'developer'}, tasks should either be completed and verified within the allocated time or roadblocks escalated proactively.`);
+  } else if (isInfraOrDevOps && technicalExplanationWords.length >= 18 && !hasPendingScope && params.workMatchScore >= 6.0) {
+    lines.push(`Infrastructure upgrade activities were successfully executed with detailed system and configuration updates.`);
+    lines.push(`The technical commentary directly substantiates the operational steps, environment versions, and service verification required for a ${params.seniorityLevel || 'developer'} with ${params.userExperienceYears || 2}+ years of experience.`);
+    if (aiTools) {
+      lines.push(`Active AI tooling (${aiTools}) was effectively leveraged to streamline execution.`);
+    } else {
+      lines.push(`Delivery met operational benchmarks with thorough technical updates and scope alignment.`);
+    }
   } else if (params.workMatchScore >= 8.5) {
     lines.push(`Task implementation was successfully executed with clear, substantive progress updates validating the completed scope.`);
     lines.push(`The technical commentary directly corroborates the development effort required for a ${params.seniorityLevel || 'developer'} with ${params.userExperienceYears || 2}+ years of experience.`);
@@ -929,42 +960,42 @@ export function generateDynamicPerformanceSummary(params: {
     }
   } else if (params.workMatchScore >= 6.0) {
     lines.push(`The feature scope was functionally delivered, but logged comments provide only partial technical context on implementation details.`);
-    lines.push(`Given ${params.userExperienceYears || 2}+ years of engineering experience, deeper documentation on code changes, APIs, or test coverage is expected.`);
+    lines.push(`Given ${params.userExperienceYears || 2}+ years of engineering experience, deeper documentation on implementation details and architectural context is expected.`);
     lines.push(`Ensure future task updates clearly delineate the modules modified and verification steps performed before closing.`);
   } else if (hasComments) {
     lines.push(`Task activity was recorded, but the task description and progress comments provide only high-level status statements without substantive implementation depth.`);
     lines.push(`Without granular technical context or architectural details, there is insufficient evidence to substantiate the development effort against the assigned scope.`);
-    lines.push(`For a ${params.seniorityLevel || 'developer'}, documenting pull requests, unit tests, and QA status is essential for accountability.`);
+    lines.push(`For a ${params.seniorityLevel || 'developer'}, providing clear technical progress updates and verification notes is essential for accountability.`);
   } else {
     lines.push(`The task was closed and logged without any progress comments in Zoho Projects to substantiate the work completed.`);
     lines.push(`Without technical verification notes, there is no audit trail to justify the time spent against the assigned description.`);
-    lines.push(`For a ${params.seniorityLevel || 'developer'}, documenting pull requests, unit tests, and QA status is essential for accountability.`);
+    lines.push(`For a ${params.seniorityLevel || 'developer'}, logging substantive progress updates and verification notes is essential for accountability.`);
   }
-  const verifiedPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'VERIFIED');
-  const coworkerPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'COWORKER_PR');
-  const emptyPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'EMPTY_PR');
 
+  // Positive recognition when testing or verification is explicitly documented
+  if (hasTestingMentioned) {
+    lines.push(`Task execution substantiated with verified testing and validation notes.`);
+  }
+
+  const verifiedPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'VERIFIED');
   if (verifiedPr) {
     lines.push(`Work evidence substantiated: PR #${verifiedPr.prNumber} verified (+${verifiedPr.additions || 0} lines in ${verifiedPr.changedFiles || 0} files).`);
   }
+
   const performanceSummary = lines.join('\n');
 
   // 2. Where User Lacked (Specific gap in execution/commenting/timing)
   let whereLacked = '';
-  if (coworkerPr) {
-    whereLacked = `PR link provided (#${coworkerPr.prNumber}) was authored by another developer (${coworkerPr.authorLogin || 'coworker'}) with 0 commits found for your account.`;
-  } else if (emptyPr) {
-    whereLacked = `PR #${emptyPr.prNumber} contained zero code changes or modified files.`;
-  } else if (!params.taskDescription || params.taskDescription.trim().length === 0) {
+  if (!params.taskDescription || params.taskDescription.trim().length === 0) {
     whereLacked = 'Task description was completely missing in Zoho Projects, preventing verification of work completed against any defined scope or acceptance criteria.';
   } else if (params.timeAssessmentLabel === 'NOT_LOGGED') {
     whereLacked = 'No actual hours were logged in Zoho Projects for this task.';
   } else if (!hasComments) {
-    whereLacked = 'Lacked progress comments, PR references, or test verification notes in Zoho to confirm completion of the task description.';
+    whereLacked = 'Lacked progress comments or technical verification notes in Zoho to confirm completion of the task description.';
   } else if (hasPendingScope) {
     whereLacked = 'Key deliverables were left in a pending or unverified state (e.g. testing pending, uncompleted sections) at the end of the planned duration without proactive blocker escalation.';
   } else if (isChecklistComment) {
-    whereLacked = 'Comments primarily mirrored the task checklist with status markers (done/pending) rather than detailing the actual technical work, code changes, or verification outcomes.';
+    whereLacked = 'Comments primarily mirrored the task checklist with status markers (done/pending) rather than detailing the actual technical work, configurations, or verification outcomes.';
   } else if (params.timeAssessmentLabel === 'OVERDUE') {
     whereLacked = 'Exceeded the scheduled delivery buffer without proactively noting technical roadblocks or blockers in task updates.';
   } else if (params.workMatchScore < 7.0 && isBriefDescription && isBriefComment) {
@@ -972,11 +1003,11 @@ export function generateDynamicPerformanceSummary(params: {
   } else if (params.workMatchScore < 7.0 && isBriefDescription) {
     whereLacked = 'Task description was overly brief and lacked detailed specifications or acceptance criteria.';
   } else if (params.workMatchScore < 7.0 && isBriefComment) {
-    whereLacked = 'Logged comments were brief and lacked granular technical details on implementation and test verification.';
+    whereLacked = 'Logged comments were brief and lacked granular technical details on implementation and verification.';
   } else if (params.workMatchScore < 7.0) {
-    whereLacked = 'Logged comments lacked specific technical context (modules tested, code changes, or QA status) relative to task complexity.';
+    whereLacked = 'Logged comments lacked specific technical context relative to task complexity.';
   } else if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
-    whereLacked = 'Completed well ahead of estimate without documenting comprehensive automated tests or edge-case handling.';
+    whereLacked = 'Completed well ahead of estimate without documenting comprehensive verification or edge-case handling.';
   } else if (!params.isQAReview) {
     whereLacked = 'Status Not In QA Review: Task was left in "In Progress" or "Backlog" instead of formally transitioning to In QA Review upon completion; points were deducted from the overall score.';
   } else {
@@ -995,10 +1026,10 @@ export function generateDynamicPerformanceSummary(params: {
     whereToImprove = 'Accurately log all work hours and timelogs in Zoho Projects alongside technical completion notes.';
   } else if (!hasComments) {
     whereToImprove = 'Always log a brief technical wrap-up in Zoho detailing what was built, files modified, and test verification outcomes.';
-  } else if (aiTools) {
-    whereToImprove = `Leverage active AI subscriptions (${aiTools}) to accelerate boilerplate code, draft unit tests, and provide structured commit notes.`;
+  } else if (aiTools && params.timeAssessmentLabel === 'OVERDUE') {
+    whereToImprove = `Leverage active AI subscriptions (${aiTools}) to accelerate development and stay within planned estimates.`;
   } else if (isSenior) {
-    whereToImprove = 'Document architectural trade-offs, link pull requests, and mentor peers through detailed task comment summaries.';
+    whereToImprove = 'Document architectural trade-offs and mentor peers through detailed task comment summaries.';
   } else {
     whereToImprove = 'Refine task estimation discipline and include explicit QA verification steps before closing work items.';
   }
@@ -1006,18 +1037,7 @@ export function generateDynamicPerformanceSummary(params: {
   // 4. Actionable improvement points list for user to work on
   const improvementItems: string[] = [];
 
-  // --- OVERALL SCORE DEDUCTION AUDIT (Complexity, Repetition, Status Gate, PR Evidence) ---
-
-  // 0. PR Evidence Audit
-  if (coworkerPr) {
-    improvementItems.push(
-      `Verify PR Authorship: PR #${coworkerPr.prNumber} was authored by another developer (${coworkerPr.authorLogin || 'coworker'}). Link your own PR or commit evidence.`
-    );
-  } else if (emptyPr) {
-    improvementItems.push(
-      `Push Code to PR: PR #${emptyPr.prNumber} contains no changes. Commit and push code before referencing in comments.`
-    );
-  }
+  // --- OVERALL SCORE DEDUCTION AUDIT (Complexity, Repetition, Status Gate) ---
 
   // 1. Status Gate Deduction (-1.0 pt from overall score)
   if (params.isQAReview === false) {
@@ -1048,13 +1068,14 @@ export function generateDynamicPerformanceSummary(params: {
   }
 
   // 3. Task Complexity & Velocity Calibration (overall complexity weight)
-  if (params.complexityScore !== undefined && params.complexityScore < 10.0) {
+  // Only suggest if complexity is low AND comments are brief/unexplained or overdue
+  if (params.complexityScore !== undefined && params.complexityScore < 8.0 && (commentWords.length < 25 || params.timeAssessmentLabel === 'OVERDUE')) {
     improvementItems.push(
       'Task Complexity & Velocity Calibration: Complete routine tasks faster or add deeper implementation details.'
     );
   }
 
-  // 3. Repetitive Scope Deduction (overall originality weight)
+  // 4. Repetitive Scope Deduction (overall originality weight)
   if (params.isRepetitive || (params.repetitionScore !== undefined && params.repetitionScore < 10.0)) {
     improvementItems.push(
       'Avoid Repetitive Scope: High repetition (>60%) detected. Build reusable components instead of duplicating tasks.'
@@ -1074,11 +1095,11 @@ export function generateDynamicPerformanceSummary(params: {
   }
 
   if (isChecklistComment) {
-    improvementItems.push('Explain Work Done Beyond Status Updates: Detail code changes and test results (aim for 40–50 words) rather than just status marks like "done".');
+    improvementItems.push('Explain Work Done Beyond Status Updates: Detail implementation steps and verification results (aim for 40–50 words) rather than just status marks like "done".');
   }
 
   if (isBriefComment && !isChecklistComment && params.workMatchScore < 7.0) {
-    improvementItems.push('Substantiate Execution in Comments: Detail code modifications and test verification steps (target 40–50 words).');
+    improvementItems.push('Substantiate Execution in Comments: Detail implementation steps and verification results (target 40–50 words).');
   } else if (!isChecklistComment && !isBriefDescription && descWords.length >= 35 && commentWords.length <= 24) {
     improvementItems.push('Substantiate Complete Scope in Comments: Detail how key specifications were implemented and verified (aim for 40–50 words).');
   }
@@ -1096,11 +1117,12 @@ export function generateDynamicPerformanceSummary(params: {
   }
 
   if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
-    improvementItems.push('Calibrate Estimation & Expand Testing: Align planned hours with scope or add automated unit test coverage.');
+    improvementItems.push('Calibrate Estimation: Align planned hours with scope or expand verification coverage.');
   }
 
-  if (aiTools) {
-    improvementItems.push(`Leverage AI Subscriptions (${aiTools}): Use AI tools to accelerate unit testing and commit notes.`);
+  // ONLY suggest leveraging AI subscriptions if genuinely overdue or delayed
+  if (aiTools && params.timeAssessmentLabel === 'OVERDUE') {
+    improvementItems.push(`Leverage AI Subscriptions (${aiTools}): Accelerate implementation, debugging, and verification to stay within planned sprint timelines.`);
   }
 
   if (improvementItems.length === 0) {

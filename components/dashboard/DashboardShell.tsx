@@ -43,7 +43,7 @@ const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
   { key: 'activity', label: 'Activity Tracker', icon: <BarChart3 size={18} /> },
   { key: 'leaderboard', label: 'Leaderboard', icon: <Trophy size={18} /> },
   { key: 'roulette', label: 'Blog Roulette', icon: <Sparkles size={18} /> },
-  { key: 'zoho', label: 'Zoho Evaluation', icon: <CheckSquare size={18} /> },
+  { key: 'zoho', label: 'Zoho', icon: <CheckSquare size={18} /> },
 ];
 
 /**

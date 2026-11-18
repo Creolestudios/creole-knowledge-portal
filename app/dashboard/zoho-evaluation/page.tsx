@@ -2,18 +2,20 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Calendar,
-  Lock,
   ExternalLink,
   Sparkles,
   ArrowLeft,
+  CalendarPlus,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import DashboardShell from '@/components/dashboard/DashboardShell';
 import LogoutButton from '@/components/logout-button';
 import ZohoDateFilterPicker, { DateRangeSelection } from '@/components/zoho/zoho-date-filter-picker';
 import ZohoTillDateSummary from '@/components/zoho/zoho-till-date-summary';
+import ZohoNextDayPlanner from '@/components/zoho/zoho-next-day-planner';
 import ZohoTaskModal from '@/components/zoho/zoho-task-modal';
 import ZohoDailyEvaluationModal from '@/components/zoho/zoho-daily-evaluation-modal';
 import ZohoWeeklyEvaluationModal from '@/components/zoho/zoho-weekly-evaluation-modal';
@@ -40,6 +42,9 @@ export default function MyZohoEvaluationPage() {
 }
 
 function MyZohoEvaluationContent() {
+  const searchParams = useSearchParams();
+  const initialView = searchParams?.get('view') === 'evaluation' ? 'evaluation' : 'planner';
+  const [activeView, setActiveView] = useState<'planner' | 'evaluation'>(initialView);
   const [user, setUser] = useState<Pick<SupabaseUser, 'id' | 'email'> | null>(null);
   const [profile, setProfile] = useState<UserProfileSchema | null>(null);
   const [data, setData] = useState<ZohoUserSummary | null>(null);
@@ -112,7 +117,7 @@ function MyZohoEvaluationContent() {
       footer={<LogoutButton variant="sidebar" />}
     >
       <div className="space-y-6">
-        {/* Navigation & Header */}
+        {/* Navigation & Header with Sub-Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Link
@@ -124,18 +129,55 @@ function MyZohoEvaluationContent() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold text-zinc-900 dark:text-white">
-                  My Zoho Task Evaluations
+                  Zoho
                 </h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
-                  <Lock className="w-3 h-3" /> Read Only
-                </span>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Personal daily task performance, AI coaching summaries, and time adherence records
+                Plan next-day deliverables and inspect daily AI performance evaluations
               </p>
             </div>
           </div>
+
+          {/* Sub-Tabs: Add Tomorrow Task vs See Evaluation */}
+          <div className="inline-flex items-center p-1 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 shadow-xs">
+            <button
+              type="button"
+              onClick={() => setActiveView('planner')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeView === 'planner'
+                  ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              <CalendarPlus className="w-4 h-4 text-[#34c4f2]" />
+              <span>Add Tomorrow Task</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('evaluation')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeView === 'evaluation'
+                  ? 'bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-purple-500" />
+              <span>See Evaluation</span>
+            </button>
+          </div>
         </div>
+
+        {/* Tab 1: Next-Day Task Planner (Image 2) */}
+        {activeView === 'planner' && (
+          <ZohoNextDayPlanner
+            userName={data?.name || profile?.current_role || user?.email?.split('@')[0] || 'Developer'}
+            userEmail={data?.email || user?.email || ''}
+          />
+        )}
+
+        {/* Tab 2: See Evaluation (Image 3) */}
+        {activeView === 'evaluation' && (
+          <>
 
         {loading && !data ? (
           <div className="p-16 text-center text-xs text-zinc-400 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl animate-pulse space-y-3">
@@ -263,6 +305,8 @@ function MyZohoEvaluationContent() {
           <div className="p-16 text-center text-xs text-zinc-400 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl">
             Could not find your Zoho integration profile.
           </div>
+        )}
+          </>
         )}
 
         {/* Daily Evaluation Modal */}

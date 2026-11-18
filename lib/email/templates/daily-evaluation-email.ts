@@ -179,11 +179,6 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
                       <span style="display: inline-block; font-size: 9.5px; font-weight: 700; color: ${timeBadge.text}; background-color: ${timeBadge.bg}; border: 1px solid ${timeBadge.border}; padding: 1px 6px; border-radius: 4px;">
                         ${timeBadge.label}
                       </span>
-                      ${task.prEvidence && task.prEvidence.length > 0 ? task.prEvidence.map(p => `
-                        <a href="${escapeHtml(p.url)}" target="_blank" style="text-decoration:none; display: inline-block; font-size: 9.5px; font-weight: 700; color: ${p.verificationStatus === 'VERIFIED' ? '#15803d' : '#b91c1c'}; background-color: ${p.verificationStatus === 'VERIFIED' ? '#f0fdf4' : '#fef2f2'}; border: 1px solid ${p.verificationStatus === 'VERIFIED' ? '#bbf7d0' : '#fecaca'}; padding: 1px 6px; border-radius: 4px; margin-left: 6px;">
-                          ${p.verificationStatus === 'VERIFIED' ? '✓ PR #' + p.prNumber : '✕ PR #' + p.prNumber}
-                        </a>
-                      `).join('') : ''}
                       ${workMatchScore ? `
                         <span style="margin-left: 8px; font-size: 10.5px; color: #64748b;">
                           Work Justification: <strong style="color: #7c3aed;">${workMatchScore}/10</strong>
