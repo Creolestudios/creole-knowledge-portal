@@ -19,6 +19,8 @@ Welcome to the wiki for the Creole Knowledge Portal project! This wiki serves as
 *   [[pages/resume-jd-assessment-plan.md|Student Mock Interview / Assessment Module]]
 *   [[pages/ai-interview-module-complete-guide.md|AI Interview Module — Complete Technical & Functional Guide]]
 *   [[Google_Drive_Video_Storage_Setup_Guide.md|Google Cloud Service Account & Video Storage Setup Guide]]
+*   [[Zoho_Task_Creation_And_Planning_User_Guide.md|Zoho Task Planning & Creation — Developer User Guidelines]]
+*   [[Zoho_Task_Evaluation_Simple_Guide.md|Zoho Task Evaluation — Core Measurement Criteria Guide]]
 *   [[Zoho_Next_Day_Task_Planning_And_Hierarchy_Workflow.md|Zoho Next-Day Task Planning & 3-Tier Hierarchy Workflow Guide]]
 *   [[components/index.md|Components]]
 *   [[decisions/index.md|Architectural Decisions]]

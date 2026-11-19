@@ -495,7 +495,11 @@ export async function syncQueuedPlannedTasks(
       // 3.3 Create Level 4 Work Task in Zoho Projects under the Level 3 User Subtask
       // Note: start_date and end_date are intentionally omitted so they remain unset ("-") in Zoho Projects
       const formattedDuration = formatZohoDurationToClock(task.planned_hours);
-      const taskNameWithHours = `${task.task_name} [${Number(task.planned_hours).toFixed(1)} hrs]`;
+      const durationLabel =
+        Number(task.planned_hours) % 1 === 0 || (Number(task.planned_hours) * 10) % 1 === 0
+          ? `${Number(task.planned_hours).toFixed(1)} hrs`
+          : `${formatZohoDurationToClock(task.planned_hours)} hrs`;
+      const taskNameWithHours = `${task.task_name} [${durationLabel}]`;
 
       const createRes = await createZohoTask(token!, portalId, projectId, {
         name: taskNameWithHours,

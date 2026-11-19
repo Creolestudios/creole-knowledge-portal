@@ -7,6 +7,7 @@ import {
   computeCompositeTaskScore,
   generateDynamicPerformanceSummary,
   detectPendingScope,
+  calculateItemizedDeductions,
 } from './heuristics';
 
 describe('Zoho Heuristics Engine', () => {
@@ -105,6 +106,43 @@ describe('Zoho Heuristics Engine', () => {
       expect(result.explanation).toContain('mirror the task checklist with status indicators');
     });
 
+    it('strictly penalizes verbatim copy-pasting of task description (Divyaraj case, <= 3.0/10)', () => {
+      const desc = 'Implement OAuth2 authorization flow for Zoho Projects integration including refresh token rotation, error telemetry, and callback route handling with unit tests.';
+      // User verbatim copy-pastes the description as the progress comment without adding any new explanation words
+      const comments = [
+        'Implement OAuth2 authorization flow for Zoho Projects integration including refresh token rotation, error telemetry, and callback route handling with unit tests.'
+      ];
+
+      const result = evaluateWorkAndCommentMatch(desc, comments, {
+        taskName: 'OAuth2 Zoho Integration',
+        plannedMinutes: 240,
+        actualMinutes: 240,
+      });
+
+      expect(result.isVerbatimMirror).toBe(true);
+      expect(result.workMatchScore).toBeLessThanOrEqual(3.0);
+      expect(result.alignmentLabel).toBe('VERBATIM_COPY_PASTE');
+      expect(result.explanation).toContain('copy-paste');
+      expect(result.explanation).toContain('verbatim');
+    });
+
+    it('does not falsely classify narrative descriptive sentences containing "Completed" as checklist comments (Srushti case)', () => {
+      const desc = 'Perform end-to-end testing of the complete task management workflow, starting from task creation through the user dashboard to ensure tasks are correctly added and synchronized with Zoho. Validate task details, parent task association, subtask creation, checklist handling, user mapping, and task status synchronization.';
+      const comments = [
+        'Performed end-to-end testing of the complete task management workflow, from task creation through the user dashboard to synchronization with Zoho. Validated task details, parent task association, subtask creation, checklist handling, user mapping, and task status synchronization. Tested the Admin evaluation workflow, covering task review, and daily evaluation generation. Executed end-to-end workflow verification across core user touchpoints. Verified performance evaluation insights, actionable improvement suggestions, and score computations. Executed end-to-end verification of the next day planning flow. Confirmed planned tasks are saved, synchronized to Zoho, and reflected in the dashboard. Completed post-deployment testing on the QA environment, confirming all end-to-end user journeys pass successfully.'
+      ];
+
+      const result = evaluateWorkAndCommentMatch(desc, comments, {
+        taskName: 'End-to-End Task Addition, Evaluation Workflow Testing & Deployment',
+        plannedMinutes: 480,
+        actualMinutes: 449,
+      });
+
+      expect(result.isChecklistComment).toBe(false);
+      expect(result.isVerbatimMirror).toBe(false);
+      expect(result.workMatchScore).toBeGreaterThanOrEqual(8.0);
+    });
+
     it('strictly penalizes score (<= 5.2/10) when extended duration task leaves deliverables pending with checklist markers (Navratan case)', () => {
       const desc = `Cash Free Integration
 Gemstone for Every purpose detail page image change
@@ -145,7 +183,7 @@ Note: 1Hr of meeting is logged in this task itself.`
 
       expect(dynSummary.whereLacked).toContain('pending or unverified');
       expect(dynSummary.improvementItems.some(i => i.includes('Pending Deliverables') || i.includes('Pending'))).toBe(true);
-      expect(dynSummary.improvementItems.some(i => i.includes('Separate Meeting Logs') || i.includes('meeting'))).toBe(true);
+      expect(dynSummary.improvementItems.some(i => i.toLowerCase().includes('meeting'))).toBe(true);
     });
 
     it('does not penalize architectural roadmap notes (e.g. "remain deferred") when current deliverables are fully completed and tested', () => {
@@ -284,9 +322,8 @@ Note: 1Hr of meeting is logged in this task itself.`
         isQAReview: true,
       });
 
-      // 8.5*0.45 + 9.0*0.35 + 8.0*0.10 + 10.0*0.10 = 3.825 + 3.15 + 0.8 + 1.0 = 8.775 + 0.3 (QA bonus) = 9.075 -> 9.1
-      // Base score: 8.775 -> 8.8 (points remain as it is when in QA Review)
-      expect(score).toBe(8.8);
+      // 8.5*0.50 + 9.0*0.10 + 8.0*0.30 + 10.0*0.10 = 4.25 + 0.90 + 2.40 + 1.00 = 8.55 -> 8.6
+      expect(score).toBe(8.6);
       expect(score).toBeLessThanOrEqual(10.0);
     });
 
@@ -299,8 +336,8 @@ Note: 1Hr of meeting is logged in this task itself.`
         isQAReview: false,
       });
 
-      // 8.775 - 1.0 (1.0 point deduction when not in QA review) = 7.775 -> 7.8
-      expect(scoreWithoutQA).toBe(7.8);
+      // 8.55 - 1.0 (1.0 point deduction when not in QA review) = 7.55 -> 7.6
+      expect(scoreWithoutQA).toBe(7.6);
     });
 
     it('does not deduct from composite overall score when task description is brief (deduction occurs on work score)', () => {
@@ -314,8 +351,8 @@ Note: 1Hr of meeting is logged in this task itself.`
       });
 
       // Deduction occurs on the Score (work match) directly, not from composite overall score
-      // 8.5*0.45 + 9.0*0.35 + 8.0*0.10 + 10.0*0.10 = 8.775 -> 8.8
-      expect(scoreWithBrief).toBe(8.8);
+      // 8.5*0.50 + 9.0*0.10 + 8.0*0.30 + 10.0*0.10 = 8.55 -> 8.6
+      expect(scoreWithBrief).toBe(8.6);
     });
 
     it('returns 0.0 when both time and comments are zero (unlogged and no comments)', () => {
@@ -345,7 +382,7 @@ Note: 1Hr of meeting is logged in this task itself.`
 
       // Does not repeat raw numerical hours or stats
       expect(summary.performanceSummary).not.toContain('mins');
-      expect(summary.performanceSummary).toContain('Task implementation was successfully executed');
+      expect(summary.performanceSummary).toContain('Work was completed well with clear progress updates');
       expect(summary.performanceSummary.split('\n').length).toBeGreaterThanOrEqual(3);
 
       // Flags where user lacked based on overdue status
@@ -542,8 +579,8 @@ Note: 1Hr of meeting is logged in this task itself.`
         complexityScore: 8.0,
       });
 
-      expect(summary.performanceSummary).toContain('Infrastructure upgrade activities were successfully executed');
-      expect(summary.performanceSummary).toContain('operational steps, environment versions, and service verification');
+      expect(summary.performanceSummary).toContain('Work was done well with clear setup and system updates');
+      expect(summary.performanceSummary).toContain('comments explain the work steps and testing done clearly');
       expect(summary.performanceSummary).not.toContain('code changes, APIs, or test coverage');
       expect(summary.improvementItems).not.toContain('Leverage AI Subscriptions (Antigravity Free): Accelerate implementation, debugging, and verification to stay within planned sprint timelines.');
       expect(summary.improvementItems).not.toContain('Task Complexity & Velocity Calibration: Complete routine tasks faster or add deeper implementation details.');
@@ -560,7 +597,7 @@ Note: 1Hr of meeting is logged in this task itself.`
         isQAReview: true,
       });
 
-      expect(summary.performanceSummary).toContain('Task execution substantiated with verified testing and validation notes.');
+      expect(summary.performanceSummary).toContain('Testing was checked and verified.');
     });
 
     it('does not penalize or demand testing if testing is not mentioned', () => {
@@ -575,7 +612,7 @@ Note: 1Hr of meeting is logged in this task itself.`
       });
 
       // Retains experience-based guidance without demanding unit tests or APIs
-      expect(summary.performanceSummary).toContain('Given 5+ years of engineering experience, deeper documentation on implementation details and architectural context is expected.');
+      expect(summary.performanceSummary).toContain('Given 5+ years of experience, please add a few more details on what was changed and tested before closing.');
       expect(summary.performanceSummary).not.toContain('APIs, or test coverage');
 
       // Improvement items do not demand testing or unit test coverage
@@ -632,4 +669,76 @@ Note: 1Hr of meeting is logged in this task itself.`
     });
   });
 
+  describe('calculateItemizedDeductions', () => {
+    it('returns empty deductions when work is on time and fully substantiated', () => {
+      const result = calculateItemizedDeductions({
+        timeScore: 10,
+        timeAssessmentLabel: 'ON_TIME',
+        timeVarianceMinutes: 0,
+        workMatchScore: 10.0,
+        isMissingDescription: false,
+        isBriefDescription: false,
+        isVerbatimMirror: false,
+        isChecklistComment: false,
+        hasPendingScope: false,
+        isPartialDelivery: false,
+        isRepetitive: false,
+      });
+
+      expect(result.deductions).toHaveLength(0);
+      expect(result.pointDeductions).toHaveLength(0);
+    });
+
+    it('itemizes deductions for overdue time variance', () => {
+      const result = calculateItemizedDeductions({
+        timeScore: 7.0,
+        timeAssessmentLabel: 'OVERDUE',
+        timeVarianceMinutes: 35,
+        workMatchScore: 10.0,
+      });
+
+      expect(result.deductions.some(d => d.includes('-3.0 pts (Time)'))).toBe(true);
+      expect(result.deductions.some(d => d.includes('+35m'))).toBe(true);
+    });
+
+    it('itemizes deductions for verbatim copy-pasting of description', () => {
+      const result = calculateItemizedDeductions({
+        timeScore: 10,
+        timeAssessmentLabel: 'ON_TIME',
+        timeVarianceMinutes: 0,
+        workMatchScore: 3.0,
+        isVerbatimMirror: true,
+      });
+
+      expect(result.deductions.some(d => d.includes('-7.0 pts (Comments)'))).toBe(true);
+      expect(result.deductions.some(d => d.includes('copy-pastes task description'))).toBe(true);
+    });
+
+    it('itemizes deductions for missing task description', () => {
+      const result = calculateItemizedDeductions({
+        timeScore: 10,
+        timeAssessmentLabel: 'ON_TIME',
+        timeVarianceMinutes: 0,
+        workMatchScore: 0.0,
+        isMissingDescription: true,
+      });
+
+      expect(result.deductions.some(d => d.includes('-10.0 pts (Scope)'))).toBe(true);
+      expect(result.deductions.some(d => d.includes('Task description is completely missing'))).toBe(true);
+    });
+
+    it('itemizes deductions for repetitive tasks', () => {
+      const result = calculateItemizedDeductions({
+        timeScore: 10,
+        timeAssessmentLabel: 'ON_TIME',
+        timeVarianceMinutes: 0,
+        workMatchScore: 10.0,
+        isRepetitive: true,
+        repetitionSimilarityPct: 88,
+      });
+
+      expect(result.deductions.some(d => d.includes('-3.0 pts (Repetition)'))).toBe(true);
+      expect(result.deductions.some(d => d.includes('88% similarity match'))).toBe(true);
+    });
+  });
 });

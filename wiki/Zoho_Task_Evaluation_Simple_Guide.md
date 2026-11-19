@@ -55,9 +55,9 @@ Creole Studios operates on a developer-led testing model.
 
 ### 5. Composite Scoring Formula (100% Total Weights)
 Every task score combines four weighted dimensions out of 10.0, followed by the QA Review status gate:
-* **Work Match & Technical Commentary**: `45%` weight (4.5 points)
-* **Time Adherence & Tolerance**: `35%` weight (3.5 points)
-* **Task Complexity**: `10%` weight (1.0 point)
+* **Work Match & Technical Commentary**: `50%` weight (5.0 points)
+* **Time Adherence & Tolerance**: `10%` weight (1.0 point)
+* **Task Complexity**: `30%` weight (3.0 points)
 * **Originality & Non-Repetition**: `10%` weight (1.0 point)
 * **Status Gate**: Subtracts the Non-QA deduction (`-1.0 pt`) if the task is not in `In QA Review`.
 
@@ -75,10 +75,10 @@ All the thresholds above are dynamically customizable by Admins via the **"Evalu
 * Non-QA Review Deduction (default: `1.0` pt)
 * Overtime Grace Buffer (default: `5` mins) & Overtime Point Penalty (default: `2.0` pts)
 * Early Grace Buffer (default: `15` mins) & Early Gap Penalty (default: `2.0` pts)
-* Missing Description Cap (default: `3.0` / 10)
+* Missing Description Cap (default: `0.0` / 10)
 * Checklist Comment Cap (default: `5.0` / 10)
 * Partial Delivery Cap (default: `5.2` / 10)
-* Weights in natural percentages: Work `45%`, Time `35%`, Complexity `10%`, Repetition `10%`.
+* Weights in natural percentages: Work `50%`, Time `10%`, Complexity `30%`, Repetition `10%`.
 
 ---
 
@@ -719,3 +719,45 @@ All the thresholds above are dynamically customizable by Admins via the **"Evalu
 * **Repetition**: Repeated 3 times in project
 * **Score**: **0.0 / 10**
 * **Verdict**: Triggers every single penalty in the engine: 0 hours logged, 0 comments, intentionally vague description, repetitive scope, and left in Progress without QA review. Results in a complete zero score (0.0 / 10).
+
+---
+
+## ℹ️ Evaluation Metrics UI Tooltips & Email Quick Guide
+
+To ensure complete transparency and quick understanding for all developers and managers, every key metric in the Web UI has an **`(i)` info icon** with a short, simple explanation, mirrored in the daily 10:00 PM evaluation email:
+
+| Metric | UI Tooltip & Email Guide (Simple English) | Where It Appears |
+|---|---|---|
+| **Planned Time** | *Time planned for this task.* | Task Modal, Daily Modal, Email summary card |
+| **Actual Spent** | *Total time logged in Zoho.* | Task Modal, Daily Modal, Email summary card |
+| **Time Spent (Score)** | *Score for finishing on time within the allowed buffer.* | Task Modal evaluation strip, Daily Modal, Email task row |
+| **Score (Work Score)** | *Score for how clearly comments explain the work done.* | Task Modal evaluation strip, Daily Modal, Email task row |
+| **Status Breakdown** | *Shows if tasks are in QA Review or Completed.* | Daily Modal, Email summary card |
+| **Day Score** | *Overall score for today's tasks.* | Daily Modal header, Email header badge |
+
+---
+
+## ✉️ Daily Evaluation Email Updates & Link Behavior
+
+1. **Direct Navigation**: The blue `[VIEW IN KNOWLEDGE PORTAL →]` button links directly to `${portalUrl}/dashboard/zoho-evaluation?view=evaluation`, opening the **See Evaluation** tab so users immediately review their evaluation without landing on the task planner.
+2. **Simplified Layout**:
+   - The standalone **Key Accomplishments** box has been removed from developer digest emails to keep emails concise and focused.
+   - **Areas for Improvement** expands to full width when improvements exist.
+   - **No Points in Email**: Point deductions (e.g. `(-1.0 pt)`, `(-4.5 pts)`) are stripped from developer-facing emails to keep recommendations positive, clear, and focused on actionable improvements.
+   - **Plain English Commentary**: Evaluator summaries and guidance use simple, everyday phrasing (e.g. *"Work was completed well with clear progress updates"* instead of dense technical jargon).
+
+---
+
+## 📊 Admin Daily Team Performance Digest Email (3-Column Layout)
+
+Delivered to Administrators and Managers, the team digest table is consolidated into **3 clean columns**:
+
+1. **User Info (Column 1)**:
+   - Developer Name & Email
+   - Total task count and status badges (e.g. `Tasks (2): [Done] [In QA Review]`)
+   - Logged hours (e.g. `Logged: 7.9h`)
+2. **Overall Score (Column 2)**:
+   - Dynamic score pill (e.g. `8.8/10`, `6.5/10`)
+3. **Evaluation Summary (Column 3)**:
+   - Bullet points detailing **Done**, **Pending**, **Why this score**, and **Action** recommendations.
+

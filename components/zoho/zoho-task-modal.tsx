@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
 import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
-import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence, computeCompositeTaskScore } from '@/lib/zoho/heuristics';
+import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence, computeCompositeTaskScore, calculateItemizedDeductions } from '@/lib/zoho/heuristics';
+import { ZohoMetricTooltip } from './zoho-metric-tooltip';
 
 interface ZohoTaskModalProps {
   task: ZohoTaskItem | null;
@@ -75,25 +76,55 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       actualMinutes: actualMins,
     });
 
+    const isUnlogged = actualMins === 0;
     const isChecklistOrVagueOrOffTopic =
       workMatchResult.isMissingDescription ||
-      workMatchResult.isBriefDescription ||
-      (workMatchResult.descriptionDeduction !== undefined && workMatchResult.descriptionDeduction > 0) ||
+      workMatchResult.isVerbatimMirror ||
       workMatchResult.isChecklistComment ||
       workMatchResult.hasPendingScope ||
       workMatchResult.alignmentLabel === 'PARTIAL_DELIVERY' ||
       workMatchResult.alignmentLabel === 'PARTIAL_ALIGNMENT' ||
       workMatchResult.alignmentLabel === 'MISSING_TASK_DESCRIPTION' ||
-      (workMatchResult.isBriefDescription && workMatchResult.isBriefComment) ||
       workMatchResult.alignmentLabel === 'OFF_TOPIC';
 
-    // If task has precomputed evaluation from server, verify actual hours and comments match
-    if (task.evaluation && !isChecklistOrVagueOrOffTopic) {
+    // CRITICAL: Always use the authoritative evaluation stored on the server/DB when available,
+    // unless the task is completely unlogged or flagged with severe checklist/verbatim mismatch
+    if (task.evaluation && !isUnlogged && !isChecklistOrVagueOrOffTopic) {
+      const serverOverall = task.evaluation.overallScore > 10 ? task.evaluation.overallScore / 10 : task.evaluation.overallScore;
+      const serverTime = task.evaluation.timeScore > 10 ? task.evaluation.timeScore / 10 : task.evaluation.timeScore;
+      const rawWork = task.evaluation.workMatchScore || task.evaluation.commentQualityScore || 0;
+      const serverWork = rawWork > 10 ? rawWork / 10 : rawWork;
+
+      const deductionsData = task.evaluation.deductions && task.evaluation.deductions.length > 0
+        ? task.evaluation.deductions
+        : calculateItemizedDeductions({
+            timeScore: serverTime,
+            timeAssessmentLabel: task.evaluation.timeAssessmentLabel || timeAdh.assessmentLabel,
+            timeVarianceMinutes: task.evaluation.timeVarianceMinutes ?? timeAdh.timeVarianceMinutes,
+            workMatchScore: serverWork,
+            isMissingDescription: workMatchResult.isMissingDescription,
+            isBriefDescription: workMatchResult.isBriefDescription,
+            descriptionDeduction: workMatchResult.descriptionDeduction,
+            isVerbatimMirror: workMatchResult.isVerbatimMirror,
+            isChecklistComment: workMatchResult.isChecklistComment,
+            hasPendingScope: workMatchResult.hasPendingScope,
+            isPartialDelivery: workMatchResult.isPartialDelivery,
+            isRepetitive: task.evaluation.isRepetitive,
+            repetitionSimilarityPct: task.evaluation.repetitionSimilarityPct,
+          }).deductions;
+
       return {
         ...task.evaluation,
-        timeScore: timeAdh.timeScore,
-        timeAssessmentLabel: timeAdh.assessmentLabel,
-        timeVarianceMinutes: timeAdh.timeVarianceMinutes,
+        overallScore: serverOverall,
+        timeScore: serverTime,
+        workMatchScore: serverWork,
+        commentQualityScore: serverWork,
+        timeAssessmentLabel: task.evaluation.timeAssessmentLabel || timeAdh.assessmentLabel,
+        timeVarianceMinutes: task.evaluation.timeVarianceMinutes ?? timeAdh.timeVarianceMinutes,
+        summaryFeedback: task.evaluation.summaryFeedback || task.evaluation.workMatchFeedback || 'Task logged and reviewed.',
+        improvementItems: task.evaluation.improvementItems || task.evaluation.improvements || [],
+        whereToImprove: task.evaluation.whereToImprove || (task.evaluation.improvements && task.evaluation.improvements[0]) || 'Continue maintaining disciplined task delivery.',
+        deductions: deductionsData,
       };
     }
 
@@ -127,6 +158,22 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       timeScore,
     });
 
+    const { deductions } = calculateItemizedDeductions({
+      timeScore,
+      timeAssessmentLabel,
+      timeVarianceMinutes: variance,
+      workMatchScore,
+      workMatchResult,
+      isMissingDescription: workMatchResult.isMissingDescription,
+      isBriefDescription: workMatchResult.isBriefDescription,
+      descriptionDeduction: workMatchResult.descriptionDeduction,
+      isVerbatimMirror: workMatchResult.isVerbatimMirror,
+      isChecklistComment: workMatchResult.isChecklistComment,
+      hasPendingScope: workMatchResult.hasPendingScope,
+      isPartialDelivery: workMatchResult.isPartialDelivery,
+      isRepetitive: false,
+    });
+
     return {
       overallScore: Math.min(10.0, overallScore),
       timeScore,
@@ -144,6 +191,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
       whereLacked: dyn.whereLacked,
       whereToImprove: dyn.whereToImprove,
       improvementItems: dyn.improvementItems,
+      deductions,
       strengths: [
         workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
         timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
@@ -256,11 +304,17 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
             <div className="p-3 rounded-xl bg-gradient-to-r from-sky-500/[0.07] via-sky-500/[0.03] to-transparent border border-sky-200/50 dark:border-sky-800/40">
               <div className="grid grid-cols-2 gap-3 text-center">
                 <div className="border-r border-zinc-200/60 dark:border-zinc-800 pr-2">
-                  <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Planned Time</div>
+                  <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center justify-center gap-1">
+                    <span>Planned Time</span>
+                    <ZohoMetricTooltip text="Time planned for this task." />
+                  </div>
                   <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5">{task.plannedMinutes != null ? formatMinutesToClock(task.plannedMinutes) : formatZohoDurationToClock(task.plannedHours)} hrs</div>
                 </div>
                 <div className="pl-2">
-                  <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Actual Spent</div>
+                  <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center justify-center gap-1">
+                    <span>Actual Spent</span>
+                    <ZohoMetricTooltip text="Total time logged in Zoho." />
+                  </div>
                   <div className="text-sm font-black text-sky-600 dark:text-sky-400 mt-0.5">{task.actualMinutes != null ? formatMinutesToClock(task.actualMinutes) : formatZohoDurationToClock(task.actualHours)} hrs</div>
                 </div>
               </div>
@@ -322,6 +376,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
               <span className="text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-purple-500" />
                 Performance Evaluation
+                <ZohoMetricTooltip text="Overall evaluation score for this task." />
               </span>
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400">
                 <span className="text-base font-black leading-none">{overallScore10}</span>
@@ -333,8 +388,9 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
             <div className="grid grid-cols-2 gap-3 p-2.5 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/40 border border-zinc-200/70 dark:border-zinc-800 text-center">
               {/* Item 1: TIME SPENT */}
               <div className="border-r border-zinc-200/60 dark:border-zinc-800 pr-2">
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">
-                  Time Spent
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight flex items-center justify-center gap-1">
+                  <span>Time Spent</span>
+                  <ZohoMetricTooltip text="Score for finishing on time within the allowed buffer." />
                 </div>
                 <div className="flex items-center justify-center gap-1.5 mt-0.5 flex-wrap">
                   <span className="text-sm font-black text-zinc-900 dark:text-white leading-tight">
@@ -365,8 +421,9 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
 
               {/* Item 2: SCORE */}
               <div className="pl-2">
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">
-                  Score
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight flex items-center justify-center gap-1">
+                  <span>Score</span>
+                  <ZohoMetricTooltip text="Score for how clearly comments explain the work done." />
                 </div>
                 <div className="flex items-center justify-center gap-1.5 mt-0.5 flex-wrap">
                   <span className="text-sm font-black text-purple-600 dark:text-purple-400 leading-tight">

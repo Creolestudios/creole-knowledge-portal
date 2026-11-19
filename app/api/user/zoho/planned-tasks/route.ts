@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { validateTaskQuality } from '@/lib/zoho/task-quality-validator';
+import { parseDurationToMinutes } from '@/lib/zoho/client';
 
 export const runtime = 'nodejs';
 
@@ -108,9 +109,19 @@ export async function POST(req: Request) {
     if (!taskDescription || !String(taskDescription).trim()) {
       return NextResponse.json({ error: 'Task Description & Technical Scope is compulsory' }, { status: 400 });
     }
-    const hoursNum = Number(plannedHours);
-    if (!Number.isFinite(hoursNum) || hoursNum <= 0) {
-      return NextResponse.json({ error: 'Planned Hours must be greater than 0' }, { status: 400 });
+    const parsedMinutes = typeof plannedHours === 'string'
+      ? parseDurationToMinutes(plannedHours)
+      : typeof plannedHours === 'number'
+      ? parseDurationToMinutes(plannedHours)
+      : 0;
+
+    const hoursNum = parsedMinutes > 0 ? parsedMinutes / 60 : Number(plannedHours);
+
+    if (!Number.isFinite(hoursNum) || hoursNum < (1 / 60)) {
+      return NextResponse.json({ error: 'Planned duration must be at least 1 minute' }, { status: 400 });
+    }
+    if (hoursNum > 4.0) {
+      return NextResponse.json({ error: 'Planned duration cannot exceed 4 hours for a single task' }, { status: 400 });
     }
     if (!targetDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(targetDate))) {
       return NextResponse.json({ error: 'A valid targetDate (YYYY-MM-DD) is compulsory' }, { status: 400 });
@@ -131,7 +142,7 @@ export async function POST(req: Request) {
       project_name: String(projectName).trim(),
       task_name: String(taskName).trim(),
       task_description: String(taskDescription).trim(),
-      planned_hours: Number(hoursNum.toFixed(1)),
+      planned_hours: Number(hoursNum.toFixed(2)),
       task_date: targetDate,
       zoho_status: 'Planned',
       created_time: new Date().toISOString(),
@@ -222,9 +233,19 @@ export async function PUT(req: Request) {
     if (!taskDescription || !String(taskDescription).trim()) {
       return NextResponse.json({ error: 'Task Description & Technical Scope is compulsory' }, { status: 400 });
     }
-    const hoursNum = Number(plannedHours);
-    if (!Number.isFinite(hoursNum) || hoursNum <= 0) {
-      return NextResponse.json({ error: 'Planned Hours must be greater than 0' }, { status: 400 });
+    const parsedMinutes = typeof plannedHours === 'string'
+      ? parseDurationToMinutes(plannedHours)
+      : typeof plannedHours === 'number'
+      ? parseDurationToMinutes(plannedHours)
+      : 0;
+
+    const hoursNum = parsedMinutes > 0 ? parsedMinutes / 60 : Number(plannedHours);
+
+    if (!Number.isFinite(hoursNum) || hoursNum < (1 / 60)) {
+      return NextResponse.json({ error: 'Planned duration must be at least 1 minute' }, { status: 400 });
+    }
+    if (hoursNum > 4.0) {
+      return NextResponse.json({ error: 'Planned duration cannot exceed 4 hours for a single task' }, { status: 400 });
     }
 
     // Task Quality & Depth Validation (word count, vague title, relevance)
@@ -242,7 +263,7 @@ export async function PUT(req: Request) {
         project_name: String(projectName).trim(),
         task_name: String(taskName).trim(),
         task_description: String(taskDescription).trim(),
-        planned_hours: Number(hoursNum.toFixed(1)),
+        planned_hours: Number(hoursNum.toFixed(2)),
       })
       .eq('id', id)
       .eq('user_id', user.id)

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import ZohoNextDayPlanner from './zoho-next-day-planner';
 
@@ -14,8 +14,14 @@ const VALID_DB_DESC_40_WORDS =
 
 describe('ZohoNextDayPlanner Component', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-18T10:00:00Z'));
     localStorage.clear();
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders the planner header and target project dropdown', () => {
@@ -98,16 +104,16 @@ describe('ZohoNextDayPlanner Component', () => {
     const descInput = screen.getByPlaceholderText(/Describe acceptance criteria/i);
     fireEvent.change(descInput, { target: { value: VALID_DESC_40_WORDS } });
 
-    // Set planned hours via numeric input
-    const hoursInput = screen.getByRole('spinbutton');
+    // Set planned hours via duration input
+    const hoursInput = screen.getByLabelText(/Planned duration/i);
     fireEvent.change(hoursInput, { target: { value: '2' } });
 
     const addButton = screen.getByRole('button', { name: /Add Task/i });
     fireEvent.click(addButton);
 
-    // Verify task is added to list
+    // Verify task is added to list with clock format
     expect(screen.getByText(VALID_TITLE)).toBeDefined();
-    expect(screen.getAllByText('2.0 hrs').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('2:00 hrs').length).toBeGreaterThanOrEqual(1);
   });
 
   it('allows user to delete a planned task', () => {
@@ -201,8 +207,8 @@ describe('ZohoNextDayPlanner Component', () => {
     fireEvent.change(screen.getByPlaceholderText(/Implement user profile picture upload/i), {
       target: { value: updatedTitle },
     });
-    const hoursInput = screen.getByRole('spinbutton');
-    fireEvent.change(hoursInput, { target: { value: '6' } });
+    const hoursInput = screen.getByLabelText(/Planned duration/i);
+    fireEvent.change(hoursInput, { target: { value: '3' } });
 
     // Submit update
     fireEvent.click(updateButton);
@@ -248,5 +254,65 @@ describe('ZohoNextDayPlanner Component', () => {
 
     // Verify modal is closed
     expect(screen.queryByText(/Full Deliverables & Technical Scope/i)).toBeNull();
+  });
+
+  it('allows user to enter flexible durations from 1 min to 4 hrs (e.g. 15m, 1m, 1.5, 4h)', () => {
+    render(<ZohoNextDayPlanner userName="Akash Jakhaniya" userEmail="akash@creolestudios.com" />);
+
+    const titleInput = screen.getByPlaceholderText(/Implement user profile picture upload/i);
+    const descInput = screen.getByPlaceholderText(/Describe acceptance criteria/i);
+    const hoursInput = screen.getByLabelText(/Planned duration/i);
+    const addButton = screen.getByRole('button', { name: /Add Task/i });
+
+    // Test 1: Enter 15 minutes (15m)
+    fireEvent.change(titleInput, { target: { value: VALID_TITLE } });
+    fireEvent.change(descInput, { target: { value: VALID_DESC_40_WORDS } });
+    fireEvent.change(hoursInput, { target: { value: '15m' } });
+
+    // Header badge reflects 0:15 hrs
+    expect(screen.getByText(/0:15 hrs \(0\.25h\)/i)).toBeDefined();
+    expect(addButton.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(addButton);
+
+    // Verify task is added with 0:15 hrs (present on task card and total planned)
+    expect(screen.getAllByText('0:15 hrs').length).toBeGreaterThanOrEqual(1);
+
+    // Test 2: Enter 1 minute (1m)
+    fireEvent.change(titleInput, { target: { value: VALID_DB_TITLE } });
+    fireEvent.change(descInput, { target: { value: VALID_DB_DESC_40_WORDS } });
+    fireEvent.change(hoursInput, { target: { value: '1m' } });
+    expect(screen.getByText(/0:01 hrs \(0\.02h\)/i)).toBeDefined();
+    fireEvent.click(addButton);
+    expect(screen.getAllByText('0:01 hrs').length).toBeGreaterThanOrEqual(1);
+
+    // Test 3: Enter clock format 01:30
+    fireEvent.change(titleInput, { target: { value: 'Refactor analytics aggregate calculation routines' } });
+    fireEvent.change(descInput, { target: { value: VALID_DESC_40_WORDS } });
+    fireEvent.change(hoursInput, { target: { value: '01:30' } });
+    expect(screen.getByText(/1:30 hrs \(1\.5h\)/i)).toBeDefined();
+    fireEvent.click(addButton);
+    expect(screen.getAllByText('1:30 hrs').length).toBeGreaterThanOrEqual(1);
+
+    // Test 4: Enter invalid duration under 1 min (00:00 / 0m)
+    fireEvent.change(hoursInput, { target: { value: '00:00' } });
+    expect(screen.getByText(/Duration must be at least 00:01 \(1 min\)/i)).toBeDefined();
+    expect(addButton.hasAttribute('disabled')).toBe(true);
+
+    // Test 5: Enter invalid duration exceeding 4 hours (05:00 / 5h)
+    fireEvent.change(hoursInput, { target: { value: '05:00' } });
+    expect(screen.getByText(/Duration cannot exceed 04:00 \(4 hrs\)/i)).toBeDefined();
+    expect(addButton.hasAttribute('disabled')).toBe(true);
+
+    // Test 6: Strictly clamp to max 2 digits on each side (prevents typing 01:4544 or 123:45)
+    fireEvent.change(hoursInput, { target: { value: '01:4544' } });
+    expect((hoursInput as HTMLInputElement).value).toBe('01:45');
+
+    fireEvent.change(hoursInput, { target: { value: '123:45' } });
+    expect((hoursInput as HTMLInputElement).value).toBe('12:45');
+
+    // Test 7: Enter minutes > 59 (e.g. 01:80)
+    fireEvent.change(hoursInput, { target: { value: '01:80' } });
+    expect(screen.getByText(/Minutes cannot exceed 59/i)).toBeDefined();
+    expect(addButton.hasAttribute('disabled')).toBe(true);
   });
 });

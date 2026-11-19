@@ -13,6 +13,7 @@ export interface TaskEmailItem {
   whereLacked?: string;
   whereToImprove?: string;
   improvementItems?: string[];
+  deductions?: string[];
   zohoLink?: string;
   prEvidence?: PullRequestEvidence[];
 }
@@ -34,6 +35,13 @@ export interface DailyEvaluationEmailPayload {
   improvements: string[];
   tasks: TaskEmailItem[];
   portalUrl?: string;
+}
+
+function stripPoints(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/\s*\(-?\d+(?:\.\d+)?\s*(?:pts?|points?)[^)]*\)/gi, '')
+    .trim();
 }
 
 function escapeHtml(str: string): string {
@@ -61,14 +69,14 @@ function getTimeBadgeColor(assessment: string): { bg: string; text: string; bord
   switch (assessment) {
     case 'ON_TIME':
     case 'SLIGHT_OVERRUN_TOLERATED':
-      return { bg: '#dcfce7', text: '#15803d', border: '#86efac', label: 'Within Buffer' };
+      return { bg: '#dcfce7', text: '#15803d', border: '#86efac', label: 'On Time' };
     case 'NOT_LOGGED':
       return { bg: '#f4f4f5', text: '#52525b', border: '#d4d4d8', label: 'Not Logged' };
     case 'UNEXPECTED_EARLY':
-      return { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa', label: 'Early Gap' };
+      return { bg: '#ffedd5', text: '#c2410c', border: '#fed7aa', label: 'Finished Early' };
     case 'OVERDUE':
     default:
-      return { bg: '#fee2e2', text: '#b91c1c', border: '#fca5a5', label: 'Buffer Exceeded' };
+      return { bg: '#fee2e2', text: '#b91c1c', border: '#fca5a5', label: 'Took Longer' };
   }
 }
 
@@ -104,7 +112,7 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
     process.env.NEXT_PUBLIC_APP_URL ||
     'http://localhost:3000';
   const portalUrl = rawPortalUrl.replace(/\/+$/, '');
-  const evaluationLink = `${portalUrl}/dashboard/zoho-evaluation`;
+  const evaluationLink = `${portalUrl}/dashboard/zoho-evaluation?view=evaluation`;
 
   const subject = `[Zoho Daily Evaluation] ${payload.userName} - ${payload.date} (Score: ${normalizedScore}/10)`;
 
@@ -177,11 +185,11 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
                         </span>
                       ` : ''}
                       <span style="display: inline-block; font-size: 9.5px; font-weight: 700; color: ${timeBadge.text}; background-color: ${timeBadge.bg}; border: 1px solid ${timeBadge.border}; padding: 1px 6px; border-radius: 4px;">
-                        ${timeBadge.label}
+                        ${timeBadge.label} <span title="Score for finishing on time within the allowed buffer." style="display: inline-block; width: 11px; height: 11px; line-height: 11px; border-radius: 50%; background-color: rgba(0,0,0,0.08); font-size: 8px; text-align: center; margin-left: 2px; cursor: help;">ℹ</span>
                       </span>
                       ${workMatchScore ? `
                         <span style="margin-left: 8px; font-size: 10.5px; color: #64748b;">
-                          Work Justification: <strong style="color: #7c3aed;">${workMatchScore}/10</strong>
+                          Work Score <span title="Score for how clearly comments explain the work done." style="display: inline-block; width: 11px; height: 11px; line-height: 11px; border-radius: 50%; background-color: #f1f5f9; color: #475569; font-size: 8px; text-align: center; margin-left: 1px; cursor: help;">ℹ</span>: <strong style="color: #7c3aed;">${workMatchScore}/10</strong>
                         </span>
                       ` : ''}
                     </td>
@@ -191,18 +199,21 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
                 <!-- Performance Feedback (Compact) -->
                 ${task.feedback ? `
                   <div style="background-color: #faf5ff; border-left: 3px solid #8b5cf6; border-radius: 4px; padding: 6px 10px; margin-top: 6px; font-size: 11.5px; color: #334155; line-height: 1.4;">
-                    ${escapeHtml(task.feedback)}
+                    ${escapeHtml(stripPoints(task.feedback))}
                   </div>
                 ` : ''}
 
-                <!-- Actionable Improvement (List format, max 4-5 items) -->
+                <!-- Actionable Improvement (List format, points stripped for clean email guidance) -->
                 ${task.improvementItems && task.improvementItems.length > 0 ? `
                   <div style="background-color: #fffbeb; border: 1px solid #fed7aa; border-radius: 6px; padding: 8px 12px; margin-top: 6px; font-size: 11px; color: #92400e; line-height: 1.4;">
                     <strong style="display: block; color: #b45309; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.04em; margin-bottom: 4px;">
                       💡 Key Areas for Improvement:
                     </strong>
                     <ul style="margin: 0; padding-left: 16px; font-size: 11px; color: #7c2d12; line-height: 1.4;">
-                      ${task.improvementItems.slice(0, 5).map(item => `<li style="margin-bottom: 3px;">${escapeHtml(item)}</li>`).join('')}
+                      ${task.improvementItems.slice(0, 5).map(item => {
+                        const cleanItem = stripPoints(item);
+                        return `<li style="margin-bottom: 3px;">${escapeHtml(cleanItem)}</li>`;
+                      }).join('')}
                     </ul>
                   </div>
                 ` : ''}
@@ -212,15 +223,13 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
         `;
       }).join('');
 
-  const safeStrengths = Array.isArray(payload.strengths) ? payload.strengths : [];
-  const strengthsListHtml = safeStrengths.length > 0
-    ? safeStrengths.map(s => `<li style="margin-bottom: 2px;">${escapeHtml(s)}</li>`).join('')
-    : '<li>Consistent execution and delivery against assigned tasks.</li>';
-
   const safeImprovements = Array.isArray(payload.improvements) ? payload.improvements : [];
   const improvementsListHtml = safeImprovements.length > 0
-    ? safeImprovements.map(i => `<li style="margin-bottom: 2px;">${escapeHtml(i)}</li>`).join('')
-    : '<li>Continue logging timely work progress and updates regularly.</li>';
+    ? safeImprovements.map(i => {
+        const cleanI = stripPoints(i);
+        return `<li style="margin-bottom: 2px;">${escapeHtml(cleanI)}</li>`;
+      }).join('')
+    : '<li>Keep adding clear progress comments and logging hours on time.</li>';
 
   const html = `
 <!DOCTYPE html>
@@ -271,52 +280,51 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
             </td>
           </tr>
 
-          <!-- Compact 3-Metric Cards: Planned Time, Actual Spent, Status (No duplicated score card) -->
+          <!-- Compact 3-Metric Cards: Planned Time, Actual Spent, Status (Terms with i icon like evaluation card) -->
           <tr>
-            <td style="padding: 10px 20px; background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 10px 20px 10px 20px; background-color: #f8fafc; border-bottom: 1px solid #e2e8f0;">
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                 <tr>
                   <!-- Planned Time -->
                   <td width="32%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; text-align: center;">
-                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.04em;">Planned Time</span>
+                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.04em;">
+                      Planned Time <span title="Time planned for task" style="display: inline-block; width: 12px; height: 12px; line-height: 12px; border-radius: 50%; background-color: #e2e8f0; color: #475569; font-size: 8.5px; text-align: center; font-weight: 800; margin-left: 2px; cursor: help;">ℹ</span>
+                    </span>
                     <strong style="display: block; font-size: 15px; font-weight: 900; color: #0f172a; margin-top: 1px;">${plannedClock} hrs</strong>
+                    <span style="display: block; font-size: 9.5px; color: #64748b; margin-top: 2px;">Time planned for task</span>
                   </td>
                   <td width="2%"></td>
                   <!-- Actual Spent -->
                   <td width="32%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; text-align: center;">
-                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #0284c7; letter-spacing: 0.04em;">Actual Spent</span>
+                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #0284c7; letter-spacing: 0.04em;">
+                      Actual Spent <span title="Total time logged in Zoho" style="display: inline-block; width: 12px; height: 12px; line-height: 12px; border-radius: 50%; background-color: #e0f2fe; color: #0284c7; font-size: 8.5px; text-align: center; font-weight: 800; margin-left: 2px; cursor: help;">ℹ</span>
+                    </span>
                     <strong style="display: block; font-size: 15px; font-weight: 900; color: #0284c7; margin-top: 1px;">${actualClock} hrs</strong>
+                    <span style="display: block; font-size: 9.5px; color: #0284c7; margin-top: 2px;">Total logged in Zoho</span>
                   </td>
                   <td width="2%"></td>
                   <!-- Task Status -->
                   <td width="32%" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 12px; text-align: center;">
-                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #16a34a; letter-spacing: 0.04em;">Status Breakdown</span>
+                    <span style="display: block; font-size: 9.5px; font-weight: 800; text-transform: uppercase; color: #16a34a; letter-spacing: 0.04em;">
+                      Status Breakdown <span title="QA or Completed status" style="display: inline-block; width: 12px; height: 12px; line-height: 12px; border-radius: 50%; background-color: #dcfce7; color: #16a34a; font-size: 8.5px; text-align: center; font-weight: 800; margin-left: 2px; cursor: help;">ℹ</span>
+                    </span>
                     <strong style="display: block; font-size: 15px; font-weight: 900; color: #16a34a; margin-top: 1px;">
                       ${payload.qaTasks > 0 ? `${payload.qaTasks} QA Review` : `${payload.doneTasks} Completed`}
                     </strong>
+                    <span style="display: block; font-size: 9.5px; color: #16a34a; margin-top: 2px;">QA or Completed status</span>
                   </td>
                 </tr>
               </table>
             </td>
           </tr>
 
-          <!-- Compact Accomplishments & Improvements (Side by side) -->
+          <!-- Areas for Improvement (Full width) -->
+          ${safeImprovements.length > 0 ? `
           <tr>
             <td style="padding: 10px 20px 8px 20px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #fffbeb; border: 1px solid #fed7aa; border-radius: 8px;">
                 <tr>
-                  <!-- Accomplishments -->
-                  <td width="48%" style="vertical-align: top; background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px;">
-                    <strong style="display: block; font-size: 10px; text-transform: uppercase; color: #166534; letter-spacing: 0.04em; margin-bottom: 5px;">
-                      ✅ Key Accomplishments
-                    </strong>
-                    <ul style="margin: 0; padding-left: 16px; font-size: 11.5px; color: #14532d; line-height: 1.4;">
-                      ${strengthsListHtml}
-                    </ul>
-                  </td>
-                  <td width="4%"></td>
-                  <!-- Improvements -->
-                  <td width="48%" style="vertical-align: top; background-color: #fffbeb; border: 1px solid #fed7aa; border-radius: 8px; padding: 10px 14px;">
+                  <td style="padding: 10px 14px;">
                     <strong style="display: block; font-size: 10px; text-transform: uppercase; color: #9a3412; letter-spacing: 0.04em; margin-bottom: 5px;">
                       💡 Areas for Improvement
                     </strong>
@@ -328,6 +336,7 @@ export function generateDailyEvaluationEmail(payload: DailyEvaluationEmailPayloa
               </table>
             </td>
           </tr>
+          ` : ''}
 
           <!-- Tasks List Section (Compact layout) -->
           <tr>
@@ -374,21 +383,16 @@ Date: ${payload.date}
 Overall Day Score: ${normalizedScore}/10 (${rating.label})
 
 Cumulative Time Activity:
-- Planned Time: ${plannedClock} hrs (${payload.totalPlannedHours.toFixed(1)}h total)
-- Actual Spent: ${actualClock} hrs (${payload.totalActualHours.toFixed(1)}h total)
+- Planned Time: ${plannedClock} hrs (Time planned for task)
+- Actual Spent: ${actualClock} hrs (Total logged in Zoho)
 - Tasks Evaluated: ${payload.taskCount} (Done: ${payload.doneTasks}, Delayed/Gap: ${payload.delayedTasks}, QA: ${payload.qaTasks})
 
-Key Accomplishments:
-${safeStrengths.map(s => `- ${s}`).join('\n')}
-
-Areas for Improvement:
-${safeImprovements.map(i => `- ${i}`).join('\n')}
-
+${safeImprovements.length > 0 ? `Areas for Improvement:\n${safeImprovements.map(i => `- ${i.replace(/\s*\(-?\d+(?:\.\d+)?\s*pts?\)/gi, '').trim()}`).join('\n')}\n` : ''}
 Tasks Evaluated:
 ${payload.tasks.map(t => {
   const tScore = t.score > 10 ? (t.score / 10).toFixed(1) : t.score.toFixed(1);
   const taskImprovements = t.improvementItems && t.improvementItems.length > 0
-    ? `\n  Improvements:\n${t.improvementItems.slice(0, 5).map(i => `    - ${i}`).join('\n')}`
+    ? `\n  Improvements:\n${t.improvementItems.slice(0, 5).map(i => `    - ${i.replace(/\s*\(-?\d+(?:\.\d+)?\s*pts?\)/gi, '').trim()}`).join('\n')}`
     : '';
   return `• [${t.projectName}] ${t.taskName} (${t.actualHours}h/${t.plannedHours}h) - Score: ${tScore}/10 | Tolerance: ${t.timeAssessmentLabel}
   Summary: ${t.feedback || 'None'}${taskImprovements}`;

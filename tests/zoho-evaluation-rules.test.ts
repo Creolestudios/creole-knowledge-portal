@@ -29,9 +29,9 @@ describe('Global Zoho Evaluation Rules Engine', () => {
     expect(DEFAULT_ZOHO_RULES.overtimeBreachDeduction).toBe(2.0);
     expect(DEFAULT_ZOHO_RULES.earlyCompletionBufferMinutes).toBe(15);
     expect(DEFAULT_ZOHO_RULES.earlyGapDeduction).toBe(2.0);
-    expect(DEFAULT_ZOHO_RULES.workMatchWeight).toBe(0.45);
-    expect(DEFAULT_ZOHO_RULES.timeAdherenceWeight).toBe(0.35);
-    expect(DEFAULT_ZOHO_RULES.complexityWeight).toBe(0.10);
+    expect(DEFAULT_ZOHO_RULES.workMatchWeight).toBe(0.50);
+    expect(DEFAULT_ZOHO_RULES.timeAdherenceWeight).toBe(0.10);
+    expect(DEFAULT_ZOHO_RULES.complexityWeight).toBe(0.30);
     expect(DEFAULT_ZOHO_RULES.repetitionWeight).toBe(0.10);
   });
 
@@ -43,8 +43,8 @@ describe('Global Zoho Evaluation Rules Engine', () => {
       repetitionScore: 10,
       isQAReview: true,
     });
-    // (10 * 0.45) + (10 * 0.35) + (8 * 0.10) + (10 * 0.10) = 4.5 + 3.5 + 0.8 + 1.0 = 9.8
-    expect(scoreInQA).toBe(9.8);
+    // (10 * 0.50) + (10 * 0.10) + (8 * 0.30) + (10 * 0.10) = 5.0 + 1.0 + 2.4 + 1.0 = 9.4
+    expect(scoreInQA).toBe(9.4);
 
     const scoreNotInQA = computeCompositeTaskScore({
       timeScore: 10,
@@ -53,8 +53,8 @@ describe('Global Zoho Evaluation Rules Engine', () => {
       repetitionScore: 10,
       isQAReview: false,
     });
-    // 9.8 - 1.0 = 8.8
-    expect(scoreNotInQA).toBe(8.8);
+    // 9.4 - 1.0 = 8.4
+    expect(scoreNotInQA).toBe(8.4);
   });
 
   it('computes composite task score with custom admin rules (e.g. 0.5 deduction)', () => {
@@ -70,8 +70,8 @@ describe('Global Zoho Evaluation Rules Engine', () => {
       isQAReview: false,
       rules: customRules,
     });
-    // 9.8 - 0.5 = 9.3
-    expect(scoreNotInQA).toBe(9.3);
+    // 9.4 - 0.5 = 8.9
+    expect(scoreNotInQA).toBe(8.9);
   });
 
   it('computes composite task score with custom weights (e.g. 60% work, 20% time)', () => {

@@ -16,6 +16,7 @@ import {
   evaluateWorkAndCommentMatch,
   calculateTimeAdherence,
   computeCompositeTaskScore,
+  calculateItemizedDeductions,
 } from '@/lib/zoho/heuristics';
 import { getZohoEvaluationRules } from '@/lib/zoho/rules-store';
 
@@ -188,20 +189,28 @@ export async function GET(request: Request) {
             const raw = t.zoho_task_evaluations?.[0];
             const complexityScore = raw?.complexity_score ? (raw.complexity_score > 10 ? raw.complexity_score / 10 : raw.complexity_score) : 8.0;
             const repetitionScore = raw?.repetition_score ? (raw.repetition_score > 10 ? raw.repetition_score / 10 : raw.repetition_score) : 10.0;
+            
+            const effectiveTimeScore = timeScore;
+            const effectiveWorkScore = workMatchScore;
+            const effectiveVariance = variance;
+            const effectiveTimeLabel = timeAssessmentLabel;
+
+            // Compute authoritative composite score using current heuristics and rules
             const overallScore = computeCompositeTaskScore({
-              timeScore,
-              commentQualityScore: workMatchScore,
+              timeScore: effectiveTimeScore,
+              commentQualityScore: effectiveWorkScore,
               complexityScore,
               repetitionScore,
               isQAReview: Boolean(t.is_qa_review || (t.zoho_status || '').toLowerCase().includes('qa')),
+              isBriefDescription: workMatchResult.isBriefDescription,
               rules: activeRules,
             });
 
             const dyn = generateDynamicPerformanceSummary({
               taskDescription: t.task_description || '',
               comments: taskCommentsList,
-              timeAssessmentLabel,
-              workMatchScore,
+              timeAssessmentLabel: effectiveTimeLabel,
+              workMatchScore: effectiveWorkScore,
               seniorityLevel,
               userExperienceYears: yearsOfExp,
               aiSubscriptions,
@@ -210,33 +219,48 @@ export async function GET(request: Request) {
               repetitionScore,
               plannedMinutes: plannedMins,
               actualMinutes: actualMins,
-              timeScore,
+              timeScore: effectiveTimeScore,
               rules: activeRules,
+            });
+
+            const { deductions } = calculateItemizedDeductions({
+              timeScore: effectiveTimeScore,
+              timeAssessmentLabel: effectiveTimeLabel,
+              timeVarianceMinutes: effectiveVariance,
+              workMatchScore: effectiveWorkScore,
+              isMissingDescription: workMatchResult.isMissingDescription,
+              isBriefDescription: workMatchResult.isBriefDescription,
+              descriptionDeduction: workMatchResult.descriptionDeduction,
+              isVerbatimMirror: workMatchResult.isVerbatimMirror,
+              isChecklistComment: workMatchResult.isChecklistComment,
+              hasPendingScope: workMatchResult.hasPendingScope,
+              isPartialDelivery: workMatchResult.isPartialDelivery,
+              isRepetitive: raw?.is_repetitive || false,
+              repetitionSimilarityPct: raw?.repetition_similarity_pct || 0,
             });
 
             const evalItem = {
               overallScore: Math.min(10.0, overallScore),
-              timeScore,
-              workMatchScore,
-              commentQualityScore: workMatchScore,
+              timeScore: effectiveTimeScore,
+              workMatchScore: effectiveWorkScore,
+              commentQualityScore: effectiveWorkScore,
               complexityScore,
               repetitionScore,
-              timeVarianceMinutes: variance,
-              timeAssessmentLabel,
+              timeVarianceMinutes: effectiveVariance,
+              timeAssessmentLabel: effectiveTimeLabel,
               isRepetitive: raw?.is_repetitive || false,
               repetitionSimilarityPct: raw?.repetition_similarity_pct || 0,
               matchedTaskId: raw?.matched_repetitive_task_id || null,
               workMatchFeedback: workMatchResult.explanation,
-              summaryFeedback: raw?.summary_feedback || dyn.performanceSummary,
+              summaryFeedback: dyn.performanceSummary,
               whereLacked: dyn.whereLacked,
               whereToImprove: dyn.whereToImprove,
               improvementItems: dyn.improvementItems,
-              strengths: (raw?.strengths && raw.strengths.length > 0)
-                ? raw.strengths
-                : [
-                    workMatchScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
-                    timeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
-                  ],
+              deductions,
+              strengths: [
+                effectiveWorkScore >= 8.5 ? 'Progress comments justify the task implementation scope.' : 'Task actively tracked in Zoho Projects.',
+                effectiveTimeScore === 10 ? 'Maintained disciplined delivery within permitted time tolerance buffer.' : 'Work logged and reviewed.',
+              ],
               improvements: dyn.improvementItems,
               aiModelUsed: raw?.ai_model_used || 'engineering-rule-engine',
             };

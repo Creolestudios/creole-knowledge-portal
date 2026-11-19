@@ -21,10 +21,10 @@ export function ZohoEvaluationCriteriaModal({
   const [saving, setSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Natural percentage state for weights (e.g. 45 instead of 0.45)
-  const [workWeightPct, setWorkWeightPct] = useState<number>(45);
-  const [timeWeightPct, setTimeWeightPct] = useState<number>(35);
-  const [complexityWeightPct, setComplexityWeightPct] = useState<number>(10);
+  // Natural percentage state for weights (e.g. 50 instead of 0.50)
+  const [workWeightPct, setWorkWeightPct] = useState<number>(50);
+  const [timeWeightPct, setTimeWeightPct] = useState<number>(10);
+  const [complexityWeightPct, setComplexityWeightPct] = useState<number>(30);
   const [repetitionWeightPct, setRepetitionWeightPct] = useState<number>(10);
 
   // Lock body overflow on modal mount
@@ -64,10 +64,10 @@ export function ZohoEvaluationCriteriaModal({
             ...data.rules,
           };
           setRules(loaded);
-          setWorkWeightPct(Math.round((loaded.workMatchWeight || 0.45) * 100));
-          setTimeWeightPct(Math.round((loaded.timeAdherenceWeight || 0.35) * 100));
-          setComplexityWeightPct(Math.round((loaded.complexityWeight || 0.10) * 100));
-          setRepetitionWeightPct(Math.round((loaded.repetitionWeight || 0.10) * 100));
+          setWorkWeightPct(Math.round((loaded.workMatchWeight ?? 0.50) * 100));
+          setTimeWeightPct(Math.round((loaded.timeAdherenceWeight ?? 0.10) * 100));
+          setComplexityWeightPct(Math.round((loaded.complexityWeight ?? 0.30) * 100));
+          setRepetitionWeightPct(Math.round((loaded.repetitionWeight ?? 0.10) * 100));
         }
       })
       .catch((err) => {
@@ -146,9 +146,9 @@ export function ZohoEvaluationCriteriaModal({
       const data = await res.json();
       if (res.ok && data.rules) {
         setRules(data.rules);
-        setWorkWeightPct(45);
-        setTimeWeightPct(35);
-        setComplexityWeightPct(10);
+        setWorkWeightPct(50);
+        setTimeWeightPct(10);
+        setComplexityWeightPct(30);
         setRepetitionWeightPct(10);
         setStatusMessage({
           type: 'success',
@@ -492,7 +492,7 @@ export function ZohoEvaluationCriteriaModal({
                   </div>
                 </div>
 
-                {/* 4. Composite Scoring Weights - Natural Numbers (45%, 35%, 10%, 10%) */}
+                {/* 4. Composite Scoring Weights - Natural Numbers (60%, 30%, 5%, 5%) */}
                 <div className="p-3.5 rounded-xl bg-zinc-50/70 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-zinc-900 dark:text-white font-black text-xs uppercase tracking-wider">
@@ -524,7 +524,7 @@ export function ZohoEvaluationCriteriaModal({
                         />
                         <span className="text-zinc-400 font-bold text-[10px]">%</span>
                       </div>
-                      <span className="text-[9px] text-zinc-400 mt-0.5 block">Def: 45%</span>
+                      <span className="text-[9px] text-zinc-400 mt-0.5 block">Def: 50%</span>
                     </div>
 
                     <div className="p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200/70 dark:border-zinc-800">
@@ -540,7 +540,7 @@ export function ZohoEvaluationCriteriaModal({
                         />
                         <span className="text-zinc-400 font-bold text-[10px]">%</span>
                       </div>
-                      <span className="text-[9px] text-zinc-400 mt-0.5 block">Def: 35%</span>
+                      <span className="text-[9px] text-zinc-400 mt-0.5 block">Def: 10%</span>
                     </div>
 
                     <div className="p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200/70 dark:border-zinc-800">
@@ -556,7 +556,7 @@ export function ZohoEvaluationCriteriaModal({
                         />
                         <span className="text-zinc-400 font-bold text-[10px]">%</span>
                       </div>
-                      <span className="text-[9px] text-zinc-400 mt-0.5 block">Def: 10%</span>
+                      <span className="text-[9px] text-zinc-400 mt-0.5 block">Def: 30%</span>
                     </div>
 
                     <div className="p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200/70 dark:border-zinc-800">

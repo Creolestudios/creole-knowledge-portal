@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GET, POST, PUT, DELETE } from './route';
 
 const mockGetUser = vi.fn();
@@ -40,9 +40,15 @@ vi.mock('@/lib/supabase/admin', () => ({
 
 describe('/api/user/zoho/planned-tasks', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-18T10:00:00Z'));
     vi.clearAllMocks();
     mockDbData = [];
     mockDbError = null;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   describe('GET', () => {
@@ -187,6 +193,78 @@ describe('/api/user/zoho/planned-tasks', () => {
       expect(json.task.sync_status).toBe('queued');
       expect(json.task.task_name).toBe(VALID_TITLE);
     });
+
+    it('accepts string durations like 15m, 1m, 1:30 and preserves 2-decimal precision', async () => {
+      mockGetUser.mockResolvedValueOnce({ data: { user: { id: 'usr-123' } } });
+      const expectedTask = {
+        id: 'tsk-15m',
+        task_name: VALID_TITLE,
+        task_description: VALID_DESCRIPTION,
+        planned_hours: 0.25,
+        task_date: '2026-11-17',
+        sync_status: 'queued',
+        zoho_status: 'Planned',
+      };
+      mockDbData = expectedTask;
+
+      const req = new Request('http://localhost/api/user/zoho/planned-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectName: 'Creole Knowledge Portal',
+          zohoProjectId: 'proj-101',
+          taskName: VALID_TITLE,
+          taskDescription: VALID_DESCRIPTION,
+          plannedHours: '15m',
+          targetDate: '2026-11-17',
+        }),
+      });
+
+      const res = await POST(req);
+      expect(res.status).toBe(201);
+      const json = await res.json();
+      expect(json.task.planned_hours).toBe(0.25);
+    });
+
+    it('rejects planned durations < 1 minute and > 16 hours', async () => {
+      mockGetUser.mockResolvedValue({ data: { user: { id: 'usr-123' } } });
+
+      // Test < 1 min (0m)
+      const resUnder = await POST(
+        new Request('http://localhost/api/user/zoho/planned-tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectName: 'CKP',
+            taskName: VALID_TITLE,
+            taskDescription: VALID_DESCRIPTION,
+            plannedHours: '0m',
+            targetDate: '2026-11-17',
+          }),
+        })
+      );
+      expect(resUnder.status).toBe(400);
+      const jsonUnder = await resUnder.json();
+      expect(jsonUnder.error).toContain('at least 1 minute');
+
+      // Test > 4 hours (5h)
+      const resOver = await POST(
+        new Request('http://localhost/api/user/zoho/planned-tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectName: 'CKP',
+            taskName: VALID_TITLE,
+            taskDescription: VALID_DESCRIPTION,
+            plannedHours: 5,
+            targetDate: '2026-11-17',
+          }),
+        })
+      );
+      expect(resOver.status).toBe(400);
+      const jsonOver = await resOver.json();
+      expect(jsonOver.error).toContain('cannot exceed 4 hours');
+    });
   });
 
   describe('PUT', () => {
@@ -244,7 +322,7 @@ describe('/api/user/zoho/planned-tasks', () => {
         id: 'tsk-1',
         task_name: VALID_TITLE,
         task_description: VALID_DESCRIPTION,
-        planned_hours: 5.0,
+        planned_hours: 3.5,
         task_date: '2026-11-17',
         sync_status: 'queued',
         zoho_status: 'Planned',
@@ -260,7 +338,7 @@ describe('/api/user/zoho/planned-tasks', () => {
           zohoProjectId: 'proj-1',
           taskName: VALID_TITLE,
           taskDescription: VALID_DESCRIPTION,
-          plannedHours: 5.0,
+          plannedHours: 3.5,
         }),
       });
       const res = await PUT(req);
@@ -268,7 +346,7 @@ describe('/api/user/zoho/planned-tasks', () => {
       const json = await res.json();
       expect(json.task.id).toBe('tsk-1');
       expect(json.task.task_name).toBe(VALID_TITLE);
-      expect(json.task.planned_hours).toBe(5.0);
+      expect(json.task.planned_hours).toBe(3.5);
     });
   });
 

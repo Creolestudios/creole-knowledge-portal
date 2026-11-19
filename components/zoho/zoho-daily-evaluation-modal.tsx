@@ -14,6 +14,7 @@ import {
 import { ZohoTaskItem, ZohoUserSummary } from '@/lib/zoho/service';
 import { formatMinutesToClock, formatZohoDurationToClock, parseDurationToMinutes } from '@/lib/zoho/client';
 import { calculateTimeAdherence } from '@/lib/zoho/heuristics';
+import { ZohoMetricTooltip } from './zoho-metric-tooltip';
 
 export interface ZohoDailyEvaluationModalProps {
   day: {
@@ -75,16 +76,31 @@ export default function ZohoDailyEvaluationModal({
   // Aggregate work justification score
   const validWorkScores = day.tasks
     .map((t) => t.evaluation?.commentQualityScore ?? t.evaluation?.workMatchScore)
-    .filter((s): s is number => typeof s === 'number' && Number.isFinite(s));
+    .filter((s): s is number => typeof s === 'number' && Number.isFinite(s))
+    .map((s) => (s > 10 ? s / 10 : s));
   const avgWorkJustification =
     validWorkScores.length > 0
       ? validWorkScores.reduce((a, b) => a + b, 0) / validWorkScores.length
       : 8.0;
 
-  // Aggregate daily overall score
-  const overallDayScore = Number.isFinite(day.dayScore) && day.dayScore >= 0
-    ? day.dayScore
-    : Number((avgWorkJustification * 0.55 + timeAdherence.timeScore * 0.40).toFixed(1));
+  // Aggregate daily overall score:
+  // Dynamically compute from the day's tasks so it faithfully reflects updated task scores (e.g. verbatim copy-paste capped at 3.0/10)
+  const validTaskScores = (day.tasks || [])
+    .map((t) => t.evaluation?.overallScore)
+    .filter((s): s is number => typeof s === 'number' && Number.isFinite(s))
+    .map((s) => (s > 10 ? s / 10 : s));
+
+  const computedDayScore = validTaskScores.length > 0
+    ? Number((validTaskScores.reduce((a, b) => a + b, 0) / validTaskScores.length).toFixed(1))
+    : null;
+
+  const rawDayScore = Number.isFinite(day.dayScore) && day.dayScore >= 0
+    ? (day.dayScore > 10 ? day.dayScore / 10 : day.dayScore)
+    : null;
+
+  const overallDayScore = computedDayScore !== null
+    ? computedDayScore
+    : (rawDayScore !== null ? rawDayScore : Number((avgWorkJustification * 0.55 + timeAdherence.timeScore * 0.40).toFixed(1)));
 
   // Determine aggregate tolerance badge
   const isWithinBuffer =
@@ -204,13 +220,19 @@ export default function ZohoDailyEvaluationModal({
             {/* Time & Hours Breakdown Bar in Clock H:MM Format */}
             <div className="grid grid-cols-2 gap-3 py-2 px-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 text-center">
               <div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">Planned Time</div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight flex items-center justify-center gap-1">
+                  <span>Planned Time</span>
+                  <ZohoMetricTooltip text="Total time planned for today's tasks." />
+                </div>
                 <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5 leading-tight">
                   {formatMinutesToClock(totalPlannedMins)} hrs
                 </div>
               </div>
               <div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">Actual Spent</div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight flex items-center justify-center gap-1">
+                  <span>Actual Spent</span>
+                  <ZohoMetricTooltip text="Total time logged in Zoho for today's tasks." />
+                </div>
                 <div className="text-sm font-black text-zinc-900 dark:text-white mt-0.5 leading-tight">
                   {formatMinutesToClock(totalActualMins)} hrs
                 </div>
@@ -305,6 +327,7 @@ export default function ZohoDailyEvaluationModal({
               <span className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
                 Performance Evaluation
+                <ZohoMetricTooltip text="Consolidated score for today's evaluated work." />
               </span>
               <div className="flex items-center gap-2">
                 <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md border ${rating.color}`}>
@@ -323,7 +346,10 @@ export default function ZohoDailyEvaluationModal({
             <div className="grid grid-cols-2 gap-3 py-2 px-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200/80 dark:border-zinc-800 text-center">
               {/* 1. Time Spent */}
               <div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">Time Spent</div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight flex items-center justify-center gap-1">
+                  <span>Time Spent</span>
+                  <ZohoMetricTooltip text="Score for finishing on time within the allowed buffer." />
+                </div>
                 <div className="flex items-center justify-center gap-1.5 mt-0.5 flex-wrap">
                   <span className="text-sm font-black text-zinc-900 dark:text-white leading-tight">
                     {timeAdherence.timeScore.toFixed(1)}
@@ -353,7 +379,10 @@ export default function ZohoDailyEvaluationModal({
 
               {/* 2. Score */}
               <div>
-                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight">Score</div>
+                <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider leading-tight flex items-center justify-center gap-1">
+                  <span>Score</span>
+                  <ZohoMetricTooltip text="Average score for how clearly comments explain the work." />
+                </div>
                 <div className="flex items-center justify-center gap-1.5 mt-0.5 flex-wrap">
                   <span className="text-sm font-black text-purple-600 dark:text-purple-400 leading-tight">
                     {avgWorkJustification.toFixed(1)}

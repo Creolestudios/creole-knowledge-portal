@@ -10,10 +10,11 @@ import ZohoTaskCard from './zoho-task-card';
 import ZohoTaskModal from './zoho-task-modal';
 import ZohoDailyEvaluationModal from './zoho-daily-evaluation-modal';
 import ZohoWeeklyEvaluationModal from './zoho-weekly-evaluation-modal';
+import ZohoMetricTooltip from './zoho-metric-tooltip';
 import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
 import ZohoReportModal, { calculatePeriodCapacity } from './zoho-report-modal';
 import ZohoEvaluationManager from './zoho-evaluation-manager';
-import { ZohoTaskItem, ZohoUserSummary, getMockZohoData, buildWeeklyPerformanceReports, isRefreshmentTask } from '@/lib/zoho/service';
+import { ZohoTaskItem, ZohoUserSummary, getMockZohoData, buildWeeklyPerformanceReports, isRefreshmentTask, formatDateYYYYMMDD } from '@/lib/zoho/service';
 
 describe('Zoho Frontend Components', () => {
   describe('ZohoFilterBar', () => {
@@ -95,8 +96,8 @@ describe('Zoho Frontend Components', () => {
       monday.setDate(now.getDate() + diffToMonday);
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
-      const startIso = monday.toISOString().split('T')[0];
-      const endIso = sunday.toISOString().split('T')[0];
+      const startIso = formatDateYYYYMMDD(monday);
+      const endIso = formatDateYYYYMMDD(sunday);
 
       render(
         <ZohoDateFilterPicker
@@ -1591,6 +1592,73 @@ describe('Zoho Frontend Components', () => {
 
       // Refreshment should NOT be rendered in the report task table
       expect(screen.queryByText('Evening refreshment')).toBeNull();
+    });
+  });
+
+  describe('ZohoMetricTooltip', () => {
+    it('renders the info icon and displays simple english text on hover', () => {
+      render(
+        <ZohoMetricTooltip
+          title="Planned Time"
+          text="Time planned for this task."
+        />
+      );
+
+      const trigger = screen.getByRole('tooltip', { name: /Planned Time: Time planned for this task/i });
+      expect(trigger).toBeDefined();
+
+      // Tooltip content is hidden initially
+      expect(screen.queryByText('Time planned for this task.')).toBeNull();
+
+      // Trigger hover
+      fireEvent.mouseEnter(trigger);
+      expect(screen.getByText('Time planned for this task.')).toBeDefined();
+
+      // Trigger leave
+      fireEvent.mouseLeave(trigger);
+      expect(screen.queryByText('Time planned for this task.')).toBeNull();
+    });
+
+    it('renders tooltips in ZohoTaskModal for planned time, actual spent, time spent, and score', () => {
+      const task: ZohoTaskItem = {
+        id: 'task-test-1',
+        zohoTaskId: 'z-test-1',
+        projectId: 'p1',
+        projectName: 'CKP Portal',
+        taskName: 'Implement Metric Tooltips',
+        taskDescription: 'Add info tooltips to metrics',
+        zohoStatus: 'Completed',
+        isQAReview: false,
+        plannedHours: 4,
+        actualHours: 4,
+        taskDate: '2026-10-25',
+        zohoLink: 'https://projects.zoho.com',
+        comments: [],
+        evaluation: {
+          overallScore: 9,
+          timeScore: 10,
+          workMatchScore: 8,
+          commentQualityScore: 8,
+          complexityScore: 8,
+          repetitionScore: 10,
+          timeVarianceMinutes: 0,
+          timeAssessmentLabel: 'ON_TIME',
+          matchedTaskId: null,
+          summaryFeedback: 'Good work',
+          strengths: [],
+          improvements: [],
+          isRepetitive: false,
+          repetitionSimilarityPct: 0,
+          aiModelUsed: 'gemini-2.5-flash',
+        },
+      };
+
+      render(<ZohoTaskModal task={task} onClose={vi.fn()} />);
+
+      expect(screen.getByRole('tooltip', { name: /Time planned for this task/i })).toBeDefined();
+      expect(screen.getByRole('tooltip', { name: /Total time logged in Zoho/i })).toBeDefined();
+      expect(screen.getByRole('tooltip', { name: /Score for finishing on time/i })).toBeDefined();
+      expect(screen.getByRole('tooltip', { name: /Score for how clearly comments explain the work/i })).toBeDefined();
     });
   });
 });

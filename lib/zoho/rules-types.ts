@@ -20,9 +20,9 @@ export interface ZohoEvaluationRulesConfig {
   partialDeliveryCap: number; // default: 5.2 (score cap when deliverables pending)
 
   // 4. Composite Weights
-  workMatchWeight: number; // default: 0.45 (45%)
-  timeAdherenceWeight: number; // default: 0.35 (35%)
-  complexityWeight: number; // default: 0.10 (10%)
+  workMatchWeight: number; // default: 0.50 (50%)
+  timeAdherenceWeight: number; // default: 0.10 (10%)
+  complexityWeight: number; // default: 0.30 (30%)
   repetitionWeight: number; // default: 0.10 (10%)
 }
 
@@ -41,8 +41,8 @@ export const DEFAULT_ZOHO_RULES: ZohoEvaluationRulesConfig = {
   shortDescriptionDeduction: 4.5,
   checklistCommentCap: 5.0,
   partialDeliveryCap: 5.2,
-  workMatchWeight: 0.45,
-  timeAdherenceWeight: 0.35,
-  complexityWeight: 0.10,
+  workMatchWeight: 0.50,
+  timeAdherenceWeight: 0.10,
+  complexityWeight: 0.30,
   repetitionWeight: 0.10,
 };

@@ -59,6 +59,7 @@ export interface DailyZohoEvaluationCronOptions {
   dryRun?: boolean;
   allowWeekend?: boolean;
   skipWeekend?: boolean;
+  skipNextDaySync?: boolean;
 }
 
 /**

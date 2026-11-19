@@ -7,10 +7,12 @@ import {
   computeCompositeTaskScore,
   evaluateWorkAndCommentMatch,
   generateDynamicPerformanceSummary,
+  calculateItemizedDeductions,
   TimeAdherenceResult,
   RepetitionCheckResult,
   WorkMatchResult,
   HistoricalTask,
+  TaskPointDeduction,
 } from './heuristics';
 
 export interface TaskEvaluationInput {
@@ -49,6 +51,8 @@ export interface TaskEvaluationResult {
   whereLacked?: string;
   whereToImprove?: string;
   improvementItems?: string[];
+  deductions?: string[];
+  pointDeductions?: TaskPointDeduction[];
   strengths: string[];
   improvements: string[];
   aiModelUsed: string;
@@ -155,21 +159,31 @@ function generateHeuristicEvaluation(
   } else if (timeAdherence.assessmentLabel === 'OVERDUE') {
     improvements.push('Task exceeded planned hours (>10m overtime); escalate blockers earlier in Zoho comments.');
   } else {
-    strengths.push('Excellent time adherence within the permitted ±10m tolerance buffer.');
+    strengths.push('Completed tasks on time within planned hours.');
   }
 
-  if (workMatch.alignmentLabel === 'STRONG_ALIGNMENT') {
+  if (workMatch.alignmentLabel === 'STRONG_ALIGNMENT' || (workMatch.workMatchScore !== undefined && workMatch.workMatchScore >= 7.5)) {
     strengths.push('Logged comments clearly match the task description and confirm the completed work.');
+  } else if (workMatch.alignmentLabel === 'VERBATIM_COPY_PASTE') {
+    improvements.push('Document Implementation Progress (-7.0 pts): Progress comment verbatim copy-pastes the task description. Detail actual code changes and verification steps.');
   } else if (workMatch.isPartialDelivery || workMatch.hasPendingScope) {
-    improvements.push('Resolve pending deliverables and escalate blockers during the scheduled time rather than leaving items incomplete.');
+    if (workMatch.hasDocumentedBlockers) {
+      improvements.push('Coordinate Dependent Blockers (-1.5 pts): Remaining items are pending on external blockers (e.g. client key/staging). Follow up with dependency owners to unblock integration.');
+    } else {
+      improvements.push('Resolve Pending Deliverables (-4.5 pts): Complete all items or proactively document blockers before completing the task.');
+    }
   } else if (workMatch.alignmentLabel === 'NO_COMMENTS') {
-    improvements.push('Always log progress comments in Zoho Projects describing the implementation steps and test status.');
-  } else {
-    improvements.push('Ensure comments provide specific technical details aligned with the task description.');
+    improvements.push('Log Progress Comments (-10.0 pts): Always log progress comments in Zoho Projects describing the implementation steps and test status.');
+  } else if (workMatch.isChecklistComment) {
+    improvements.push('Explain Work Done Beyond Status Updates (-4.8 pts): Detail implementation steps and verification results rather than just status marks like "done".');
+  } else if (workMatch.workMatchScore !== undefined && workMatch.workMatchScore < 7.0) {
+    improvements.push('Substantiate Technical Scope: Detail key changes, files modified, and verification results in progress comments.');
   }
 
-  if (workMatch.hasMeetingLogged) {
-    improvements.push('Record meeting hours under dedicated administrative/meeting tasks rather than inside technical feature tickets.');
+  const isMeetingTask = /\b(meeting|discussion|standup|scrum|call|sync|interview|catchup|demo)\b/i.test(`${input.taskName || ''} ${input.taskDescription || ''}`);
+  const hasExplainedMeetingAgenda = /\b(discussed|agenda|minutes|decided|agreed|reviewed|sync(?:ed)?|covered|action\s+items?|points?|notes?)\b/i.test(input.comments.join(' '));
+  if (workMatch.hasMeetingLogged && !isMeetingTask && !hasExplainedMeetingAgenda) {
+    improvements.push('Document Meeting Outcomes: Briefly summarize discussion points or action items agreed upon during the meeting to justify logged hours.');
   }
 
   if (input.isQAReview) {
@@ -204,6 +218,23 @@ function generateHeuristicEvaluation(
     rules,
   });
 
+  const { deductions, pointDeductions } = calculateItemizedDeductions({
+    timeScore: timeAdherence.timeScore,
+    timeAssessmentLabel: timeAdherence.assessmentLabel,
+    timeVarianceMinutes: timeAdherence.timeVarianceMinutes,
+    workMatchScore: workMatch.workMatchScore,
+    workMatchResult: workMatch,
+    isMissingDescription: workMatch.isMissingDescription,
+    isBriefDescription: workMatch.isBriefDescription,
+    descriptionDeduction: workMatch.descriptionDeduction,
+    isVerbatimMirror: workMatch.isVerbatimMirror,
+    isChecklistComment: workMatch.isChecklistComment,
+    hasPendingScope: workMatch.hasPendingScope,
+    isPartialDelivery: workMatch.isPartialDelivery,
+    isRepetitive: repetition.isRepetitive,
+    repetitionSimilarityPct: repetition.similarityPct,
+  });
+
   return {
     overallScore,
     timeScore: timeAdherence.timeScore,
@@ -221,6 +252,8 @@ function generateHeuristicEvaluation(
     whereLacked: dynamicSummary.whereLacked,
     whereToImprove: dynamicSummary.whereToImprove,
     improvementItems: dynamicSummary.improvementItems,
+    deductions,
+    pointDeductions,
     strengths,
     improvements,
     aiModelUsed: 'rule-engine-fallback',
@@ -402,6 +435,23 @@ Return your evaluation strictly conforming to the requested JSON schema.
       prEvidence: input.prEvidence,
     });
 
+    const { deductions, pointDeductions } = calculateItemizedDeductions({
+      timeScore: timeAdherence.timeScore,
+      timeAssessmentLabel: timeAdherence.assessmentLabel,
+      timeVarianceMinutes: timeAdherence.timeVarianceMinutes,
+      workMatchScore,
+      workMatchResult: workMatch,
+      isMissingDescription: workMatch.isMissingDescription,
+      isBriefDescription: workMatch.isBriefDescription,
+      descriptionDeduction: workMatch.descriptionDeduction,
+      isVerbatimMirror: workMatch.isVerbatimMirror,
+      isChecklistComment: workMatch.isChecklistComment,
+      hasPendingScope: workMatch.hasPendingScope,
+      isPartialDelivery: workMatch.isPartialDelivery,
+      isRepetitive: repetition.isRepetitive,
+      repetitionSimilarityPct: repetition.similarityPct,
+    });
+
     return {
       overallScore,
       timeScore: timeAdherence.timeScore,
@@ -419,6 +469,8 @@ Return your evaluation strictly conforming to the requested JSON schema.
       whereLacked: parsed.whereLacked || fallbackSummary.whereLacked,
       whereToImprove: parsed.whereToImprove || fallbackSummary.whereToImprove,
       improvementItems: fallbackSummary.improvementItems,
+      deductions,
+      pointDeductions,
       strengths: rawStrengths,
       improvements: rawImprovements,
       aiModelUsed: 'gemini-2.5-flash',

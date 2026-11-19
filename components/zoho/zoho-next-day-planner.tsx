@@ -24,6 +24,12 @@ import {
   validateTaskQuality,
   MIN_DESCRIPTION_WORDS,
 } from '@/lib/zoho/task-quality-validator';
+import {
+  parseDurationToMinutes,
+  formatMinutesToClock,
+  formatMinutesToHHMM,
+  formatZohoDurationToClock,
+} from '@/lib/zoho/client';
 
 export interface PlannedTaskItem {
   id: string;
@@ -142,7 +148,7 @@ export default function ZohoNextDayPlanner({
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectName, setProjectName] = useState(DEFAULT_PROJECT_OPTIONS[0].name);
   const [taskTitle, setTaskTitle] = useState('');
-  const [plannedHours, setPlannedHours] = useState<number>(4.0);
+  const [plannedHoursInput, setPlannedHoursInput] = useState<string>('04:00');
   const [description, setDescription] = useState('');
   const [cutoffStatus, setCutoffStatus] = useState(checkCutoffStatus);
 
@@ -364,7 +370,7 @@ export default function ZohoNextDayPlanner({
     setEditingTaskId(task.id);
     setTaskTitle(task.taskTitle);
     setDescription(task.description || '');
-    setPlannedHours(task.plannedHours);
+    setPlannedHoursInput(formatMinutesToHHMM(Math.round(task.plannedHours * 60)));
 
     // Sync project name
     const projMatch = projectOptions.find(
@@ -385,9 +391,128 @@ export default function ZohoNextDayPlanner({
     setEditingTaskId(null);
     setTaskTitle('');
     setDescription('');
-    setPlannedHours(4.0);
+    setPlannedHoursInput('04:00');
     setIsTaskSelectOpen(false);
     setTaskSearchQuery('');
+  };
+
+  // Planned Duration Validation (supports e.g. 00:15, 01:30, 04:00, 16:00, 15m, 1.5, 4, 16 - range: 1 min to 16 hrs)
+  const parsedDuration = useMemo(() => {
+    const trimmed = plannedHoursInput.trim();
+    if (!trimmed) {
+      return { totalMinutes: 0, decimalHours: 0, isValid: false, error: 'Duration is required' };
+    }
+    if (trimmed.includes(':')) {
+      const parts = trimmed.split(':');
+      const h = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10);
+      if (Number.isNaN(h) || Number.isNaN(m)) {
+        return { totalMinutes: 0, decimalHours: 0, isValid: false, error: 'Enter valid time in 00:00 format' };
+      }
+      if (m > 59) {
+        return { totalMinutes: 0, decimalHours: 0, isValid: false, error: 'Minutes cannot exceed 59' };
+      }
+      const totalMinutes = h * 60 + m;
+      if (totalMinutes < 1) {
+        return { totalMinutes: 0, decimalHours: 0, isValid: false, error: 'Duration must be at least 00:01 (1 min)' };
+      }
+      if (totalMinutes > 240) {
+        return { totalMinutes: 0, decimalHours: 0, isValid: false, error: 'Duration cannot exceed 04:00 (4 hrs)' };
+      }
+      const decimalHours = Number((totalMinutes / 60).toFixed(2));
+      return { totalMinutes, decimalHours, isValid: true, error: null };
+    }
+
+    const totalMinutes = parseDurationToMinutes(trimmed);
+    if (totalMinutes < 1) {
+      return {
+        totalMinutes,
+        decimalHours: 0,
+        isValid: false,
+        error: 'Duration must be at least 00:01 (1 min)',
+      };
+    }
+    if (totalMinutes > 240) {
+      return {
+        totalMinutes,
+        decimalHours: totalMinutes / 60,
+        isValid: false,
+        error: 'Duration cannot exceed 04:00 (4 hrs)',
+      };
+    }
+    const decimalHours = Number((totalMinutes / 60).toFixed(2));
+    return {
+      totalMinutes,
+      decimalHours,
+      isValid: true,
+      error: null,
+    };
+  }, [plannedHoursInput]);
+
+  // Strictly enforce max 2 digits for hours and max 2 digits for minutes (HH:MM)
+  const handleDurationInputChange = (val: string) => {
+    const trimmed = val.trim().toLowerCase();
+
+    // Support shorthand like "15m", "1m", "30 min"
+    if (trimmed.endsWith('m') || trimmed.includes('min')) {
+      const numeric = parseInt(trimmed.replace(/\D/g, ''), 10);
+      if (!Number.isNaN(numeric)) {
+        const hh = Math.floor(numeric / 60).toString().padStart(2, '0');
+        const mm = Math.round(numeric % 60).toString().padStart(2, '0');
+        setPlannedHoursInput(`${hh}:${mm}`);
+        return;
+      }
+    }
+
+    // Support shorthand like "1.5", ".5", "1.5h"
+    if (trimmed.includes('.') || trimmed.endsWith('h')) {
+      const num = parseFloat(trimmed.replace(/[^0-9.]/g, ''));
+      if (!Number.isNaN(num) && num > 0) {
+        const totalMins = Math.round(num * 60);
+        const hh = Math.floor(totalMins / 60).toString().padStart(2, '0');
+        const mm = Math.round(totalMins % 60).toString().padStart(2, '0');
+        setPlannedHoursInput(`${hh}:${mm}`);
+        return;
+      }
+    }
+
+    // Standard clock entry: strictly allow only digits and colon, max 2 digits each side
+    const sanitized = val.replace(/[^0-9:]/g, '');
+
+    if (sanitized.includes(':')) {
+      const parts = sanitized.split(':');
+      // Strictly max 2 digits for hours (left side), and max 2 digits for minutes (right side)
+      const hoursPart = parts[0].slice(0, 2);
+      const minsPart = parts.slice(1).join('').slice(0, 2);
+      setPlannedHoursInput(`${hoursPart}:${minsPart}`);
+    } else {
+      if (sanitized.length <= 2) {
+        setPlannedHoursInput(sanitized);
+      } else {
+        setPlannedHoursInput(`${sanitized.slice(0, 2)}:${sanitized.slice(2, 4)}`);
+      }
+    }
+  };
+
+  // Auto-pad on blur to ensure neat 00:00 format
+  const handleDurationBlur = () => {
+    const trimmed = plannedHoursInput.trim();
+    if (!trimmed) {
+      setPlannedHoursInput('04:00');
+      return;
+    }
+    if (trimmed.includes(':')) {
+      const [h, m] = trimmed.split(':');
+      const hh = (parseInt(h, 10) || 0).toString().padStart(2, '0');
+      const mm = (parseInt(m, 10) || 0).toString().padStart(2, '0');
+      setPlannedHoursInput(`${hh}:${mm}`);
+    } else {
+      const num = parseInt(trimmed, 10);
+      if (!Number.isNaN(num)) {
+        const hh = Math.min(Math.max(num, 0), 4).toString().padStart(2, '0');
+        setPlannedHoursInput(`${hh}:00`);
+      }
+    }
   };
 
   // Quality & Deliverable Validation (word count >= 40, non-vague title, relevance)
@@ -397,7 +522,7 @@ export default function ZohoNextDayPlanner({
 
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!qualityResult.isValid || plannedHours <= 0) return;
+    if (!qualityResult.isValid || !parsedDuration.isValid) return;
     if (cutoffStatus.isLocked) return;
 
     const selectedProj = projectName;
@@ -412,7 +537,7 @@ export default function ZohoNextDayPlanner({
               ...t,
               projectName: selectedProj,
               taskTitle: taskTitle.trim(),
-              plannedHours: Number(plannedHours.toFixed(1)),
+              plannedHours: parsedDuration.decimalHours,
               description: description.trim(),
             }
           : t
@@ -430,7 +555,7 @@ export default function ZohoNextDayPlanner({
             zohoProjectId: selectedProjObj?.id || 'ckp_main',
             taskName: taskTitle.trim(),
             taskDescription: description.trim(),
-            plannedHours: Number(plannedHours.toFixed(1)),
+            plannedHours: parsedDuration.decimalHours,
           }),
         });
       } catch {
@@ -445,7 +570,7 @@ export default function ZohoNextDayPlanner({
       id: tempId,
       projectName: selectedProj,
       taskTitle: taskTitle.trim(),
-      plannedHours: Number(plannedHours.toFixed(1)),
+      plannedHours: parsedDuration.decimalHours,
       description: description.trim(),
       createdAt: new Date().toISOString(),
       targetDate: nextWorkingDay.dateStr,
@@ -458,7 +583,7 @@ export default function ZohoNextDayPlanner({
     // Reset inputs
     setTaskTitle('');
     setDescription('');
-    setPlannedHours(4.0);
+    setPlannedHoursInput('04:00');
 
     // Call API to persist into zoho_tasks
     try {
@@ -783,32 +908,55 @@ export default function ZohoNextDayPlanner({
               <div className="sm:col-span-3 space-y-1">
                 <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider flex items-center justify-between">
                   <span className="flex items-center gap-1">
-                    Planned Hours <span className="text-rose-500 font-bold">*</span>
+                    Planned Time <span className="text-zinc-400 font-normal lowercase">(00:00)</span> <span className="text-rose-500 font-bold">*</span>
                   </span>
-                  <span className="text-teal-600 dark:text-teal-400 font-extrabold">{plannedHours}h</span>
+                  <span
+                    className={cn(
+                      'font-extrabold text-xs transition-colors',
+                      parsedDuration.isValid ? 'text-teal-600 dark:text-teal-400' : 'text-amber-500'
+                    )}
+                  >
+                    {parsedDuration.isValid
+                      ? `${formatMinutesToClock(parsedDuration.totalMinutes)} hrs (${parsedDuration.decimalHours}h)`
+                      : '00:01 - 04:00'}
+                  </span>
                 </label>
                 <div className="flex items-center gap-1.5">
                   <input
-                    type="number"
+                    type="text"
+                    list="planner-hours-suggestions"
                     disabled={cutoffStatus.isLocked}
                     required
-                    step="0.5"
-                    min="0.5"
-                    max="12"
-                    value={plannedHours}
-                    onChange={(e) => setPlannedHours(Number(e.target.value) || 1)}
-                    className="w-20 text-xs font-semibold px-2 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 text-center"
+                    maxLength={5}
+                    aria-label="Planned duration"
+                    placeholder="00:00"
+                    value={plannedHoursInput}
+                    onChange={(e) => handleDurationInputChange(e.target.value)}
+                    onBlur={handleDurationBlur}
+                    className="w-24 text-xs font-semibold px-2.5 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50 text-center tracking-wider"
                   />
+                  <datalist id="planner-hours-suggestions">
+                    <option value="00:15">00:15 (15 mins)</option>
+                    <option value="00:30">00:30 (30 mins)</option>
+                    <option value="00:45">00:45 (45 mins)</option>
+                    <option value="01:00">01:00 (1 hr)</option>
+                    <option value="01:30">01:30 (1.5 hrs)</option>
+                    <option value="02:00">02:00 (2 hrs)</option>
+                    <option value="03:00">03:00 (3 hrs)</option>
+                    <option value="04:00">04:00 (4 hrs)</option>
+                  </datalist>
                   <button
                     type="submit"
                     disabled={
                       cutoffStatus.isLocked ||
                       !qualityResult.isValid ||
-                      plannedHours <= 0
+                      !parsedDuration.isValid
                     }
                     title={
                       !qualityResult.isValid
                         ? qualityResult.descriptionError || qualityResult.titleError || qualityResult.relevanceError
+                        : !parsedDuration.isValid
+                        ? parsedDuration.error || undefined
                         : undefined
                     }
                     className={cn(
@@ -831,6 +979,12 @@ export default function ZohoNextDayPlanner({
                     )}
                   </button>
                 </div>
+                {!parsedDuration.isValid && plannedHoursInput.trim() !== '' && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1 pt-0.5">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{parsedDuration.error}</span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -933,7 +1087,7 @@ export default function ZohoNextDayPlanner({
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-zinc-500 font-medium">Total Planned:</span>
                 <span className="font-black text-teal-600 dark:text-teal-400 tabular-nums text-sm">
-                  {totalPlannedHours.toFixed(1)} hrs
+                  {formatMinutesToClock(Math.round(totalPlannedHours * 60))} hrs
                 </span>
               </div>
             </div>
@@ -983,7 +1137,7 @@ export default function ZohoNextDayPlanner({
 
                     <div className="flex items-center gap-3 shrink-0">
                       <span className="text-xs font-black px-2.5 py-1 rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 tabular-nums">
-                        {item.plannedHours.toFixed(1)} hrs
+                        {formatZohoDurationToClock(item.plannedHours)} hrs
                       </span>
 
                       {!cutoffStatus.isLocked && (
@@ -1026,7 +1180,7 @@ export default function ZohoNextDayPlanner({
                     {viewingTask.projectName}
                   </span>
                   <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300">
-                    {viewingTask.plannedHours.toFixed(1)} hrs
+                    {formatZohoDurationToClock(viewingTask.plannedHours)} hrs
                   </span>
                 </div>
                 <h3 className="text-sm sm:text-base font-bold text-white break-words">

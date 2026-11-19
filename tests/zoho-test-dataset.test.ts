@@ -107,7 +107,7 @@ describe('Zoho Test Dataset (13 Users, 43 Test Cases)', () => {
     const case01 = allUser4Tasks.find((t) => t.taskName.includes('PostgreSQL Row Level Security'))!;
 
     expect(case01).toBeDefined();
-    expect(case01.evaluation?.overallScore).toBe(9.8);
+    expect(case01.evaluation?.overallScore).toBe(9.4);
     expect(case01.evaluation?.timeScore).toBe(10);
     expect(case01.evaluation?.timeAssessmentLabel).toBe('ON_TIME');
   });
@@ -133,16 +133,17 @@ describe('Zoho Test Dataset (13 Users, 43 Test Cases)', () => {
 
     expect(case37).toBeDefined();
     expect(case37.evaluation?.workMatchScore).toBe(0.0);
-    expect(case37.evaluation?.overallScore).toBe(5.3);
+    expect(case37.evaluation?.overallScore).toBe(4.4);
     expect(
       case37.evaluation?.improvementItems?.some((item) =>
-        item.includes('Missing Task Description: Task description is completely missing in Zoho Projects. Score was set to 0.0/10.')
+        item.includes('Missing Task Description') &&
+        item.includes('Task description is completely missing in Zoho Projects. Score was set to 0.0/10.')
       )
     ).toBe(true);
 
     expect(case34).toBeDefined();
     expect(case34.evaluation?.workMatchScore).toBe(5.5);
-    expect(case34.evaluation?.overallScore).toBe(7.8);
+    expect(case34.evaluation?.overallScore).toBe(7.2);
     expect(
       case34.evaluation?.improvementItems?.some((item) =>
         item.includes('4.5 points was deducted from the score') &&

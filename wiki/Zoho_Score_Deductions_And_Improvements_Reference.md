@@ -143,7 +143,15 @@ Every task is evaluated on a **0.0 to 10.0 scale**. Below are 10 clear examples 
   * ❌ **-2.0 Marks (Rushed Without Verification)**: Finished in $<40\%$ of time with zero automated test proof.
   * ❌ **-1.0 Mark (Status Gate)**: Left in *"In Progress"*.
 
-#### Example 10: Zero Hours Logged or Missing Description (Score: 0.0 / 10)
+#### Example 10: Verbatim Copy-Pasting of Task Description (Score: 3.0 / 10)
+* **Setup**: Planned: 4h | Logged: 4h (On-Time) | Status: `In QA Review`.
+* **Description**: Detailed 90-word task description outlining requirements and deliverables.
+* **Comment**: User verbatim copy-pastes the exact task description as the comment with zero new technical implementation details or verification evidence.
+* **Why Score Deducted**:
+  * ❌ **-7.0 Marks (Verbatim Copy-Paste Loophole)**: Copy-pasting the task description into comments without documenting actual implementation progress or code changes is strictly detected as `VERBATIM_COPY_PASTE` and capped at **3.0 / 10**.
+  * 💡 **Itemized Deduction**: `-7.0 pts (Comments): Comment copy-pastes task description without explaining actual implementation steps`.
+
+#### Example 11: Zero Hours Logged or Missing Description (Score: 0.0 / 10)
 * **Setup**: Planned: 4h | Logged: 0h (`NOT_LOGGED`) OR Description completely blank.
 * **Comment**: None or basic comment.
 * **Why Score is Zero**:
@@ -151,4 +159,21 @@ Every task is evaluated on a **0.0 to 10.0 scale**. Below are 10 clear examples 
   * ❌ **0.0 / 10 for Work**: If description is empty or comments are missing, work cannot be verified against any assigned scope. Tasks with 0 hours and 0 comments receive a flat **0.0 / 10**.
 
 ---
+
+## 🧾 Itemized Point Deductions Reference
+
+Both the **Task Details Modal (UI)** and the **Daily Evaluation Email** display an explicit **⚠️ Points Deducted** breakdown for complete transparency:
+
+| Category | Trigger Condition | Points Deducted | Example Display |
+| :--- | :--- | :--- | :--- |
+| **Time Adherence** | Overdue beyond 5m buffer | `-1.0` to `-8.0 pts` | `-3.0 pts (Time): Exceeded tolerance buffer by +35m` |
+| **Time Adherence** | Early gap $>15\text{m}$ | `-1.0` to `-5.0 pts` | `-2.5 pts (Time): Early completion gap of -30m (>15m early)` |
+| **Time Adherence** | No time logged | `-10.0 pts` | `-10.0 pts (Time): No work time logged in Zoho Projects (0.0h)` |
+| **Task Description** | Missing description | `-10.0 pts` | `-10.0 pts (Scope): Task description is completely missing in Zoho Projects` |
+| **Task Description** | Brief description ($<40$ words) | `-4.5 pts` | `-4.5 pts (Scope): Description under 40 words or lacks detailed acceptance criteria` |
+| **Comments & Work** | Verbatim copy-paste of description | `-7.0 pts` | `-7.0 pts (Comments): Comment copy-pastes task description without explaining actual implementation steps` |
+| **Comments & Work** | Checklist markers with pending scope | `-4.8` to `-5.0 pts` | `-4.8 pts (Comments): Key deliverables left pending or unverified on ticket` |
+| **Comments & Work** | Checklist status only (`- Done`) | `-4.8 pts` | `-4.8 pts (Comments): Comments primarily mirror checklist status marks without technical code/test depth` |
+| **Comments & Work** | No progress comments logged | `-10.0 pts` | `-10.0 pts (Comments): No progress comments logged in Zoho Projects` |
+| **Repetition** | $>80\%$ match with prior task | `-3.0 pts` | `-3.0 pts (Repetition): Repetitive task detected (88% similarity match)` |
 

@@ -109,7 +109,7 @@ export function parseDurationToMinutes(durationStr: string | number | null | und
       if (fracStr === '75') return hours * 60 + 45;
 
       const mins = parseInt(fracStr, 10);
-      if (mins <= 59) {
+      if (hours > 0 && mins <= 59) {
         return hours * 60 + mins;
       }
     } else if (fracStr.length === 1) {
@@ -130,11 +130,11 @@ export function parseDurationToMinutes(durationStr: string | number | null | und
     return hours * 60 + minutes;
   }
 
-  // "3h 55m" or "3h" or "55m"
-  const hoursMatch = trimmed.match(/(\d+)\s*h/i);
+  // "3h 55m" or "3h" or "55m" or "1.5h"
+  const hoursMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*h/i);
   const minsMatch = trimmed.match(/(\d+)\s*m/i);
   let total = 0;
-  if (hoursMatch) total += parseInt(hoursMatch[1], 10) * 60;
+  if (hoursMatch) total += Math.round(parseFloat(hoursMatch[1]) * 60);
   if (minsMatch) total += parseInt(minsMatch[1], 10);
   if (total > 0) return total;
 
@@ -149,7 +149,7 @@ export function parseDurationToMinutes(durationStr: string | number | null | und
       if (fracStr === '75') return hours * 60 + 45;
 
       const mins = parseInt(fracStr, 10);
-      if (mins <= 59) {
+      if (hours > 0 && mins <= 59) {
         return hours * 60 + mins;
       }
     } else if (fracStr.length === 1) {
@@ -187,19 +187,19 @@ export function extractPlannedMinutesFromTask(
   if (fromWork > 0) return fromWork;
 
   if (taskName) {
-    const bracketMatch = taskName.match(/\[\s*([\d.]+)\s*(?:hours?|hrs?|h)\s*\]/i);
+    const bracketMatch = taskName.match(/\[\s*([\d.:]+)\s*(?:hours?|hrs?|h)\s*\]/i);
     if (bracketMatch) {
-      const parsed = parseFloat(bracketMatch[1]);
-      if (!Number.isNaN(parsed) && parsed > 0) {
-        return Math.round(parsed * 60);
+      const parsed = parseDurationToMinutes(bracketMatch[1]);
+      if (parsed > 0) {
+        return parsed;
       }
     }
 
-    const suffixMatch = taskName.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs|h)\b/i);
+    const suffixMatch = taskName.match(/(\d+(?:[.:]\d+)?)\s*(?:hours?|hrs|h)\b/i);
     if (suffixMatch) {
-      const parsed = parseFloat(suffixMatch[1]);
-      if (!Number.isNaN(parsed) && parsed > 0) {
-        return Math.round(parsed * 60);
+      const parsed = parseDurationToMinutes(suffixMatch[1]);
+      if (parsed > 0) {
+        return parsed;
       }
     }
   }
@@ -216,6 +216,16 @@ export function formatMinutesToClock(mins: number): string {
   const h = Math.floor(mins / 60);
   const m = Math.round(mins % 60);
   return `${h}:${m.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Formats total minutes into two-digit clock format "HH:MM" (e.g. 240 -> "04:00", 15 -> "00:15", 90 -> "01:30").
+ */
+export function formatMinutesToHHMM(mins: number): string {
+  if (!mins || mins <= 0 || !Number.isFinite(mins)) return '00:00';
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 }
 
 /**

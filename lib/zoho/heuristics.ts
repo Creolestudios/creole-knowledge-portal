@@ -50,7 +50,17 @@ export function detectPendingScope(commentsText: string): {
     /\b(?:no|zero|without\s+any)\s+(?:pending|remaining)\b/i,
   ];
 
-  const hasDocumentedBlockers = /\b(?:pending\s+(?:points?|items?|tasks?)\s+are\s+due\s+to|due\s+to\s+(?:other\s+tasks?|blockers?|dependencies|client|gemstones|photos|credentials?|assets?)|dependent\s+on\s+(?:other\s+tasks?|client|key|assets?)|waiting\s+for\s+(?:client|key|assets?|photos?))\b/i.test(commentsText);
+  const blockerPatterns = [
+    /\b(?:due\s+to\s+(?:other\s+tasks?|blockers?|dependencies|client|gemstones|photos|credentials?|assets?|outage|downtime|review|pr|approval|issue|bug|error|delay))\b/i,
+    /\b(?:dependent\s+on\s+(?:other\s+tasks?|client|key|assets?|backend|api|lead|staging|review|credentials?))\b/i,
+    /\b(?:waiting\s+for\s+(?:client|key|assets?|photos?|response|approval|credentials?|staging|review|merge|feedback|input))\b/i,
+    /\b(?:blocked\s+(?:by|due\s+to)|blocker\s+(?:noted|escalated|reported|raised))\b/i,
+    /\b(?:escalated\s+to\s+(?:lead|client|team|pm|manager))\b/i,
+    /\b(?:requires?\s+(?:client|lead|team)\s+approval)\b/i,
+    /\b(?:cant\s+(?:test|verify|proceed)\s+due\s+to|cannot\s+(?:test|verify|proceed)\s+due\s+to)\b/i,
+    /\b(?:pending\s+(?:points?|items?|tasks?)\s+are\s+due\s+to)\b/i,
+  ];
+  const hasDocumentedBlockers = blockerPatterns.some(p => p.test(commentsText));
 
   let occurrences = 0;
 
@@ -126,10 +136,11 @@ export interface TaskTimeReasonablenessResult {
 
 export interface WorkMatchResult {
   workMatchScore: number; // 0 - 10
-  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED' | 'MISSING_TASK_DESCRIPTION' | 'OFF_TOPIC' | 'PARTIAL_DELIVERY' | 'PARTIAL_ALIGNMENT';
+  alignmentLabel: 'STRONG_ALIGNMENT' | 'MODERATE_ALIGNMENT' | 'WEAK_ALIGNMENT' | 'NO_COMMENTS' | 'UNVERIFIED' | 'MISSING_TASK_DESCRIPTION' | 'OFF_TOPIC' | 'PARTIAL_DELIVERY' | 'PARTIAL_ALIGNMENT' | 'VERBATIM_COPY_PASTE';
   explanation: string;
   isBriefDescription?: boolean;
   isChecklistComment?: boolean;
+  isVerbatimMirror?: boolean;
   isBriefComment?: boolean;
   isConciseEvidenceComment?: boolean;
   isMissingDescription?: boolean;
@@ -143,6 +154,12 @@ export interface WorkMatchResult {
   hasVerifiedPr?: boolean;
   hasCoworkerPr?: boolean;
   prFeedback?: string;
+}
+
+export interface TaskPointDeduction {
+  category: 'Time Adherence' | 'Task Description' | 'Work & Comment Match' | 'Repetition';
+  pointsLost: number;
+  reason: string;
 }
 
 /**
@@ -403,10 +420,12 @@ export function evaluateWorkAndCommentMatch(
   const meetingPattern = /\b(?:\d+\s*(?:hr|hour|mins?|minutes?)\s*(?:of\s*)?meeting|meeting\s+is\s+logged|meeting\s+logged|logged\s+in\s+this\s+task\s+itself)\b/i;
   const hasMeetingLogged = meetingPattern.test(combinedComments);
 
-  // Detect checklist comments that copy-paste the description with "- Done", "Done", "pending"
+  // Detect checklist comments that copy-paste the description with "- Done", ": Done", "is done", "[x]"
   const checklistMarkers = [
-    /\b(done|not done|pending|completed)\b/i,
-    /-\s*(done|pending|not done)/i,
+    /\[\s*[x ]\s*\]/i,
+    /[-\u2013\u2014:]\s*(?:done|pending|not done|completed)\b/i,
+    /\b(?:is\s+done|are\s+done|is\s+pending|are\s+pending|status:\s*(?:done|pending|completed))\b/i,
+    /(?:^|\n)\s*[-*•\d.]+\s*.*?\b(?:done|pending|not done)\s*$/im,
   ];
   const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
 
@@ -425,8 +444,18 @@ export function evaluateWorkAndCommentMatch(
     'did', 'note', '1hr', 'task', 'itself', 'as', 'there', 'some'
   ]);
   const technicalExplanationWords = nonDescWords.filter(w => !statusStopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
-  const isChecklistComment = (hasChecklistMarkers && technicalExplanationWords.length < 18) ||
-    (totalStamps >= 2 && technicalExplanationWords.length < 25);
+
+  // Verbatim copy-paste detection:
+  // When comment has substantial length (>= 15 words) but almost zero new words outside the description (nonDescWords < 5 or technicalExplanationWords < 4),
+  // it is an exact or near-verbatim clone of the task description without explaining real implementation progress.
+  const isVerbatimMirror =
+    (commentWords.length >= 15 && nonDescWords.length < 5) ||
+    (descWords.length >= 20 && commentWords.length >= 20 && technicalExplanationWords.length < 5);
+
+  const isChecklistComment = !isVerbatimMirror && (
+    (hasChecklistMarkers && technicalExplanationWords.length < 18) ||
+    (totalStamps >= 2 && technicalExplanationWords.length < 25)
+  );
 
   // Check action words
   const actionTerms = [
@@ -536,7 +565,10 @@ export function evaluateWorkAndCommentMatch(
     (!isBriefComment && overallSimilarity >= 0.25)
   );
 
-  if (isPartialDelivery) {
+  if (isVerbatimMirror) {
+    // Strictly penalize verbatim copy-pasting of description into comment (0 new progress words)
+    baseScore = 3.0;
+  } else if (isPartialDelivery) {
     // Deliverables left pending on a 3h-8h ticket:
     // With 4h to 8h planned, leaving core deliverables pending (or untested) means the assigned scope was incomplete.
     if (pendingOccurrences >= 2 || isChecklistComment || totalStamps >= 2) {
@@ -557,6 +589,11 @@ export function evaluateWorkAndCommentMatch(
   } else if (isBriefDescription && isBriefComment) {
     // Vague/brief description combined with brief comment lacks substantive context
     baseScore = 5.5;
+  } else if (hasStrongTechnicalEvidence && hasPendingScope && hasDocumentedBlockers) {
+    // Deliverables left pending WITH legitimate documented blockers or external dependencies:
+    // User explained what was completed and documented the roadblock (e.g. waiting for client key, staging downtime).
+    // Mild calibration (8.5/10) rather than a hefty penalty.
+    baseScore = 8.5;
   } else if (hasStrongTechnicalEvidence && !hasPendingScope) {
     if (isConciseEvidenceComment) {
       baseScore = 7.2; // Keep between 7.0 and 7.5 when comment is according to task but completed in 1-2 lines
@@ -609,7 +646,10 @@ export function evaluateWorkAndCommentMatch(
   }
 
   // Cap score strictly if partial delivery or checklist comment
-  if (isPartialDelivery) {
+  if (isVerbatimMirror) {
+    // Strictly penalize verbatim copy-pasting of description into comment (0 new progress words)
+    baseScore = 3.0;
+  } else if (isPartialDelivery) {
     baseScore = Math.min(5.5, baseScore);
   } else if (isChecklistComment) {
     baseScore = Math.min(5.2, baseScore);
@@ -660,6 +700,8 @@ export function evaluateWorkAndCommentMatch(
   let explanation = '';
   if (coworkerPr) {
     explanation = prFeedback;
+  } else if (isVerbatimMirror) {
+    explanation = `Comments copy-paste the assigned task description verbatim without explaining technical implementation progress${expTag}. Progress notes must substantiate actual work completed rather than mirroring the scope.`;
   } else if (isOffTopic) {
     explanation = `Comments do not topically align with the assigned task description or requirements${expTag}. Progress notes must directly substantiate the specific deliverable.`;
   } else if (isPartialDelivery) {
@@ -685,7 +727,9 @@ export function evaluateWorkAndCommentMatch(
     explanation = `${explanation} ${prFeedback}`.trim();
   }
 
-  const alignmentLabel = isOffTopic
+  const alignmentLabel = isVerbatimMirror
+    ? 'VERBATIM_COPY_PASTE'
+    : isOffTopic
     ? 'OFF_TOPIC'
     : isPartialDelivery
     ? 'PARTIAL_DELIVERY'
@@ -705,6 +749,7 @@ export function evaluateWorkAndCommentMatch(
     explanation,
     isBriefDescription,
     isChecklistComment,
+    isVerbatimMirror,
     isBriefComment,
     isConciseEvidenceComment,
     descriptionDeduction: descPenalty,
@@ -828,13 +873,13 @@ export function computeCompositeTaskScore(params: {
   }
 
   // Base weights (Total = 1.0):
-  // Work / Comment match: 45% (4.5 pts)
-  // Time Adherence (±10m buffer): 35% (3.5 pts)
-  // Complexity: 10% (1.0 pt)
+  // Work / Comment match: 50% (5.0 pts)
+  // Time Adherence: 10% (1.0 pt)
+  // Complexity: 30% (3.0 pts)
   // Originality / Non-Repetition: 10% (1.0 pt)
-  const wComment = params.rules?.workMatchWeight ?? 0.45;
-  const wTime = params.rules?.timeAdherenceWeight ?? 0.35;
-  const wComplexity = params.rules?.complexityWeight ?? 0.10;
+  const wComment = params.rules?.workMatchWeight ?? 0.50;
+  const wTime = params.rules?.timeAdherenceWeight ?? 0.10;
+  const wComplexity = params.rules?.complexityWeight ?? 0.30;
   const wRepetition = params.rules?.repetitionWeight ?? 0.10;
   const nonQADeduction = params.rules?.nonQAReviewDeduction ?? 1.0;
 
@@ -851,6 +896,108 @@ export function computeCompositeTaskScore(params: {
   return Number(Math.max(0.0, Math.min(10.0, weighted)).toFixed(1));
 }
 
+/**
+ * Calculates itemized point deductions explaining exactly why points were deducted
+ */
+export function calculateItemizedDeductions(params: {
+  timeScore: number;
+  timeAssessmentLabel: string;
+  timeVarianceMinutes: number;
+  workMatchScore: number;
+  workMatchResult?: WorkMatchResult;
+  isMissingDescription?: boolean;
+  isBriefDescription?: boolean;
+  descriptionDeduction?: number;
+  isVerbatimMirror?: boolean;
+  isChecklistComment?: boolean;
+  hasPendingScope?: boolean;
+  isPartialDelivery?: boolean;
+  isRepetitive?: boolean;
+  repetitionSimilarityPct?: number;
+}): {
+  deductions: string[];
+  pointDeductions: TaskPointDeduction[];
+} {
+  const pointDeductions: TaskPointDeduction[] = [];
+  const deductions: string[] = [];
+
+  const normTime = params.timeScore > 10 ? params.timeScore / 10 : params.timeScore;
+  const normWork = params.workMatchScore > 10 ? params.workMatchScore / 10 : params.workMatchScore;
+
+  // 1. Time Adherence Deductions
+  if (normTime < 10.0) {
+    const timeLost = Number((10.0 - normTime).toFixed(1));
+    let reason = '';
+    if (params.timeAssessmentLabel === 'NOT_LOGGED') {
+      reason = 'No work time logged in Zoho Projects (0.0h)';
+    } else if (params.timeAssessmentLabel === 'OVERDUE') {
+      const overMins = params.timeVarianceMinutes > 0 ? params.timeVarianceMinutes : Math.abs(params.timeVarianceMinutes);
+      reason = `Exceeded tolerance buffer by +${overMins}m`;
+    } else if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
+      const earlyMins = Math.abs(params.timeVarianceMinutes);
+      reason = `Early completion gap of -${earlyMins}m (>10m early)`;
+    } else {
+      reason = `Time variance penalty (${params.timeVarianceMinutes > 0 ? '+' : ''}${params.timeVarianceMinutes}m)`;
+    }
+    pointDeductions.push({ category: 'Time Adherence', pointsLost: timeLost, reason });
+    deductions.push(`-${timeLost.toFixed(1)} pts (Time): ${reason}`);
+  }
+
+  // 2. Task Description Deductions
+  if (params.isMissingDescription) {
+    pointDeductions.push({
+      category: 'Task Description',
+      pointsLost: 10.0,
+      reason: 'Task description completely missing in Zoho Projects',
+    });
+    deductions.push('-10.0 pts (Scope): Task description is completely missing in Zoho Projects');
+  } else if (params.descriptionDeduction && params.descriptionDeduction > 0) {
+    const descLost = Number(params.descriptionDeduction.toFixed(1));
+    pointDeductions.push({
+      category: 'Task Description',
+      pointsLost: descLost,
+      reason: 'Task description under 40 words or lacks detailed acceptance criteria',
+    });
+    deductions.push(`-${descLost.toFixed(1)} pts (Scope): Description under 40 words or lacks detailed acceptance criteria`);
+  }
+
+  // 3. Work & Comment Match Deductions
+  if (normWork < 10.0 && !params.isMissingDescription) {
+    const commentLost = Number((10.0 - normWork).toFixed(1));
+    let reason = '';
+    if (params.workMatchResult?.alignmentLabel === 'NO_COMMENTS' || normWork === 0) {
+      reason = 'No progress comments logged in Zoho Projects';
+    } else if (params.isVerbatimMirror || params.workMatchResult?.isVerbatimMirror || params.workMatchResult?.alignmentLabel === 'VERBATIM_COPY_PASTE') {
+      reason = 'Comment copy-pastes task description without explaining actual implementation steps';
+    } else if (params.isChecklistComment || params.workMatchResult?.isChecklistComment) {
+      reason = 'Comments primarily mirror checklist status marks without technical code/test depth';
+    } else if (params.isPartialDelivery || params.workMatchResult?.isPartialDelivery || params.hasPendingScope) {
+      reason = 'Key deliverables left pending or unverified on ticket';
+    } else if (params.workMatchResult?.alignmentLabel === 'OFF_TOPIC') {
+      reason = 'Comments do not topically align with assigned deliverables';
+    } else if (commentLost >= 0.5) {
+      reason = 'Comments lack comprehensive technical depth or implementation details';
+    }
+
+    if (reason) {
+      pointDeductions.push({ category: 'Work & Comment Match', pointsLost: commentLost, reason });
+      deductions.push(`-${commentLost.toFixed(1)} pts (Comments): ${reason}`);
+    }
+  }
+
+  // 4. Repetition Deductions
+  if (params.isRepetitive) {
+    pointDeductions.push({
+      category: 'Repetition',
+      pointsLost: 3.0,
+      reason: `Repetitive task detected (${params.repetitionSimilarityPct || 80}% match with previous task)`,
+    });
+    deductions.push(`-3.0 pts (Repetition): Repetitive task detected (${params.repetitionSimilarityPct || 80}% similarity match)`);
+  }
+
+  return { deductions, pointDeductions };
+}
+
 export interface DynamicPerformanceSummary {
   performanceSummary: string;
   whereLacked: string;
@@ -863,6 +1010,7 @@ export interface DynamicPerformanceSummary {
  * based on user performance, description, comments, experience, and AI tools.
  */
 export function generateDynamicPerformanceSummary(params: {
+  taskName?: string;
   taskDescription: string;
   comments: string[];
   timeAssessmentLabel: string;
@@ -901,8 +1049,10 @@ export function generateDynamicPerformanceSummary(params: {
   const isBriefComment = commentWords.length > 0 && commentWords.length < 35;
 
   const checklistMarkers = [
-    /\b(done|not done|pending|completed)\b/i,
-    /-\s*(done|pending|not done)/i,
+    /\[\s*[x ]\s*\]/i,
+    /[-\u2013\u2014:]\s*(?:done|pending|not done|completed)\b/i,
+    /\b(?:is\s+done|are\s+done|is\s+pending|are\s+pending|status:\s*(?:done|pending|completed))\b/i,
+    /(?:^|\n)\s*[-*•\d.]+\s*.*?\b(?:done|pending|not done)\s*$/im,
   ];
   const hasChecklistMarkers = checklistMarkers.some(re => re.test(combinedComments));
 
@@ -926,7 +1076,10 @@ export function generateDynamicPerformanceSummary(params: {
     'did', 'note', '1hr', 'task', 'itself', 'as', 'there', 'some'
   ]);
   const technicalExplanationWords = nonDescWords.filter(w => !statusStopWords.has(w.toLowerCase().replace(/[^a-z0-9]/g, '')));
-  const isChecklistComment = hasComments && ((hasChecklistMarkers && technicalExplanationWords.length < 18) || (totalStamps >= 2 && technicalExplanationWords.length < 25));
+  const isVerbatimMirror =
+    (commentWords.length >= 15 && nonDescWords.length < 5) ||
+    (descWords.length >= 20 && commentWords.length >= 20 && technicalExplanationWords.length < 5);
+  const isChecklistComment = !isVerbatimMirror && hasComments && ((hasChecklistMarkers && technicalExplanationWords.length < 18) || (totalStamps >= 2 && technicalExplanationWords.length < 25));
 
   // Detect task category and testing/validation mentions
   const testingMentionRegex = /\b(tested|testing|test(?:s|ed)?\s+(?:on|in|with|via)|verified|verification|smoke test(?:ed)?|checked on (?:staging|local|server|live)|restored and verified|qa tested|validation|tested properly)\b/i;
@@ -938,43 +1091,46 @@ export function generateDynamicPerformanceSummary(params: {
 
   // 1. Performance Summary
   const lines: string[] = [];
-  if (hasPendingScope && params.workMatchScore < 7.0) {
+  if (isVerbatimMirror) {
+    lines.push('Progress comments verbatim copy-paste the task description without explaining actual implementation steps or technical progress.');
+    lines.push('Simply mirroring the assigned scope provides no audit trail of what code was modified, configured, or tested.');
+    lines.push(`For a ${params.seniorityLevel || 'developer'}, progress updates must substantiate real implementation work completed rather than echoing requirements.`);
+  } else if (hasPendingScope && params.workMatchScore < 7.0 && !hasDocumentedBlockers) {
     lines.push(`Task was recorded with deliverables left pending or unverified at the end of the planned duration.`);
     lines.push(`While partial progress was noted, closing extended duration tasks with pending deliverables or unresolved testing does not meet engineering completion standards.`);
     lines.push(`For a ${params.seniorityLevel || 'developer'}, tasks should either be completed and verified within the allocated time or roadblocks escalated proactively.`);
   } else if (isInfraOrDevOps && technicalExplanationWords.length >= 18 && !hasPendingScope && params.workMatchScore >= 6.0) {
-    lines.push(`Infrastructure upgrade activities were successfully executed with detailed system and configuration updates.`);
-    lines.push(`The technical commentary directly substantiates the operational steps, environment versions, and service verification required for a ${params.seniorityLevel || 'developer'} with ${params.userExperienceYears || 2}+ years of experience.`);
+    lines.push(`Work was done well with clear setup and system updates.`);
+    lines.push(`The comments explain the work steps and testing done clearly for a ${params.seniorityLevel || 'developer'} with ${params.userExperienceYears || 2}+ years of experience.`);
     if (aiTools) {
-      lines.push(`Active AI tooling (${aiTools}) was effectively leveraged to streamline execution.`);
+      lines.push(`AI tool (${aiTools}) was used well to help finish faster.`);
     } else {
-      lines.push(`Delivery met operational benchmarks with thorough technical updates and scope alignment.`);
+      lines.push(`Delivery met quality standards with clear updates.`);
     }
   } else if (params.workMatchScore >= 8.5) {
-    lines.push(`Task implementation was successfully executed with clear, substantive progress updates validating the completed scope.`);
-    lines.push(`The technical commentary directly corroborates the development effort required for a ${params.seniorityLevel || 'developer'} with ${params.userExperienceYears || 2}+ years of experience.`);
+    lines.push(`Work was completed well with clear progress updates.`);
+    lines.push(`The comments clearly explain the code and steps taken for a ${params.seniorityLevel || 'developer'} with ${params.userExperienceYears || 2}+ years of experience.`);
     if (aiTools) {
-      lines.push(`Active AI tooling (${aiTools}) was effectively leveraged to streamline implementation and maintain engineering velocity.`);
+      lines.push(`AI tool (${aiTools}) was used well to help finish faster.`);
     } else {
-      lines.push(`Delivery met core quality benchmarks with proper task discipline and scope alignment.`);
+      lines.push(`Delivery met quality standards with clear updates.`);
     }
   } else if (params.workMatchScore >= 6.0) {
-    lines.push(`The feature scope was functionally delivered, but logged comments provide only partial technical context on implementation details.`);
-    lines.push(`Given ${params.userExperienceYears || 2}+ years of engineering experience, deeper documentation on implementation details and architectural context is expected.`);
-    lines.push(`Ensure future task updates clearly delineate the modules modified and verification steps performed before closing.`);
+    lines.push(`The task was delivered, but comments only give a brief update.`);
+    lines.push(`Given ${params.userExperienceYears || 2}+ years of experience, please add a few more details on what was changed and tested before closing.`);
   } else if (hasComments) {
-    lines.push(`Task activity was recorded, but the task description and progress comments provide only high-level status statements without substantive implementation depth.`);
-    lines.push(`Without granular technical context or architectural details, there is insufficient evidence to substantiate the development effort against the assigned scope.`);
-    lines.push(`For a ${params.seniorityLevel || 'developer'}, providing clear technical progress updates and verification notes is essential for accountability.`);
+    lines.push(`Task activity was recorded, but comments only give brief status notes without enough detail.`);
+    lines.push(`Please write what code or steps were worked on so team members can understand the work done.`);
+    lines.push(`For a ${params.seniorityLevel || 'developer'}, writing clear progress notes is important.`);
   } else {
-    lines.push(`The task was closed and logged without any progress comments in Zoho Projects to substantiate the work completed.`);
-    lines.push(`Without technical verification notes, there is no audit trail to justify the time spent against the assigned description.`);
-    lines.push(`For a ${params.seniorityLevel || 'developer'}, logging substantive progress updates and verification notes is essential for accountability.`);
+    lines.push(`The task was closed without any progress comments in Zoho Projects to explain the work completed.`);
+    lines.push(`Without comments, there is no record of what was done during the logged time.`);
+    lines.push(`For a ${params.seniorityLevel || 'developer'}, logging progress notes and verification is important.`);
   }
 
   // Positive recognition when testing or verification is explicitly documented
   if (hasTestingMentioned) {
-    lines.push(`Task execution substantiated with verified testing and validation notes.`);
+    lines.push(`Testing was checked and verified.`);
   }
 
   const verifiedPr = (params.prEvidence || []).find((p) => p.verificationStatus === 'VERIFIED');
@@ -988,10 +1144,14 @@ export function generateDynamicPerformanceSummary(params: {
   let whereLacked = '';
   if (!params.taskDescription || params.taskDescription.trim().length === 0) {
     whereLacked = 'Task description was completely missing in Zoho Projects, preventing verification of work completed against any defined scope or acceptance criteria.';
+  } else if (isVerbatimMirror) {
+    whereLacked = 'Progress comment simply copy-pasted the task description without documenting actual implementation progress or code changes.';
   } else if (params.timeAssessmentLabel === 'NOT_LOGGED') {
     whereLacked = 'No actual hours were logged in Zoho Projects for this task.';
   } else if (!hasComments) {
     whereLacked = 'Lacked progress comments or technical verification notes in Zoho to confirm completion of the task description.';
+  } else if (hasPendingScope && hasDocumentedBlockers) {
+    whereLacked = 'Certain deliverables remained pending due to documented external blockers or dependencies.';
   } else if (hasPendingScope) {
     whereLacked = 'Key deliverables were left in a pending or unverified state (e.g. testing pending, uncompleted sections) at the end of the planned duration without proactive blocker escalation.';
   } else if (isChecklistComment) {
@@ -1018,6 +1178,10 @@ export function generateDynamicPerformanceSummary(params: {
   let whereToImprove = '';
   if (!params.taskDescription || params.taskDescription.trim().length === 0) {
     whereToImprove = 'Always provide clear task descriptions with defined acceptance criteria in Zoho Projects before tracking hours and logging progress.';
+  } else if (isVerbatimMirror) {
+    whereToImprove = 'Document actual implementation steps, code changes, and test verification outcomes rather than copy-pasting the task description.';
+  } else if (hasPendingScope && hasDocumentedBlockers) {
+    whereToImprove = 'Follow up with external dependency owners or project leads to unblock remaining deliverables.';
   } else if (hasPendingScope) {
     whereToImprove = 'Complete and test all assigned deliverables within the allocated timeframe, or proactively escalate blockers to project leads during the shift.';
   } else if (isChecklistComment || (params.workMatchScore < 7.0 && isBriefDescription && isBriefComment)) {
@@ -1042,7 +1206,7 @@ export function generateDynamicPerformanceSummary(params: {
   // 1. Status Gate Deduction (-1.0 pt from overall score)
   if (params.isQAReview === false) {
     improvementItems.push(
-      'Status Not Moved to In QA Review: Move completed task to "In QA Review" with testing notes to keep status up to date.'
+      'Status Not Moved to In QA Review (-1.0 pt): Move completed task to "In QA Review" with testing notes to keep status up to date.'
     );
   }
 
@@ -1059,65 +1223,75 @@ export function generateDynamicPerformanceSummary(params: {
 
   if (isMissingDescription) {
     improvementItems.push(
-      `Missing Task Description: Task description is completely missing in Zoho Projects. Score was set to ${missingCap.toFixed(1)}/10. Add clear requirements (40–50 words).`
+      `Missing Task Description (-10.0 pts): Task description is completely missing in Zoho Projects. Score was set to 0.0/10. Add clear requirements before logging hours.`
     );
   } else if (isBriefDescription) {
     improvementItems.push(
-      `Define Comprehensive Task Scope: Task description was overly brief (${descWords.length} words); ${descPenalty.toFixed(1)} points was deducted from the score. Add clear specifications (40–50 words).`
+      `Define Comprehensive Task Scope (-${descPenalty.toFixed(1)} pts): Task description was overly brief (${descWords.length} words); ${descPenalty.toFixed(1)} points was deducted from the score. Add clear specifications (40–50 words).`
     );
   }
 
-  // 3. Task Complexity & Velocity Calibration (overall complexity weight)
-  // Only suggest if complexity is low AND comments are brief/unexplained or overdue
+  // 3. Verbatim Mirror Deduction (-7.0 pts)
+  if (isVerbatimMirror) {
+    improvementItems.push(
+      'Document Implementation Progress (-7.0 pts): Progress comment verbatim copy-pastes the task description. Detail actual code changes and verification steps.'
+    );
+  }
+
+  // 4. Task Complexity & Velocity Calibration (overall complexity weight)
   if (params.complexityScore !== undefined && params.complexityScore < 8.0 && (commentWords.length < 25 || params.timeAssessmentLabel === 'OVERDUE')) {
     improvementItems.push(
       'Task Complexity & Velocity Calibration: Complete routine tasks faster or add deeper implementation details.'
     );
   }
 
-  // 4. Repetitive Scope Deduction (overall originality weight)
+  // 5. Repetitive Scope Deduction (overall originality weight)
   if (params.isRepetitive || (params.repetitionScore !== undefined && params.repetitionScore < 10.0)) {
     improvementItems.push(
-      'Avoid Repetitive Scope: High repetition (>60%) detected. Build reusable components instead of duplicating tasks.'
+      'Avoid Repetitive Scope (-3.0 pts): High repetition (>60%) detected. Build reusable components instead of duplicating tasks.'
     );
   }
 
   // --- CONTEXTUAL WORK & TIME IMPROVEMENT GUIDANCE (Clean & User-Friendly) ---
 
   if (hasPendingScope && hasDocumentedBlockers) {
-    improvementItems.push('Coordinate Dependent Blockers: Follow up with owners of blocking dependencies to verify integration early.');
+    improvementItems.push('Coordinate Dependent Blockers (-1.5 pts): Remaining items are pending on external blockers (e.g. client key/staging). Follow up with dependency owners to unblock integration.');
   } else if (hasPendingScope) {
-    improvementItems.push('Resolve Pending Deliverables & Escalate Blockers: Complete all items or escalate blockers before closing tasks.');
+    improvementItems.push('Resolve Pending Deliverables (-4.5 pts): Complete all items or escalate blockers before closing tasks.');
   }
 
-  if (hasMeetingLogged) {
-    improvementItems.push('Separate Meeting Logs from Development Tasks: Record meeting hours under administrative tasks, not dev tickets.');
+  // Meeting logs: If the task itself is a meeting, do not complain if agenda/discussion is explained.
+  // If meeting hours were logged inside a technical feature ticket, advise separating administrative meetings.
+  const isMeetingTask = /\b(meeting|discussion|standup|scrum|call|sync|interview|catchup|demo)\b/i.test(`${cleanTaskDesc} ${params.taskName || ''}`);
+  const hasExplainedMeetingAgenda = /\b(discussed|agenda|minutes|decided|agreed|reviewed|sync(?:ed)?|covered|action\s+items?|points?|notes?)\b/i.test(combinedComments);
+  if (isMeetingTask) {
+    if (!hasExplainedMeetingAgenda) {
+      improvementItems.push('Document Meeting Outcomes: Briefly summarize discussion points or action items agreed upon during the meeting to justify logged hours.');
+    }
+  } else if (hasMeetingLogged) {
+    improvementItems.push('Separate Meeting Logs: Record meeting hours under dedicated administrative/meeting tasks rather than inside technical feature tickets.');
   }
 
-  if (isChecklistComment) {
-    improvementItems.push('Explain Work Done Beyond Status Updates: Detail implementation steps and verification results (aim for 40–50 words) rather than just status marks like "done".');
+  if (isChecklistComment && !isVerbatimMirror) {
+    improvementItems.push('Explain Work Done Beyond Status Updates (-4.8 pts): Detail implementation steps and verification results (aim for 40–50 words) rather than just status marks like "done".');
   }
 
-  if (isBriefComment && !isChecklistComment && params.workMatchScore < 7.0) {
+  if (isBriefComment && !isChecklistComment && !isVerbatimMirror && params.workMatchScore < 7.0) {
     improvementItems.push('Substantiate Execution in Comments: Detail implementation steps and verification results (target 40–50 words).');
-  } else if (!isChecklistComment && !isBriefDescription && descWords.length >= 35 && commentWords.length <= 24) {
-    improvementItems.push('Substantiate Complete Scope in Comments: Detail how key specifications were implemented and verified (aim for 40–50 words).');
   }
 
   if (params.timeAssessmentLabel === 'NOT_LOGGED') {
-    improvementItems.push('Log Task Hours in Zoho: Record billable/non-billable hours in Zoho timelogs daily.');
+    improvementItems.push('Log Task Hours in Zoho (-10.0 pts): Record actual hours in Zoho timelogs daily.');
+  } else if (params.timeAssessmentLabel === 'OVERDUE') {
+    const timeLost = Number(Math.max(0.5, 10.0 - (params.timeScore ?? 7.0)).toFixed(1));
+    improvementItems.push(`Time Limit (-${timeLost} pts): Took longer than planned. Try to finish on time or note delays early in comments.`);
+  } else if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
+    const earlyLost = Number(Math.max(0.5, 10.0 - (params.timeScore ?? 8.0)).toFixed(1));
+    improvementItems.push(`Early Completion (-${earlyLost} pts): Task finished early (>15m gap). Try to estimate time closer to actual work or add more testing.`);
   }
 
   if (!hasComments) {
-    improvementItems.push('Log Technical Progress Comments: Post a concise comment in Zoho detailing files changed and verification steps.');
-  }
-
-  if (params.timeAssessmentLabel === 'OVERDUE') {
-    improvementItems.push('Time Limit & Adherence: Finish within planned time limit or flag roadblocks early in comments.');
-  }
-
-  if (params.timeAssessmentLabel === 'UNEXPECTED_EARLY') {
-    improvementItems.push('Calibrate Estimation: Align planned hours with scope or expand verification coverage.');
+    improvementItems.push('Log Technical Progress Comments (-10.0 pts): Post a short comment in Zoho detailing files changed and testing done.');
   }
 
   // ONLY suggest leveraging AI subscriptions if genuinely overdue or delayed

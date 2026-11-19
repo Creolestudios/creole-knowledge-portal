@@ -70,16 +70,15 @@ describe('Daily Digest Email Generator', () => {
     expect(result.html).not.toContain('Hours Logged');
     expect(result.html).toContain('alice@creolestudios.com');
     expect(result.html).toContain('bob@creolestudios.com');
-    expect(result.html).toContain('User Email');
-    expect(result.html).toContain('Total Tasks');
-    expect(result.html).toContain('Task Status');
-    expect(result.html).toContain('Logged Hours');
-    expect(result.html).toContain('Total Score');
+    expect(result.html).toContain('User Info');
+    expect(result.html).toContain('Tasks (');
+    expect(result.html).toContain('Logged:');
+    expect(result.html).toContain('Overall Score');
     expect(result.html).toContain('Evaluation Summary');
     expect(result.html).not.toContain('Excellent');
     expect(result.html).toContain('9.2/10');
     expect(result.html).toContain('7.6/10');
-    expect(result.html).toContain('Delivered all 2 tasks with strong code quality');
+    expect(result.html).toContain('Maintained perfect time adherence');
     expect(result.html).toContain('/admin/dashboard?tab=zoho');
 
     expect(result.text).toContain('alice@creolestudios.com');
@@ -103,19 +102,22 @@ describe('Daily Digest Email Generator', () => {
     expect(result.html).toContain('No employee activity recorded or evaluated');
   });
 
-  it('formats evaluation summary as 3-4 bullet pointers in HTML and plain text', () => {
+  it('formats evaluation summary as deduction-focused pointers in HTML and plain text without Done, Pending, or Action', () => {
     const result = generateDailyDigestEmail(samplePayload);
 
-    // Verify HTML renders structured bullet list
-    expect(result.html).toContain('<strong>Done:</strong>');
-    expect(result.html).toContain('<strong>Pending:</strong>');
-    expect(result.html).toContain('<strong>Why this score (9.2/10):</strong>');
-    expect(result.html).toContain('<strong>Action:</strong>');
+    // Verify HTML renders deduction reasons and NOT Done/Pending/Action
+    expect(result.html).toContain('Why this score (9.2/10):');
+    expect(result.html).toContain('Why this score (7.6/10):');
+    expect(result.html).not.toContain('<strong>Done:</strong>');
+    expect(result.html).not.toContain('<strong>Pending:</strong>');
+    expect(result.html).not.toContain('<strong>Action:</strong>');
 
-    // Verify Plain text renders bullet points
-    expect(result.text).toContain('• Done:');
-    expect(result.text).toContain('• Pending:');
-    expect(result.text).toContain('• Why this score (9.2/10):');
+    // Verify Plain text renders
+    expect(result.text).toContain('Why this score (9.2/10):');
+    expect(result.text).toContain('Why this score (7.6/10):');
+    expect(result.text).not.toContain('• Done:');
+    expect(result.text).not.toContain('• Pending:');
+    expect(result.text).not.toContain('• Action:');
   });
 
   it('respects custom summaryPointers passed on DailyDigestUserRow', () => {
@@ -153,7 +155,7 @@ describe('Daily Digest Email Generator', () => {
     expect(result.text).toContain('• Pending: Awaiting QA verification before closing tickets.');
   });
 
-  it('buildEvaluationSummaryPointers generates 3-4 clear pointers for various employee states', () => {
+  it('buildEvaluationSummaryPointers generates clear deduction-focused reasons without Done, Pending, or Action', () => {
     // Overdue/delayed case
     const delayedPointers = buildEvaluationSummaryPointers({
       userName: 'Delayed Dev',
@@ -168,12 +170,12 @@ describe('Daily Digest Email Generator', () => {
       reason: 'Daily evaluation completed.', // generic
     });
 
-    expect(delayedPointers.length).toBeGreaterThanOrEqual(3);
-    expect(delayedPointers.length).toBeLessThanOrEqual(4);
-    expect(delayedPointers[0]).toContain('Done:');
-    expect(delayedPointers[1]).toContain('Pending: 1 task(s) delayed/overdue');
-    expect(delayedPointers[2]).toContain('Why this score (5.5/10):');
-    expect(delayedPointers[3]).toContain('Action:');
+    expect(delayedPointers.length).toBeGreaterThanOrEqual(2);
+    expect(delayedPointers[0]).toBe('Why this score (5.5/10):');
+    expect(delayedPointers[1]).toBe('1 task(s) took more time than planned.');
+    expect(delayedPointers.some((p) => p.startsWith('Done:'))).toBe(false);
+    expect(delayedPointers.some((p) => p.startsWith('Pending:'))).toBe(false);
+    expect(delayedPointers.some((p) => p.startsWith('Action:'))).toBe(false);
 
     // Missing timelog case
     const zeroHoursPointers = buildEvaluationSummaryPointers({
@@ -189,10 +191,37 @@ describe('Daily Digest Email Generator', () => {
       reason: 'No hours recorded.',
     });
 
-    expect(zeroHoursPointers[0]).toBe('Done: 0 tasks completed; no timelog recorded today.');
-    expect(zeroHoursPointers[1]).toContain('Pending: Incomplete timelog entries');
-    expect(zeroHoursPointers[2]).toContain('Why this score (2.0/10):');
-    expect(zeroHoursPointers[3]).toContain('Action: Ensure daily hours');
+    expect(zeroHoursPointers[0]).toBe('Why this score (2.0/10):');
+    expect(zeroHoursPointers[1]).toBe('No hours logged in Zoho Projects for assigned tasks.');
+    expect(zeroHoursPointers.some((p) => p.startsWith('Done:'))).toBe(false);
+    expect(zeroHoursPointers.some((p) => p.startsWith('Pending:'))).toBe(false);
+    expect(zeroHoursPointers.some((p) => p.startsWith('Action:'))).toBe(false);
+
+    // Missing progress comments deduction case (all deduction points listed under Why this score)
+    const missingCommentsPointers = buildEvaluationSummaryPointers({
+      userName: 'Bharat Raj',
+      userEmail: 'bharat.raj@creolestudios.com',
+      totalTasks: 2,
+      doneTasks: 0,
+      delayedTasks: 0,
+      qaTasks: 0,
+      totalPlannedHours: 8.0,
+      totalActualHours: 7.9,
+      dailyScore: 4.3,
+      reason: 'Completed 0/2 task(s) on 2026-11-19. Logged 7.9h vs 8h planned.',
+      importantNotes: [
+        'Log Progress Comments (-10.0 pts): Always log progress comments in Zoho Projects describing the implementation steps and test status.',
+      ],
+    });
+
+    expect(missingCommentsPointers.length).toBe(3);
+    expect(missingCommentsPointers[0]).toBe('Why this score (4.3/10):');
+    expect(missingCommentsPointers[1]).toBe('No progress comments added explaining what was done and tested.');
+    expect(missingCommentsPointers[2]).toBe('Tasks were left in In Progress without moving to In QA Review.');
+    expect(missingCommentsPointers[1]).not.toContain(' or ');
+    expect(missingCommentsPointers.some((p) => p.startsWith('Done:'))).toBe(false);
+    expect(missingCommentsPointers.some((p) => p.startsWith('Pending:'))).toBe(false);
+    expect(missingCommentsPointers.some((p) => p.startsWith('Action:'))).toBe(false);
   });
 });
 

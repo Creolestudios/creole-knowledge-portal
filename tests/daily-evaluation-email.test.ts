@@ -36,6 +36,7 @@ describe('Daily Evaluation Email Generator', () => {
         status: 'Closed',
         timeAssessmentLabel: 'ON_TIME',
         score: 92,
+        workMatchScore: 92,
         feedback: 'Accurate logging and comprehensive details',
       },
       {
@@ -60,14 +61,15 @@ describe('Daily Evaluation Email Generator', () => {
     expect(result.html).toContain('8.8');
     expect(result.html).toContain('Implement Resend Email Service');
     expect(result.html).toContain('QA Review for Task Modal');
-    expect(result.html).toContain('High comment quality');
+    expect(result.html).not.toContain('Key Accomplishments');
     expect(result.html).toContain('Log time earlier in the afternoon');
-    expect(result.html).toContain('/dashboard/zoho-evaluation');
+    expect(result.html).toContain('/dashboard/zoho-evaluation?view=evaluation');
     expect(result.html).not.toContain('Performance Evaluation Summary');
 
     expect(result.text).toContain('Jane Developer');
     expect(result.text).toContain('Score: 8.8/10');
     expect(result.text).toContain('Implement Resend Email Service');
+    expect(result.text).not.toContain('Key Accomplishments:');
     expect(result.text).not.toContain('Performance Evaluation Summary:');
   });
 
@@ -82,8 +84,7 @@ describe('Daily Evaluation Email Generator', () => {
     const result = generateDailyEvaluationEmail(emptyPayload);
 
     expect(result.html).toContain('No tasks logged or evaluated for this date.');
-    expect(result.html).toContain('Consistent execution and delivery against assigned tasks.');
-    expect(result.html).toContain('Continue logging timely work progress and updates regularly.');
+    expect(result.html).not.toContain('Key Accomplishments');
   });
 
   it('renders task improvementItems as a structured bulleted list in HTML and plain text capped at 5 items', () => {
@@ -125,6 +126,41 @@ describe('Daily Evaluation Email Generator', () => {
     expect(result.text).toContain('Improvements:');
     expect(result.text).toContain('    - Status Not Moved to In QA Review: Move completed task to "In QA Review" with testing notes to keep status up to date.');
     expect(result.text).not.toContain('Excess 6th item');
+  });
+
+  it('renders metric terms with i icon tooltips in simple English matching evaluation card', () => {
+    const result = generateDailyEvaluationEmail(samplePayload);
+
+    expect(result.html).toContain('title="Time planned for task"');
+    expect(result.html).toContain('Time planned for task');
+    expect(result.html).toContain('Total logged in Zoho');
+    expect(result.html).toContain('Score for finishing on time within the allowed buffer.');
+    expect(result.html).toContain('Score for how clearly comments explain the work done.');
+  });
+
+  it('strips point deduction numbers (-X pts) from email improvements and notes', () => {
+    const payloadWithPoints = {
+      ...samplePayload,
+      improvements: [
+        'Add progress comments in Zoho Projects explaining what was done and tested (-5.0 pts work score).',
+        'Move tasks to In QA Review before closing the day (-1.0 pt status deduction).',
+      ],
+      tasks: [
+        {
+          ...samplePayload.tasks[0],
+          improvementItems: [
+            'Log Progress Comments (-10.0 pts): Add progress comments in Zoho Projects explaining what was done and tested.',
+          ],
+        },
+      ],
+    };
+    const result = generateDailyEvaluationEmail(payloadWithPoints);
+
+    expect(result.html).toContain('Add progress comments in Zoho Projects explaining what was done and tested.');
+    expect(result.html).toContain('Move tasks to In QA Review before closing the day.');
+    expect(result.html).not.toContain('-5.0 pts');
+    expect(result.html).not.toContain('-1.0 pt');
+    expect(result.html).not.toContain('-10.0 pts');
   });
 });
 
