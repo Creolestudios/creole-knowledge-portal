@@ -48,9 +48,12 @@ interface ZohoNextDayPlannerProps {
 }
 
 /**
- * Computes next working day in IST (skips weekends: Fri/Sat/Sun -> Monday)
+ * Computes target working day in IST:
+ * - On weekdays (Mon-Fri) BEFORE 8:30 AM: target is TODAY (e.g. on Friday morning before 8:30 AM, plan for Friday!).
+ * - On weekdays (Mon-Thu) AFTER 8:30 AM: target is TOMORROW (+1 day).
+ * - On Friday AFTER 8:30 AM and all weekend (Sat-Sun): target is MONDAY.
  */
-function getNextWorkingDayIST(): { dateStr: string; label: string; isMonday: boolean } {
+function getNextWorkingDayIST(): { dateStr: string; label: string; isMonday: boolean; isToday: boolean } {
   // Current time in IST
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
@@ -58,21 +61,35 @@ function getNextWorkingDayIST(): { dateStr: string; label: string; isMonday: boo
   const istNow = new Date(utc + istOffset);
 
   const dayOfWeek = istNow.getDay(); // 0: Sun, 1: Mon, ..., 5: Fri, 6: Sat
+  const hours = istNow.getHours();
+  const minutes = istNow.getMinutes();
+  const isBeforeCutoff = hours < 8 || (hours === 8 && minutes < 30);
+
   let daysToAdd = 1;
   let isMonday = false;
+  let isToday = false;
 
-  if (dayOfWeek === 5) {
-    // Friday -> next is Monday (+3 days)
+  if (dayOfWeek >= 1 && dayOfWeek <= 5 && isBeforeCutoff) {
+    // Weekday before 8:30 AM: planning for TODAY
+    daysToAdd = 0;
+    isToday = true;
+    isMonday = (dayOfWeek === 1);
+  } else if (dayOfWeek === 5) {
+    // Friday after 8:30 AM -> Monday (+3 days)
     daysToAdd = 3;
     isMonday = true;
   } else if (dayOfWeek === 6) {
-    // Saturday -> next is Monday (+2 days)
+    // Saturday -> Monday (+2 days)
     daysToAdd = 2;
     isMonday = true;
   } else if (dayOfWeek === 0) {
-    // Sunday -> next is Monday (+1 day)
+    // Sunday -> Monday (+1 day)
     daysToAdd = 1;
     isMonday = true;
+  } else {
+    // Mon-Thu after 8:30 AM -> Tomorrow (+1 day)
+    daysToAdd = 1;
+    isMonday = false;
   }
 
   const targetDate = new Date(istNow.getTime() + daysToAdd * 86400000);
@@ -89,13 +106,13 @@ function getNextWorkingDayIST(): { dateStr: string; label: string; isMonday: boo
   };
   const label = targetDate.toLocaleDateString('en-US', options);
 
-  return { dateStr, label, isMonday };
+  return { dateStr, label, isMonday, isToday };
 }
 
 /**
  * Checks if current time is past 8:30 AM IST (08:30)
  */
-function checkCutoffStatus(): { isLocked: boolean; timeRemainingText: string } {
+function checkCutoffStatus(targetDateStr?: string): { isLocked: boolean; timeRemainingText: string } {
   if (process.env.NODE_ENV === 'test') {
     return {
       isLocked: false,
@@ -110,18 +127,33 @@ function checkCutoffStatus(): { isLocked: boolean; timeRemainingText: string } {
 
   const hours = istNow.getHours();
   const minutes = istNow.getMinutes();
+  const todayStr = `${istNow.getFullYear()}-${String(istNow.getMonth() + 1).padStart(2, '0')}-${String(istNow.getDate()).padStart(2, '0')}`;
 
-  if (hours > 8 || (hours === 8 && minutes >= 30)) {
+  // If viewing/submitting for a previous day: locked
+  if (targetDateStr && targetDateStr < todayStr) {
+    return {
+      isLocked: true,
+      timeRemainingText: 'Cutoff Passed — Submissions Locked',
+    };
+  }
+
+  // If target date is today and past 8:30 AM: locked
+  if ((!targetDateStr || targetDateStr === todayStr) && (hours > 8 || (hours === 8 && minutes >= 30))) {
     return {
       isLocked: true,
       timeRemainingText: '8:30 AM Cutoff Passed — Submissions Locked',
     };
   }
 
+  // Calculate time remaining until 8:30 AM cutoff
   const targetCutoff = new Date(istNow);
   targetCutoff.setHours(8, 30, 0, 0);
-  const diffMs = targetCutoff.getTime() - istNow.getTime();
 
+  if (hours > 8 || (hours === 8 && minutes >= 30)) {
+    targetCutoff.setDate(targetCutoff.getDate() + 1);
+  }
+
+  const diffMs = targetCutoff.getTime() - istNow.getTime();
   const diffHours = Math.floor(diffMs / 3600000);
   const diffMins = Math.floor((diffMs % 3600000) / 60000);
 
@@ -658,7 +690,11 @@ export default function ZohoNextDayPlanner({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white">
-                  {nextWorkingDay.isMonday ? "Plan Monday's Tasks" : "Plan Tomorrow's Tasks"}
+                  {nextWorkingDay.isToday
+                    ? "Plan Today's Tasks"
+                    : nextWorkingDay.isMonday
+                    ? "Plan Monday's Tasks"
+                    : "Plan Tomorrow's Tasks"}
                 </h2>
                 <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-700 dark:text-teal-300">
                   {nextWorkingDay.label}

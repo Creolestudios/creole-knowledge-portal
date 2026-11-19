@@ -386,6 +386,7 @@ export async function syncQueuedPlannedTasks(
             const placeholderRes = await createZohoTask(token, portalId, projectId, {
               name: `Placeholder Task - ${weekPrefix}`,
               parent_id: mainTaskId,
+              unassigned: true,
             });
             if (placeholderRes.success && placeholderRes.taskId) {
               placeholderTaskId = placeholderRes.taskId;
@@ -413,6 +414,7 @@ export async function syncQueuedPlannedTasks(
               const userBucketRes = await createZohoTask(token, portalId, projectId, {
                 name: `${u.name} ${u.hours}`,
                 parent_id: mainTaskId, // Direct subtask of Level 1 parent, sibling to placeholder!
+                unassigned: true,
               });
               if (userBucketRes.success && userBucketRes.taskId) {
                 l1Subtasks.push({
@@ -461,6 +463,7 @@ export async function syncQueuedPlannedTasks(
         const bucketRes = await createZohoTask(token!, portalId, projectId, {
           name: bucketName,
           parent_id: mainTaskId,
+          unassigned: true,
         });
 
         if (bucketRes.success && bucketRes.taskId) {

@@ -723,6 +723,7 @@ export interface CreateZohoTaskPayload {
   end_date?: string;
   parent_id?: string; // Level 2 Subtask ID (User Bucket)
   status?: string; // e.g. "Backlog"
+  unassigned?: boolean; // When true, explicitly strips any default or inherited owner in Zoho Projects
 }
 
 /**
@@ -798,6 +799,25 @@ export async function createZohoTask(
         });
       } catch (updErr) {
         console.warn(`[ZohoClient] Work hours update warning for task ${taskId}:`, updErr);
+      }
+    }
+
+    // If explicitly unassigned, ensure person_responsible is stripped in Zoho Projects
+    if (taskId && payload.unassigned) {
+      try {
+        const unassignParams = new URLSearchParams();
+        unassignParams.set('person_responsible', '0');
+
+        await fetch(`${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${taskId}/`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Zoho-oauthtoken ${token}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: unassignParams.toString(),
+        });
+      } catch (unassignErr) {
+        console.warn(`[ZohoClient] Unassign warning for task ${taskId}:`, unassignErr);
       }
     }
 

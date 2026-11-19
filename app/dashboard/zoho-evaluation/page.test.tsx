@@ -136,8 +136,8 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
     expect(screen.getByRole('button', { name: /Add Tomorrow Task/i })).toBeDefined();
     expect(screen.getByRole('button', { name: /See Evaluation/i })).toBeDefined();
 
-    // Default tab is Add Tomorrow Task (showing Plan Tomorrow's or Monday's Tasks depending on day)
-    expect(screen.getByText(/Plan (Tomorrow's|Monday's) Tasks/i)).toBeDefined();
+    // Default tab is Add Tomorrow Task (showing Plan Today's, Tomorrow's or Monday's Tasks depending on time/day)
+    expect(screen.getByText(/Plan (Today's|Tomorrow's|Monday's) Tasks/i)).toBeDefined();
 
     // Switch to See Evaluation tab
     fireEvent.click(screen.getByRole('button', { name: /See Evaluation/i }));
@@ -226,11 +226,11 @@ describe('MyZohoEvaluationPage (User Portal Screen)', () => {
     await waitFor(() => {
       expect(screen.getByText('Jayesh Patel')).toBeDefined();
     });
-    expect(screen.queryByText(/Plan (Tomorrow's|Monday's) Tasks/i)).toBeNull();
+    expect(screen.queryByText(/Plan (Today's|Tomorrow's|Monday's) Tasks/i)).toBeNull();
 
     // Switching back to planner persists to localStorage
     fireEvent.click(screen.getByRole('button', { name: /Add Tomorrow Task/i }));
     expect(localStorage.getItem('ckp_zoho_active_view')).toBe('planner');
-    expect(screen.getByText(/Plan (Tomorrow's|Monday's) Tasks/i)).toBeDefined();
+    expect(screen.getByText(/Plan (Today's|Tomorrow's|Monday's) Tasks/i)).toBeDefined();
   });
 });
