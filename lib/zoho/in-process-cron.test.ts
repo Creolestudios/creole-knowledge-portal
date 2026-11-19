@@ -40,13 +40,13 @@ describe('In-Process Zoho Cron Scheduler (Internal Node.js Engine)', () => {
     expect(ist.dateStr).toBe('2026-11-18');
   });
 
-  it('triggers 10:00 PM IST daily evaluation on weekdays (Monday - Friday)', async () => {
+  it('triggers 8:30 AM IST daily evaluation on weekdays (Monday - Friday)', async () => {
     const { runDailyZohoEvaluationCron } = await import('./cron');
 
-    // Wednesday (dayOfWeek 3) at 22:02 IST
+    // Wednesday (dayOfWeek 3) at 08:32 IST -> evaluates previous workday Tuesday (2026-11-17)
     const wednesdayIST = {
-      hours: 22,
-      minutes: 2,
+      hours: 8,
+      minutes: 32,
       dayOfWeek: 3,
       dateStr: '2026-11-18',
     };
@@ -54,8 +54,9 @@ describe('In-Process Zoho Cron Scheduler (Internal Node.js Engine)', () => {
     const res = await checkAndExecuteSchedules(wednesdayIST);
     expect(res.ranEvaluation).toBe(true);
     expect(runDailyZohoEvaluationCron).toHaveBeenCalledWith({
-      targetDate: '2026-11-18',
+      targetDate: '2026-11-17',
       dryRun: false,
+      skipNextDaySync: true,
     });
   });
 
@@ -63,8 +64,8 @@ describe('In-Process Zoho Cron Scheduler (Internal Node.js Engine)', () => {
     const { runDailyZohoEvaluationCron } = await import('./cron');
 
     const wednesdayIST = {
-      hours: 22,
-      minutes: 2,
+      hours: 8,
+      minutes: 32,
       dayOfWeek: 3,
       dateStr: '2026-11-18',
     };
@@ -73,19 +74,55 @@ describe('In-Process Zoho Cron Scheduler (Internal Node.js Engine)', () => {
     await checkAndExecuteSchedules(wednesdayIST);
     expect(runDailyZohoEvaluationCron).toHaveBeenCalledTimes(1);
 
-    // Second trigger 30s later (at 22:02:30)
+    // Second trigger 30s later (at 08:32:30)
     const secondCall = await checkAndExecuteSchedules(wednesdayIST);
     expect(secondCall.ranEvaluation).toBe(false);
     expect(runDailyZohoEvaluationCron).toHaveBeenCalledTimes(1);
   });
 
-  it('triggers 9:00 AM IST task dispatch on Mondays', async () => {
+  it('triggers Friday night evaluation at 10:00 PM IST (22:00) for Friday tasks', async () => {
+    const { runDailyZohoEvaluationCron } = await import('./cron');
+
+    // Friday (dayOfWeek 5) at 22:01 IST
+    const fridayNightIST = {
+      hours: 22,
+      minutes: 1,
+      dayOfWeek: 5,
+      dateStr: '2026-11-20',
+    };
+
+    const res = await checkAndExecuteSchedules(fridayNightIST);
+    expect(res.ranEvaluation).toBe(true);
+    expect(runDailyZohoEvaluationCron).toHaveBeenCalledWith({
+      targetDate: '2026-11-20',
+      dryRun: false,
+      skipNextDaySync: true,
+    });
+  });
+
+  it('does NOT trigger morning evaluation on Monday at 8:30 AM (Friday was already evaluated on Friday night)', async () => {
+    const { runDailyZohoEvaluationCron } = await import('./cron');
+
+    // Monday (dayOfWeek 1) at 08:32 IST
+    const mondayMorningIST = {
+      hours: 8,
+      minutes: 32,
+      dayOfWeek: 1,
+      dateStr: '2026-11-23',
+    };
+
+    const res = await checkAndExecuteSchedules(mondayMorningIST);
+    expect(res.ranEvaluation).toBe(false);
+    expect(runDailyZohoEvaluationCron).not.toHaveBeenCalled();
+  });
+
+  it('triggers 8:45 AM IST task dispatch on weekdays', async () => {
     const { syncQueuedPlannedTasks } = await import('./planned-task-sync');
 
-    // Monday (dayOfWeek 1) at 09:01 IST
+    // Monday (dayOfWeek 1) at 08:46 IST
     const mondayIST = {
-      hours: 9,
-      minutes: 1,
+      hours: 8,
+      minutes: 46,
       dayOfWeek: 1,
       dateStr: '2026-11-23',
     };
@@ -95,7 +132,7 @@ describe('In-Process Zoho Cron Scheduler (Internal Node.js Engine)', () => {
     expect(syncQueuedPlannedTasks).toHaveBeenCalledWith('2026-11-23', { dryRun: false });
   });
 
-  it('triggers task dispatch at 6:30 PM IST (testing schedule)', async () => {
+  it('does NOT trigger task dispatch at old testing times like 6:30 PM IST in production', async () => {
     const { syncQueuedPlannedTasks } = await import('./planned-task-sync');
 
     // Wednesday at 18:30 IST
@@ -107,8 +144,8 @@ describe('In-Process Zoho Cron Scheduler (Internal Node.js Engine)', () => {
     };
 
     const res = await checkAndExecuteSchedules(testIST);
-    expect(res.ranMondayDispatch).toBe(true);
-    expect(syncQueuedPlannedTasks).toHaveBeenCalledWith('2026-11-18', { dryRun: false });
+    expect(res.ranMondayDispatch).toBe(false);
+    expect(syncQueuedPlannedTasks).not.toHaveBeenCalled();
   });
 
   it('does NOT trigger when outside the scheduled time windows', async () => {

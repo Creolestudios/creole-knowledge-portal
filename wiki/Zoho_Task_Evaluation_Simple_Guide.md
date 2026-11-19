@@ -724,7 +724,7 @@ All the thresholds above are dynamically customizable by Admins via the **"Evalu
 
 ## ℹ️ Evaluation Metrics UI Tooltips & Email Quick Guide
 
-To ensure complete transparency and quick understanding for all developers and managers, every key metric in the Web UI has an **`(i)` info icon** with a short, simple explanation, mirrored in the daily 10:00 PM evaluation email:
+To ensure complete transparency and quick understanding for all developers and managers, every key metric in the Web UI has an **`(i)` info icon** with a short, simple explanation, mirrored in the daily 8:30 AM evaluation email:
 
 | Metric | UI Tooltip & Email Guide (Simple English) | Where It Appears |
 |---|---|---|

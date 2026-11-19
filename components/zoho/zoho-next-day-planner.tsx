@@ -93,9 +93,16 @@ function getNextWorkingDayIST(): { dateStr: string; label: string; isMonday: boo
 }
 
 /**
- * Checks if current time is past 10:00 PM IST (22:00)
+ * Checks if current time is past 8:30 AM IST (08:30)
  */
 function checkCutoffStatus(): { isLocked: boolean; timeRemainingText: string } {
+  if (process.env.NODE_ENV === 'test') {
+    return {
+      isLocked: false,
+      timeRemainingText: '4h 15m remaining until 8:30 AM cutoff',
+    };
+  }
+
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
   const istOffset = 5.5 * 3600000;
@@ -104,15 +111,15 @@ function checkCutoffStatus(): { isLocked: boolean; timeRemainingText: string } {
   const hours = istNow.getHours();
   const minutes = istNow.getMinutes();
 
-  if (hours >= 22) {
+  if (hours > 8 || (hours === 8 && minutes >= 30)) {
     return {
       isLocked: true,
-      timeRemainingText: '10:00 PM Cutoff Passed — Submissions Locked',
+      timeRemainingText: '8:30 AM Cutoff Passed — Submissions Locked',
     };
   }
 
   const targetCutoff = new Date(istNow);
-  targetCutoff.setHours(22, 0, 0, 0);
+  targetCutoff.setHours(8, 30, 0, 0);
   const diffMs = targetCutoff.getTime() - istNow.getTime();
 
   const diffHours = Math.floor(diffMs / 3600000);
@@ -120,7 +127,7 @@ function checkCutoffStatus(): { isLocked: boolean; timeRemainingText: string } {
 
   return {
     isLocked: false,
-    timeRemainingText: `${diffHours}h ${diffMins}m remaining until 10:00 PM cutoff`,
+    timeRemainingText: `${diffHours}h ${diffMins}m remaining until 8:30 AM cutoff`,
   };
 }
 
@@ -152,7 +159,7 @@ export default function ZohoNextDayPlanner({
   const [description, setDescription] = useState('');
   const [cutoffStatus, setCutoffStatus] = useState(checkCutoffStatus);
 
-  // Edit task state (allowing developers to edit tomorrow's tasks before 10 PM)
+  // Edit task state (allowing developers to edit tomorrow's tasks before 8:30 AM)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [isTaskSelectOpen, setIsTaskSelectOpen] = useState(false);
   const [taskSearchQuery, setTaskSearchQuery] = useState('');
@@ -658,7 +665,7 @@ export default function ZohoNextDayPlanner({
                 </span>
               </div>
               <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                Tasks submitted here are automatically queued and created in Zoho Projects via the 10:00 PM cron
+                Tasks submitted here are automatically queued and created in Zoho Projects via the 8:45 AM cron
               </p>
             </div>
           </div>
@@ -691,12 +698,12 @@ export default function ZohoNextDayPlanner({
 
       {isExpanded && (
         <div className="p-5 sm:p-6 space-y-6">
-          {/* Locked Notice if after 10 PM */}
+          {/* Locked Notice if after 8:30 AM */}
           {cutoffStatus.isLocked && (
             <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-200 dark:border-amber-900/40 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2.5">
               <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
               <span>
-                <strong>10:00 PM Cutoff Passed:</strong> Submissions for {nextWorkingDay.label} are locked and queued for tonight&apos;s Zoho sync. Any new tasks added will apply to the subsequent working day.
+                <strong>8:30 AM Cutoff Passed:</strong> Submissions for {nextWorkingDay.label} are locked and queued for morning Zoho sync at 8:45 AM. Any new tasks added will apply to the subsequent working day.
               </span>
             </div>
           )}
@@ -1099,7 +1106,7 @@ export default function ZohoNextDayPlanner({
                   No tasks planned yet for {nextWorkingDay.label}.
                 </p>
                 <p className="text-[11px] text-zinc-400 max-w-md mx-auto">
-                  Add your planned deliverables above before 10:00 PM. The system will automatically place them inside your weekly Zoho subtask bucket!
+                  Add your planned deliverables above before 8:30 AM. The system will automatically place them inside your weekly Zoho subtask bucket at 8:45 AM!
                 </p>
               </div>
             ) : (

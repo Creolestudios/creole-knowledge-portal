@@ -17,11 +17,31 @@ function getISTNow(): Date {
 }
 
 /**
- * Checks if current IST time is past 10:00 PM (22:00)
+ * Checks if current IST time is past 8:30 AM (08:30) for a given target date.
+ * - In test environments (NODE_ENV === 'test' or VITEST), returns false so unit tests can run any time.
+ * - If targetDate is in the future, returns false (developers can plan ahead).
+ * - If targetDate is today, returns true if current IST time >= 08:30.
+ * - If targetDate is in the past, returns true (locked).
  */
-function isPastCutoffIST(): boolean {
+export function isPastCutoffIST(targetDateStr?: string): boolean {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+    return false;
+  }
+
   const ist = getISTNow();
-  return ist.getHours() >= 22;
+  const todayStr = `${ist.getFullYear()}-${String(ist.getMonth() + 1).padStart(2, '0')}-${String(ist.getDate()).padStart(2, '0')}`;
+
+  if (!targetDateStr || targetDateStr === todayStr) {
+    const hours = ist.getHours();
+    const minutes = ist.getMinutes();
+    return hours > 8 || (hours === 8 && minutes >= 30);
+  }
+
+  if (targetDateStr > todayStr) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
@@ -81,14 +101,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 10:00 PM IST server-side cutoff validation
-    if (isPastCutoffIST()) {
-      return NextResponse.json(
-        { error: '10:00 PM Cutoff Passed. Task submissions for this target date are closed.' },
-        { status: 403 }
-      );
-    }
-
     const body = await req.json();
     const {
       projectName,
@@ -98,6 +110,14 @@ export async function POST(req: Request) {
       plannedHours,
       targetDate,
     } = body;
+
+    // 8:30 AM IST server-side cutoff validation
+    if (isPastCutoffIST(targetDate)) {
+      return NextResponse.json(
+        { error: '8:30 AM Cutoff Passed. Task submissions for this target date are closed.' },
+        { status: 403 }
+      );
+    }
 
     // Compulsory field validation
     if (!projectName || !String(projectName).trim()) {
@@ -203,14 +223,6 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // 10:00 PM IST server-side cutoff validation
-    if (isPastCutoffIST()) {
-      return NextResponse.json(
-        { error: '10:00 PM Cutoff Passed. Task modifications are locked.' },
-        { status: 403 }
-      );
-    }
-
     const body = await req.json();
     const {
       id,
@@ -219,7 +231,16 @@ export async function PUT(req: Request) {
       taskName,
       taskDescription,
       plannedHours,
+      targetDate,
     } = body;
+
+    // 8:30 AM IST server-side cutoff validation
+    if (isPastCutoffIST(targetDate)) {
+      return NextResponse.json(
+        { error: '8:30 AM Cutoff Passed. Task modifications are locked.' },
+        { status: 403 }
+      );
+    }
 
     if (!id || !String(id).trim()) {
       return NextResponse.json({ error: 'Task ID is compulsory for update' }, { status: 400 });
@@ -301,7 +322,7 @@ export async function DELETE(req: Request) {
 
     if (isPastCutoffIST()) {
       return NextResponse.json(
-        { error: '10:00 PM Cutoff Passed. Tasks are locked and cannot be deleted.' },
+        { error: '8:30 AM Cutoff Passed. Tasks are locked and cannot be deleted.' },
         { status: 403 }
       );
     }

@@ -3,10 +3,11 @@
  * Runs inside the Node.js standalone server on production (e.g. DigitalOcean Droplet / Docker / Any Server).
  *
  * Schedules:
- * 1. Daily Zoho Evaluation & Next-Day Task Creation:
- *    - Monday to Friday at 22:00 IST (10:00 PM IST)
- * 2. Weekly Monday Task Dispatch:
- *    - Monday at 09:00 IST (09:00 AM IST)
+ * 1. Daily Zoho Evaluation & Email Digest:
+ *    - Monday to Friday morning at 08:30 IST (08:30 AM IST)
+ *    - Friday night at 22:00 IST (10:00 PM IST onwards)
+ * 2. Daily Zoho Task Addition / Dispatch:
+ *    - Monday to Friday at 08:45 IST (08:45 AM IST)
  */
 
 import { runDailyZohoEvaluationCron } from './cron';
@@ -41,6 +42,33 @@ export function getISTDateParts(referenceDate = new Date()): ISTDateParts {
 }
 
 /**
+ * Computes the previous workday (Monday to Friday) date string in YYYY-MM-DD
+ * - If reference day is Monday, previous workday is Friday (-3 days)
+ * - If reference day is Sunday, previous workday is Friday (-2 days)
+ * - If reference day is Saturday, previous workday is Friday (-1 day)
+ * - If reference day is Tuesday through Friday, previous workday is yesterday (-1 day)
+ */
+export function getPreviousWorkdayDateStr(referenceDate = new Date()): string {
+  const parts = getISTDateParts(referenceDate);
+  const [y, m, d] = parts.dateStr.split('-').map(Number);
+  const dateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const dayOfWeek = dateObj.getUTCDay();
+
+  let daysToSubtract = 1;
+  if (dayOfWeek === 1) {
+    daysToSubtract = 3;
+  } else if (dayOfWeek === 0) {
+    daysToSubtract = 2;
+  }
+
+  const prevObj = new Date(dateObj.getTime() - daysToSubtract * 86400000);
+  const py = prevObj.getUTCFullYear();
+  const pm = String(prevObj.getUTCMonth() + 1).padStart(2, '0');
+  const pd = String(prevObj.getUTCDate()).padStart(2, '0');
+  return `${py}-${pm}-${pd}`;
+}
+
+/**
  * Checks schedule triggers and executes the appropriate cron job
  */
 export async function checkAndExecuteSchedules(
@@ -51,15 +79,24 @@ export async function checkAndExecuteSchedules(
   let ranEvaluation = false;
   let ranMondayDispatch = false;
 
-  // 1. Daily 10:00 PM IST (22:00) Cron: Mon - Fri (dayOfWeek 1 to 5)
-  // Window: 22:00 to 22:05 to ensure execution even if thread was momentarily busy
-  if (hours === 22 && minutes >= 0 && minutes <= 5 && dayOfWeek >= 1 && dayOfWeek <= 5) {
-    if (lastEvaluationRunDate !== dateStr) {
-      lastEvaluationRunDate = dateStr;
+  // 1. Morning Evaluation (Tue - Fri at 08:30 AM IST) & Friday Night Evaluation (Friday at 10:00 PM IST onwards)
+  // Monday morning evaluation is skipped because Friday work is explicitly evaluated on Friday at 10:00 PM IST.
+  const isMorningEvaluation = hours === 8 && minutes >= 30 && minutes <= 35 && dayOfWeek >= 2 && dayOfWeek <= 5;
+  const isFridayNightEvaluation = dayOfWeek === 5 && hours === 22 && minutes >= 0 && minutes <= 5;
+
+  if (isMorningEvaluation || isFridayNightEvaluation) {
+    const runKey = isFridayNightEvaluation ? `${dateStr}_friday_10pm` : dateStr;
+    if (lastEvaluationRunDate !== runKey) {
+      lastEvaluationRunDate = runKey;
       ranEvaluation = true;
-      console.log(`[InProcessCron] Triggering daily 10:00 PM IST Zoho Evaluation & Task Sync for ${dateStr}...`);
+      const evalType = isFridayNightEvaluation ? 'Friday 10:00 PM IST' : 'daily 08:30 AM IST';
+      // In the morning, evaluate the previous workday. On Friday night, evaluate today (Friday).
+      const evalTargetDate = isFridayNightEvaluation
+        ? dateStr
+        : getPreviousWorkdayDateStr(mockDateParts ? new Date(dateStr) : new Date());
+      console.log(`[InProcessCron] Triggering ${evalType} Zoho Evaluation for ${evalTargetDate}...`);
       try {
-        const res = await runDailyZohoEvaluationCron({ targetDate: dateStr, dryRun: false });
+        const res = await runDailyZohoEvaluationCron({ targetDate: evalTargetDate, dryRun: false, skipNextDaySync: true });
         console.log('[InProcessCron] Daily evaluation completed successfully:', res.success);
       } catch (err) {
         console.error('[InProcessCron] Daily evaluation failed:', err);
@@ -67,22 +104,20 @@ export async function checkAndExecuteSchedules(
     }
   }
 
-  // 2. Task Dispatch Cron:
-  // Real production schedule: Monday at 09:00 AM IST (09:00 to 09:05)
-  // Testing schedule: 6:30 PM IST (18:30 to 18:45)
-  const isMondayRealSchedule = hours === 9 && minutes >= 0 && minutes <= 5 && dayOfWeek === 1;
-  const isTestingSchedule = hours === 18 && minutes >= 30 && minutes <= 45;
+  // 2. Daily 8:45 AM IST Task Addition / Dispatch Cron:
+  // Production schedule: Monday to Friday at 08:45 AM IST (08:45 to 08:50)
+  const isMorningTaskAdditionSchedule = hours === 8 && minutes >= 45 && minutes <= 50 && dayOfWeek >= 1 && dayOfWeek <= 5;
 
-  if (isMondayRealSchedule || isTestingSchedule) {
+  if (isMorningTaskAdditionSchedule) {
     if (lastMondayRunDate !== dateStr) {
       lastMondayRunDate = dateStr;
       ranMondayDispatch = true;
-      console.log(`[InProcessCron] Triggering Task Dispatch for ${dateStr} (IST: ${hours}:${String(minutes).padStart(2, '0')})...`);
+      console.log(`[InProcessCron] Triggering Task Addition / Dispatch for ${dateStr} (IST: ${hours}:${String(minutes).padStart(2, '0')})...`);
       try {
         const res = await syncQueuedPlannedTasks(dateStr, { dryRun: false });
-        console.log('[InProcessCron] Task dispatch completed successfully. Synced:', res.syncedCount);
+        console.log('[InProcessCron] Task addition / dispatch completed successfully. Synced:', res.syncedCount);
       } catch (err) {
-        console.error('[InProcessCron] Task dispatch failed:', err);
+        console.error('[InProcessCron] Task addition / dispatch failed:', err);
       }
     }
   }
@@ -91,10 +126,14 @@ export async function checkAndExecuteSchedules(
 }
 
 /**
- * Starts the internal 30-second checking loop in Node.js
+ * Starts the internal 30-second checking loop in Node.js (Production only)
  */
 export function startInProcessCron(): void {
   if (isSchedulerRunning) return;
+  // Guard against starting in local development or unit test runs
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+    return;
+  }
   isSchedulerRunning = true;
 
   console.log('[InProcessCron] Internal background cron scheduler started (checks every 30s in IST).');

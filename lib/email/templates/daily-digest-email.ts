@@ -422,7 +422,7 @@ export function generateDailyDigestEmail(payload: DailyDigestEmailPayload): {
           <tr>
             <td style="background-color: #f8fafc; padding: 16px 20px; border-top: 1px solid #e2e8f0; text-align: center;">
               <p style="margin: 0; font-size: 11px; color: #64748b; line-height: 1.5;">
-                This consolidated team digest is delivered daily at 10:00 PM IST to authorized Administrators and Managers configured in the Creole Knowledge Portal.
+                This consolidated team digest is delivered daily at 8:30 AM IST to authorized Administrators and Managers configured in the Creole Knowledge Portal.
               </p>
               <p style="margin: 6px 0 0 0; font-size: 10px; color: #94a3b8;">
                 &copy; ${new Date().getFullYear()} Creole Studios &middot; Creole Knowledge Portal

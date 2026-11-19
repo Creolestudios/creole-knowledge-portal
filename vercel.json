@@ -1,16 +1,21 @@
 {
   "_real_schedule_notes": {
-    "task_addition_real_schedule": "30 3 * * 1 (Every Monday at 09:00 AM IST)",
-    "zoho_evaluation_real_schedule": "30 16 * * 1-5 (Mon-Fri at 10:00 PM IST)"
+    "task_addition_real_schedule": "15 3 * * 1-5 (Mon-Fri at 08:45 AM IST)",
+    "zoho_evaluation_morning_schedule": "0 3 * * 2-5 (Tue-Fri at 08:30 AM IST)",
+    "zoho_evaluation_friday_night_schedule": "30 16 * * 5 (Every Friday at 10:00 PM IST)"
   },
   "crons": [
     {
       "path": "/api/cron/monday-task-dispatch",
-      "schedule": "0 13 * * *"
+      "schedule": "15 3 * * 1-5"
     },
     {
       "path": "/api/cron/zoho-evaluation",
-      "schedule": "30 16 * * 1-5"
+      "schedule": "0 3 * * 2-5"
+    },
+    {
+      "path": "/api/cron/zoho-evaluation?trigger=friday_10pm",
+      "schedule": "30 16 * * 5"
     },
     {
       "path": "/api/cron/cleanup-recordings",

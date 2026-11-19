@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { runDailyZohoEvaluationCron } from '@/lib/zoho/cron';
 import { requireAdminUser } from '@/lib/supabase/admin';
+import { getISTDateParts, getPreviousWorkdayDateStr } from '@/lib/zoho/in-process-cron';
 
 export const runtime = 'nodejs';
 
@@ -25,8 +26,8 @@ async function isAuthorized(req: Request): Promise<boolean> {
 }
 
 /**
- * Handles the daily 10:00 PM IST Zoho Evaluation Cron Trigger (Mon-Fri)
- * Schedule: 10:00 PM IST (16:30 UTC -> "30 16 * * 1-5")
+ * Handles the daily 08:30 AM IST Zoho Evaluation Cron Trigger (Mon-Fri)
+ * Schedule: 08:30 AM IST (03:00 UTC -> "0 3 * * 1-5")
  *
  * GET /api/cron/zoho-evaluation
  * POST /api/cron/zoho-evaluation
@@ -47,15 +48,38 @@ async function handleCronExecution(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const dateParam = searchParams.get('date') || undefined;
+    const triggerParam = searchParams.get('trigger');
     const dryRunParam = searchParams.get('dryRun');
     const dryRun = dryRunParam === 'true' || dryRunParam === '1';
     const allowWeekendParam = searchParams.get('allowWeekend');
     const allowWeekend = allowWeekendParam === 'true' || allowWeekendParam === '1';
 
+    let targetDate = dateParam;
+    if (!targetDate) {
+      if (triggerParam === 'friday_10pm') {
+        const ist = getISTDateParts();
+        targetDate = ist.dateStr;
+      } else {
+        const ist = getISTDateParts();
+        if (ist.dayOfWeek === 1) {
+          // Monday morning: Friday work was already evaluated on Friday at 10:00 PM
+          return NextResponse.json({
+            success: true,
+            skipped: true,
+            message: 'Skipped: Friday tasks were already evaluated on Friday at 10:00 PM. Monday morning runs task addition only.',
+            date: ist.dateStr,
+            dryRun,
+          });
+        }
+        targetDate = getPreviousWorkdayDateStr();
+      }
+    }
+
     const result = await runDailyZohoEvaluationCron({
-      targetDate: dateParam,
+      targetDate,
       dryRun,
       allowWeekend,
+      skipNextDaySync: true,
     });
 
     if (result.skipped) {

@@ -72,7 +72,7 @@ function cleanText(str: string | null | undefined): string {
 
 /**
  * Runs the dedicated daily Zoho Evaluation Cron.
- * // Original Schedule: 10:00 PM IST (16:30 UTC -> "30 16 * * 1-5")
+ * // Schedule: 08:30 AM IST (03:00 UTC -> "0 3 * * 1-5")
  * // Testing Schedule: 12:05 PM IST (06:35 UTC -> "35 6 * * *")
  * Monday to Friday only (skips Saturday and Sunday unless allowWeekend is true).
  *
@@ -719,27 +719,28 @@ export async function runDailyZohoEvaluationCron(
       }
     }
 
-    // Phase 2: Ingest queued tasks planned for tomorrow (Monday to Thursday nights)
-    // Friday night tasks remain queued for Monday 9:00 AM Cron
-    try {
-      const [y, m, d] = targetDate.split('-').map(Number);
-      const currentDateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-      const dayOfWeek = currentDateObj.getUTCDay(); // 1: Mon, ..., 4: Thu, 5: Fri
+    // Phase 2: Ingest queued tasks planned for tomorrow (if not skipped for morning 8:45 AM cron)
+    if (!options?.skipNextDaySync) {
+      try {
+        const [y, m, d] = targetDate.split('-').map(Number);
+        const currentDateObj = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+        const dayOfWeek = currentDateObj.getUTCDay(); // 1: Mon, ..., 4: Thu, 5: Fri
 
-      if (dayOfWeek >= 1 && dayOfWeek <= 4) {
-        const nextDayObj = new Date(currentDateObj.getTime() + 86400000);
-        const ny = nextDayObj.getUTCFullYear();
-        const nm = String(nextDayObj.getUTCMonth() + 1).padStart(2, '0');
-        const nd = String(nextDayObj.getUTCDate()).padStart(2, '0');
-        const tomorrowDateStr = `${ny}-${nm}-${nd}`;
+        if (dayOfWeek >= 1 && dayOfWeek <= 4) {
+          const nextDayObj = new Date(currentDateObj.getTime() + 86400000);
+          const ny = nextDayObj.getUTCFullYear();
+          const nm = String(nextDayObj.getUTCMonth() + 1).padStart(2, '0');
+          const nd = String(nextDayObj.getUTCDate()).padStart(2, '0');
+          const tomorrowDateStr = `${ny}-${nm}-${nd}`;
 
-        console.log(`[ZohoCron] Ingesting next-day planned tasks for ${tomorrowDateStr}...`);
-        await syncQueuedPlannedTasks(tomorrowDateStr, { dryRun });
-      } else if (dayOfWeek === 5) {
-        console.log('[ZohoCron] Friday night: Next-day tasks remain queued for the Monday 9:00 AM cron.');
+          console.log(`[ZohoCron] Ingesting next-day planned tasks for ${tomorrowDateStr}...`);
+          await syncQueuedPlannedTasks(tomorrowDateStr, { dryRun });
+        } else if (dayOfWeek === 5) {
+          console.log('[ZohoCron] Friday night: Next-day tasks remain queued for the Monday 9:00 AM cron.');
+        }
+      } catch (syncErr) {
+        console.warn('[ZohoCron] Next-day planned tasks sync encountered warning:', syncErr);
       }
-    } catch (syncErr) {
-      console.warn('[ZohoCron] Next-day planned tasks sync encountered warning:', syncErr);
     }
 
     return {

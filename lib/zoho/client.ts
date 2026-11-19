@@ -779,6 +779,28 @@ export async function createZohoTask(
     const taskId = String(createdTask.id_string || createdTask.id || '');
     const link = buildZohoTaskDeepLink(portalId, projectId, taskId);
 
+    // If duration or work was specified on a subtask, ensure Zoho persists work_hours
+    if (taskId && (payload.duration || payload.work)) {
+      try {
+        const updateParams = new URLSearchParams();
+        if (payload.duration) updateParams.set('duration', payload.duration);
+        if (payload.duration_type) updateParams.set('duration_type', payload.duration_type);
+        if (payload.work) updateParams.set('work', payload.work);
+        if (payload.work_type) updateParams.set('work_type', payload.work_type);
+
+        await fetch(`${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${taskId}/`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Zoho-oauthtoken ${token}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: updateParams.toString(),
+        });
+      } catch (updErr) {
+        console.warn(`[ZohoClient] Work hours update warning for task ${taskId}:`, updErr);
+      }
+    }
+
     return {
       success: true,
       taskId,

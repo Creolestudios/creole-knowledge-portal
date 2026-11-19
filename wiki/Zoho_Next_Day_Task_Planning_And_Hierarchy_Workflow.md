@@ -1,18 +1,19 @@
 # Zoho Projects Next-Day Task Planning & 3-Tier Hierarchy Workflow Guide
 
-*A complete technical and operational guide for next-day developer task planning, Monday 9:00 AM weekly ingestion, daily 10:00 PM cron synchronization, and Zoho Projects 3-tier task hierarchy.*
+*A complete technical and operational guide for next-day developer task planning (8:30 AM cutoff), morning 8:45 AM cron synchronization, morning 8:30 AM weekday evaluation, Friday 10:00 PM evaluation, and Zoho Projects 3-tier task hierarchy.*
 
 ---
 
 ## 📌 1. Executive Summary
 
-This document specifies the end-to-end architecture and workflow for the **Next-Day Task Planning & Ingestion Engine** within the Creole Knowledge Portal (CKP). It bridges developer task planning on the CKP User Dashboard with **Zoho Projects** and the existing daily evaluation engine through two coordinated cron jobs and a structured 3-tier task hierarchy.
+This document specifies the end-to-end architecture and workflow for the **Next-Day Task Planning & Ingestion Engine** within the Creole Knowledge Portal (CKP). It bridges developer task planning on the CKP User Dashboard with **Zoho Projects** and the existing daily evaluation engine through scheduled cron jobs and a structured 3-tier task hierarchy.
 
 ### Core Objectives:
-1. **Next-Day Task Planning**: Developers submit their planned tasks for the next working day via the CKP User Dashboard with a strict **10:00 PM cutoff**.
-2. **Weekly Monday 9:00 AM Cron**: Identifies the Admin-created Weekly Main Task (`W{WeekNumber}-...`), creates user budget/container subtasks, sets up checklist tasks (assigned strictly to the respective developer), and creates Monday tasks submitted on Friday.
-3. **Daily 10:00 PM Cron (Existing + New)**: Evaluates the current day's work, locks next-day task submissions, and automatically dispatches next-day tasks into Zoho Projects under the correct user container.
-4. **Accurate User & Project Attribution**: Ensures every task is placed under the correct Level 2 container (`parent_id`) and assigned to the correct user account (`person_responsible`).
+1. **Next-Day Task Planning**: Developers submit their planned tasks for the next working day via the CKP User Dashboard with a strict **8:30 AM cutoff**.
+2. **Daily Morning 8:45 AM Task Addition Cron**: Discovers or creates Weekly Main Tasks and user budget subtasks, sets up checklist tasks, and creates today's planned tasks in Zoho Projects.
+3. **Daily Morning 8:30 AM Evaluation Cron**: Evaluates previous workday's completed tasks, timelogs, comments, and sends daily reports.
+4. **Friday Night 10:00 PM Evaluation Cron**: Explicitly evaluates Friday's work on Friday night and sends weekly wrap-up digest before the weekend.
+5. **Accurate User & Project Attribution**: Ensures every task is placed under the correct Level 2 container (`parent_id`) and assigned to the correct user account (`person_responsible`).
 
 ---
 
@@ -22,7 +23,7 @@ This document specifies the end-to-end architecture and workflow for the **Next-
 flowchart TD
     subgraph "CKP User Dashboard (/dashboard)"
         UI["Developer Task Planner Widget<br/>- Project Selector<br/>- Task Title & Description<br/>- Estimated Hours (hr)<br/>- Target Date (Next Working Day)"]
-        LOCK["10:00 PM Cutoff Gatekeeper<br/>(Locks inputs at 22:00 IST)"]
+        LOCK["8:30 AM Cutoff Gatekeeper<br/>(Locks inputs at 08:30 IST)"]
         UI --> LOCK
     end
 
@@ -34,8 +35,8 @@ flowchart TD
     end
 
     subgraph "Cron Automation Engine"
-        CRON_MON["Monday 9:00 AM Cron<br/>(/api/cron/monday-task-dispatch)<br/>- Fetches Admin W{Week} Task<br/>- Creates User Subtasks & Checklist<br/>- Syncs Friday's Monday Tasks"]
-        CRON_DAILY["Daily 10:00 PM Cron<br/>(/api/cron/zoho-evaluation)<br/>- Evaluates Today's Logged Work<br/>- Syncs Next-Day Planned Tasks"]
+        CRON_EVAL["Daily 8:30 AM Cron<br/>(/api/cron/zoho-evaluation)<br/>- Evaluates Completed Work<br/>- Sends Daily Evaluation Emails"]
+        CRON_ADD["Daily 8:45 AM Cron<br/>(/api/cron/monday-task-dispatch)<br/>- Ingests & Syncs Planned Deliverables"]
     end
 
     subgraph "Zoho Projects REST API"
@@ -153,56 +154,49 @@ Even if Aman's task is nested under `others 20`, the Zoho task creation payload 
 
 ---
 
-## ⏰ 5. The Dual Cron Architecture
+## ⏰ 5. The Cron Architecture & Schedules
 
 ```mermaid
-timeline
-    title Weekly Task Planning & Cron Lifecycle
-    Friday 22:00 IST : Developers submit Monday tasks on CKP
-                     : Friday 10 PM Cron locks Monday submissions
-    Monday 09:00 IST : Monday 9 AM Cron triggers
-                     : Fetches Admin's W{Week} Main Task
-                     : Sets up Level 2 Subtasks & User Checklist
-                     : Pushes Friday's Monday Tasks to Zoho
-    Mon-Thu 22:00 IST : Daily 10 PM Cron triggers
-                      : Evaluates completed day's tasks
-                      : Pushes Next-Day planned tasks to Zoho
+flowchart TD
+    subgraph Monday_To_Friday_Daily_Cycle["Monday - Friday Daily Cycle"]
+        Cutoff["08:30 AM IST: Submission Cutoff (Planner Locked)"]
+        Eval["08:30 AM IST: Daily Evaluation Cron (Evaluates Previous Workday)"]
+        Sync["08:45 AM IST: Task Addition Cron (Syncs Today's Tasks to Zoho)"]
+        Cutoff --> Eval
+        Eval --> Sync
+    end
+
+    subgraph Friday_Night_Cycle["Friday Night Explicit Evaluation"]
+        FriEval["Friday 10:00 PM IST: Friday Evaluation Cron (Evaluates Friday's Work)"]
+        FriReports["Sends Friday Individual & Admin Digest Reports"]
+        FriEval --> FriReports
+    end
 ```
 
-### Cron 1: Monday 9:00 AM Cron (`/api/cron/monday-task-dispatch`)
-* **Schedule**: Every Monday at **9:00 AM IST** (`03:30 UTC` &rarr; `30 3 * * 1`).
+### Cron 1: Daily 8:45 AM Task Addition Cron (`/api/cron/monday-task-dispatch`)
+* **Schedule**: Monday to Friday at **08:45 AM IST** (`03:15 UTC` &rarr; `15 3 * * 1-5`).
 * **Trigger Responsibility**:
-  1. **Calculate Week Number**: e.g., `W47` for ISO week 47.
-  2. **Fetch Weekly Main Task**: Calls `GET /portal/{portal_id}/projects/{project_id}/tasks/` and locates the task where the title starts with `W{WeekNumber}` (or `W - {WeekNumber}`).
-  3. **Discover or Create Level 2 Subtasks**:
-     * Inspects subtasks under the Weekly Main Task (`priya 10`, `krunal 10`, `others 20`).
-     * If user-specific subtasks or the `others` subtask do not exist, creates them.
-  4. **Create Level 3A Checklist Task**:
-     * Creates a checklist subtask under each user's Level 2 bucket.
-     * Sets `person_responsible = zoho_user_id` so only the assignee can update its progress.
-  5. **Sync Friday's Monday Tasks**:
-     * Queries `zoho_planned_tasks` for tasks with `target_date = Current Monday` and `status = 'queued'`.
-     * Creates each task under the developer's matching Level 2 subtask in Zoho.
+  1. **Weekly Container Setup (Monday Morning)**:
+     * Discovers or verifies Weekly Main Task (`W{WeekNumber}`).
+     * Discovers or creates Level 2 user containers (`priya 10`, `krunal 10`, `others 20`).
+     * Creates Level 3A Checklist task under each developer's container.
+  2. **Push Today's Tasks to Zoho**:
+     * Queries `zoho_planned_tasks` for tasks with `target_date = Current Date` and `status = 'queued'`.
+     * Creates each task under the developer's Level 2 subtask in Zoho.
      * Updates database record status to `'synced'` with the generated `zoho_task_id`.
-  6. **Cache Containers**: Stores the Weekly Parent ID and User Subtask IDs in `zoho_weekly_containers` for reuse throughout the week.
 
-### Cron 2: Daily 10:00 PM Cron (`/api/cron/zoho-evaluation`)
-* **Schedule**: Monday to Friday at **10:00 PM IST** (`16:30 UTC` &rarr; `30 16 * * 1-5`).
-* **Execution Flow**:
-  1. **Phase 1 — Daily Evaluation (Existing Engine)**:
-     * Pulls today's completed tasks, timelogs, comments, and QA review statuses from Zoho.
-     * Runs heuristic and Gemini AI evaluations.
-     * Dispatches daily evaluation emails and digest to users and seniors.
-  2. **Phase 2 — Next-Day Task Creation (New Ingestion Engine)**:
-     * **Monday, Tuesday, Wednesday, Thursday Nights**:
-       * Selects all planned tasks submitted before 10:00 PM where `target_date = Next Day`.
-       * Looks up the user's cached Level 2 subtask ID from `zoho_weekly_containers`.
-       * Calls Zoho API `POST /tasks/` to create Level 3 tasks.
-       * Marks records as `'synced'`.
-     * **Friday Night**:
-       * Evaluates Friday's work.
-       * Locks Monday's planned tasks in `zoho_planned_tasks` with status `'queued'`.
-       * Leaves them queued for the **Monday 9:00 AM Cron** (waiting for the Admin to create next week's `W{NextWeek}` task in Zoho).
+### Cron 2: Weekday 8:30 AM Morning Evaluation Cron (`/api/cron/zoho-evaluation`)
+* **Schedule**: Tuesday to Friday at **08:30 AM IST** (`03:00 UTC` &rarr; `0 3 * * 2-5`).
+* **Trigger Responsibility**:
+  * Evaluates completed tasks, timelogs, comments, and QA review statuses from the previous workday (e.g. Tuesday evaluates Monday).
+  * Dispatches daily evaluation emails and Team Performance Digest to developers and managers.
+  * **Monday Morning**: Evaluation is intentionally skipped because Friday work was already evaluated on Friday night. Monday morning focuses strictly on Task Addition at 8:45 AM.
+
+### Cron 3: Friday 10:00 PM Night Evaluation Cron (`/api/cron/zoho-evaluation?trigger=friday_10pm`)
+* **Schedule**: Every Friday at **10:00 PM IST onwards** (`16:30 UTC` &rarr; `30 16 * * 5`).
+* **Trigger Responsibility**:
+  * Explicit end-of-week evaluation: evaluates Friday's tasks and timelogs on Friday night.
+  * Dispatches Friday evaluation reports and weekly wrap-up digest before the weekend.
 
 ---
 
@@ -257,15 +251,16 @@ CREATE TABLE IF NOT EXISTS public.zoho_weekly_containers (
 ### User Flow on `/dashboard/zoho-evaluation`:
 1. **Next-Day Planner Card**:
    * Shows a clean card titled **"Plan Tomorrow's Tasks"** (or **"Plan Monday's Tasks"** on Fridays).
-   * Displays the countdown to the **10:00 PM cutoff**.
+   * Displays the countdown to the **8:30 AM cutoff**.
 2. **Form Inputs**:
    * **Project**: Dropdown populated from active Zoho projects.
    * **Task Title**: Clear title input (e.g., `Refactor user authentication flow`).
    * **Estimated Hours**: Numeric input / slider (e.g., `4.0 hrs`).
-   * **Description / Acceptance Criteria**: Textarea for detailed technical expectations.
+   * **Description / Acceptance Criteria**: Textarea for detailed technical expectations (minimum 40 words).
 3. **Cutoff Behavior**:
-   * Before 10:00 PM: Users can add, edit, or delete items.
-   * At 10:00 PM: Form locks automatically; shows badge: `"Locked & Queued for Zoho Sync at 10:00 PM"`.
+   * Before 8:30 AM: Users can add, edit, or delete items for the target workday.
+   * At 8:30 AM: Form locks automatically; shows badge: `"8:30 AM Cutoff Passed — Submissions Locked"`.
+   * At 8:45 AM: Morning Task Addition cron synchronizes all queued tasks into Zoho Projects.
 
 ---
 
@@ -326,7 +321,7 @@ export function resolveTargetSubtaskId(
 | **Developer submits tasks for multiple projects** | Tasks routed to wrong project | The planner form requires explicit project selection per task item; the cron groups tasks by `zoho_project_id` and queries the corresponding project container. |
 | **Developer name not listed in Level 2** | Task orphaned without bucket | Automatic fallback logic routes the task under the `others [hrs]` subtask while keeping `person_responsible` assigned to that specific developer. |
 | **Checklist status changed by non-assignee** | Unauthorized status progression | Level 3A checklist tasks are explicitly assigned to the developer's Zoho User ID, preventing unauthorized updates in Zoho Projects. |
-| **User tries to submit after 10:00 PM** | Inconsistent cron dispatch | Frontend UI disables submission, and backend API enforces server-side time validation against 10:00 PM IST. |
+| **User tries to submit after 8:30 AM** | Inconsistent cron dispatch | Frontend UI disables submission, and backend API enforces server-side time validation against 8:30 AM IST. |
 
 ---
 
@@ -334,9 +329,8 @@ export function resolveTargetSubtaskId(
 
 | Operation | Time / Frequency | Actor / Service | Outcome |
 |---|---|---|---|
-| **Create Weekly Main Task** | Before Monday 9:00 AM | Admin (Zoho UI) | Task named `W{Week}-...` created in Zoho. |
-| **Add Next-Day Tasks** | Daily until 10:00 PM | Developer (CKP UI) | Tasks stored as `'queued'` in Supabase. |
-| **Weekly Ingestion & Setup** | Monday 09:00 AM IST | Monday Cron | Locates `W{Week}`, creates user subtasks + checklists, syncs Friday's Monday tasks. |
-| **Daily Ingestion & Evaluation** | Mon-Thu 10:00 PM IST | Daily 10 PM Cron | Evaluates completed work, creates next-day tasks in Zoho. |
-| **Weekend Queuing** | Friday 10:00 PM IST | Daily 10 PM Cron | Evaluates Friday's work, holds Monday's planned tasks for Monday 9:00 AM cron. |
+| **Create Weekly Main Task** | Before Monday 8:30 AM | Admin (Zoho UI) | Task named `W{Week}-...` created in Zoho. |
+| **Add Daily Planned Tasks** | Daily until 8:30 AM | Developer (CKP UI) | Tasks stored as `'queued'` in Supabase. |
+| **Daily Evaluation & Digest** | Mon-Fri 08:30 AM IST | Evaluation Cron | Evaluates completed work, sends daily evaluation & digest emails. |
+| **Daily Ingestion & Task Addition** | Mon-Fri 08:45 AM IST | Task Dispatch Cron | Syncs queued tasks into Zoho Projects under developer containers. |
 

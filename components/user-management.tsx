@@ -675,7 +675,7 @@ export default function UserManagement() {
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-black text-zinc-900 dark:text-white">
-                      10 PM Daily Evaluation Email (All Users)
+                      8:30 AM Daily Evaluation Email (All Users)
                     </span>
                     <span
                       data-testid="master-daily-email-badge"
@@ -689,7 +689,7 @@ export default function UserManagement() {
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                    Common control to enable or disable automated 10 PM evaluation emails for all users combinely.
+                    Common control to enable or disable automated 8:30 AM evaluation emails for all users combinely.
                   </p>
                 </div>
               </div>
@@ -1038,7 +1038,7 @@ export default function UserManagement() {
                         <Mail size={14} className="text-purple-500 dark:text-purple-400" />
                         Reporting Senior Emails
                       </label>
-                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium">Daily 10 PM evaluation CC</span>
+                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500 font-medium">Daily 8:30 AM evaluation CC</span>
                     </div>
 
                     <div className="space-y-2">
@@ -1052,7 +1052,7 @@ export default function UserManagement() {
                           }}
                           onKeyDown={addSeniorEmailTag}
                           placeholder="Type senior email (e.g. pm@creolestudios.com) and press Enter"
-                          className="flex-1 px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-zinc-900 dark:text-white transition-all text-sm"
+                          className="flex-1 px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-700 rounded-2xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 text-zinc-900 dark:white transition-all text-sm"
                         />
                         <button
                           type="button"
@@ -1101,15 +1101,15 @@ export default function UserManagement() {
                     </div>
                   </div>
 
-                  {/* Daily 10 PM Evaluation Email Toggle */}
+                  {/* Daily 8:30 AM Evaluation Email Toggle */}
                   <div className="p-5 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700/80 rounded-2xl flex items-center justify-between gap-4">
                     <div>
                       <label className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-zinc-900 dark:text-white">
                         <Mail size={14} className="text-[#34c4f2]" />
-                        Daily 10:00 PM Evaluation Email
+                        Daily 8:30 AM Evaluation Email
                       </label>
                       <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                        When enabled, daily performance reports will be automatically emailed to this user and their reporting seniors at 10:00 PM IST.
+                        When enabled, daily performance reports will be automatically emailed to this user and their reporting seniors at 8:30 AM IST.
                       </p>
                     </div>
 

@@ -307,7 +307,7 @@ describe('/api/cron/zoho-evaluation Route Handler', () => {
     expect(data.message).toContain('Saturday');
   });
 
-  it('verifies vercel.json schedules /api/cron/zoho-evaluation at 16:30 UTC (10:00 PM IST) on weekdays', async () => {
+  it('verifies vercel.json schedules /api/cron/zoho-evaluation at 03:00 UTC (08:30 AM IST) on weekdays', async () => {
     const fs = await import('fs');
     const path = await import('path');
     const vercelConfig = JSON.parse(
@@ -317,7 +317,7 @@ describe('/api/cron/zoho-evaluation Route Handler', () => {
       (c: { path: string }) => c.path === '/api/cron/zoho-evaluation'
     );
     expect(cronItem).toBeDefined();
-    // Supports production 10:00 PM IST ('30 16 * * 1-5') and testing 12:05 PM IST ('35 6 * * *')
-    expect(['30 16 * * 1-5', '35 6 * * *']).toContain(cronItem.schedule);
+    // Supports production 08:30 AM IST ('0 3 * * 2-5' Tue-Fri or '0 3 * * 1-5'), 09:00 AM IST ('30 3 * * 1-5'), legacy 10:00 PM IST ('30 16 * * 1-5') and testing ('35 6 * * *')
+    expect(['0 3 * * 1-5', '0 3 * * 2-5', '30 3 * * 1-5', '30 16 * * 1-5', '35 6 * * *']).toContain(cronItem.schedule);
   });
 });

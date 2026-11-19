@@ -25,7 +25,7 @@ Follow these steps during your workday before the daily cutoff:
 3. **Check the Target Day & Cutoff**:
    * The top banner shows the target working day calculated in IST (e.g., *"Plan Tomorrow's Tasks — Thu, Nov 20, 2026"*).
    * On Friday, Saturday, or Sunday, the banner automatically shifts to *"Plan Monday's Tasks"*.
-   * Check the countdown pill (e.g., *"4h 25m remaining until 10:00 PM cutoff"*).
+   * Check the countdown pill (e.g., *"4h 25m remaining until 8:30 AM cutoff"*).
 4. **Select Target Project**:
    * Click the **Target Project** dropdown.
    * Use the live search field to quickly filter and select from your actively assigned Zoho projects.
@@ -56,10 +56,10 @@ Follow these steps during your workday before the daily cutoff:
 
 The portal enforces automated validation on every planned task. Tasks cannot be saved if any rule is violated:
 
-### A. Daily Timing & 10:00 PM IST Cutoff
-* **Strict Cutoff**: All tasks must be submitted before **10:00 PM IST**.
-* **Automatic Lockout**: At 10:00 PM IST, the form automatically locks with a lock badge. No tasks can be added, updated, or removed after 10:00 PM for the target day.
-* **Automated Sync**: The backend cron job ingests all queued planned tasks at 10:00 PM and synchronizes them directly into Zoho Projects under the 4-tier hierarchy.
+### A. Daily Timing & 8:30 AM Cutoff / 8:45 AM Sync
+* **Strict Submission Cutoff**: All tasks must be submitted before **8:30 AM IST**.
+* **Automatic Lockout**: At 8:30 AM IST, the form automatically locks with a lock badge. No tasks can be added, updated, or removed after 8:30 AM for the target day.
+* **Automated Sync at 8:45 AM**: The backend cron job ingests all queued planned tasks at 8:45 AM IST and synchronizes them directly into Zoho Projects under the 4-tier hierarchy.
 * **Weekend Policy**: Tasks created on Friday or over the weekend target **Monday** and sync to Zoho Projects on Monday morning at 09:00 AM IST.
 
 ### B. Target Project Constraints
@@ -92,10 +92,10 @@ The portal enforces automated validation on every planned task. Tasks cannot be 
 
 ## ✏️ 4. How to Edit or Delete a Planned Task
 
-You can update or delete planned tasks at any time **before the 10:00 PM IST cutoff**:
+You can update or delete planned tasks at any time **before the 8:30 AM IST cutoff**:
 
 ### To Edit an Existing Task:
-1. Ensure you are on the **Add Tomorrow Task** tab before 10:00 PM.
+1. Ensure you are on the **Add Tomorrow Task** tab before 8:30 AM.
 2. **Select the Task to Edit**:
    * Click the **"Select a task to edit..."** dropdown at the top of the form and choose your task, OR
    * Click the **Edit (Pencil)** icon on the task row in the queued list below.
@@ -111,7 +111,7 @@ You can update or delete planned tasks at any time **before the 10:00 PM IST cut
 3. Confirm deletion. The hours will be freed from your daily planned total immediately.
 
 > [!NOTE]
-> Once the 10:00 PM IST cutoff passes and tasks are synchronized to Zoho Projects, they can no longer be edited or deleted from the portal. Any subsequent adjustments must be performed directly within Zoho Projects.
+> Once the 8:30 AM IST cutoff passes and tasks are synchronized to Zoho Projects at 8:45 AM, they can no longer be edited or deleted from the portal. Any subsequent adjustments must be performed directly within Zoho Projects.
 
 ---
 

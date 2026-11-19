@@ -484,7 +484,7 @@ app/dashboard/zoho-evaluation/page.tsx (User Read-Only Portal wrapped in Dashboa
 
 | Method | Endpoint | Access | Purpose |
 | :--- | :--- | :--- | :--- |
-| `GET`/`POST` | `/api/cron/zoho-evaluation` | Automated Cron (`CRON_SECRET`) | Monday to Friday 10:00 PM IST (`30 16 * * 1-5` UTC) crawl (skips weekends): ingests daily tasks, timelogs & comments, and executes comprehensive AI/heuristic evaluations. |
+| `GET`/`POST` | `/api/cron/zoho-evaluation` | Automated Cron (`CRON_SECRET`) | Monday to Friday 08:30 AM IST (`0 3 * * 1-5` UTC) morning crawl & Friday 10:00 PM IST (`30 16 * * 5` UTC) night crawl: ingests tasks, timelogs & comments, and executes comprehensive AI/heuristic evaluations. |
 | `POST` | `/api/admin/zoho/sync` | Admin Session | Triggers on-demand manual mid-day synchronization of tasks, timelogs & comments from Zoho. |
 | `POST` | `/api/admin/zoho/evaluate` | Admin / Worker | Runs Gemini AI evaluation on unevaluated tasks and calculates daily rollups. |
 | `GET` | `/api/admin/zoho/users` | Admin | Fetches user list with their per-day tasks, evaluation scores, and Zoho deep-links. |
@@ -502,9 +502,9 @@ To guarantee zero latency and prevent hitting Zoho Projects API rolling rate lim
 3. **Modal Rendering**: When an employee opens a task modal in `/dashboard/zoho-evaluation`, `ZohoTaskModal` receives the mapped `task.comments` array, formatting timestamps and displaying complete work justification and evidence.
 4. **Conditional Live Sync**: Live Zoho API sync is only invoked when `forceSync` (`?sync=true` or `?refresh=true`) is explicitly requested.
 
-### 7.2 Monday-to-Friday 10 PM Evaluation Email Reports & Reporting Seniors Notification Pipeline
+### 7.2 Daily Evaluation Email Reports & Reporting Seniors Notification Pipeline
 
-Following the Monday-to-Friday 10:00 PM IST crawl (`30 16 * * 1-5` UTC, skipping Saturday and Sunday), comprehensive task performance analysis emails are dispatched to each evaluated employee, their configured reporting seniors, and an executive consolidated team digest is delivered to administrators and managers:
+Following each scheduled crawl (Monday-to-Friday 08:30 AM IST for previous workday evaluation, and Friday 10:00 PM IST onwards for Friday work evaluation), comprehensive task performance analysis emails are dispatched to each evaluated employee, their configured reporting seniors, and an executive consolidated team digest is delivered to administrators and managers:
 
 1. **Reporting Senior Configuration**:
    - In Admin Portal (`/admin/dashboard` → Users tab), administrators can configure multiple senior email addresses (`senior_emails`) for any employee.

@@ -573,7 +573,7 @@ describe('UserManagement', () => {
 
     // Verify master toggle card is present
     expect(screen.getByTestId('master-daily-email-card')).toBeInTheDocument();
-    expect(screen.getByText('10 PM Daily Evaluation Email (All Users)')).toBeInTheDocument();
+    expect(screen.getByText('8:30 AM Daily Evaluation Email (All Users)')).toBeInTheDocument();
 
     // Verify toggle button exists and click it
     const toggleBtn = screen.getByTestId('master-daily-email-toggle-btn');
