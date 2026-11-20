@@ -278,11 +278,11 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
       expect(workTask.name).toBe('Implement OAuth Flow [4.0 hrs]');
       expect(workTask.parent_id).toBe('created-task-2'); // Nested under Srushti Subtask!
       expect(workTask.person_responsible).toBe('zoho-srushti-99'); // Assigned to Developer!
-      expect(workTask.duration).toBe('4'); // Decimal/number format for Zoho API
-      expect(workTask.duration_type).toBe('hours'); // Displayed as hours
-      expect(workTask.work).toBe('4'); // Work Hours (P) displays exact hours
+      expect(workTask.duration).toBe('04:00');
+      expect(workTask.duration_type).toBe('hrs');
+      expect(workTask.work).toBe('04:00');
       expect(workTask.work_type).toBe('work_hours');
-      expect(workTask.owner_work).toBe(JSON.stringify([{ user_id: 'zoho-srushti-99', working_hours: '4' }]));
+      expect(workTask.owner_work).toBe(JSON.stringify([{ user_id: 'zoho-srushti-99', working_hours: '4:00' }]));
       expect(workTask.start_date).toBeUndefined(); // Start Date intentionally omitted ("-")
       expect(workTask.end_date).toBeUndefined(); // End Date intentionally omitted ("-")
     });

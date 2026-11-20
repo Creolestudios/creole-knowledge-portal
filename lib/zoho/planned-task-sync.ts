@@ -6,6 +6,8 @@ import {
   fetchZohoPortalUsers,
   createZohoTask,
   formatZohoDurationToClock,
+  formatMinutesToHHMM,
+  parseDurationToMinutes,
 } from './client';
 
 export interface PlannedTaskSyncResult {
@@ -543,25 +545,26 @@ export async function syncQueuedPlannedTasks(
       // 3.3 Create Level 4 Work Task in Zoho Projects under the Level 3 User Subtask
       // Note: start_date and end_date are intentionally omitted so they remain unset ("-") in Zoho Projects
       const hoursNum = Number(task.planned_hours) || 4;
-      const hoursStr = String(hoursNum);
-      const formattedDuration = formatZohoDurationToClock(task.planned_hours);
+      const formattedClock = formatZohoDurationToClock(task.planned_hours);
+      const totalMinutes = parseDurationToMinutes(task.planned_hours);
+      const formattedHHMM = formatMinutesToHHMM(totalMinutes);
       const durationLabel =
         hoursNum % 1 === 0 || (hoursNum * 10) % 1 === 0
           ? `${hoursNum.toFixed(1)} hrs`
-          : `${formatZohoDurationToClock(task.planned_hours)} hrs`;
+          : `${formattedClock} hrs`;
       const taskNameWithHours = `${task.task_name} [${durationLabel}]`;
 
       const ownerWorkPayload = zohoUserId
-        ? JSON.stringify([{ user_id: String(zohoUserId), working_hours: hoursStr }])
+        ? JSON.stringify([{ user_id: String(zohoUserId), working_hours: formattedClock }])
         : undefined;
 
       const createRes = await createZohoTask(token!, portalId, projectId, {
         name: taskNameWithHours,
         description: task.task_description || undefined,
         person_responsible: zohoUserId || undefined,
-        duration: hoursStr,
-        duration_type: 'hours',
-        work: hoursStr,
+        duration: formattedHHMM,
+        duration_type: 'hrs',
+        work: formattedHHMM,
         work_type: 'work_hours',
         owner_work: ownerWorkPayload,
         parent_id: workTaskParentId,
