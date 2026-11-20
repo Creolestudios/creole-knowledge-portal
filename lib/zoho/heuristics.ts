@@ -377,10 +377,13 @@ export function evaluateWorkAndCommentMatch(
   const cleanComments = (comments || []).filter(c => Boolean(c && c.trim().length > 0));
 
   if (!cleanComments || cleanComments.length === 0) {
+    const missingCap = context?.rules?.missingCommentCap ?? context?.rules?.missingDescriptionCap ?? 0.0;
     return {
-      workMatchScore: 0.0,
+      workMatchScore: missingCap,
       alignmentLabel: 'NO_COMMENTS',
-      explanation: 'No progress comments were logged in Zoho Projects to substantiate the work completed. Score is 0.',
+      explanation: missingCap === 0.0
+        ? 'No progress comments were logged in Zoho Projects to substantiate the work completed. Score is 0.'
+        : `No progress comments were logged in Zoho Projects. Work justification score is strictly capped at ${missingCap.toFixed(1)}/10.`,
       isBriefDescription: false,
       isChecklistComment: false,
       isBriefComment: false,
@@ -694,6 +697,13 @@ export function evaluateWorkAndCommentMatch(
     baseScore = Math.max(1.0, baseScore - descPenalty);
   }
 
+  // Deduct points from Score if comment is very short (<= 10 words, 1-line brief comment)
+  const shortCommentDeduction = context?.rules?.shortCommentDeduction ?? 4.8;
+  if (isBriefComment && !isVerbatimMirror && cleanComments.length > 0) {
+    const targetMax = Math.max(1.0, 10.0 - shortCommentDeduction);
+    baseScore = Math.min(baseScore, targetMax);
+  }
+
   const finalScore = Number(Math.min(10.0, Math.max(1.0, baseScore)).toFixed(1));
   const expTag = context?.seniorityLevel ? ` for a ${context.seniorityLevel} developer (${context.userExperienceYears || 2} yrs)` : '';
 
@@ -971,6 +981,8 @@ export function calculateItemizedDeductions(params: {
       reason = 'Comment copy-pastes task description without explaining actual implementation steps';
     } else if (params.isChecklistComment || params.workMatchResult?.isChecklistComment) {
       reason = 'Comments primarily mirror checklist status marks without technical code/test depth';
+    } else if (params.workMatchResult?.isBriefComment) {
+      reason = 'Very short comment (≤ 10 words) lacks technical implementation details';
     } else if (params.isPartialDelivery || params.workMatchResult?.isPartialDelivery || params.hasPendingScope) {
       reason = 'Key deliverables left pending or unverified on ticket';
     } else if (params.workMatchResult?.alignmentLabel === 'OFF_TOPIC') {
@@ -1272,12 +1284,13 @@ export function generateDynamicPerformanceSummary(params: {
     improvementItems.push('Separate Meeting Logs: Record meeting hours under dedicated administrative/meeting tasks rather than inside technical feature tickets.');
   }
 
+  const shortCommentCut = params.rules?.shortCommentDeduction ?? 4.8;
   if (isChecklistComment && !isVerbatimMirror) {
-    improvementItems.push('Explain Work Done Beyond Status Updates (-4.8 pts): Detail implementation steps and verification results (aim for 40–50 words) rather than just status marks like "done".');
+    improvementItems.push(`Explain Work Done Beyond Status Updates (-${shortCommentCut.toFixed(1)} pts): Detail implementation steps and verification results (aim for 40–50 words) rather than just status marks like "done".`);
   }
 
   if (isBriefComment && !isChecklistComment && !isVerbatimMirror && params.workMatchScore < 7.0) {
-    improvementItems.push('Substantiate Execution in Comments: Detail implementation steps and verification results (target 40–50 words).');
+    improvementItems.push(`Substantiate Execution in Comments (-${shortCommentCut.toFixed(1)} pts): Comment was brief; detail implementation steps and verification results (target 40–50 words).`);
   }
 
   if (params.timeAssessmentLabel === 'NOT_LOGGED') {

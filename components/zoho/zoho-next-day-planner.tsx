@@ -18,6 +18,7 @@ import {
   X,
   Check,
   List,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -137,20 +138,25 @@ function checkCutoffStatus(targetDateStr?: string): { isLocked: boolean; timeRem
     };
   }
 
-  // If target date is today and past 8:30 AM: locked
-  if ((!targetDateStr || targetDateStr === todayStr) && (hours > 8 || (hours === 8 && minutes >= 30))) {
+  // Calculate target cutoff time (8:30 AM on target date)
+  let targetCutoff: Date;
+  if (targetDateStr) {
+    const [y, m, d] = targetDateStr.split('-').map(Number);
+    targetCutoff = new Date(y, m - 1, d, 8, 30, 0, 0);
+  } else {
+    targetCutoff = new Date(istNow);
+    targetCutoff.setHours(8, 30, 0, 0);
+    if (hours > 8 || (hours === 8 && minutes >= 30)) {
+      targetCutoff.setDate(targetCutoff.getDate() + 1);
+    }
+  }
+
+  // If current IST time is past the target cutoff: locked
+  if (istNow.getTime() >= targetCutoff.getTime()) {
     return {
       isLocked: true,
       timeRemainingText: '8:30 AM Cutoff Passed — Submissions Locked',
     };
-  }
-
-  // Calculate time remaining until 8:30 AM cutoff
-  const targetCutoff = new Date(istNow);
-  targetCutoff.setHours(8, 30, 0, 0);
-
-  if (hours > 8 || (hours === 8 && minutes >= 30)) {
-    targetCutoff.setDate(targetCutoff.getDate() + 1);
   }
 
   const diffMs = targetCutoff.getTime() - istNow.getTime();
@@ -189,7 +195,9 @@ export default function ZohoNextDayPlanner({
   const [taskTitle, setTaskTitle] = useState('');
   const [plannedHoursInput, setPlannedHoursInput] = useState<string>('04:00');
   const [description, setDescription] = useState('');
-  const [cutoffStatus, setCutoffStatus] = useState(checkCutoffStatus);
+
+  const nextWorkingDay = useMemo(() => getNextWorkingDayIST(), []);
+  const [cutoffStatus, setCutoffStatus] = useState(() => checkCutoffStatus(nextWorkingDay.dateStr));
 
   // Edit task state (allowing developers to edit tomorrow's tasks before 8:30 AM)
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -203,7 +211,6 @@ export default function ZohoNextDayPlanner({
   // Selected task to view full details in a modal card
   const [viewingTask, setViewingTask] = useState<PlannedTaskItem | null>(null);
 
-  const nextWorkingDay = useMemo(() => getNextWorkingDayIST(), []);
   const storageKey = `ckp_planned_tasks_${nextWorkingDay.dateStr}_${userEmail || 'default'}`;
 
   // Click outside listener for dropdowns
@@ -290,42 +297,39 @@ export default function ZohoNextDayPlanner({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Fetch live active projects from Zoho API via cached route
-  useEffect(() => {
-    let isMounted = true;
-    async function loadProjects() {
-      try {
-        setLoadingProjects(true);
-        const res = await fetch('/api/user/zoho/projects');
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && Array.isArray(data.projects) && data.projects.length > 0) {
-            setProjectOptions(data.projects);
-            setProjectName((prev) => {
-              const exists = data.projects.some((p: ProjectOption) => p.name === prev);
-              return exists ? prev : data.projects[0].name;
-            });
-          }
+  // Fetch live active projects from Zoho API via cached route (supports forced live refresh)
+  const loadProjects = async (force = false) => {
+    try {
+      setLoadingProjects(true);
+      const res = await fetch(`/api/user/zoho/projects${force ? '?refresh=true' : ''}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.projects) && data.projects.length > 0) {
+          setProjectOptions(data.projects);
+          setProjectName((prev) => {
+            const exists = data.projects.some((p: ProjectOption) => p.name === prev);
+            return exists ? prev : data.projects[0].name;
+          });
         }
-      } catch {
-        // Silently preserve default project options on network or mock fallback
-      } finally {
-        if (isMounted) setLoadingProjects(false);
       }
+    } catch {
+      // Silently preserve default project options on network or mock fallback
+    } finally {
+      setLoadingProjects(false);
     }
-    void loadProjects();
-    return () => {
-      isMounted = false;
-    };
+  };
+
+  useEffect(() => {
+    void loadProjects(false);
   }, []);
 
   // Update countdown every 30 seconds
   useEffect(() => {
     const timer = setInterval(() => {
-      setCutoffStatus(checkCutoffStatus());
+      setCutoffStatus(checkCutoffStatus(nextWorkingDay.dateStr));
     }, 30000);
     return () => clearInterval(timer);
-  }, []);
+  }, [nextWorkingDay.dateStr]);
 
   // Load tasks from API (with localStorage fallback)
   useEffect(() => {
@@ -855,9 +859,21 @@ export default function ZohoNextDayPlanner({
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
               {/* Searchable Target Project Selection */}
               <div className="sm:col-span-4 space-y-1">
-                <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1">
-                  <FolderKanban className="w-3.5 h-3.5 text-zinc-400" /> Target Project <span className="text-rose-500 font-bold">*</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                    <FolderKanban className="w-3.5 h-3.5 text-zinc-400" /> Target Project <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    title="Refresh live projects from Zoho"
+                    disabled={loadingProjects || cutoffStatus.isLocked}
+                    onClick={() => void loadProjects(true)}
+                    className="flex items-center gap-1 text-[10.5px] font-bold text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 disabled:opacity-50 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className={cn("w-3 h-3", loadingProjects && "animate-spin")} />
+                    <span>{loadingProjects ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
+                </div>
 
                 <div className="relative" ref={projectDropdownRef}>
                   <button
@@ -892,9 +908,20 @@ export default function ZohoNextDayPlanner({
                       </div>
                       <div className="max-h-48 overflow-y-auto space-y-0.5">
                         {filteredProjects.length === 0 ? (
-                          <p className="text-[11px] text-zinc-400 text-center py-2">
-                            No matching projects
-                          </p>
+                          <div className="py-2.5 text-center space-y-1.5">
+                            <p className="text-[11px] text-zinc-400">
+                              No matching projects found
+                            </p>
+                            <button
+                              type="button"
+                              disabled={loadingProjects}
+                              onClick={() => void loadProjects(true)}
+                              className="text-[11px] text-teal-600 dark:text-teal-400 font-bold hover:underline flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                            >
+                              <RefreshCw className={cn("w-3 h-3", loadingProjects && "animate-spin")} />
+                              <span>{loadingProjects ? 'Refreshing...' : 'Refresh from Zoho'}</span>
+                            </button>
+                          </div>
                         ) : (
                           filteredProjects.map((proj) => (
                             <button

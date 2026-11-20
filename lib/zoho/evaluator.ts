@@ -365,8 +365,9 @@ Return your evaluation strictly conforming to the requested JSON schema.
 
     const parsed = JSON.parse(response.text?.trim() || '{}');
     const hasComments = input.comments && input.comments.length > 0;
-    const rawWorkMatch = hasComments && Number.isFinite(parsed.workMatchScore) ? parsed.workMatchScore : (hasComments ? workMatch.workMatchScore : 0);
-    let workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : 0;
+    const missingCommentLimit = activeRules.missingCommentCap ?? 0.0;
+    const rawWorkMatch = hasComments && Number.isFinite(parsed.workMatchScore) ? parsed.workMatchScore : (hasComments ? workMatch.workMatchScore : missingCommentLimit);
+    let workMatchScore = hasComments ? Math.max(0, Math.min(10, rawWorkMatch > 10 ? rawWorkMatch / 10 : rawWorkMatch)) : missingCommentLimit;
     if (workMatch.isMissingDescription) {
       workMatchScore = 0.0;
     } else if (workMatch.isPartialDelivery || (workMatch.hasPendingScope && !workMatch.hasDocumentedBlockers) || workMatch.isChecklistComment || (workMatch.isBriefDescription && workMatch.isBriefComment)) {

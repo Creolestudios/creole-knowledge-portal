@@ -175,5 +175,6 @@ Both the **Task Details Modal (UI)** and the **Daily Evaluation Email** display 
 | **Comments & Work** | Checklist markers with pending scope | `-4.8` to `-5.0 pts` | `-4.8 pts (Comments): Key deliverables left pending or unverified on ticket` |
 | **Comments & Work** | Checklist status only (`- Done`) | `-4.8 pts` | `-4.8 pts (Comments): Comments primarily mirror checklist status marks without technical code/test depth` |
 | **Comments & Work** | No progress comments logged | `-10.0 pts` | `-10.0 pts (Comments): No progress comments logged in Zoho Projects` |
+| **Comments & Work** | Very short comment ($\le 10$ words) | `-4.8 pts` | `-4.8 pts (Comments): Very short comment (≤ 10 words) lacks technical implementation details` |
 | **Repetition** | $>80\%$ match with prior task | `-3.0 pts` | `-3.0 pts (Repetition): Repetitive task detected (88% similarity match)` |
 

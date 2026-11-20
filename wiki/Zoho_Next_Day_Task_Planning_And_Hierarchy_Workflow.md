@@ -334,3 +334,16 @@ export function resolveTargetSubtaskId(
 | **Daily Evaluation & Digest** | Mon-Fri 08:30 AM IST | Evaluation Cron | Evaluates completed work, sends daily evaluation & digest emails. |
 | **Daily Ingestion & Task Addition** | Mon-Fri 08:45 AM IST | Task Dispatch Cron | Syncs queued tasks into Zoho Projects under developer containers. |
 
+---
+
+## 🔄 11. User Project Allocation & Live Refresh Mechanism
+
+### Strict Zoho Authority
+To maintain data integrity and prevent orphaned tasks:
+1. **No Manual Project Creation**: Developers cannot manually enter or invent arbitrary project names in the portal. All selectable projects originate 100% authentically from Zoho Projects.
+2. **User-Specific Project Ingestion**: When the planner loads, `/api/user/zoho/projects` retrieves only projects actively allocated to that developer's mapped Zoho User ID or email.
+3. **Instant Live Refresh**:
+   * Assigned projects are normally cached for 30 minutes in memory for high-speed planner rendering.
+   * If a Project Manager assigns a developer to a new project in Zoho Projects during the day, the developer clicks the **Refresh** button (`↻`) beside the Target Project dropdown.
+   * This immediately triggers `/api/user/zoho/projects?refresh=true`, which bypasses the cache, queries Zoho Projects REST API live, and instantly populates the newly allocated project into the dropdown.
+

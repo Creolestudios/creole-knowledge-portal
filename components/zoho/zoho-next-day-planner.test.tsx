@@ -315,4 +315,11 @@ describe('ZohoNextDayPlanner Component', () => {
     expect(screen.getByText(/Minutes cannot exceed 59/i)).toBeDefined();
     expect(addButton.hasAttribute('disabled')).toBe(true);
   });
+
+  it('renders refresh button and allows refreshing live projects from Zoho', async () => {
+    render(<ZohoNextDayPlanner userName="Priya Sharma" userEmail="priya@creolestudios.com" />);
+    const refreshBtn = screen.getByRole('button', { name: /Refresh/i });
+    expect(refreshBtn).toBeDefined();
+    fireEvent.click(refreshBtn);
+  });
 });

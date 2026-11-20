@@ -15,7 +15,7 @@ import {
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(req?: Request) {
   try {
     const supabase = await createClient();
     const {
@@ -26,12 +26,24 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const cached = getUserCachedProjects(user.id);
-    if (cached.isValid && cached.projects) {
-      return NextResponse.json({
-        projects: cached.projects,
-        cached: true,
-      });
+    let forceRefresh = false;
+    if (req?.url) {
+      try {
+        const { searchParams } = new URL(req.url);
+        forceRefresh = searchParams.get('refresh') === 'true' || searchParams.get('force') === 'true';
+      } catch {
+        // ignore malformed url in tests
+      }
+    }
+
+    if (!forceRefresh) {
+      const cached = getUserCachedProjects(user.id);
+      if (cached.isValid && cached.projects) {
+        return NextResponse.json({
+          projects: cached.projects,
+          cached: true,
+        });
+      }
     }
 
     const portalId = process.env.ZOHO_PORTAL_ID || 'creolestudios';

@@ -97,4 +97,31 @@ describe('GET /api/user/zoho/projects', () => {
     expect(body.projects[1].name).toBe('CKP Portal');
     expect(mockFetchZohoUserProjects).toHaveBeenCalled();
   });
+
+  it('bypasses cache when ?refresh=true is provided', async () => {
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: 'usr-refresh', email: 'dev@creolestudios.com' } },
+    });
+    mockGetZohoAccessToken.mockResolvedValue('valid-zoho-token');
+    mockFetchZohoPortalProjects
+      .mockResolvedValueOnce([
+        { id: 'p1', id_string: 'p1', name: 'Initial Project', status: 'active' },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'p1', id_string: 'p1', name: 'Initial Project', status: 'active' },
+        { id: 'p2', id_string: 'p2', name: 'Newly Allocated Project', status: 'active' },
+      ]);
+
+    // Initial fetch caches 1 project
+    const initialRes = await GET();
+    const initialBody = await initialRes.json();
+    expect(initialBody.projects.length).toBe(1);
+
+    // Call with ?refresh=true forces a live re-fetch
+    const req = new Request('http://localhost:3000/api/user/zoho/projects?refresh=true');
+    const refreshRes = await GET(req);
+    const refreshBody = await refreshRes.json();
+    expect(refreshBody.projects.length).toBe(2);
+    expect(refreshBody.projects.some((p: any) => p.name === 'Newly Allocated Project')).toBe(true);
+  });
 });
