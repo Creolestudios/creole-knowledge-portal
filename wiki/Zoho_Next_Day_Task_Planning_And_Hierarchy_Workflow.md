@@ -140,7 +140,10 @@ Even if Aman's task is nested under `others 20`, the Zoho task creation payload 
   "name": "Setup automated CI runner [2.5 hrs]",
   "parent_id": "1892000000099004",
   "person_responsible": "aman_zoho_user_id",
-  "duration": "02:30"
+  "duration": "02:30",
+  "duration_type": "hrs",
+  "work": "02:30",
+  "work_type": "work_hours"
 }
 ```
 **Why this matters**:
