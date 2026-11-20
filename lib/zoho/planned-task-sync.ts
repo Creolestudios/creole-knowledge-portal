@@ -63,14 +63,12 @@ export function getISOWeekNumber(dateStr: string): number {
 }
 
 /**
- * Finds the latest active weekly parent task (Level 1) for a project.
- * Multi-year & sprint safeguard:
- * 1. Matches target week (e.g. W47).
- * 2. Excludes closed/completed tasks.
- * 3. Sorts by created time descending (picks 2026 over 2024/2025).
- * 4. Falls back to latest active weekly task (e.g. W46) if sprint lags calendar week.
+ * Finds the latest active weekly parent task (Level 1) for a project:
+ * - Scans all OPEN tasks in the project matching weekly pattern (e.g. W46, W47, W51).
+ * - Sorts by highest week number descending (e.g. W47 > W46).
+ * - If multiple tasks have the same week number, picks the newest by created_time.
  */
-export function findLatestActiveWeeklyTask(projectTasks: any[], weekNumber: number): any | null {
+export function findLatestActiveWeeklyTask(projectTasks: any[], fallbackWeekNumber?: number): any | null {
   if (!projectTasks || projectTasks.length === 0) return null;
 
   const parseTime = (t: any): number => {
@@ -89,27 +87,41 @@ export function findLatestActiveWeeklyTask(projectTasks: any[], weekNumber: numb
     return statusName === 'closed' || statusName === 'completed';
   };
 
-  const weekPrefix = `W${weekNumber}`;
-  const candidates = projectTasks
-    .filter((pt: any) => {
-      const cleanName = String(pt.name || '').trim().toUpperCase();
-      const matches = cleanName.startsWith(weekPrefix) || cleanName.startsWith(`W - ${weekNumber}`);
-      return matches && !isClosed(pt);
-    })
-    .sort((a: any, b: any) => parseTime(b) - parseTime(a));
+  const parseWeekNumber = (name: string): number => {
+    const match = String(name || '').match(/\bW\s*-?\s*(\d+)\b/i);
+    return match ? parseInt(match[1], 10) : 0;
+  };
 
-  if (candidates.length > 0) return candidates[0];
+  // 1. Scan all OPEN weekly tasks
+  const openWeeklyTasks = projectTasks.filter((pt: any) => {
+    const weekNum = parseWeekNumber(pt.name);
+    return weekNum > 0 && !isClosed(pt);
+  });
 
-  // Fallback to any latest active weekly task (e.g., W46 if W47 not yet created)
-  const fallbacks = projectTasks
-    .filter((pt: any) => {
-      const cleanName = String(pt.name || '').trim().toUpperCase();
-      const isWeekly = /^W\s*-?\s*\d+/i.test(cleanName);
-      return isWeekly && !isClosed(pt);
-    })
-    .sort((a: any, b: any) => parseTime(b) - parseTime(a));
+  if (openWeeklyTasks.length > 0) {
+    // Sort by highest week number descending (e.g. W47 > W46), tie-breaking by created_time descending
+    openWeeklyTasks.sort((a: any, b: any) => {
+      const weekA = parseWeekNumber(a.name);
+      const weekB = parseWeekNumber(b.name);
+      if (weekB !== weekA) return weekB - weekA;
+      return parseTime(b) - parseTime(a);
+    });
+    return openWeeklyTasks[0];
+  }
 
-  return fallbacks[0] || null;
+  // 2. Fallback check by week prefix if provided
+  if (fallbackWeekNumber) {
+    const weekPrefix = `W${fallbackWeekNumber}`;
+    const candidates = projectTasks
+      .filter((pt: any) => {
+        const cleanName = String(pt.name || '').trim().toUpperCase();
+        return (cleanName.startsWith(weekPrefix) || cleanName.startsWith(`W - ${fallbackWeekNumber}`)) && !isClosed(pt);
+      })
+      .sort((a: any, b: any) => parseTime(b) - parseTime(a));
+    if (candidates.length > 0) return candidates[0];
+  }
+
+  return null;
 }
 
 /**
@@ -376,6 +388,10 @@ export async function syncQueuedPlannedTasks(
             ''
           );
 
+          // Extract the active sprint week number directly from the parent task's title (e.g. "W46" or "W47")
+          const parentWeekMatch = String(weeklyMain.name || '').match(/\bW\s*-?\s*(\d+)\b/i);
+          const activeWeekPrefix = parentWeekMatch ? `W${parentWeekMatch[1]}` : weekPrefix;
+
           // Level 2: Fetch subtasks under Level 1 Weekly Main Task to find or create Placeholder Task
           const l1Subtasks = await fetchZohoTaskSubtasks(token, portalId, projectId, mainTaskId);
           let placeholder = l1Subtasks.find((st: any) => isPlaceholderTaskName(st.name));
@@ -384,7 +400,7 @@ export async function syncQueuedPlannedTasks(
           if (!placeholderTaskId && !dryRun) {
             // Create Level 2 Placeholder Task directly under Level 1 Main Task FIRST (strictly Unassigned)
             const placeholderRes = await createZohoTask(token, portalId, projectId, {
-              name: `Placeholder Task - ${weekPrefix}`,
+              name: `Placeholder Task - ${activeWeekPrefix}`,
               parent_id: mainTaskId,
               unassigned: true,
             });
@@ -393,7 +409,7 @@ export async function syncQueuedPlannedTasks(
               l1Subtasks.push({
                 id: placeholderRes.taskId,
                 id_string: placeholderRes.taskId,
-                name: `Placeholder Task - ${weekPrefix}`,
+                name: `Placeholder Task - ${activeWeekPrefix}`,
               });
             }
           }
@@ -497,21 +513,28 @@ export async function syncQueuedPlannedTasks(
 
       // 3.3 Create Level 4 Work Task in Zoho Projects under the Level 3 User Subtask
       // Note: start_date and end_date are intentionally omitted so they remain unset ("-") in Zoho Projects
+      const hoursNum = Number(task.planned_hours) || 4;
+      const hoursStr = String(hoursNum);
       const formattedDuration = formatZohoDurationToClock(task.planned_hours);
       const durationLabel =
-        Number(task.planned_hours) % 1 === 0 || (Number(task.planned_hours) * 10) % 1 === 0
-          ? `${Number(task.planned_hours).toFixed(1)} hrs`
+        hoursNum % 1 === 0 || (hoursNum * 10) % 1 === 0
+          ? `${hoursNum.toFixed(1)} hrs`
           : `${formatZohoDurationToClock(task.planned_hours)} hrs`;
       const taskNameWithHours = `${task.task_name} [${durationLabel}]`;
+
+      const ownerWorkPayload = zohoUserId
+        ? JSON.stringify([{ user_id: String(zohoUserId), working_hours: hoursStr }])
+        : undefined;
 
       const createRes = await createZohoTask(token!, portalId, projectId, {
         name: taskNameWithHours,
         description: task.task_description || undefined,
         person_responsible: zohoUserId || undefined,
-        duration: formattedDuration,
-        duration_type: 'hrs',
-        work: formattedDuration,
+        duration: hoursStr,
+        duration_type: 'hours',
+        work: hoursStr,
         work_type: 'work_hours',
+        owner_work: ownerWorkPayload,
         parent_id: workTaskParentId,
       });
 

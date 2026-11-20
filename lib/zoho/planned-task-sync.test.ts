@@ -122,6 +122,24 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
       expect(found.id).toBe('w46-task');
     });
 
+    it('picks highest open week number (e.g. W47 over W46, W51 over closed W50)', () => {
+      const projectTasks = [
+        {
+          id: 'w46-task',
+          name: 'W46 - Older Sprint',
+          status: { name: 'Closed' },
+        },
+        {
+          id: 'w47-task',
+          name: 'W47 - Active Sprint',
+          status: { name: 'Open' },
+        },
+      ];
+      const found = findLatestActiveWeeklyTask(projectTasks);
+      expect(found).toBeDefined();
+      expect(found.id).toBe('w47-task');
+    });
+
     it('resolves allocated hours from parent title with explicit user breakdown (e.g. srushti 40, priya 16)', () => {
       const title = 'W46 - Zoho task analyzing automation - 50 hours (srushti 40, priya 16)';
       expect(resolveAllocatedHoursFromTitle(title, 'srushti')).toBe(40);
@@ -254,10 +272,11 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
       expect(workTask.name).toBe('Implement OAuth Flow [4.0 hrs]');
       expect(workTask.parent_id).toBe('created-task-2'); // Nested under Srushti Subtask!
       expect(workTask.person_responsible).toBe('zoho-srushti-99'); // Assigned to Developer!
-      expect(workTask.duration).toBe('4:00'); // Clock format for exact task hours
-      expect(workTask.duration_type).toBe('hrs'); // Displayed as hours
-      expect(workTask.work).toBe('4:00'); // Work Hours (P) displays exact hours
+      expect(workTask.duration).toBe('4'); // Decimal/number format for Zoho API
+      expect(workTask.duration_type).toBe('hours'); // Displayed as hours
+      expect(workTask.work).toBe('4'); // Work Hours (P) displays exact hours
       expect(workTask.work_type).toBe('work_hours');
+      expect(workTask.owner_work).toBe(JSON.stringify([{ user_id: 'zoho-srushti-99', working_hours: '4' }]));
       expect(workTask.start_date).toBeUndefined(); // Start Date intentionally omitted ("-")
       expect(workTask.end_date).toBeUndefined(); // End Date intentionally omitted ("-")
     });

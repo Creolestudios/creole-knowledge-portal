@@ -715,10 +715,11 @@ export interface CreateZohoTaskPayload {
   name: string;
   description?: string;
   person_responsible?: string;
-  duration?: string; // e.g. "04:00"
-  duration_type?: string; // e.g. "hrs" or "days"
-  work?: string; // e.g. "04:00"
+  duration?: string; // e.g. "4" or "04:00"
+  duration_type?: string; // e.g. "hours" or "days"
+  work?: string; // e.g. "4" or "04:00"
   work_type?: string; // e.g. "work_hours"
+  owner_work?: string; // JSON string e.g. '[{"user_id":"...","working_hours":"4"}]'
   start_date?: string; // e.g. "11-17-2026"
   end_date?: string;
   parent_id?: string; // Level 2 Subtask ID (User Bucket)
@@ -749,6 +750,7 @@ export async function createZohoTask(
     if (payload.duration_type) params.set('duration_type', payload.duration_type);
     if (payload.work) params.set('work', payload.work);
     if (payload.work_type) params.set('work_type', payload.work_type);
+    if (payload.owner_work) params.set('owner_work', payload.owner_work);
     if (payload.start_date) params.set('start_date', payload.start_date);
     if (payload.end_date) params.set('end_date', payload.end_date);
     // Only pass parent_id in body if targeting main /tasks/ endpoint
@@ -780,16 +782,18 @@ export async function createZohoTask(
     const taskId = String(createdTask.id_string || createdTask.id || '');
     const link = buildZohoTaskDeepLink(portalId, projectId, taskId);
 
-    // If duration or work was specified on a subtask, ensure Zoho persists work_hours
-    if (taskId && (payload.duration || payload.work)) {
+    // If duration, work, or owner_work was specified on a task, ensure Zoho persists work_hours
+    if (taskId && (payload.duration || payload.work || payload.owner_work)) {
       try {
         const updateParams = new URLSearchParams();
         if (payload.duration) updateParams.set('duration', payload.duration);
         if (payload.duration_type) updateParams.set('duration_type', payload.duration_type);
         if (payload.work) updateParams.set('work', payload.work);
         if (payload.work_type) updateParams.set('work_type', payload.work_type);
+        if (payload.person_responsible) updateParams.set('person_responsible', payload.person_responsible);
+        if (payload.owner_work) updateParams.set('owner_work', payload.owner_work);
 
-        await fetch(`${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${taskId}/`, {
+        const updRes = await fetch(`${apiBase}/portal/${portalId}/projects/${projectId}/tasks/${taskId}/`, {
           method: 'POST',
           headers: {
             Authorization: `Zoho-oauthtoken ${token}`,
@@ -797,6 +801,10 @@ export async function createZohoTask(
           },
           body: updateParams.toString(),
         });
+        if (!updRes.ok) {
+          const updText = await updRes.text();
+          console.warn(`[ZohoClient] Work hours update failed for ${taskId}: ${updRes.status}`, updText);
+        }
       } catch (updErr) {
         console.warn(`[ZohoClient] Work hours update warning for task ${taskId}:`, updErr);
       }
