@@ -775,6 +775,49 @@ describe('Zoho Frontend Components', () => {
       });
     });
 
+    it('triggers planned task sync when "Sync Task" button is clicked', async () => {
+      const mockFetch = vi.fn().mockImplementation(async (url: string, opts?: any) => {
+        if (url.includes('/api/admin/zoho/sync-tasks') && opts?.method === 'POST') {
+          return {
+            ok: true,
+            json: async () => ({
+              success: true,
+              syncedCount: 5,
+              skippedCount: 0,
+              message: 'Successfully synchronized 5 queued task(s) to Zoho Projects.',
+            }),
+          };
+        }
+        if (url.includes('/api/admin/zoho/sync-tasks')) {
+          return {
+            ok: true,
+            json: async () => ({ queuedCount: 5 }),
+          };
+        }
+        if (url.includes('/api/admin/zoho/users')) {
+          return {
+            ok: true,
+            json: async () => ({ users: mockUsers }),
+          };
+        }
+        return { ok: true, json: async () => ({}) };
+      });
+      global.fetch = mockFetch;
+
+      render(<ZohoEvaluationManager />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Sync Task')).toBeDefined();
+      });
+
+      fireEvent.click(screen.getByText('Sync Task'));
+
+      await waitFor(() => {
+        expect(mockFetch).toHaveBeenCalledWith('/api/admin/zoho/sync-tasks', expect.objectContaining({ method: 'POST' }));
+        expect(screen.getByText('Successfully synchronized 5 queued task(s) to Zoho Projects.')).toBeDefined();
+      });
+    });
+
     it('moves date filter and generate report inside user detail view and removes outer select user dropdown', async () => {
       global.fetch = vi.fn().mockImplementation(async (url: string) => {
         if (url.includes('/api/admin/zoho/users')) {

@@ -341,7 +341,7 @@ export async function syncLiveZohoTasks(forceRefresh = false): Promise<{
           const taskDescription = cleanText(raw.description || raw.name);
           const projectName = cleanText(raw.project?.name || 'General Project');
           const projectId = String(raw.project?.id_string || raw.project?.id || '0');
-          const zohoLink = buildZohoTaskDeepLink(portalId, projectId, taskId);
+          const zohoLink = raw.link?.web?.url || buildZohoTaskDeepLink(portalId, projectId, taskId);
 
           // Persist task to live Supabase zoho_tasks table FIRST (satisfies foreign key)
           try {

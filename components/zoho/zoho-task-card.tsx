@@ -3,7 +3,7 @@
 import React from 'react';
 import { ExternalLink, Clock, MessageSquare, CheckCircle, AlertCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
-import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
+import { formatZohoDurationToClock, formatMinutesToClock, formatZohoTaskWebUrl } from '@/lib/zoho/client';
 
 interface ZohoTaskCardProps {
   task: ZohoTaskItem;
@@ -74,7 +74,7 @@ export default function ZohoTaskCard({ task, onClick }: ZohoTaskCardProps) {
 
         {/* Direct Zoho Task Link Button (Requirement 12) */}
         <a
-          href={task.zohoLink}
+          href={formatZohoTaskWebUrl(task.zohoLink, task.zohoTaskId, task.projectId)}
           target="_blank"
           rel="noopener noreferrer"
           onClick={(e) => e.stopPropagation()}

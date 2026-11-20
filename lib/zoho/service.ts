@@ -9,6 +9,12 @@ export function buildZohoTaskDeepLink(
   projectId: string,
   taskId: string
 ): string {
+  if (taskId && /^\d+$/.test(String(taskId).trim())) {
+    if (projectId && /^\d+$/.test(String(projectId).trim())) {
+      return `https://projects.zoho.in/portal/creolestudiosdotcom1#taskdetail/${projectId}/${taskId}`;
+    }
+    return `https://projects.zoho.in/portal/creolestudiosdotcom1#zp/task-detail/${taskId}`;
+  }
   const safePortal = portalId || 'creolestudiosdotcom1';
   return `https://projects.zoho.com/portal/${safePortal}#taskdetail/${projectId}/${taskId}`;
 }

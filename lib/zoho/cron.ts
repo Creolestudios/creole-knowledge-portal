@@ -406,7 +406,7 @@ export async function runDailyZohoEvaluationCron(
         const projectName = cleanText(raw.project?.name || 'General Project');
         const projectId = String(raw.project?.id_string || raw.project?.id || '0');
         const taskId = String(raw.id_string || raw.id || '0');
-        const zohoLink = buildZohoTaskDeepLink(portalId, projectId, taskId);
+        const zohoLink = raw.link?.web?.url || buildZohoTaskDeepLink(portalId, projectId, taskId);
 
         let taskDescription = cleanText(raw.description || raw.name);
         if (taskDescription.length < 50) {

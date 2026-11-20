@@ -42,6 +42,7 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
     });
 
     it('identifies placeholder container task names accurately', () => {
+      expect(isPlaceholderTaskName('Week 47 - Placeholder Task')).toBe(true);
       expect(isPlaceholderTaskName('Placeholder Task - W47')).toBe(true);
       expect(isPlaceholderTaskName('Planned Tasks - W47')).toBe(true);
       expect(isPlaceholderTaskName('Planned Tasks Container - W47')).toBe(true);
@@ -106,7 +107,7 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
       expect(found.id).toBe('active-2026-task');
     });
 
-    it('gracefully falls back to latest active W46 when project sprint lags calendar week', () => {
+    it('strictly requires active target week (W47) and does NOT fall back to older W46 when Monday parent task is missing', () => {
       const projectTasks = [
         {
           id: 'w46-task',
@@ -116,10 +117,15 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
         },
       ];
 
-      // Target week is 47, but project only has active W46
-      const found = findLatestActiveWeeklyTask(projectTasks, 47);
-      expect(found).toBeDefined();
-      expect(found.id).toBe('w46-task');
+      // Target week is 47, but project only has active W46.
+      // As requested by user, we remove the fallback so tasks are NOT attached to last week.
+      const foundTargetWeek = findLatestActiveWeeklyTask(projectTasks, 47);
+      expect(foundTargetWeek).toBeNull();
+
+      // Without targetWeekNumber, general fallback still finds latest open weekly task
+      const foundGeneral = findLatestActiveWeeklyTask(projectTasks);
+      expect(foundGeneral).toBeDefined();
+      expect(foundGeneral?.id).toBe('w46-task');
     });
 
     it('picks highest open week number (e.g. W47 over W46, W51 over closed W50)', () => {
@@ -251,7 +257,7 @@ describe('Planned Task Sync Engine (Option B: Single Table & 4-Tier Hierarchy)',
       expect(createdTasks.length).toBe(4);
 
       const placeholderTask = createdTasks[0];
-      expect(placeholderTask.name).toContain('Placeholder Task - W47');
+      expect(placeholderTask.name).toBe('Week 47 - Placeholder Task');
       expect(placeholderTask.parent_id).toBe('main-task-1');
       expect(placeholderTask.person_responsible).toBeUndefined(); // Strictly UNASSIGNED!
 

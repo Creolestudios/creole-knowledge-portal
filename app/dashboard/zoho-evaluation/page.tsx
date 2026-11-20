@@ -24,6 +24,7 @@ import {
   ZohoTaskItem,
   getDefaultWeekSelection,
 } from '@/lib/zoho/service';
+import { formatZohoTaskWebUrl } from '@/lib/zoho/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import type { UserProfileSchema } from '@/types/contracts';
 
@@ -323,7 +324,7 @@ function MyZohoEvaluationContent() {
 
                           {task.zohoLink && (
                             <a
-                              href={task.zohoLink}
+                              href={formatZohoTaskWebUrl(task.zohoLink, task.zohoTaskId, task.projectId)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="p-1 rounded-lg text-zinc-400 hover:text-[#34c4f2] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"

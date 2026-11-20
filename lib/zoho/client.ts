@@ -76,6 +76,48 @@ export function stripHtml(input: string | null | undefined): string {
 }
 
 /**
+ * Resolves a direct, working Zoho Projects task URL.
+ * Converts legacy projects.zoho.com / numeric portal ID / #taskdetail links
+ * into the modern working India portal format:
+ * https://projects.zoho.in/portal/creolestudiosdotcom1#zp/task-detail/{taskId}
+ */
+export function formatZohoTaskWebUrl(
+  link?: string | null,
+  taskId?: string | null,
+  projectId?: string | null
+): string {
+  // If we have a real numerical Zoho taskId and projectId, #taskdetail/{projectId}/{taskId} ensures Zoho SPA loads both project & task
+  if (taskId && /^\d+$/.test(String(taskId).trim())) {
+    if (projectId && /^\d+$/.test(String(projectId).trim())) {
+      return `https://projects.zoho.in/portal/creolestudiosdotcom1#taskdetail/${projectId}/${taskId}`;
+    }
+    return `https://projects.zoho.in/portal/creolestudiosdotcom1#zp/task-detail/${taskId}`;
+  }
+
+  if (!link || typeof link !== 'string' || link.trim() === '') {
+    return 'https://projects.zoho.in/portal/creolestudiosdotcom1';
+  }
+
+  const cleanLink = link.trim();
+
+  // If the link contains a numerical taskId and projectId in the hash or path, extract them
+  const matchWithProj = cleanLink.match(/(?:taskdetail|task-detail)\/(\d+)\/(\d+)/i);
+  if (matchWithProj && matchWithProj[1] && matchWithProj[2]) {
+    return `https://projects.zoho.in/portal/creolestudiosdotcom1#taskdetail/${matchWithProj[1]}/${matchWithProj[2]}`;
+  }
+
+  const match = cleanLink.match(/(?:taskdetail|task-detail|\/tasks?\/)[^/]*\/(\d+)/i) || cleanLink.match(/\/(\d{15,})\b/);
+  if (match && match[1]) {
+    if (projectId && /^\d+$/.test(String(projectId).trim())) {
+      return `https://projects.zoho.in/portal/creolestudiosdotcom1#taskdetail/${projectId}/${match[1]}`;
+    }
+    return `https://projects.zoho.in/portal/creolestudiosdotcom1#zp/task-detail/${match[1]}`;
+  }
+
+  return cleanLink;
+}
+
+/**
  * Builds direct Zoho task URL for one-click navigation from CKP to Zoho Projects
  */
 export function buildZohoTaskDeepLink(
@@ -83,6 +125,12 @@ export function buildZohoTaskDeepLink(
   projectId: string,
   taskId: string
 ): string {
+  if (taskId && /^\d+$/.test(String(taskId).trim())) {
+    if (projectId && /^\d+$/.test(String(projectId).trim())) {
+      return `https://projects.zoho.in/portal/creolestudiosdotcom1#taskdetail/${projectId}/${taskId}`;
+    }
+    return `https://projects.zoho.in/portal/creolestudiosdotcom1#zp/task-detail/${taskId}`;
+  }
   const safePortal = portalId || 'creolestudiosdotcom1';
   return `https://projects.zoho.com/portal/${safePortal}#taskdetail/${projectId}/${taskId}`;
 }

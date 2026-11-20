@@ -12,7 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { ZohoTaskItem } from '@/lib/zoho/service';
-import { formatZohoDurationToClock, formatMinutesToClock } from '@/lib/zoho/client';
+import { formatZohoDurationToClock, formatMinutesToClock, formatZohoTaskWebUrl } from '@/lib/zoho/client';
 import { generateDynamicPerformanceSummary, evaluateWorkAndCommentMatch, calculateTimeAdherence, computeCompositeTaskScore, calculateItemizedDeductions } from '@/lib/zoho/heuristics';
 import { ZohoMetricTooltip } from './zoho-metric-tooltip';
 
@@ -265,7 +265,7 @@ export default function ZohoTaskModal({ task, onClose, hideZohoLink }: ZohoTaskM
             {/* Direct Zoho Deep-Link Button (Hidden for regular users in user portal) */}
             {!hideZohoLink && task.zohoLink && (
               <a
-                href={task.zohoLink}
+                href={formatZohoTaskWebUrl(task.zohoLink, task.zohoTaskId, task.projectId)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:text-[#34c4f2] dark:hover:text-[#34c4f2] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-2xs"

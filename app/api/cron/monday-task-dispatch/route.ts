@@ -62,6 +62,8 @@ async function handleMondayDispatch(req: Request) {
       totalQueued: result.totalQueued,
       syncedCount: result.syncedCount,
       failedCount: result.failedCount,
+      adminEmailSent: result.adminEmailSent,
+      adminEmailRecipients: result.adminEmailRecipients,
       details: result.details,
     });
   } catch (err: unknown) {

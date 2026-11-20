@@ -13,6 +13,8 @@ export interface PlannedTaskSyncResult {
   syncedCount: number;
   failedCount: number;
   skippedCount: number;
+  adminEmailSent?: boolean;
+  adminEmailRecipients?: number;
   details: Array<{
     taskId: string;
     taskName: string;
@@ -63,12 +65,16 @@ export function getISOWeekNumber(dateStr: string): number {
 }
 
 /**
- * Finds the latest active weekly parent task (Level 1) for a project:
- * - Scans all OPEN tasks in the project matching weekly pattern (e.g. W46, W47, W51).
- * - Sorts by highest week number descending (e.g. W47 > W46).
- * - If multiple tasks have the same week number, picks the newest by created_time.
+ * Finds the active weekly parent task (Level 1) for a project:
+ * - If targetWeekNumber is provided (e.g. for Monday / active sprint week):
+ *   STRICTLY finds the parent task matching W{targetWeekNumber}.
+ *   Never falls back to older weeks (e.g. never attaches W47 tasks to W46).
+ * - If no targetWeekNumber is provided, picks the open task with the highest week number.
  */
-export function findLatestActiveWeeklyTask(projectTasks: any[], fallbackWeekNumber?: number): any | null {
+export function findLatestActiveWeeklyTask(
+  projectTasks: any[],
+  targetWeekNumber?: number
+): any | null {
   if (!projectTasks || projectTasks.length === 0) return null;
 
   const parseTime = (t: any): number => {
@@ -92,7 +98,25 @@ export function findLatestActiveWeeklyTask(projectTasks: any[], fallbackWeekNumb
     return match ? parseInt(match[1], 10) : 0;
   };
 
-  // 1. Scan all OPEN weekly tasks
+  // 1. Strict Target Week Matching (specifically for Monday / active sprint week):
+  // When targetWeekNumber is provided, ONLY match parent tasks for this exact week.
+  // Never fall back to older weeks (e.g. do not attach W47 tasks to W46).
+  if (targetWeekNumber) {
+    const targetWeekTasks = projectTasks.filter((pt: any) => {
+      const weekNum = parseWeekNumber(pt.name);
+      return weekNum === targetWeekNumber && !isClosed(pt);
+    });
+
+    if (targetWeekTasks.length > 0) {
+      targetWeekTasks.sort((a: any, b: any) => parseTime(b) - parseTime(a));
+      return targetWeekTasks[0];
+    }
+
+    // Do NOT fall back to older weeks!
+    return null;
+  }
+
+  // 2. Generic fallback only when NO targetWeekNumber is passed:
   const openWeeklyTasks = projectTasks.filter((pt: any) => {
     const weekNum = parseWeekNumber(pt.name);
     return weekNum > 0 && !isClosed(pt);
@@ -107,18 +131,6 @@ export function findLatestActiveWeeklyTask(projectTasks: any[], fallbackWeekNumb
       return parseTime(b) - parseTime(a);
     });
     return openWeeklyTasks[0];
-  }
-
-  // 2. Fallback check by week prefix if provided
-  if (fallbackWeekNumber) {
-    const weekPrefix = `W${fallbackWeekNumber}`;
-    const candidates = projectTasks
-      .filter((pt: any) => {
-        const cleanName = String(pt.name || '').trim().toUpperCase();
-        return (cleanName.startsWith(weekPrefix) || cleanName.startsWith(`W - ${fallbackWeekNumber}`)) && !isClosed(pt);
-      })
-      .sort((a: any, b: any) => parseTime(b) - parseTime(a));
-    if (candidates.length > 0) return candidates[0];
   }
 
   return null;
@@ -390,7 +402,9 @@ export async function syncQueuedPlannedTasks(
 
           // Extract the active sprint week number directly from the parent task's title (e.g. "W46" or "W47")
           const parentWeekMatch = String(weeklyMain.name || '').match(/\bW\s*-?\s*(\d+)\b/i);
-          const activeWeekPrefix = parentWeekMatch ? `W${parentWeekMatch[1]}` : weekPrefix;
+          const activeWeekNumber = parentWeekMatch ? parseInt(parentWeekMatch[1], 10) : weekNumber;
+          const activeWeekPrefix = `W${activeWeekNumber}`;
+          const placeholderTaskName = `Week ${activeWeekNumber} - Placeholder Task`;
 
           // Level 2: Fetch subtasks under Level 1 Weekly Main Task to find or create Placeholder Task
           const l1Subtasks = await fetchZohoTaskSubtasks(token, portalId, projectId, mainTaskId);
@@ -398,9 +412,9 @@ export async function syncQueuedPlannedTasks(
           let placeholderTaskId = placeholder ? String(placeholder.id_string || placeholder.id) : undefined;
 
           if (!placeholderTaskId && !dryRun) {
-            // Create Level 2 Placeholder Task directly under Level 1 Main Task FIRST (strictly Unassigned)
+            // Create Level 2 Placeholder Task directly under Level 1 Main Task (same tier/priority as developer subtask buckets, strictly Unassigned)
             const placeholderRes = await createZohoTask(token, portalId, projectId, {
-              name: `Placeholder Task - ${activeWeekPrefix}`,
+              name: placeholderTaskName,
               parent_id: mainTaskId,
               unassigned: true,
             });
@@ -409,7 +423,7 @@ export async function syncQueuedPlannedTasks(
               l1Subtasks.push({
                 id: placeholderRes.taskId,
                 id_string: placeholderRes.taskId,
-                name: `Placeholder Task - ${activeWeekPrefix}`,
+                name: placeholderTaskName,
               });
             }
           }
@@ -462,6 +476,21 @@ export async function syncQueuedPlannedTasks(
       const hierarchy = projectHierarchyCache[projectId] || { userBuckets: [] };
       const mainTaskId = hierarchy.mainTaskId;
       const placeholderTaskId = hierarchy.placeholderTaskId;
+
+      // If Level 1 weekly parent task was not found for the target week, do NOT create orphaned tasks
+      // or attach to older weeks as fallback. Keep tasks queued in CKP.
+      if (!mainTaskId && !dryRun) {
+        console.warn(`[planned-task-sync] No weekly parent task found for week ${weekNumber} in project ${projectId}. Keeping task queued without fallback.`);
+        result.skippedCount++;
+        result.details.push({
+          taskId: task.id,
+          taskName: task.task_name,
+          userName: userFirstName,
+          status: 'skipped',
+          error: `Parent task W${weekNumber} not found in project ${projectId}. Kept queued without fallback.`,
+        });
+        continue;
+      }
 
       // Find or create User Subtask directly under Level 1 Main Task (along with Placeholder)
       let bucket = resolveUserSubtaskBucket(hierarchy.userBuckets, userFirstName);
@@ -612,6 +641,136 @@ export async function syncQueuedPlannedTasks(
     }
   }
 
+  // 4. Dispatch Morning 8:45 AM Planned Tasks Summary Email to Admins
+  try {
+    const adminEmailRes = await dispatchPlannedTasksAdminEmail(targetDate, { dryRun });
+    result.adminEmailSent = adminEmailRes.success;
+    result.adminEmailRecipients = adminEmailRes.recipientCount;
+  } catch (emailErr) {
+    console.warn('[planned-task-sync] Admin email dispatch warning:', emailErr);
+  }
+
   return result;
+}
+
+/**
+ * Compiles and dispatches the Morning 8:45 AM Planned Tasks Summary Email to Administrators.
+ * Displays strictly 2 columns: User Name and Task Count (includes active users with 0 tasks).
+ */
+export async function dispatchPlannedTasksAdminEmail(
+  targetDate: string,
+  options?: { dryRun?: boolean }
+): Promise<{ success: boolean; recipientCount: number; error?: string }> {
+  try {
+    // 1. Fetch admin digest recipients
+    const { getDigestRecipientEmails } = await import('./digest-recipients-store');
+    const adminEmails = await getDigestRecipientEmails();
+    if (!adminEmails || adminEmails.length === 0) {
+      console.log('[planned-task-sync] No admin digest recipients found. Skipping email.');
+      return { success: false, recipientCount: 0, error: 'No admin recipients configured' };
+    }
+
+    // 2. Fetch all active non-admin developers
+    const { data: profiles } = await supabaseAdmin
+      .from('user_profiles')
+      .select('user_id, name, email, role');
+
+    const nonAdminProfiles = (profiles || []).filter(
+      (p: any) => p && p.role !== 'admin' && (p.name || p.email)
+    );
+
+    let activeUsers: Array<{ userId: string; name: string }> = [];
+
+    if (nonAdminProfiles.length > 0) {
+      activeUsers = nonAdminProfiles.map((p: any) => ({
+        userId: String(p.user_id || p.email),
+        name: String(p.name || p.email?.split('@')[0] || 'Developer'),
+      }));
+    } else {
+      const { data: mappings } = await supabaseAdmin
+        .from('zoho_user_mappings')
+        .select('user_id, zoho_user_email, first_name');
+      if (mappings && mappings.length > 0) {
+        activeUsers = mappings.map((m: any) => ({
+          userId: String(m.user_id),
+          name: String(m.first_name || m.zoho_user_email?.split('@')[0] || 'Developer'),
+        }));
+      }
+    }
+
+    // 3. Query all planned tasks for this targetDate
+    let tasksForDate: any[] = [];
+    const { data: plannedData, error: plannedErr } = await supabaseAdmin
+      .from('zoho_planned_tasks')
+      .select('id, user_id, task_name')
+      .eq('task_date', targetDate);
+
+    if (!plannedErr && Array.isArray(plannedData)) {
+      tasksForDate = plannedData;
+    } else {
+      const { data: fallbackTasks } = await supabaseAdmin
+        .from('zoho_tasks')
+        .select('id, user_id, task_name')
+        .eq('task_date', targetDate);
+      tasksForDate = fallbackTasks || [];
+    }
+
+    // 4. Map task counts per user (guaranteeing 0 if user has no tasks)
+    const taskCountMap: Record<string, number> = {};
+    for (const t of tasksForDate) {
+      const uid = String(t.user_id || '');
+      taskCountMap[uid] = (taskCountMap[uid] || 0) + 1;
+    }
+
+    // If activeUsers is still empty (e.g. test environment with only tasks), derive from tasks
+    if (activeUsers.length === 0 && tasksForDate.length > 0) {
+      const uniqueUids = Array.from(new Set(tasksForDate.map(t => String(t.user_id))));
+      activeUsers = uniqueUids.map(uid => ({
+        userId: uid,
+        name: `Developer (${uid.slice(0, 6)})`,
+      }));
+    }
+
+    const userRows = activeUsers.map(user => {
+      const count = taskCountMap[user.userId] || 0;
+      return {
+        userId: user.userId,
+        userName: user.name,
+        taskCount: count,
+      };
+    });
+
+    // Sort: users with tasks first, descending by count, then alphabetically
+    userRows.sort((a, b) => {
+      if (b.taskCount !== a.taskCount) return b.taskCount - a.taskCount;
+      return a.userName.localeCompare(b.userName);
+    });
+
+    const totalTasks = tasksForDate.length;
+    const totalUsers = userRows.length;
+    const zeroCountUsers = userRows.filter(u => u.taskCount === 0).length;
+
+    const payload = {
+      date: targetDate,
+      totalTasks,
+      totalUsers,
+      zeroCountUsers,
+      users: userRows,
+      portalUrl: process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+    };
+
+    const { sendPlannedTasksAdminEmail } = await import('../email/service');
+    const emailResult = await sendPlannedTasksAdminEmail({
+      to: adminEmails,
+      payload,
+      dryRun: options?.dryRun,
+    });
+
+    return emailResult;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[planned-task-sync] Error dispatching planned tasks admin email:', message);
+    return { success: false, recipientCount: 0, error: message };
+  }
 }
 

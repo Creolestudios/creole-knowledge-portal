@@ -35,6 +35,7 @@ import {
   getDefaultWeekSelection,
   getMockZohoData,
 } from '@/lib/zoho/service';
+import { formatZohoTaskWebUrl } from '@/lib/zoho/client';
 
 function getUrlUserEmail(): string | null {
   if (typeof window === 'undefined') return null;
@@ -55,6 +56,8 @@ export default function ZohoEvaluationManager() {
   const [showWeeklyReport, setShowWeeklyReport] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [showCriteriaModal, setShowCriteriaModal] = useState(false);
+  const [isSyncingTasks, setIsSyncingTasks] = useState(false);
+  const [queuedTasksCount, setQueuedTasksCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isLiveZoho, setIsLiveZoho] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -137,9 +140,53 @@ export default function ZohoEvaluationManager() {
     }
   };
 
+  const fetchQueuedTasksCount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/zoho/sync-tasks');
+      if (res.ok) {
+        const data = await res.json();
+        setQueuedTasksCount(typeof data.queuedCount === 'number' ? data.queuedCount : 0);
+      }
+    } catch {
+      // Best effort
+    }
+  }, []);
+
+  const handleSyncQueuedTasks = async () => {
+    setIsSyncingTasks(true);
+    setEmailNotification(null);
+    try {
+      const res = await fetch('/api/admin/zoho/sync-tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to sync tasks');
+      }
+
+      setEmailNotification({
+        type: data.syncedCount > 0 ? 'success' : data.skippedCount > 0 ? 'error' : 'success',
+        message: data.message || 'Task sync completed.',
+      });
+
+      await fetchUsers();
+      await fetchQueuedTasksCount();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setEmailNotification({
+        type: 'error',
+        message: msg,
+      });
+    } finally {
+      setIsSyncingTasks(false);
+    }
+  };
+
   useEffect(() => {
     void Promise.resolve().then(fetchUsers);
-  }, [fetchUsers]);
+    void Promise.resolve().then(fetchQueuedTasksCount);
+  }, [fetchUsers, fetchQueuedTasksCount]);
 
   // Exclude admin users
   const nonAdminUsers = users.filter((u) => {
@@ -258,6 +305,23 @@ export default function ZohoEvaluationManager() {
                   className="w-full pl-9 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#34c4f2]"
                 />
               </div>
+
+              {/* Sync Task Button */}
+              <button
+                type="button"
+                onClick={handleSyncQueuedTasks}
+                disabled={isSyncingTasks}
+                className="text-xs font-bold px-3.5 py-2 rounded-xl bg-[#34c4f2]/10 hover:bg-[#34c4f2]/20 text-[#34c4f2] border border-[#34c4f2]/30 flex items-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-95 disabled:opacity-60 shrink-0"
+                title="Sync queued planned tasks to Zoho Projects under the current week's parent task"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-[#34c4f2] ${isSyncingTasks ? 'animate-spin' : ''}`} />
+                <span>{isSyncingTasks ? 'Syncing...' : 'Sync Task'}</span>
+                {queuedTasksCount > 0 && !isSyncingTasks && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#34c4f2] text-zinc-950 ml-0.5">
+                    {queuedTasksCount}
+                  </span>
+                )}
+              </button>
 
               {/* Sync Live Tasks from Zoho Button */}
               <button
@@ -616,7 +680,7 @@ export default function ZohoEvaluationManager() {
                         </div>
 
                         <a
-                          href={task.zohoLink}
+                          href={formatZohoTaskWebUrl(task.zohoLink, task.zohoTaskId, task.projectId)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-1 rounded-lg text-zinc-400 hover:text-[#34c4f2] hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"

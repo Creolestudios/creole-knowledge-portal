@@ -69,26 +69,23 @@ In Creole Studios' active Zoho Projects, tasks follow a structured 4-tier hierar
 graph TD
     Main["📁 Level 1: Weekly Main Task (Admin Created)<br/>Name: W47 - Sample tasks added by CKP... (Srushti 14, Priya 6)<br/>Owner: Admin (e.g. Senil Shah)"]
 
-    subgraph "Level 2: Placeholder Task"
-        Placeholder["📦 Placeholder Task - W47<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
+    subgraph "Level 2 (Same Tier): Sibling Containers"
+        Placeholder["📦 Week 47 - Placeholder Task<br/>parent_id: Level 1 Main Task<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
+        Sub_Srushti["👤 Srushti 40<br/>parent_id: Level 1 Main Task<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
+        Sub_Priya["👤 Priya 16<br/>parent_id: Level 1 Main Task<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
+        Sub_Others["👥 others 20<br/>parent_id: Level 1 Main Task<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
     end
 
-    subgraph "Level 3: User Named Subtasks (Hour Buckets)"
-        Sub_Srushti["👤 Srushti 40<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
-        Sub_Priya["👤 Priya 16<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
-        Sub_Others["👥 others 20<br/>Owner: UNASSIGNED<br/>Status: Backlog"]
-    end
-
-    subgraph "Level 4: Developer Work Tasks (Portal Ingested)"
-        Task_Srushti["📝 Zoho Automatic Task Creation... [8.0 hrs]<br/>Owner: Srushti Amin (Zoho User ID)<br/>Timesheet Trackable"]
-        Task_Priya["📝 Priya's Task: Fix profile upload bug [3.0 hrs]<br/>Owner: Priya (Zoho User ID)"]
-        Task_Others["📝 Aman's Task: Setup test runner [2.5 hrs]<br/>Owner: Aman (Zoho User ID)"]
+    subgraph "Level 3: Developer Work Tasks (Portal Ingested)"
+        Task_Srushti["📝 Zoho Automatic Task Creation... [8.0 hrs]<br/>parent_id: Srushti 40<br/>Owner: Srushti Amin (Zoho User ID)<br/>Timesheet Trackable"]
+        Task_Priya["📝 Priya's Task: Fix profile upload bug [3.0 hrs]<br/>parent_id: Priya 16<br/>Owner: Priya (Zoho User ID)"]
+        Task_Others["📝 Aman's Task: Setup test runner [2.5 hrs]<br/>parent_id: others 20<br/>Owner: Aman (Zoho User ID)"]
     end
 
     Main --> Placeholder
-    Placeholder --> Sub_Srushti
-    Placeholder --> Sub_Priya
-    Placeholder --> Sub_Others
+    Main --> Sub_Srushti
+    Main --> Sub_Priya
+    Main --> Sub_Others
 
     Sub_Srushti --> Task_Srushti
     Sub_Priya --> Task_Priya
@@ -109,10 +106,10 @@ graph TD
 
 | Level | Name / Format | Creator | `parent_id` | Assignee (`person_responsible`) | Role / Function |
 |---|---|---|---|---|---|
-| **Level 1** | `W{WeekNumber}-{Description}` | Admin | `null` | **Admin** (e.g. Senil Shah) | Weekly container representing sprint/milestone. |
-| **Level 2** | `Placeholder Task - W{WeekNumber}` | CKP Cron / Admin | Level 1 Task ID | **UNASSIGNED** (`null`) | Placeholder container. Status default is `Backlog`. Strictly unassigned. |
-| **Level 3** | User bucket (e.g., `Srushti 40`, `Priya 16`, `others 20`) | CKP Cron / Admin | Level 2 Placeholder ID | **UNASSIGNED** (`null`) | Hour-budget container grouping developer work. Automatically parsed from parent title breakdown (e.g. `(srushti 40, priya 16)`) or general hours. Remains unassigned. |
-| **Level 4** | `[Task Title] [X.X hrs]` | CKP Cron (9 AM Mon / 10 PM Daily) | Level 3 Subtask ID | **Respective Developer** | Actual daily work items with duration, assigned to developer. |
+| **Level 1** | `W{WeekNumber}-{Description}` | Admin / PM | `null` | **Admin** (e.g. Senil Shah) | Weekly container representing sprint/milestone. |
+| **Level 2 (Sibling)** | `Week {WeekNumber} - Placeholder Task` | CKP Cron / Sync Task | Level 1 Task ID | **UNASSIGNED** (`null`) | Admin placeholder container at same level as developer buckets. Strictly unassigned. |
+| **Level 2 (Sibling)** | User bucket (e.g., `Srushti 40`, `Priya 16`, `others 20`) | CKP Cron / Sync Task | Level 1 Task ID | **UNASSIGNED** (`null`) | Hour-budget container grouping developer work, sibling to Placeholder. Parsed from parent title breakdown. Strictly unassigned. |
+| **Level 3** | `[Task Title] [X.X hrs]` | CKP Cron / Sync Task | Level 2 User Subtask ID | **Respective Developer** | Actual daily work items with duration, assigned to developer. |
 
 ---
 
@@ -177,13 +174,16 @@ flowchart TD
 * **Schedule**: Monday to Friday at **08:45 AM IST** (`03:15 UTC` &rarr; `15 3 * * 1-5`).
 * **Trigger Responsibility**:
   1. **Weekly Container Setup (Monday Morning)**:
-     * Discovers or verifies Weekly Main Task (`W{WeekNumber}`).
-     * Discovers or creates Level 2 user containers (`priya 10`, `krunal 10`, `others 20`).
-     * Creates Level 3A Checklist task under each developer's container.
+     * Discovers Weekly Main Task (`W{WeekNumber}`).
+     * **Strict Zero-Fallback Policy**: If the PM has not yet created the target week's parent task in Zoho Projects by 8:45 AM, the cron **skips Zoho creation completely** and leaves all tasks safely queued in CKP (`sync_status = 'queued'`). It **never** attaches tasks to older weeks (e.g. `W46`).
+     * Creates `Week {WeekNumber} - Placeholder Task` and developer subtask containers (`srushti 40`, `priya 16`, `others 20`) as equal siblings under the parent task (strictly unassigned).
   2. **Push Today's Tasks to Zoho**:
-     * Queries `zoho_planned_tasks` for tasks with `target_date = Current Date` and `status = 'queued'`.
-     * Creates each task under the developer's Level 2 subtask in Zoho.
-     * Updates database record status to `'synced'` with the generated `zoho_task_id`.
+     * Queries queued planned tasks for the target date.
+     * Creates each task under the developer's subtask bucket in Zoho with duration label `[4.0 hrs]`.
+     * Updates database record status to `'Open'` with the generated `zoho_task_id` and deep link.
+     * Dispatches the **Morning 8:45 AM Admin Summary Digest Email** with developer names and task counts.
+  3. **Admin Manual "Sync Task" Trigger**:
+     * In Admin Console, if parent task was missing at 8:45 AM, clicking **"Sync Task"** runs this exact sync workflow on demand once the PM adds the parent task in Zoho.
 
 ### Cron 2: Weekday 8:30 AM Morning Evaluation Cron (`/api/cron/zoho-evaluation`)
 * **Schedule**: Tuesday to Friday at **08:30 AM IST** (`03:00 UTC` &rarr; `0 3 * * 2-5`).
